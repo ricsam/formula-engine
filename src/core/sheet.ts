@@ -140,14 +140,14 @@ export function setRangeValues(
 ): void {
   for (let row = 0; row < values.length; row++) {
     const rowData = values[row];
-    for (let col = 0; col < rowData.length; col++) {
+    for (let col = 0; rowData && col < rowData.length; col++) {
       const address: SimpleCellAddress = {
         sheet: sheet.id,
         col: topLeft.col + col,
         row: topLeft.row + row
       };
       
-      const value = rowData[col];
+      const value = rowData![col];
       if (value === undefined) {
         removeCell(sheet, address);
       } else {
@@ -229,6 +229,9 @@ function parseA1Key(key: string, sheetId: number): SimpleCellAddress | null {
   }
   
   const [, colLetters, rowDigits] = match;
+  if (!colLetters || !rowDigits) {
+    throw new Error(`Invalid cell address: ${key}`);
+  }
   const col = letterToColNumber(colLetters);
   const row = parseInt(rowDigits, 10) - 1;
   

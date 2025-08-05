@@ -239,26 +239,26 @@ Cell addressing utilities:
 
 ### Parser Files
 
-#### `src/parser/lexer.ts` - ✅ TODO
+#### `src/parser/lexer.ts` - ✅ DONE (2024-12-30)
 Token lexer for formula parsing:
 - Token types (NUMBER, STRING, FUNCTION, OPERATOR, etc.)
 - Tokenization logic
 - Error handling
 
-#### `src/parser/ast.ts` - ✅ TODO
+#### `src/parser/ast.ts` - ✅ DONE (2024-12-30)
 AST node definitions:
 - Node types for values, functions, operators
 - AST traversal utilities
 - AST optimization
 
-#### `src/parser/parser.ts` - ✅ TODO
+#### `src/parser/parser.ts` - ✅ DONE (2024-12-30)
 Recursive descent parser:
 - Expression parsing
 - Function call parsing
 - Reference parsing
 - Error recovery
 
-#### `src/parser/grammar.ts` - ✅ TODO
+#### `src/parser/grammar.ts` - ✅ DONE (2024-12-30)
 Grammar rules and precedence:
 - Operator precedence table
 - Grammar production rules

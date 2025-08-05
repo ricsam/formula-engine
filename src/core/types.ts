@@ -194,8 +194,12 @@ export function addressToKey(address: SimpleCellAddress): AddressKey {
 
 // Helper function to parse address keys
 export function keyToAddress(key: AddressKey): SimpleCellAddress {
-  const [sheet, col, row] = key.split(':').map(Number);
-  return { sheet, col, row };
+  const parts = key.split(':').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) {
+    throw new Error(`Invalid address key: ${key}`);
+  }
+  const [sheet, col, row] = parts;
+  return { sheet: sheet!, col: col!, row: row! };
 }
 
 // A1 notation helpers

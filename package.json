@@ -2,6 +2,10 @@
   "name": "formula-engine",
   "module": "index.ts",
   "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "chevrotain": "^11.0.3",
