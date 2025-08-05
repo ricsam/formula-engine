@@ -145,7 +145,7 @@ formula-engine/
 
 ### Core Files
 
-#### `src/core/types.ts` - ✅ TODO
+#### `src/core/types.ts` - ✅ DONE (2024-12-30)
 ```typescript
 export interface SimpleCellAddress {
   sheet: number;
@@ -209,7 +209,7 @@ export type FormulaError =
   | '#ERROR!';
 ```
 
-#### `src/core/engine.ts` - ✅ TODO
+#### `src/core/engine.ts` - ✅ DONE (2024-12-30)
 Main FormulaEngine class implementing all API methods:
 - Sheet management methods
 - Cell access methods
@@ -217,20 +217,20 @@ Main FormulaEngine class implementing all API methods:
 - Evaluation control methods
 - Undo/redo methods
 
-#### `src/core/sheet.ts` - ✅ TODO
+#### `src/core/sheet.ts` - ✅ DONE (2024-12-30)
 Sheet data structure and operations:
 - Map-based cell storage
 - Bounding rectangle calculation
 - Cell enumeration utilities
 - Used range tracking
 
-#### `src/core/cell.ts` - ✅ TODO
+#### `src/core/cell.ts` - ✅ DONE (2024-12-30)
 Cell data structures and utilities:
 - Cell value storage
 - Type detection
 - Formula storage
 
-#### `src/core/address.ts` - ✅ TODO
+#### `src/core/address.ts` - ✅ DONE (2024-12-30)
 Cell addressing utilities:
 - Address parsing (A1 notation)
 - Address validation
