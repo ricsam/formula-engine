@@ -266,27 +266,27 @@ Grammar rules and precedence:
 
 ### Evaluator Files
 
-#### `src/evaluator/evaluator.ts` - ✅ TODO
+#### `src/evaluator/evaluator.ts` - ✅ DONE (2024-12-30)
 Core evaluation engine:
 - AST evaluation
 - Context management
 - Value coercion rules
 - Evaluation strategies (lazy/eager)
 
-#### `src/evaluator/dependency-graph.ts` - ✅ TODO
+#### `src/evaluator/dependency-graph.ts` - ✅ DONE (2024-12-30)
 Dependency tracking system:
 - Graph data structure
 - Cycle detection
 - Topological sorting
 - Incremental updates
 
-#### `src/evaluator/array-evaluator.ts` - ✅ TODO
+#### `src/evaluator/array-evaluator.ts` - ✅ DONE (2024-12-30)
 Array formula evaluation:
 - Broadcasting logic
 - Spilling behavior
 - Array operation optimization
 
-#### `src/evaluator/error-handler.ts` - ✅ TODO
+#### `src/evaluator/error-handler.ts` - ✅ DONE (2024-12-30)
 Error management:
 - Error propagation
 - Error recovery
