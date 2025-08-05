@@ -1,0 +1,13 @@
+{
+  "name": "formula-engine",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@types/bun": "latest",
+    "chevrotain": "^11.0.3",
+    "zod": "^4.0.14"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  }
+}
