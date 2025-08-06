@@ -37,6 +37,7 @@ import {
   getArrayDimensions,
   broadcastToSize
 } from './array-evaluator';
+import { parseFormula } from '../parser/parser';
 
 /**
  * Evaluation context containing necessary information
@@ -226,17 +227,50 @@ export class Evaluator {
       return '#CYCLE!';
     }
     
-    // TODO: Parse and evaluate named expression
-    // For now, if the expression is a simple value, return it
-    if (typeof namedExpr.expression === 'string' && !namedExpr.expression.startsWith('=')) {
-      const num = parseFloat(namedExpr.expression);
-      if (!isNaN(num)) return num;
-      if (namedExpr.expression === 'TRUE') return true;
-      if (namedExpr.expression === 'FALSE') return false;
-      return namedExpr.expression;
+    // Parse and evaluate named expression
+    if (typeof namedExpr.expression === 'string') {
+      if (!namedExpr.expression.startsWith('=')) {
+        // Simple value
+        const num = parseFloat(namedExpr.expression);
+        if (!isNaN(num)) return num;
+        if (namedExpr.expression === 'TRUE') return true;
+        if (namedExpr.expression === 'FALSE') return false;
+        return namedExpr.expression;
+      } else {
+        // Formula expression - need to evaluate it
+        try {
+          // Add this named expression to the evaluation stack to detect cycles
+          context.evaluationStack.add(key);
+          
+          // Parse the formula (remove the = prefix)
+          const formula = namedExpr.expression.substring(1);
+          const ast = parseFormula(formula, context.currentSheet);
+          
+          // Create a new context for evaluating the named expression
+          const nestedContext: EvaluationContext = {
+            ...context,
+            evaluationStack: new Set(context.evaluationStack)
+          };
+          
+          const result = this.evaluate(ast, nestedContext);
+          
+          // Merge dependencies from the nested evaluation
+          for (const dep of result.dependencies) {
+            dependencies.add(dep);
+          }
+          
+          // Remove from evaluation stack
+          context.evaluationStack.delete(key);
+          
+          return result.value;
+        } catch (error) {
+          context.evaluationStack.delete(key);
+          return '#NAME?';
+        }
+      }
     }
     
-    return '#NAME?'; // Placeholder for complex expressions
+    return '#NAME?';
   }
   
   /**

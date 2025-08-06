@@ -53,8 +53,20 @@ describe('Dependency Tracking Integration Tests', () => {
       engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '=MyValue * 2');
       
       const precedents = engine.getCellPrecedents({ sheet: sheetId, col: 1, row: 0 });
-      // Should include the named expression as a precedent
+      
+      // Should include A1 as a transitive dependency through the named expression
       expect(precedents.length).toBeGreaterThanOrEqual(1);
+      
+      // Verify that A1 is included in the precedents (transitive dependency)
+      const hasA1 = precedents.some(prec => {
+        return 'col' in prec && 'row' in prec && 'sheet' in prec &&
+               prec.col === 0 && prec.row === 0 && prec.sheet === sheetId;
+      });
+      expect(hasA1).toBe(true);
+      
+      // Also verify the formula evaluation works correctly
+      const result = engine.getCellValue({ sheet: sheetId, col: 1, row: 0 });
+      expect(result).toBe(200);
     });
 
     test('should return empty array for cells without formulas', () => {

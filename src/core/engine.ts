@@ -73,7 +73,7 @@ import { parseFormula } from '../parser/parser';
 import { Evaluator, type EvaluationContext } from '../evaluator/evaluator';
 import { DependencyGraph } from '../evaluator/dependency-graph';
 import { ErrorHandler } from '../evaluator/error-handler';
-import { functionRegistry } from '../functions/index';
+import { functionRegistry } from '../functions';
 
 /**
  * Main FormulaEngine class
@@ -307,6 +307,7 @@ export class FormulaEngine {
     } else if (typeof content === 'string' && isFormula(content)) {
       // Formula cell
       const formula = extractFormula(content);
+      const addressKey = addressToKey(address);
       newCell = createFormulaCell(formula);
       
       // Parse and evaluate the formula
@@ -318,15 +319,17 @@ export class FormulaEngine {
           currentSheet: address.sheet,
           currentCell: address,
           namedExpressions: this.namedExpressions,
-          getCellValue: (addr: SimpleCellAddress) => this.getCellValueInternal(addr),
+          getCellValue: (addr: SimpleCellAddress) => this.getCellValueInternal(addr, context.evaluationStack),
           getRangeValues: (range: SimpleCellRange) => this.getRangeValuesInternal(range),
           getFunction: (name: string) => functionRegistry.get(name),
           errorHandler: this.errorHandler,
           evaluationStack: new Set<string>()
         };
         
+        // Add current cell to evaluation stack to detect cycles
+        context.evaluationStack.add(addressKey);
+        
         // Update dependencies
-        const addressKey = addressToKey(address);
         this.dependencyGraph.addCell(address);
         this.dependencyGraph.clearDependencies(addressKey);
         
@@ -362,6 +365,17 @@ export class FormulaEngine {
               }
             };
             this.dependencyGraph.addRange(depRange);
+            this.dependencyGraph.addDependency(addressKey, dep);
+          } else if (dep.startsWith('name:')) {
+            // Named expression dependency: name:MyValue or name:0:MyValue
+            const nameParts = dep.split(':');
+            if (nameParts.length === 2 && nameParts[1]) {
+              // Global scope: name:MyValue
+              this.dependencyGraph.addNamedExpression(nameParts[1], undefined);
+            } else if (nameParts.length === 3 && nameParts[1] && nameParts[2]) {
+              // Sheet scope: name:0:MyValue
+              this.dependencyGraph.addNamedExpression(nameParts[2], parseInt(nameParts[1]));
+            }
             this.dependencyGraph.addDependency(addressKey, dep);
           } else {
             // Unknown dependency format, add it anyway
@@ -1036,7 +1050,8 @@ export class FormulaEngine {
       
       for (const cellAddr of iterateRange(address)) {
         const key = addressToKey(cellAddr);
-        const precedents = this.dependencyGraph.getPrecedents(key);
+        // Use transitive precedents to include dependencies through named expressions
+        const precedents = this.dependencyGraph.getTransitivePrecedents(key);
         
         for (const prec of precedents) {
           if (!seenKeys.has(prec)) {
@@ -1051,12 +1066,35 @@ export class FormulaEngine {
     } else {
       // Single cell
       const key = addressToKey(address);
-      const precedents = this.dependencyGraph.getPrecedents(key);
+      // Use transitive precedents to include dependencies through named expressions
+      const precedents = this.dependencyGraph.getTransitivePrecedents(key);
+      
+      // Group individual cells into ranges where possible
+      const cellPrecedents: SimpleCellAddress[] = [];
+      const rangePrecedents: SimpleCellRange[] = [];
       
       for (const prec of precedents) {
         const parsed = this.parseNodeKey(prec);
         if (parsed) {
-          result.push(parsed);
+          if ('start' in parsed && 'end' in parsed) {
+            rangePrecedents.push(parsed);
+          } else {
+            cellPrecedents.push(parsed);
+          }
+        }
+      }
+      
+      // For now, prioritize range dependencies over individual cells
+      // In a full implementation, we'd check if individual cells are covered by ranges
+      result.push(...rangePrecedents);
+      
+      // Only add individual cells that aren't covered by ranges
+      for (const cell of cellPrecedents) {
+        const isCoveredByRange = rangePrecedents.some(range => 
+          this.isAddressInRange(cell, range)
+        );
+        if (!isCoveredByRange) {
+          result.push(cell);
         }
       }
     }
@@ -1088,9 +1126,23 @@ export class FormulaEngine {
           row: parseInt(parts[4])
         }
       };
+    } else if (key.startsWith('name:')) {
+      // Named expression: name:name or name:scope:name
+      // For now, we don't have a way to represent named expressions in our return type
+      // This is a limitation of the current API design
+      // In a full implementation, we'd extend the return type
+      return null;
     }
     
     return null;
+  }
+
+  private isAddressInRange(address: SimpleCellAddress, range: SimpleCellRange): boolean {
+    return address.sheet === range.start.sheet &&
+           address.col >= range.start.col &&
+           address.col <= range.end.col &&
+           address.row >= range.start.row &&
+           address.row <= range.end.row;
   }
 
   // ===== Cell Information =====
@@ -1202,6 +1254,75 @@ export class FormulaEngine {
     
     this.namedExpressions.set(key, namedExpr);
     
+    // Add the named expression to the dependency graph
+    const namedExprKey = DependencyGraph.getNamedExpressionKey(expressionName, scope);
+    this.dependencyGraph.addNamedExpression(expressionName, scope);
+    
+    // If the expression is a formula, parse it and build dependencies
+    if (typeof expression === 'string' && expression.startsWith('=')) {
+      try {
+        const formula = expression.substring(1);
+        const ast = parseFormula(formula, scope || 0);
+        
+        const context: EvaluationContext = {
+          currentSheet: scope || 0,
+          namedExpressions: this.namedExpressions,
+          getCellValue: (addr) => this.getCellValue(addr),
+          getRangeValues: (range) => this.getRangeValues(range),
+          getFunction: (name: string) => functionRegistry.get(name),
+          errorHandler: this.errorHandler,
+          evaluationStack: new Set<string>()
+        };
+        
+        const result = this.evaluator.evaluate(ast, context);
+        
+        // Register dependencies for the named expression
+        for (const dep of result.dependencies) {
+          // Parse the dependency and add to graph if needed
+          const parts = dep.split(':');
+          
+          if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+            // Cell dependency
+            const depAddress: SimpleCellAddress = {
+              sheet: parseInt(parts[0]),
+              col: parseInt(parts[1]), 
+              row: parseInt(parts[2])
+            };
+            this.dependencyGraph.addCell(depAddress);
+            this.dependencyGraph.addDependency(namedExprKey, dep);
+          } else if (parts.length === 5 && parts[0] && parts[1] && parts[2] && parts[3] && parts[4]) {
+            // Range dependency
+            const depRange: SimpleCellRange = {
+              start: {
+                sheet: parseInt(parts[0]),
+                col: parseInt(parts[1]),
+                row: parseInt(parts[2])
+              },
+              end: {
+                sheet: parseInt(parts[0]),
+                col: parseInt(parts[3]),
+                row: parseInt(parts[4])
+              }
+            };
+            this.dependencyGraph.addRange(depRange);
+            this.dependencyGraph.addDependency(namedExprKey, dep);
+          } else if (dep.startsWith('name:')) {
+            // Named expression dependency
+            const nameParts = dep.split(':');
+            if (nameParts.length === 2 && nameParts[1]) {
+              this.dependencyGraph.addNamedExpression(nameParts[1], undefined);
+            } else if (nameParts.length === 3 && nameParts[1] && nameParts[2]) {
+              this.dependencyGraph.addNamedExpression(nameParts[2], parseInt(nameParts[1]));
+            }
+            this.dependencyGraph.addDependency(namedExprKey, dep);
+          }
+        }
+      } catch (error) {
+        // Formula parsing failed, but we can still store the named expression
+        console.warn(`Failed to parse named expression formula: ${expression}`, error);
+      }
+    }
+    
     // TODO: Update dependent cells
     
     return [];
@@ -1311,16 +1432,53 @@ export class FormulaEngine {
   }
 
   private getNamedExpressionKey(name: string, scope?: number): string {
-    return scope === undefined ? `global:${name}` : `sheet:${scope}:${name}`;
+    return scope === undefined ? name : `${scope}:${name}`;
   }
 
   // ===== Internal Helper Methods for Evaluation =====
 
-  private getCellValueInternal(address: SimpleCellAddress): CellValue {
+  private getCellValueInternal(address: SimpleCellAddress, evaluationStack?: Set<string>): CellValue {
     const sheet = this.sheets.get(address.sheet);
     if (!sheet) return undefined;
     
     const cell = getCell(sheet, address);
+    if (!cell) return undefined;
+    
+    // If this cell has a formula and we have an evaluation stack, check for cycles
+    if (cell.formula && evaluationStack) {
+      const key = addressToKey(address);
+      if (evaluationStack.has(key)) {
+        return '#CYCLE!';
+      }
+      
+      // If this cell needs to be re-evaluated, do it now with the current stack
+      if (cell.value === undefined || isFormulaError(cell.value)) {
+        try {
+          const ast = parseFormula(cell.formula, address.sheet);
+          
+          // Create evaluation context with the existing stack
+          const context: EvaluationContext = {
+            currentSheet: address.sheet,
+            currentCell: address,
+            namedExpressions: this.namedExpressions,
+            getCellValue: (addr: SimpleCellAddress) => this.getCellValueInternal(addr, evaluationStack),
+            getRangeValues: (range: SimpleCellRange) => this.getRangeValuesInternal(range),
+            getFunction: (name: string) => functionRegistry.get(name),
+            errorHandler: this.errorHandler,
+            evaluationStack: new Set(evaluationStack)
+          };
+          
+          // Add current cell to stack
+          context.evaluationStack.add(key);
+          
+          const result = this.evaluator.evaluate(ast, context);
+          return result.value;
+        } catch (error) {
+          return '#ERROR!';
+        }
+      }
+    }
+    
     return cell?.value;
   }
 

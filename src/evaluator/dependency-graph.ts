@@ -48,6 +48,7 @@ export class DependencyGraph {
   private nodes: Map<string, DependencyNode> = new Map();
   private dependencies: Map<string, DependencyInfo> = new Map();
   private rangeIndex: Map<string, Set<string>> = new Map(); // Maps cells to ranges containing them
+  private largeRanges: Array<{key: string, range: SimpleCellRange, size: number}> = []; // Sparse index for large ranges
   
   /**
    * Creates a unique key for a cell address
@@ -110,19 +111,33 @@ export class DependencyGraph {
         dependents: new Set()
       });
       
-      // Index all cells in the range
-      for (let row = range.start.row; row <= range.end.row; row++) {
-        for (let col = range.start.col; col <= range.end.col; col++) {
-          const cellKey = DependencyGraph.getCellKey({
-            sheet: range.start.sheet,
-            col,
-            row
-          });
-          
-          if (!this.rangeIndex.has(cellKey)) {
-            this.rangeIndex.set(cellKey, new Set());
+      // Index all cells in the range using optimized approach
+      // For large ranges, we use sparse indexing to avoid O(n²) complexity
+      const rangeSize = (range.end.row - range.start.row + 1) * (range.end.col - range.start.col + 1);
+      
+      if (rangeSize > 1000) {
+        // For large ranges, use sparse indexing
+        // We'll track the range boundaries and check containment on demand
+        this.largeRanges.push({
+          key,
+          range,
+          size: rangeSize
+        });
+      } else {
+        // For smaller ranges, use direct indexing
+        for (let row = range.start.row; row <= range.end.row; row++) {
+          for (let col = range.start.col; col <= range.end.col; col++) {
+            const cellKey = DependencyGraph.getCellKey({
+              sheet: range.start.sheet,
+              col,
+              row
+            });
+            
+            if (!this.rangeIndex.has(cellKey)) {
+              this.rangeIndex.set(cellKey, new Set());
+            }
+            this.rangeIndex.get(cellKey)!.add(key);
           }
-          this.rangeIndex.get(cellKey)!.add(key);
         }
       }
     }
@@ -372,6 +387,80 @@ export class DependencyGraph {
   }
   
   /**
+   * Find all strongly connected components using Tarjan's algorithm
+   */
+  findStronglyConnectedComponents(): string[][] {
+    const index = new Map<string, number>();
+    const lowLink = new Map<string, number>();
+    const onStack = new Set<string>();
+    const stack: string[] = [];
+    const sccs: string[][] = [];
+    let currentIndex = 0;
+
+    const tarjan = (node: string): void => {
+      index.set(node, currentIndex);
+      lowLink.set(node, currentIndex);
+      currentIndex++;
+      stack.push(node);
+      onStack.add(node);
+
+      const deps = this.dependencies.get(node);
+      if (deps) {
+        for (const precedent of deps.precedents) {
+          if (!index.has(precedent)) {
+            // Successor not yet visited; recurse
+            tarjan(precedent);
+            lowLink.set(node, Math.min(lowLink.get(node)!, lowLink.get(precedent)!));
+          } else if (onStack.has(precedent)) {
+            // Successor is in stack and hence in the current SCC
+            lowLink.set(node, Math.min(lowLink.get(node)!, index.get(precedent)!));
+          }
+        }
+      }
+
+      // If node is a root node, pop the stack and create an SCC
+      if (lowLink.get(node) === index.get(node)) {
+        const scc: string[] = [];
+        let w: string;
+        do {
+          w = stack.pop()!;
+          onStack.delete(w);
+          scc.push(w);
+        } while (w !== node);
+        
+        sccs.push(scc);
+      }
+    };
+
+    for (const node of this.nodes.keys()) {
+      if (!index.has(node)) {
+        tarjan(node);
+      }
+    }
+
+    return sccs;
+  }
+
+  /**
+   * Get all nodes involved in circular dependencies using SCC analysis
+   */
+  getCircularNodes(): Set<string> {
+    const sccs = this.findStronglyConnectedComponents();
+    const circularNodes = new Set<string>();
+    
+    for (const scc of sccs) {
+      // Only SCCs with more than one node represent cycles
+      if (scc.length > 1) {
+        for (const node of scc) {
+          circularNodes.add(node);
+        }
+      }
+    }
+    
+    return circularNodes;
+  }
+
+  /**
    * Topological sort of the graph
    */
   topologicalSort(): string[] | null {
@@ -428,7 +517,27 @@ export class DependencyGraph {
    */
   getRangesContainingCell(address: SimpleCellAddress): string[] {
     const cellKey = DependencyGraph.getCellKey(address);
-    return Array.from(this.rangeIndex.get(cellKey) || []);
+    const ranges = new Set(this.rangeIndex.get(cellKey) || []);
+    
+    // Check large ranges using sparse indexing
+    for (const largeRange of this.largeRanges) {
+      if (this.isAddressInRange(address, largeRange.range)) {
+        ranges.add(largeRange.key);
+      }
+    }
+    
+    return Array.from(ranges);
+  }
+
+  /**
+   * Helper method to check if an address is within a range
+   */
+  private isAddressInRange(address: SimpleCellAddress, range: SimpleCellRange): boolean {
+    return address.sheet === range.start.sheet &&
+           address.col >= range.start.col &&
+           address.col <= range.end.col &&
+           address.row >= range.start.row &&
+           address.row <= range.end.row;
   }
   
   /**
@@ -437,7 +546,20 @@ export class DependencyGraph {
   isCellInRange(address: SimpleCellAddress): boolean {
     const cellKey = DependencyGraph.getCellKey(address);
     const ranges = this.rangeIndex.get(cellKey);
-    return ranges !== undefined && ranges.size > 0;
+    
+    // Check direct index first
+    if (ranges !== undefined && ranges.size > 0) {
+      return true;
+    }
+    
+    // Check large ranges
+    for (const largeRange of this.largeRanges) {
+      if (this.isAddressInRange(address, largeRange.range)) {
+        return true;
+      }
+    }
+    
+    return false;
   }
   
   /**
@@ -447,6 +569,7 @@ export class DependencyGraph {
     this.nodes.clear();
     this.dependencies.clear();
     this.rangeIndex.clear();
+    this.largeRanges = [];
   }
   
   /**
