@@ -37,7 +37,7 @@ import {
   getArrayDimensions,
   broadcastToSize
 } from './array-evaluator';
-import { parseFormula } from '../parser/parser';
+import { parseFormula, type SheetResolver } from '../parser/parser';
 
 /**
  * Evaluation context containing necessary information
@@ -52,6 +52,7 @@ export interface EvaluationContext {
   errorHandler: ErrorHandler;
   evaluationStack: Set<string>; // For cycle detection
   arrayContext?: ArrayEvaluationContext;
+  sheetResolver?: SheetResolver; // For resolving sheet names in formulas
 }
 
 /**
@@ -244,7 +245,7 @@ export class Evaluator {
           
           // Parse the formula (remove the = prefix)
           const formula = namedExpr.expression.substring(1);
-          const ast = parseFormula(formula, context.currentSheet);
+          const ast = parseFormula(formula, context.currentSheet, context.sheetResolver);
           
           // Create a new context for evaluating the named expression
           const nestedContext: EvaluationContext = {

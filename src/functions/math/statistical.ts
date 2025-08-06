@@ -147,6 +147,157 @@ export const COUNTBLANK: FunctionDefinition = {
 };
 
 /**
+ * COUNTIF function - Counts cells that meet a criteria
+ */
+export const COUNTIF: FunctionDefinition = {
+  name: 'COUNTIF',
+  minArgs: 2,
+  maxArgs: 2,
+  acceptsArrays: true,
+  evaluate: (args: CellValue[]): CellValue => {
+    const error = propagateError(args);
+    if (error) return error;
+    
+    const range = args[0];
+    const criteria = args[1];
+    
+    // Flatten the range values
+    const flattened = flattenValues([range]);
+    let count = 0;
+    
+    for (const value of flattened) {
+      if (matchesCriteria(value, criteria)) {
+        count++;
+      }
+    }
+    
+    return count;
+  }
+};
+
+/**
+ * SUMIF function - Sums cells that meet a criteria
+ */
+export const SUMIF: FunctionDefinition = {
+  name: 'SUMIF',
+  minArgs: 2,
+  maxArgs: 3,
+  acceptsArrays: true,
+  evaluate: (args: CellValue[]): CellValue => {
+    const error = propagateError(args);
+    if (error) return error;
+    
+    const range = args[0];
+    const criteria = args[1];
+    const sumRange = args.length === 3 ? args[2] : range;
+    
+    // Flatten the range and sum range values
+    const rangeFlattened = flattenValues([range]);
+    const sumFlattened = flattenValues([sumRange]);
+    
+    // Ensure both arrays are the same length
+    if (rangeFlattened.length !== sumFlattened.length) {
+      return '#VALUE!';
+    }
+    
+    let sum = 0;
+    let hasNumbers = false;
+    
+    for (let i = 0; i < rangeFlattened.length; i++) {
+      if (matchesCriteria(rangeFlattened[i], criteria)) {
+        const value = sumFlattened[i];
+        if (typeof value === 'number') {
+          sum += value;
+          hasNumbers = true;
+        } else if (typeof value === 'boolean') {
+          sum += value ? 1 : 0;
+          hasNumbers = true;
+        }
+      }
+    }
+    
+    return hasNumbers ? sum : 0;
+  }
+};
+
+/**
+ * Helper function to check if a value matches criteria
+ * Supports exact matches, comparison operators, and wildcards
+ */
+function matchesCriteria(value: CellValue, criteria: CellValue): boolean {
+  // Handle error values
+  if (isFormulaError(value) || isFormulaError(criteria)) {
+    return false;
+  }
+  
+  // Convert criteria to string for parsing
+  const criteriaStr = String(criteria);
+  
+  // Check for comparison operators
+  const comparisonMatch = criteriaStr.match(/^(>=|<=|<>|>|<|=)(.*)$/);
+  
+  if (comparisonMatch) {
+    const operator = comparisonMatch[1];
+    const targetStr = comparisonMatch[2];
+    
+    // Try to convert to number for numeric comparisons
+    const numValue = typeof value === 'number' ? value : 
+                     typeof value === 'boolean' ? (value ? 1 : 0) :
+                     typeof value === 'string' && !isNaN(Number(value)) ? Number(value) : null;
+    
+    const numTarget = !isNaN(Number(targetStr)) ? Number(targetStr) : null;
+    
+    // If both can be numbers, do numeric comparison
+    if (numValue !== null && numTarget !== null) {
+      switch (operator) {
+        case '>=': return numValue >= numTarget;
+        case '<=': return numValue <= numTarget;
+        case '<>': return numValue !== numTarget;
+        case '>': return numValue > numTarget;
+        case '<': return numValue < numTarget;
+        case '=': return numValue === numTarget;
+      }
+    } else {
+      // String comparison
+      const strValue = String(value);
+      const target = targetStr || '';
+      switch (operator) {
+        case '>=': return strValue >= target;
+        case '<=': return strValue <= target;
+        case '<>': return strValue !== target;
+        case '>': return strValue > target;
+        case '<': return strValue < target;
+        case '=': return strValue === target;
+      }
+    }
+  }
+  
+  // Check for wildcards (* and ?)
+  if (typeof criteria === 'string' && (criteria.includes('*') || criteria.includes('?'))) {
+    const pattern = criteria
+      .replace(/[.*+?^${}()|[\]\\]/g, '\\$&') // Escape regex special chars
+      .replace(/\\\*/g, '.*') // Replace \* with .*
+      .replace(/\\\?/g, '.'); // Replace \? with .
+    
+    const regex = new RegExp(`^${pattern}$`, 'i');
+    return regex.test(String(value));
+  }
+  
+  // Handle empty string matching
+  if (criteria === '' || criteria === '""') {
+    return value === '' || value === undefined || value === null;
+  }
+  
+  // Exact match (case-insensitive for strings)
+  if (typeof value === 'string' && typeof criteria === 'string') {
+    return value.toLowerCase() === criteria.toLowerCase();
+  }
+  
+  // For other types, use strict equality
+  return value === criteria;
+}
+
+/**
  * AVERAGE function - Returns the average of numbers
  * Ignores text, logical values, and empty cells
  */
@@ -364,6 +515,8 @@ export const statisticalFunctions: FunctionDefinition[] = [
   PRODUCT,
   COUNT,
   COUNTBLANK,
+  COUNTIF,
+  SUMIF,
   AVERAGE,
   MAX,
   MIN,

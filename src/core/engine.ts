@@ -20,7 +20,8 @@ import type {
   Sheet,
   Cell,
   FormulaEngineOptions,
-  ArrayFormula
+  ArrayFormula,
+  FormulaEngineEvents
 } from './types';
 
 import {
@@ -66,14 +67,51 @@ import {
   setRangeValues,
   getBoundingRect as getSheetBoundingRect,
   getAllCells,
-  shiftCells
+  shiftCells,
+  getFormulaCells
 } from './sheet';
 
-import { parseFormula } from '../parser/parser';
+import { parseFormula, type SheetResolver, ParseError } from '../parser/parser';
 import { Evaluator, type EvaluationContext } from '../evaluator/evaluator';
 import { DependencyGraph } from '../evaluator/dependency-graph';
 import { ErrorHandler } from '../evaluator/error-handler';
 import { functionRegistry } from '../functions';
+
+// Simple event emitter for internal use
+type EventListener<T = any> = (data: T) => void;
+
+class EventEmitter<T extends Record<string, any>> {
+  private listeners: { [K in keyof T]?: EventListener<T[K]>[] } = {};
+
+  on<K extends keyof T>(event: K, listener: EventListener<T[K]>): () => void {
+    if (!this.listeners[event]) {
+      this.listeners[event] = [];
+    }
+    this.listeners[event]!.push(listener);
+    
+    // Return unsubscribe function
+    return () => {
+      const listeners = this.listeners[event];
+      if (listeners) {
+        const index = listeners.indexOf(listener);
+        if (index > -1) {
+          listeners.splice(index, 1);
+        }
+      }
+    };
+  }
+
+  emit<K extends keyof T>(event: K, data: T[K]): void {
+    const listeners = this.listeners[event];
+    if (listeners) {
+      listeners.forEach(listener => listener(data));
+    }
+  }
+
+  removeAllListeners(): void {
+    this.listeners = {};
+  }
+}
 
 /**
  * Main FormulaEngine class
@@ -91,6 +129,7 @@ export class FormulaEngine {
   private dependencyGraph: DependencyGraph;
   private evaluator: Evaluator;
   private errorHandler: ErrorHandler;
+  private eventEmitter: EventEmitter<FormulaEngineEvents>;
 
   constructor(options: FormulaEngineOptions = {}) {
     this.options = {
@@ -111,6 +150,7 @@ export class FormulaEngine {
       functionRegistry.getAllFunctions(),
       this.errorHandler
     );
+    this.eventEmitter = new EventEmitter<FormulaEngineEvents>();
   }
 
   /**
@@ -296,6 +336,13 @@ export class FormulaEngine {
       this.dependencyGraph.removeNode(addressKey);
       
       if (oldValue !== undefined) {
+        // Emit cell-changed event for cleared cell
+        this.emit('cell-changed', {
+          address,
+          oldValue,
+          newValue: undefined
+        });
+        
         return {
           address,
           oldValue,
@@ -312,7 +359,7 @@ export class FormulaEngine {
       
       // Parse and evaluate the formula
       try {
-        const ast = parseFormula(formula, address.sheet);
+        const ast = parseFormula(formula, address.sheet, (sheetName) => this.getSheetId(sheetName));
         
         // Create evaluation context
         const context: EvaluationContext = {
@@ -323,7 +370,8 @@ export class FormulaEngine {
           getRangeValues: (range: SimpleCellRange) => this.getRangeValuesInternal(range),
           getFunction: (name: string) => functionRegistry.get(name),
           errorHandler: this.errorHandler,
-          evaluationStack: new Set<string>()
+          evaluationStack: new Set<string>(),
+          sheetResolver: (sheetName: string) => this.getSheetId(sheetName)
         };
         
         // Add current cell to evaluation stack to detect cycles
@@ -426,7 +474,10 @@ export class FormulaEngine {
         }
       } catch (error) {
         // If parsing or evaluation fails, store the error
-        if (error instanceof Error && error.message.startsWith('#')) {
+        if (error instanceof ParseError && error.message.includes('not found')) {
+          // Sheet not found error
+          newCell.value = '#REF!';
+        } else if (error instanceof Error && error.message.startsWith('#')) {
           newCell.value = error.message as any;
         } else {
           newCell.value = '#ERROR!';
@@ -440,11 +491,6 @@ export class FormulaEngine {
     
     setCell(sheet, address, newCell);
     
-    // Recalculate dependent cells if value changed and evaluation is not suspended
-    if (oldValue !== newCell.value && !this.evaluationSuspended) {
-      this.recalculateDependents(address);
-    }
-    
     if (oldValue !== newCell.value) {
       const change: ExportedChange = {
         address,
@@ -452,6 +498,18 @@ export class FormulaEngine {
         newValue: newCell.value,
         type: 'cell-change'
       };
+      
+      // Emit cell-changed event for the main cell first
+      this.emit('cell-changed', {
+        address,
+        oldValue: oldValue ?? undefined,
+        newValue: newCell.value
+      });
+      
+      // Then recalculate dependent cells (which will emit their own events)
+      if (!this.evaluationSuspended) {
+        this.recalculateDependents(address);
+      }
       
       if (this.evaluationSuspended) {
         this.pendingChanges.push(change);
@@ -609,6 +667,12 @@ export class FormulaEngine {
     const sheet = createSheet(id, finalName);
     this.sheets.set(id, sheet);
     
+    // Emit sheet-added event
+    this.emit('sheet-added', {
+      sheetId: id,
+      sheetName: finalName
+    });
+    
     return finalName;
   }
 
@@ -623,7 +687,9 @@ export class FormulaEngine {
     const sheet = this.sheets.get(sheetId);
     if (!sheet) return [];
     
-    // Collect all cell changes
+    const deletedSheetName = sheet.name;
+    
+    // Collect all cell changes from the deleted sheet
     const changes: ExportedChange[] = [];
     for (const [key, cell] of sheet.cells) {
       const address = parseCellAddress(key, sheetId);
@@ -637,7 +703,50 @@ export class FormulaEngine {
       }
     }
     
+    // Delete the sheet
     this.sheets.delete(sheetId);
+    
+    // Force re-evaluation of all formulas in remaining sheets that reference the deleted sheet
+    for (const [remainingSheetId, remainingSheet] of this.sheets) {
+      const formulaCells = getFormulaCells(remainingSheet);
+      
+      for (const [key, cell] of formulaCells) {
+        if (cell.formula) {
+          // Check if formula references the deleted sheet
+          // Simple check - look for sheet name followed by !
+          const sheetRefPattern = new RegExp(`\\b${deletedSheetName}!`, 'i');
+          const quotedSheetRefPattern = new RegExp(`'${deletedSheetName.replace(/'/g, "''")}!'`, 'i');
+          
+          if (sheetRefPattern.test(cell.formula) || quotedSheetRefPattern.test(cell.formula)) {
+            const address = parseCellAddress(key, remainingSheetId);
+            if (address) {
+              const oldValue = cell.value;
+              
+              // Force recalculation of this cell
+              const cellKey = addressToKey(address);
+              this.recalculateCell(cellKey);
+              
+              // The cell should now have #REF! error
+              const newCell = getCell(remainingSheet, address);
+              if (newCell) {
+                changes.push({
+                  address,
+                  oldValue,
+                  newValue: newCell.value,
+                  type: 'cell-change'
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+    
+    // Emit sheet-removed event
+    this.emit('sheet-removed', {
+      sheetId,
+      sheetName: deletedSheetName
+    });
     
     return changes;
   }
@@ -735,7 +844,15 @@ export class FormulaEngine {
     
     const sheet = this.sheets.get(sheetId);
     if (sheet) {
+      const oldName = sheet.name;
       sheet.name = newName;
+      
+      // Emit sheet-renamed event
+      this.emit('sheet-renamed', {
+        sheetId,
+        oldName,
+        newName
+      });
     }
   }
 
@@ -1262,7 +1379,7 @@ export class FormulaEngine {
     if (typeof expression === 'string' && expression.startsWith('=')) {
       try {
         const formula = expression.substring(1);
-        const ast = parseFormula(formula, scope || 0);
+        const ast = parseFormula(formula, scope || 0, (sheetName) => this.getSheetId(sheetName));
         
         const context: EvaluationContext = {
           currentSheet: scope || 0,
@@ -1271,7 +1388,8 @@ export class FormulaEngine {
           getRangeValues: (range) => this.getRangeValues(range),
           getFunction: (name: string) => functionRegistry.get(name),
           errorHandler: this.errorHandler,
-          evaluationStack: new Set<string>()
+          evaluationStack: new Set<string>(),
+          sheetResolver: (sheetName: string) => this.getSheetId(sheetName)
         };
         
         const result = this.evaluator.evaluate(ast, context);
@@ -1454,7 +1572,7 @@ export class FormulaEngine {
       // If this cell needs to be re-evaluated, do it now with the current stack
       if (cell.value === undefined || isFormulaError(cell.value)) {
         try {
-          const ast = parseFormula(cell.formula, address.sheet);
+          const ast = parseFormula(cell.formula, address.sheet, (sheetName) => this.getSheetId(sheetName));
           
           // Create evaluation context with the existing stack
           const context: EvaluationContext = {
@@ -1465,7 +1583,8 @@ export class FormulaEngine {
             getRangeValues: (range: SimpleCellRange) => this.getRangeValuesInternal(range),
             getFunction: (name: string) => functionRegistry.get(name),
             errorHandler: this.errorHandler,
-            evaluationStack: new Set(evaluationStack)
+            evaluationStack: new Set(evaluationStack),
+            sheetResolver: (sheetName: string) => this.getSheetId(sheetName)
           };
           
           // Add current cell to stack
@@ -1474,6 +1593,9 @@ export class FormulaEngine {
           const result = this.evaluator.evaluate(ast, context);
           return result.value;
         } catch (error) {
+          if (error instanceof ParseError && error.message.includes('not found')) {
+            return '#REF!';
+          }
           return '#ERROR!';
         }
       }
@@ -1689,9 +1811,11 @@ export class FormulaEngine {
     const cell = getCell(sheet, address);
     if (!cell || !cell.formula) return;
     
+    const oldValue = cell.value;
+    
     // Re-evaluate the formula
     try {
-      const ast = parseFormula(cell.formula, address.sheet);
+      const ast = parseFormula(cell.formula, address.sheet, (sheetName) => this.getSheetId(sheetName));
       
       const context: EvaluationContext = {
         currentSheet: address.sheet,
@@ -1701,7 +1825,8 @@ export class FormulaEngine {
         getRangeValues: (range: SimpleCellRange) => this.getRangeValuesInternal(range),
         getFunction: (name: string) => functionRegistry.get(name),
         errorHandler: this.errorHandler,
-        evaluationStack: new Set<string>()
+        evaluationStack: new Set<string>(),
+        sheetResolver: (sheetName: string) => this.getSheetId(sheetName)
       };
       
       const result = this.evaluator.evaluate(ast, context);
@@ -1721,11 +1846,22 @@ export class FormulaEngine {
         cell.value = result.value;
       }
     } catch (error) {
-      if (error instanceof Error && error.message.startsWith('#')) {
+      if (error instanceof ParseError && error.message.includes('not found')) {
+        cell.value = '#REF!';
+      } else if (error instanceof Error && error.message.startsWith('#')) {
         cell.value = error.message as any;
       } else {
         cell.value = '#ERROR!';
       }
+    }
+    
+    // Emit cell-changed event if the value actually changed
+    if (oldValue !== cell.value) {
+      this.emit('cell-changed', {
+        address,
+        oldValue: oldValue ?? undefined,
+        newValue: cell.value
+      });
     }
   }
 
@@ -1787,6 +1923,51 @@ export class FormulaEngine {
 
   clearUndoStack(): void {
     this.undoStack = [];
+  }
+
+  // ===== Event System =====
+
+  /**
+   * Subscribe to FormulaEngine events
+   * @param event The event name
+   * @param listener The event listener function
+   * @returns Unsubscribe function
+   */
+  on<K extends keyof FormulaEngineEvents>(
+    event: K, 
+    listener: EventListener<FormulaEngineEvents[K]>
+  ): () => void {
+    return this.eventEmitter.on(event, listener);
+  }
+
+  /**
+   * Subscribe to FormulaEngine events (alias for on)
+   * @param event The event name
+   * @param listener The event listener function
+   * @returns Unsubscribe function
+   */
+  subscribe<K extends keyof FormulaEngineEvents>(
+    event: K, 
+    listener: EventListener<FormulaEngineEvents[K]>
+  ): () => void {
+    return this.eventEmitter.on(event, listener);
+  }
+
+  /**
+   * Remove all event listeners
+   */
+  removeAllListeners(): void {
+    this.eventEmitter.removeAllListeners();
+  }
+
+  /**
+   * Emit an event (internal use)
+   */
+  private emit<K extends keyof FormulaEngineEvents>(
+    event: K, 
+    data: FormulaEngineEvents[K]
+  ): void {
+    this.eventEmitter.emit(event, data);
   }
 }
 

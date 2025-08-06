@@ -52,21 +52,28 @@ export class ParseError extends Error {
 }
 
 /**
+ * Sheet resolver function type
+ */
+export type SheetResolver = (sheetName: string) => number;
+
+/**
  * Formula parser class
  */
 export class Parser {
   private tokens: TokenStream;
   private contextSheetId: number;
+  private sheetResolver?: SheetResolver;
   
-  constructor(tokens: Token[], contextSheetId: number = 0) {
+  constructor(tokens: Token[], contextSheetId: number = 0, sheetResolver?: SheetResolver) {
     this.tokens = new TokenStream(tokens);
     this.contextSheetId = contextSheetId;
+    this.sheetResolver = sheetResolver;
   }
   
   /**
    * Parse a formula string
    */
-  static parse(formula: string, contextSheetId: number = 0): FormulaAST {
+  static parse(formula: string, contextSheetId: number = 0, sheetResolver?: SheetResolver): FormulaAST {
     // Remove leading '=' if present
     const cleanFormula = formula.startsWith('=') ? formula.substring(1) : formula;
     
@@ -75,7 +82,7 @@ export class Parser {
     const tokens = lexer.tokenize();
     
     // Parse
-    const parser = new Parser(tokens, contextSheetId);
+    const parser = new Parser(tokens, contextSheetId, sheetResolver);
     return parser.parseFormula();
   }
   
@@ -443,6 +450,21 @@ export class Parser {
     const token = this.tokens.consume();
     let value = token.value;
     
+    // Check if this is a sheet reference (Sheet1! or 'My Sheet'!)
+    if (this.tokens.match('EXCLAMATION')) {
+      this.tokens.consume(); // Consume '!'
+      
+      // Extract sheet name (remove quotes if present)
+      let sheetName = value;
+      if (sheetName.startsWith("'") && sheetName.endsWith("'")) {
+        sheetName = sheetName.slice(1, -1).replace(/''/g, "'"); // Remove quotes and unescape
+      }
+      
+      // Now parse the cell reference after the sheet name
+      const cellRef = this.parseCellOrRangeWithSheet(sheetName, start);
+      return cellRef;
+    }
+    
     // Check if this could be part of a cell reference (e.g., D in D$4)
     if (this.tokens.match('DOLLAR') && this.isColumnIdentifier(value)) {
       // This is a mixed reference like D$4
@@ -722,11 +744,64 @@ export class Parser {
   }
   
   /**
-   * Get sheet ID from sheet name (stub - will be implemented with engine integration)
+   * Parse a cell or range reference with a known sheet name
+   */
+  private parseCellOrRangeWithSheet(sheetName: string, startPos: number): ASTNode {
+    // Build the full reference string for parsing
+    let ref = sheetName.includes(' ') ? `'${sheetName}'!` : sheetName + '!';
+    
+    // Check for $ before column
+    if (this.tokens.match('DOLLAR')) {
+      ref += this.tokens.consume().value;
+    }
+    
+    // Get the cell reference part
+    if (this.tokens.match('IDENTIFIER')) {
+      const identifier = this.tokens.consume();
+      ref += identifier.value;
+      
+      // Check for $ before row or just row number
+      if (this.tokens.match('DOLLAR')) {
+        ref += this.tokens.consume().value;
+      }
+      
+      if (this.tokens.match('NUMBER')) {
+        ref += this.tokens.consume().value;
+      }
+    } else {
+      throw new ParseError(`Expected cell reference after ${sheetName}!`, this.tokens.peek().position);
+    }
+    
+    // Check for range
+    if (this.tokens.match('COLON')) {
+      this.tokens.consume();
+      const endRef = this.parseRangeEnd();
+      // For cross-sheet ranges, we need to prepend the sheet name to the end reference
+      const fullEndRef = sheetName.includes(' ') ? `'${sheetName}'!${endRef}` : `${sheetName}!${endRef}`;
+      return this.parseRange(ref, fullEndRef, startPos, this.tokens.peek().position.start);
+    }
+    
+    // Parse as single cell reference
+    const cellRef = this.parseCellReferenceString(ref);
+    if (cellRef) {
+      return cellRef;
+    }
+    
+    throw new ParseError(`Invalid cell reference: ${ref}`, { start: startPos, end: this.tokens.peek().position.start });
+  }
+  
+  /**
+   * Get sheet ID from sheet name
    */
   private getSheetId(sheetName: string): number {
-    // For now, return context sheet ID
-    // TODO: Integrate with engine to resolve sheet names
+    if (this.sheetResolver) {
+      const sheetId = this.sheetResolver(sheetName);
+      if (sheetId === -1) {
+        throw new ParseError(`Sheet '${sheetName}' not found`);
+      }
+      return sheetId;
+    }
+    // Fallback to context sheet ID if no resolver provided
     return this.contextSheetId;
   }
 }
@@ -734,8 +809,8 @@ export class Parser {
 /**
  * Parse a formula string into an AST
  */
-export function parseFormula(formula: string, contextSheetId: number = 0): FormulaAST {
-  return Parser.parse(formula, contextSheetId) as FormulaAST;
+export function parseFormula(formula: string, contextSheetId: number = 0, sheetResolver?: SheetResolver): FormulaAST {
+  return Parser.parse(formula, contextSheetId, sheetResolver) as FormulaAST;
 }
 
 /**

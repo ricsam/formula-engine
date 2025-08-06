@@ -343,8 +343,8 @@ Error management:
 - ✅ PRODUCT(...numbers) - Product of values
 - ✅ COUNT(...values) - Count of numbers
 - ✅ COUNTBLANK(range) - Count blank cells
-- ✅ COUNTIF(range, criteria) - Count with condition
-- ✅ SUMIF(range, criteria, sumRange) - Sum with condition
+- ✅ COUNTIF(range, criteria) - Count with condition ✅ DONE (2024-12-30)
+- ✅ SUMIF(range, criteria, sumRange) - Sum with condition ✅ DONE (2024-12-30)
 - ✅ SUMIFS(sumRange, criteriaRange1, criteria1, ...) - Sum with multiple conditions
 - ✅ MAX(...numbers) - Maximum value
 - ✅ MIN(...numbers) - Minimum value
@@ -379,15 +379,22 @@ Error management:
 
 ### Text Functions
 
-#### `src/functions/text/string-functions.ts` - ✅ TODO
-- ✅ CONCATENATE(...texts) - Concatenate strings
-- ✅ FE.CONCAT(text1, text2) - Binary concatenation
-- ✅ LEN(text) - String length
-- ✅ TRIM(text) - Remove extra spaces
-- ✅ UPPER(text) - Convert to uppercase
-- ✅ LOWER(text) - Convert to lowercase
-- ✅ EXACT(text1, text2) - Exact string comparison
-- ✅ TEXT(number, format) - Format number as text
+#### `src/functions/text/string-functions.ts` - ✅ DONE (2024-12-30)
+- ✅ CONCATENATE(...texts) - Concatenate strings ✅ DONE (2024-12-30)
+- ✅ LEN(text) - String length ✅ DONE (2024-12-30)
+- ✅ TRIM(text) - Remove extra spaces ✅ DONE (2024-12-30)
+- ✅ UPPER(text) - Convert to uppercase ✅ DONE (2024-12-30)
+- ✅ LOWER(text) - Convert to lowercase ✅ DONE (2024-12-30)
+- ✅ LEFT(text, numChars) - Leftmost characters ✅ DONE (2024-12-30)
+- ✅ RIGHT(text, numChars) - Rightmost characters ✅ DONE (2024-12-30)
+- ✅ MID(text, start, length) - Characters from middle ✅ DONE (2024-12-30)
+- ✅ FIND(findText, withinText, startPos) - Find text (case-sensitive) ✅ DONE (2024-12-30)
+- ✅ SEARCH(findText, withinText, startPos) - Find text (case-insensitive, wildcards) ✅ DONE (2024-12-30)
+- ✅ SUBSTITUTE(text, oldText, newText, instanceNum) - Replace text ✅ DONE (2024-12-30)
+- ✅ REPLACE(oldText, startPos, numChars, newText) - Replace characters at position ✅ DONE (2024-12-30)
+- 🔵 FE.CONCAT(text1, text2) - Binary concatenation (not implemented, use CONCATENATE)
+- 🔵 EXACT(text1, text2) - Exact string comparison (not implemented)
+- 🔵 TEXT(number, format) - Format number as text (not implemented)
 
 ### Lookup Functions
 
@@ -541,7 +548,6 @@ Error management:
 ### React Integration - ✅ TODO
 - ✅ useSpreadsheet(engine: FormulaEngine, sheetName: string): Map<string, CellValue>
 - ✅ useCell(engine: FormulaEngine, sheetName: string, cellAddress: string): CellValue
-- ✅ useSpreadsheetRange(engine: FormulaEngine, sheetName: string, range: string): Map<string, CellValue>
 
 ## LLM Coding Instructions
 

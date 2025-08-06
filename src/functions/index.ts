@@ -7,6 +7,7 @@ import { lookupFunctions } from './lookup/lookup-functions';
 import { logicalConditionFunctions } from './logical/conditions';
 import { infoFunctions } from './info/info-functions';
 import { arrayFunctions } from './array/array-functions';
+import { textFunctions } from './text/string-functions';
 
 export class FunctionRegistry {
   private functions = new Map<string, FunctionDefinition>();
@@ -64,7 +65,8 @@ export class FunctionRegistry {
   }
 
   private registerTextFunctions(): void {
-    // These will be imported from text/string-functions.ts
+    // Register text functions
+    textFunctions.forEach(func => this.register(func));
   }
 
   private registerLookupFunctions(): void {

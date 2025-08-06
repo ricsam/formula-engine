@@ -74,5 +74,22 @@ export {
   createRange
 } from './src/core/address';
 
+// Export React integration (optional - only import if using React)
+export {
+  useSpreadsheet,
+  useCell,
+  useSpreadsheetRange,
+  useFormulaEngineEvents
+} from './src/react/hooks';
+
+export type {
+  UseSpreadsheetOptions,
+  UseCellOptions,
+  UseSpreadsheetRangeOptions,
+  SpreadsheetHookResult,
+  CellHookResult,
+  SpreadsheetRangeHookResult
+} from './src/react/types';
+
 // Version
 export const VERSION = '0.1.0';
