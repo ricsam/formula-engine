@@ -377,11 +377,6 @@ export class Lexer {
     
     const value = this.input.substring(start, this.position);
     
-    // Check if it's a boolean
-    if (value.toUpperCase() === 'TRUE' || value.toUpperCase() === 'FALSE') {
-      return { type: 'BOOLEAN', value: value.toUpperCase(), position: { start, end: this.position } };
-    }
-    
     // Check if it's followed by an opening parenthesis (function call)
     let lookahead = this.position;
     while (lookahead < this.input.length) {
@@ -398,6 +393,11 @@ export class Lexer {
       if (lookChar === '(') {
         return { type: 'FUNCTION', value: value.toUpperCase(), position: { start, end: this.position } };
       }
+    }
+    
+    // Check if it's a boolean (only if not a function)
+    if (value.toUpperCase() === 'TRUE' || value.toUpperCase() === 'FALSE') {
+      return { type: 'BOOLEAN', value: value.toUpperCase(), position: { start, end: this.position } };
     }
     
     return { type: 'IDENTIFIER', value, position: { start, end: this.position } };

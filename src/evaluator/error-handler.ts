@@ -349,7 +349,8 @@ export const ERROR_MESSAGES = {
   TYPE_MISMATCH: 'Type mismatch in operation',
   CIRCULAR_REFERENCE: 'Circular reference detected',
   VALUE_NOT_AVAILABLE: 'Value not available',
-  GENERAL_ERROR: 'Formula evaluation error'
+  GENERAL_ERROR: 'Formula evaluation error',
+  SPILL_BLOCKED: 'Spill range isn\'t blank'
 };
 
 /**
@@ -367,7 +368,8 @@ export function createStandardError(
     '#VALUE!': ERROR_MESSAGES.TYPE_MISMATCH,
     '#CYCLE!': ERROR_MESSAGES.CIRCULAR_REFERENCE,
     '#N/A': ERROR_MESSAGES.VALUE_NOT_AVAILABLE,
-    '#ERROR!': ERROR_MESSAGES.GENERAL_ERROR
+    '#ERROR!': ERROR_MESSAGES.GENERAL_ERROR,
+    '#SPILL!': ERROR_MESSAGES.SPILL_BLOCKED
   };
   
   return createFormulaError(type, {

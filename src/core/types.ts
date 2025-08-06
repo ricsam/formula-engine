@@ -69,7 +69,8 @@ export type FormulaError =
   | '#REF!'      // Invalid reference
   | '#VALUE!'    // Wrong argument type
   | '#CYCLE!'    // Circular reference detected
-  | '#ERROR!';   // General error
+  | '#ERROR!'    // General error
+  | '#SPILL!';   // Array spill blocked
 
 // Internal cell structure
 export interface Cell {

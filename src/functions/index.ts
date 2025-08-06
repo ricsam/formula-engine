@@ -4,6 +4,9 @@ import type { EvaluationContext, FunctionDefinition } from '../evaluator/evaluat
 import { basicMathFunctions } from './math/basic';
 import { statisticalFunctions } from './math/statistical';
 import { lookupFunctions } from './lookup/lookup-functions';
+import { logicalConditionFunctions } from './logical/conditions';
+import { infoFunctions } from './info/info-functions';
+import { arrayFunctions } from './array/array-functions';
 
 export class FunctionRegistry {
   private functions = new Map<string, FunctionDefinition>();
@@ -56,7 +59,8 @@ export class FunctionRegistry {
   }
 
   private registerLogicalFunctions(): void {
-    // These will be imported from logical/conditions.ts and logical/comparisons.ts
+    // Register logical condition functions
+    logicalConditionFunctions.forEach(func => this.register(func));
   }
 
   private registerTextFunctions(): void {
@@ -69,11 +73,13 @@ export class FunctionRegistry {
   }
 
   private registerInfoFunctions(): void {
-    // These will be imported from info/info-functions.ts
+    // Register info functions
+    infoFunctions.forEach(func => this.register(func));
   }
 
   private registerArrayFunctions(): void {
-    // These will be imported from array/array-functions.ts
+    // Register array functions
+    arrayFunctions.forEach(func => this.register(func));
   }
 }
 

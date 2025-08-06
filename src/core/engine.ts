@@ -19,7 +19,8 @@ import type {
   FormatInfo,
   Sheet,
   Cell,
-  FormulaEngineOptions
+  FormulaEngineOptions,
+  ArrayFormula
 } from './types';
 
 import {
@@ -41,6 +42,7 @@ import {
 import {
   createValueCell,
   createFormulaCell,
+  createArrayCell,
   createEmptyCell,
   isFormula,
   extractFormula,
@@ -67,6 +69,12 @@ import {
   shiftCells
 } from './sheet';
 
+import { parseFormula } from '../parser/parser';
+import { Evaluator, type EvaluationContext } from '../evaluator/evaluator';
+import { DependencyGraph } from '../evaluator/dependency-graph';
+import { ErrorHandler } from '../evaluator/error-handler';
+import { functionRegistry } from '../functions/index';
+
 /**
  * Main FormulaEngine class
  */
@@ -80,6 +88,9 @@ export class FormulaEngine {
   private undoStack: Command[] = [];
   private redoStack: Command[] = [];
   private options: FormulaEngineOptions;
+  private dependencyGraph: DependencyGraph;
+  private evaluator: Evaluator;
+  private errorHandler: ErrorHandler;
 
   constructor(options: FormulaEngineOptions = {}) {
     this.options = {
@@ -91,6 +102,15 @@ export class FormulaEngine {
       locale: 'en-US',
       ...options
     };
+    
+    // Initialize evaluation components
+    this.dependencyGraph = new DependencyGraph();
+    this.errorHandler = new ErrorHandler();
+    this.evaluator = new Evaluator(
+      this.dependencyGraph,
+      functionRegistry.getAllFunctions(),
+      this.errorHandler
+    );
   }
 
   /**
@@ -115,7 +135,10 @@ export class FormulaEngine {
     if (!sheet) return '';
     
     const cell = getCell(sheet, cellAddress);
-    return cell?.formula || '';
+    if (!cell?.formula) return '';
+    
+    // Add '=' prefix if not already present
+    return cell.formula.startsWith('=') ? cell.formula : '=' + cell.formula;
   }
 
   getCellSerialized(cellAddress: SimpleCellAddress): RawCellContent {
@@ -280,9 +303,104 @@ export class FormulaEngine {
       const formula = extractFormula(content);
       newCell = createFormulaCell(formula);
       
-      // TODO: Parse formula and evaluate
-      // For now, just store the formula
-      newCell.value = content; // Temporary
+      // Parse and evaluate the formula
+      try {
+        const ast = parseFormula(formula, address.sheet);
+        
+        // Create evaluation context
+        const context: EvaluationContext = {
+          currentSheet: address.sheet,
+          currentCell: address,
+          namedExpressions: this.namedExpressions,
+          getCellValue: (addr: SimpleCellAddress) => this.getCellValueInternal(addr),
+          getRangeValues: (range: SimpleCellRange) => this.getRangeValuesInternal(range),
+          getFunction: (name: string) => functionRegistry.get(name),
+          errorHandler: this.errorHandler,
+          evaluationStack: new Set<string>()
+        };
+        
+        // Update dependencies
+        const addressKey = addressToKey(address);
+        this.dependencyGraph.addCell(address);
+        this.dependencyGraph.clearDependencies(addressKey);
+        
+        // Evaluate the formula
+        const result = this.evaluator.evaluate(ast, context);
+        
+        // Register dependencies
+        for (const dep of result.dependencies) {
+          // Parse the dependency key to determine type
+          const parts = dep.split(':');
+          
+          if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+            // Cell dependency: sheet:col:row
+            const depAddress: SimpleCellAddress = {
+              sheet: parseInt(parts[0]),
+              col: parseInt(parts[1]), 
+              row: parseInt(parts[2])
+            };
+            this.dependencyGraph.addCell(depAddress);
+            this.dependencyGraph.addDependency(addressKey, dep);
+          } else if (parts.length === 5) {
+            // Range dependency: sheet:startCol:startRow:endCol:endRow
+            // For ranges, we don't add them as nodes, just skip
+            // The individual cells in the range are already added as separate dependencies
+            continue;
+          } else {
+            // Unknown dependency format, add it anyway
+            this.dependencyGraph.addDependency(addressKey, dep);
+          }
+        }
+        
+        // Handle array results
+        if (result.isArrayResult && Array.isArray(result.value) && result.arrayDimensions) {
+          // Implement array spilling
+          const arrayValue = result.value as CellValue[][];
+          const { rows, cols } = result.arrayDimensions;
+          
+          // Calculate spill range
+          const spillRange: SimpleCellRange = {
+            start: address,
+            end: {
+              sheet: address.sheet,
+              row: address.row + rows - 1,
+              col: address.col + cols - 1
+            }
+          };
+          
+          // Check if spill range is available (no non-empty cells)
+          if (this.canSpillArray(spillRange, address)) {
+            // Clear any previous spill range for this formula
+            this.clearPreviousSpillRange(address);
+            
+            // Create array formula info
+            const arrayFormula: ArrayFormula = {
+              formula,
+              originAddress: address,
+              spillRange
+            };
+            
+            // Set the origin cell
+            newCell = createArrayCell(formula, arrayValue[0]?.[0] ?? undefined, arrayFormula);
+            newCell.dependencies = new Set();
+            
+            // Spill the array values
+            this.spillArray(arrayValue, spillRange, arrayFormula);
+          } else {
+            // Spill blocked - return #SPILL! error
+            newCell.value = '#SPILL!';
+          }
+        } else {
+          newCell.value = result.value;
+        }
+      } catch (error) {
+        // If parsing or evaluation fails, store the error
+        if (error instanceof Error && error.message.startsWith('#')) {
+          newCell.value = error.message as any;
+        } else {
+          newCell.value = '#ERROR!';
+        }
+      }
     } else {
       // Value cell
       const value = parseInputValue(content);
@@ -290,6 +408,11 @@ export class FormulaEngine {
     }
     
     setCell(sheet, address, newCell);
+    
+    // Recalculate dependent cells if value changed and evaluation is not suspended
+    if (oldValue !== newCell.value && !this.evaluationSuspended) {
+      this.recalculateDependents(address);
+    }
     
     if (oldValue !== newCell.value) {
       const change: ExportedChange = {
@@ -764,13 +887,26 @@ export class FormulaEngine {
       const rowData = data[row];
       if (rowData) {
         for (let col = 0; col < rowData.length; col++) {
-          const address: SimpleCellAddress = {
+          const sourceAddress: SimpleCellAddress = {
+            sheet: range.start.sheet,
+            col: range.start.col + col,
+            row: range.start.row + row
+          };
+          
+          const targetAddress: SimpleCellAddress = {
             sheet: targetLeftCorner.sheet,
             col: targetLeftCorner.col + col,
             row: targetLeftCorner.row + row
           };
           
-          const change = this.setCellValue(address, rowData[col]);
+          let content = rowData[col];
+          
+          // If content is a formula, adjust relative references
+          if (typeof content === 'string' && content.startsWith('=')) {
+            content = this.adjustFormula(content, sourceAddress, targetAddress);
+          }
+          
+          const change = this.setCellValue(targetAddress, content);
           if (change) {
             changes.push(change);
           }
@@ -1056,6 +1192,247 @@ export class FormulaEngine {
 
   private getNamedExpressionKey(name: string, scope?: number): string {
     return scope === undefined ? `global:${name}` : `sheet:${scope}:${name}`;
+  }
+
+  // ===== Internal Helper Methods for Evaluation =====
+
+  private getCellValueInternal(address: SimpleCellAddress): CellValue {
+    const sheet = this.sheets.get(address.sheet);
+    if (!sheet) return undefined;
+    
+    const cell = getCell(sheet, address);
+    return cell?.value;
+  }
+
+  private getRangeValuesInternal(range: SimpleCellRange): CellValue[][] {
+    const sheet = this.sheets.get(range.start.sheet);
+    if (!sheet) return [];
+    
+    const result: CellValue[][] = [];
+    
+    for (let row = range.start.row; row <= range.end.row; row++) {
+      const rowValues: CellValue[] = [];
+      for (let col = range.start.col; col <= range.end.col; col++) {
+        const cell = getCell(sheet, { sheet: range.start.sheet, row, col });
+        rowValues.push(cell?.value ?? undefined);
+      }
+      result.push(rowValues);
+    }
+    
+    return result;
+  }
+
+  // ===== Array Spilling Helper Methods =====
+
+  private canSpillArray(spillRange: SimpleCellRange, originAddress: SimpleCellAddress): boolean {
+    const sheet = this.sheets.get(spillRange.start.sheet);
+    if (!sheet) return false;
+    
+    // Check if any cells in the spill range (except origin) are non-empty
+    for (let row = spillRange.start.row; row <= spillRange.end.row; row++) {
+      for (let col = spillRange.start.col; col <= spillRange.end.col; col++) {
+        // Skip the origin cell
+        if (row === originAddress.row && col === originAddress.col) {
+          continue;
+        }
+        
+        const cell = getCell(sheet, { sheet: spillRange.start.sheet, row, col });
+        if (cell && !isEmptyCell(cell)) {
+          return false;
+        }
+      }
+    }
+    
+    return true;
+  }
+
+  private clearPreviousSpillRange(originAddress: SimpleCellAddress): void {
+    const sheet = this.sheets.get(originAddress.sheet);
+    if (!sheet) return;
+    
+    // Get the origin cell to find its previous spill range
+    const originCell = getCell(sheet, originAddress);
+    if (!originCell || !originCell.arrayFormula) return;
+    
+    const spillRange = originCell.arrayFormula.spillRange;
+    
+    // Clear all cells in the spill range except the origin
+    for (let row = spillRange.start.row; row <= spillRange.end.row; row++) {
+      for (let col = spillRange.start.col; col <= spillRange.end.col; col++) {
+        if (row === originAddress.row && col === originAddress.col) {
+          continue;
+        }
+        
+        removeCell(sheet, { sheet: spillRange.start.sheet, row, col });
+      }
+    }
+  }
+
+  private spillArray(
+    arrayValue: CellValue[][],
+    spillRange: SimpleCellRange,
+    arrayFormula: ArrayFormula
+  ): void {
+    const sheet = this.sheets.get(spillRange.start.sheet);
+    if (!sheet) return;
+    
+    // Set each cell in the array
+    for (let r = 0; r < arrayValue.length; r++) {
+      for (let c = 0; c < (arrayValue[r]?.length || 0); c++) {
+        const row = spillRange.start.row + r;
+        const col = spillRange.start.col + c;
+        
+        // Skip the origin cell (already set)
+        if (row === arrayFormula.originAddress.row && col === arrayFormula.originAddress.col) {
+          continue;
+        }
+        
+        const cellValue = arrayValue[r]?.[c];
+        if (cellValue !== undefined) {
+          const spilledCell = createArrayCell('', cellValue, arrayFormula);
+          setCell(sheet, { sheet: spillRange.start.sheet, row, col }, spilledCell);
+        }
+      }
+    }
+  }
+
+  // ===== Formula Adjustment Methods =====
+
+  private adjustFormula(
+    formula: string,
+    sourceAddress: SimpleCellAddress,
+    targetAddress: SimpleCellAddress
+  ): string {
+    // Calculate offset
+    const rowOffset = targetAddress.row - sourceAddress.row;
+    const colOffset = targetAddress.col - sourceAddress.col;
+    
+    // Use regex to find cell references and ranges
+    // Matches: A1, $A$1, A$1, $A1, A1:B2, etc.
+    const cellRefRegex = /(\$?)([A-Z]+)(\$?)(\d+)(?::(\$?)([A-Z]+)(\$?)(\d+))?/g;
+    
+    return formula.replace(cellRefRegex, (match, col1Dollar, col1, row1Dollar, row1, 
+                                          col2Dollar, col2, row2Dollar, row2) => {
+      // Helper function to adjust a single cell reference
+      const adjustCell = (colDollar: string, col: string, rowDollar: string, row: string) => {
+        // Convert column letters to number
+        let colNum = 0;
+        for (let i = 0; i < col.length; i++) {
+          colNum = colNum * 26 + (col.charCodeAt(i) - 64);
+        }
+        colNum--; // Zero-based
+        
+        // Adjust based on relative/absolute
+        if (!colDollar) {
+          colNum += colOffset;
+        }
+        
+        let rowNum = parseInt(row) - 1; // Zero-based
+        if (!rowDollar) {
+          rowNum += rowOffset;
+        }
+        
+        // Convert back to A1 notation
+        let newCol = '';
+        let tempCol = colNum + 1;
+        while (tempCol > 0) {
+          tempCol--;
+          newCol = String.fromCharCode(65 + (tempCol % 26)) + newCol;
+          tempCol = Math.floor(tempCol / 26);
+        }
+        
+        return colDollar + newCol + rowDollar + (rowNum + 1);
+      };
+      
+      // Adjust first cell reference
+      const adjustedFirst = adjustCell(col1Dollar, col1, row1Dollar, row1);
+      
+      // If it's a range, adjust the second cell reference too
+      if (col2) {
+        const adjustedSecond = adjustCell(col2Dollar, col2, row2Dollar, row2);
+        return adjustedFirst + ':' + adjustedSecond;
+      }
+      
+      return adjustedFirst;
+    });
+  }
+
+  // ===== Recalculation Methods =====
+
+  private recalculateDependents(address: SimpleCellAddress): void {
+    const addressKey = addressToKey(address);
+    const dependents = this.dependencyGraph.getDependents(addressKey);
+    
+    // Sort dependents in topological order to ensure correct calculation order
+    const sortedDependents = this.sortDependentsTopologically(dependents);
+    
+    // Recalculate each dependent
+    for (const depKey of sortedDependents) {
+      this.recalculateCell(depKey);
+    }
+  }
+
+  private sortDependentsTopologically(dependents: string[]): string[] {
+    // Simple implementation - in a real system this would use a proper topological sort
+    // For now, just return as-is since our dependency graph handles cycles
+    return dependents;
+  }
+
+  private recalculateCell(cellKey: string): void {
+    // Parse the cell key
+    const parts = cellKey.split(':');
+    if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return;
+    
+    const address: SimpleCellAddress = {
+      sheet: parseInt(parts[0]),
+      col: parseInt(parts[1]),
+      row: parseInt(parts[2])
+    };
+    
+    const sheet = this.sheets.get(address.sheet);
+    if (!sheet) return;
+    
+    const cell = getCell(sheet, address);
+    if (!cell || !cell.formula) return;
+    
+    // Re-evaluate the formula
+    try {
+      const ast = parseFormula(cell.formula, address.sheet);
+      
+      const context: EvaluationContext = {
+        currentSheet: address.sheet,
+        currentCell: address,
+        namedExpressions: this.namedExpressions,
+        getCellValue: (addr: SimpleCellAddress) => this.getCellValueInternal(addr),
+        getRangeValues: (range: SimpleCellRange) => this.getRangeValuesInternal(range),
+        getFunction: (name: string) => functionRegistry.get(name),
+        errorHandler: this.errorHandler,
+        evaluationStack: new Set<string>()
+      };
+      
+      const result = this.evaluator.evaluate(ast, context);
+      
+      // Update the cell value
+      if (result.isArrayResult && Array.isArray(result.value) && result.arrayDimensions) {
+        // Handle array spilling for recalculation
+        const arrayValue = result.value as CellValue[][];
+        cell.value = arrayValue[0]?.[0] ?? undefined;
+        
+        // If this is an array formula origin, update the spilled values
+        if (cell.arrayFormula && cell.arrayFormula.originAddress.row === address.row && 
+            cell.arrayFormula.originAddress.col === address.col) {
+          this.spillArray(arrayValue, cell.arrayFormula.spillRange, cell.arrayFormula);
+        }
+      } else {
+        cell.value = result.value;
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith('#')) {
+        cell.value = error.message as any;
+      } else {
+        cell.value = '#ERROR!';
+      }
+    }
   }
 
   // ===== Formula Utilities =====

@@ -377,8 +377,8 @@ export class Parser {
     
     // Handle empty argument list
     if (this.tokens.match('RPAREN')) {
-      this.tokens.consume();
-      const endPos = this.tokens.peek().position.start;
+      const rparenToken = this.tokens.consume();
+      const endPos = rparenToken.position.end;
       const node = createFunctionNode(
         functionName,
         args,
@@ -405,8 +405,19 @@ export class Parser {
         this.tokens.consume();
         // Continue parsing next argument
       } else if (this.tokens.match('RPAREN')) {
-        this.tokens.consume();
-        break;
+        const rparenToken = this.tokens.consume();
+        const end = rparenToken.position.end;
+        const node = createFunctionNode(functionName, args, start, end);
+        
+        // Validate argument count
+        if (!validateFunctionArgCount(functionName, args.length)) {
+          throw new ParseError(
+            `Invalid number of arguments for function ${functionName}`,
+            { start, end }
+          );
+        }
+        
+        return node;
       } else {
         throw new ParseError(
           `Expected ',' or ')' in function arguments`,
@@ -415,18 +426,11 @@ export class Parser {
       }
     }
     
-    const end = this.tokens.peek().position.start;
-    const node = createFunctionNode(functionName, args, start, end);
-    
-    // Validate argument count
-    if (!validateFunctionArgCount(functionName, args.length)) {
-      throw new ParseError(
-        `Invalid number of arguments for function ${functionName}`,
-        { start, end }
-      );
-    }
-    
-    return node;
+    // This should never be reached
+    throw new ParseError(
+      'Unexpected end of function argument parsing',
+      this.tokens.peek().position
+    );
   }
   
   /**

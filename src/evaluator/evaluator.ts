@@ -306,11 +306,24 @@ export class Evaluator {
     
     // Evaluate arguments
     const args: CellValue[] = [];
-    for (const argNode of node.args) {
+    
+    // IS* functions should receive errors as arguments without propagation
+    const isErrorCheckingFunction = node.name.toUpperCase().startsWith('IS');
+    
+    // IF function needs special handling - only propagate errors from condition
+    const isIfFunction = node.name.toUpperCase() === 'IF';
+    
+    for (let i = 0; i < node.args.length; i++) {
+      const argNode = node.args[i];
+      if (!argNode) continue;
       const argValue = this.evaluateNode(argNode, context, dependencies);
+      
       // Check for errors in arguments
-      if (isFormulaError(argValue)) {
-        return argValue;
+      if (isFormulaError(argValue) && !isErrorCheckingFunction) {
+        // For IF, only propagate errors from the condition (first argument)
+        if (!isIfFunction || i === 0) {
+          return argValue;
+        }
       }
       args.push(argValue);
     }
