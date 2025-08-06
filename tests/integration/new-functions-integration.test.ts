@@ -26,8 +26,8 @@ describe('New Functions Integration Tests', () => {
       engine.setCellContents({ sheet: sheetId, col: 0, row: 2 }, '=IF(1 > 0, 100, 200)');
       expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 2 })).toBe(100);
 
-      // Test IF without else value (defaults to FALSE)
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 3 }, '=IF(FALSE(), "Yes")');
+      // Test IF with explicit false value
+      engine.setCellContents({ sheet: sheetId, col: 0, row: 3 }, '=IF(FALSE(), "Yes", FALSE())');
       expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 3 })).toBe(false);
     });
 

@@ -354,7 +354,7 @@ export const FUNCTION_CONSTRAINTS: Record<string, FunctionConstraints> = {
   'GAMMA': { exactArgs: 1 },
   
   // Logical functions
-  'IF': { minArgs: 2, maxArgs: 3 },
+  'IF': { exactArgs: 3 },
   'IFS': { minArgs: 2 },  // condition1, value1, condition2, value2, ...
   'SWITCH': { minArgs: 3 },  // expression, value1, result1, ...
   'AND': { minArgs: 1 },

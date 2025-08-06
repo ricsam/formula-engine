@@ -84,7 +84,7 @@ export class FormulaEngine {
   private nextSheetId: number = 0;
   private evaluationSuspended: boolean = false;
   private pendingChanges: ExportedChange[] = [];
-  private clipboard: { range: SimpleCellRange; data: RawCellContent[][] } | null = null;
+  private clipboard: { range: SimpleCellRange; data: RawCellContent[][]; isValues?: boolean } | null = null;
   private undoStack: Command[] = [];
   private redoStack: Command[] = [];
   private options: FormulaEngineOptions;
@@ -137,8 +137,8 @@ export class FormulaEngine {
     const cell = getCell(sheet, cellAddress);
     if (!cell?.formula) return '';
     
-    // Add '=' prefix if not already present
-    return cell.formula.startsWith('=') ? cell.formula : '=' + cell.formula;
+    // Return formula with '=' prefix
+    return '=' + cell.formula;
   }
 
   getCellSerialized(cellAddress: SimpleCellAddress): RawCellContent {
@@ -146,7 +146,7 @@ export class FormulaEngine {
     if (!sheet) return undefined;
     
     const cell = getCell(sheet, cellAddress);
-    return serializeCell(cell);
+    return serializeCell(cell, cellAddress);
   }
 
   getSheetValues(sheetId: number): Map<string, CellValue> {
@@ -179,7 +179,8 @@ export class FormulaEngine {
     
     const result = new Map<string, RawCellContent>();
     for (const [key, cell] of sheet.cells) {
-      const serialized = serializeCell(cell);
+      const address = parseCellAddress(key, sheetId);
+      const serialized = serializeCell(cell, address || undefined);
       if (serialized !== undefined) {
         result.set(key, serialized);
       }
@@ -289,6 +290,11 @@ export class FormulaEngine {
       // Empty cell
       removeCell(sheet, address);
       
+      // Clear dependencies in the graph
+      const addressKey = addressToKey(address);
+      this.dependencyGraph.clearDependencies(addressKey);
+      this.dependencyGraph.removeNode(addressKey);
+      
       if (oldValue !== undefined) {
         return {
           address,
@@ -341,11 +347,22 @@ export class FormulaEngine {
             };
             this.dependencyGraph.addCell(depAddress);
             this.dependencyGraph.addDependency(addressKey, dep);
-          } else if (parts.length === 5) {
+          } else if (parts.length === 5 && parts[0] && parts[1] && parts[2] && parts[3] && parts[4]) {
             // Range dependency: sheet:startCol:startRow:endCol:endRow
-            // For ranges, we don't add them as nodes, just skip
-            // The individual cells in the range are already added as separate dependencies
-            continue;
+            const depRange: SimpleCellRange = {
+              start: {
+                sheet: parseInt(parts[0]),
+                col: parseInt(parts[1]),
+                row: parseInt(parts[2])
+              },
+              end: {
+                sheet: parseInt(parts[0]),
+                col: parseInt(parts[3]),
+                row: parseInt(parts[4])
+              }
+            };
+            this.dependencyGraph.addRange(depRange);
+            this.dependencyGraph.addDependency(addressKey, dep);
           } else {
             // Unknown dependency format, add it anyway
             this.dependencyGraph.addDependency(addressKey, dep);
@@ -532,7 +549,7 @@ export class FormulaEngine {
           row: source.start.row + row
         };
         const cell = getCell(sheet, address);
-        rowData.push(serializeCell(cell));
+        rowData.push(serializeCell(cell, address));
       }
       result.push(rowData);
     }
@@ -853,11 +870,13 @@ export class FormulaEngine {
 
   copy(source: SimpleCellRange): CellValue[][] {
     const values = this.getRangeValues(source);
+    const serializedData = this.getRangeSerialized(source);
     
     // Store in clipboard
     this.clipboard = {
       range: source,
-      data: this.getRangeSerialized(source)
+      data: serializedData,
+      isValues: this.shouldCopyAsValues(source)
     };
     
     return values;
@@ -881,7 +900,7 @@ export class FormulaEngine {
     if (!this.clipboard) return [];
     
     const changes: ExportedChange[] = [];
-    const { range, data } = this.clipboard;
+    const { range, data, isValues } = this.clipboard;
     
     for (let row = 0; row < data.length; row++) {
       const rowData = data[row];
@@ -901,8 +920,16 @@ export class FormulaEngine {
           
           let content = rowData[col];
           
-          // If content is a formula, adjust relative references
-          if (typeof content === 'string' && content.startsWith('=')) {
+          // If copying as values, get the actual value instead of formula
+          if (isValues && typeof content === 'string' && content.startsWith('=')) {
+            // Get the value from the source
+            const sourceSheet = this.sheets.get(sourceAddress.sheet);
+            if (sourceSheet) {
+              const sourceCell = getCell(sourceSheet, sourceAddress);
+              content = sourceCell?.value ?? undefined;
+            }
+          } else if (typeof content === 'string' && content.startsWith('=')) {
+            // If content is a formula and not copying as values, adjust relative references
             content = this.adjustFormula(content, sourceAddress, targetAddress);
           }
           
@@ -964,13 +991,106 @@ export class FormulaEngine {
   // ===== Dependency Analysis =====
 
   getCellDependents(address: SimpleCellAddress | SimpleCellRange): (SimpleCellRange | SimpleCellAddress)[] {
-    // TODO: Implement dependency tracking
-    return [];
+    const result: (SimpleCellRange | SimpleCellAddress)[] = [];
+    
+    if ('start' in address && 'end' in address) {
+      // Range: Get dependents for each cell in the range
+      const seenKeys = new Set<string>();
+      
+      for (const cellAddr of iterateRange(address)) {
+        const key = addressToKey(cellAddr);
+        const dependents = this.dependencyGraph.getDependents(key);
+        
+        for (const dep of dependents) {
+          if (!seenKeys.has(dep)) {
+            seenKeys.add(dep);
+            const parsed = this.parseNodeKey(dep);
+            if (parsed) {
+              result.push(parsed);
+            }
+          }
+        }
+      }
+    } else {
+      // Single cell
+      const key = addressToKey(address);
+      const dependents = this.dependencyGraph.getDependents(key);
+      
+      for (const dep of dependents) {
+        const parsed = this.parseNodeKey(dep);
+        if (parsed) {
+          result.push(parsed);
+        }
+      }
+    }
+    
+    return result;
   }
 
   getCellPrecedents(address: SimpleCellAddress | SimpleCellRange): (SimpleCellRange | SimpleCellAddress)[] {
-    // TODO: Implement dependency tracking
-    return [];
+    const result: (SimpleCellRange | SimpleCellAddress)[] = [];
+    
+    if ('start' in address && 'end' in address) {
+      // Range: Get precedents for each cell in the range
+      const seenKeys = new Set<string>();
+      
+      for (const cellAddr of iterateRange(address)) {
+        const key = addressToKey(cellAddr);
+        const precedents = this.dependencyGraph.getPrecedents(key);
+        
+        for (const prec of precedents) {
+          if (!seenKeys.has(prec)) {
+            seenKeys.add(prec);
+            const parsed = this.parseNodeKey(prec);
+            if (parsed) {
+              result.push(parsed);
+            }
+          }
+        }
+      }
+    } else {
+      // Single cell
+      const key = addressToKey(address);
+      const precedents = this.dependencyGraph.getPrecedents(key);
+      
+      for (const prec of precedents) {
+        const parsed = this.parseNodeKey(prec);
+        if (parsed) {
+          result.push(parsed);
+        }
+      }
+    }
+    
+    return result;
+  }
+
+  private parseNodeKey(key: string): SimpleCellAddress | SimpleCellRange | null {
+    const parts = key.split(':');
+    
+    if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+      // Cell: sheet:col:row
+      return {
+        sheet: parseInt(parts[0]),
+        col: parseInt(parts[1]),
+        row: parseInt(parts[2])
+      };
+    } else if (parts.length === 5 && parts[0] && parts[1] && parts[2] && parts[3] && parts[4]) {
+      // Range: sheet:startCol:startRow:endCol:endRow
+      return {
+        start: {
+          sheet: parseInt(parts[0]),
+          col: parseInt(parts[1]),
+          row: parseInt(parts[2])
+        },
+        end: {
+          sheet: parseInt(parts[0]),
+          col: parseInt(parts[3]),
+          row: parseInt(parts[4])
+        }
+      };
+    }
+    
+    return null;
   }
 
   // ===== Cell Information =====
@@ -1223,6 +1343,22 @@ export class FormulaEngine {
   }
 
   // ===== Array Spilling Helper Methods =====
+
+  private shouldCopyAsValues(range: SimpleCellRange): boolean {
+    // When copying a range that contains array cells (including spilled cells),
+    // we should copy values instead of formulas
+    const sheet = this.sheets.get(range.start.sheet);
+    if (!sheet) return false;
+    
+    for (const address of iterateRange(range)) {
+      const cell = getCell(sheet, address);
+      if (cell && cell.type === 'ARRAY') {
+        return true;
+      }
+    }
+    
+    return false;
+  }
 
   private canSpillArray(spillRange: SimpleCellRange, originAddress: SimpleCellAddress): boolean {
     const sheet = this.sheets.get(spillRange.start.sheet);

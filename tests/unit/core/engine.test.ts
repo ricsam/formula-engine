@@ -94,7 +94,7 @@ describe('FormulaEngine', () => {
     engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, '=A2+B2');
     
     const formula = engine.getCellFormula({ sheet: sheetId, col: 0, row: 0 });
-    expect(formula).toBe('A2+B2');
+    expect(formula).toBe('=A2+B2');
     
     const serialized = engine.getCellSerialized({ sheet: sheetId, col: 0, row: 0 });
     expect(serialized).toBe('=A2+B2');

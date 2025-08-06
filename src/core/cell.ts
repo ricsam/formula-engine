@@ -219,9 +219,22 @@ export function cloneCell(cell: Cell): Cell {
 /**
  * Convert a cell to a serializable format
  */
-export function serializeCell(cell: Cell | undefined): CellValue | string {
+export function serializeCell(cell: Cell | undefined, address?: SimpleCellAddress): CellValue | string {
   if (!cell) {
     return undefined;
+  }
+
+  // If it's an array cell but not the origin, return the value
+  // This ensures spilled cells copy their values, not the formula
+  if (cell.type === 'ARRAY' && cell.arrayFormula && address) {
+    const isOrigin = cell.arrayFormula.originAddress.sheet === address.sheet &&
+                     cell.arrayFormula.originAddress.row === address.row &&
+                     cell.arrayFormula.originAddress.col === address.col;
+    
+    if (!isOrigin) {
+      // This is a spilled cell, return the value
+      return cell.value;
+    }
   }
 
   // If it has a formula, return the formula with = prefix
