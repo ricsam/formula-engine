@@ -203,7 +203,7 @@ export function FullSpreadsheetDemo() {
   };
 
   return (
-    <div className="flex flex-col gap-4 h-full">
+    <div className="flex flex-col gap-4 h-full w-full p-8">
       {/* Formula Bar */}
       <div className="flex gap-2 items-center">
         <div className="w-20 text-sm font-mono bg-gray-100 px-2 py-2 rounded">

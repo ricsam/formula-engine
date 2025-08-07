@@ -396,6 +396,105 @@ export const REPLACE: FunctionDefinition = {
   }
 };
 
+/**
+ * FE.CONCAT function - Binary concatenation (simpler than CONCATENATE)
+ */
+export const FE_CONCAT: FunctionDefinition = {
+  name: 'FE.CONCAT',
+  minArgs: 2,
+  maxArgs: 2,
+  acceptsArrays: false,
+  evaluate: (args: CellValue[]): CellValue => {
+    const error = propagateError(args);
+    if (error) return error;
+    
+    const text1 = args[0];
+    const text2 = args[1];
+    
+    // Convert to strings, treating null/undefined as empty string
+    const str1 = text1 === undefined || text1 === null ? '' : String(text1);
+    const str2 = text2 === undefined || text2 === null ? '' : String(text2);
+    
+    return str1 + str2;
+  }
+};
+
+/**
+ * EXACT function - Exact string comparison (case-sensitive)
+ */
+export const EXACT: FunctionDefinition = {
+  name: 'EXACT',
+  minArgs: 2,
+  maxArgs: 2,
+  acceptsArrays: false,
+  evaluate: (args: CellValue[]): CellValue => {
+    const error = propagateError(args);
+    if (error) return error;
+    
+    const text1 = args[0];
+    const text2 = args[1];
+    
+    // Convert to strings, treating null/undefined as empty string
+    const str1 = text1 === undefined || text1 === null ? '' : String(text1);
+    const str2 = text2 === undefined || text2 === null ? '' : String(text2);
+    
+    return str1 === str2;
+  }
+};
+
+/**
+ * TEXT function - Format number as text (basic implementation)
+ */
+export const TEXT: FunctionDefinition = {
+  name: 'TEXT',
+  minArgs: 2,
+  maxArgs: 2,
+  acceptsArrays: false,
+  evaluate: (args: CellValue[]): CellValue => {
+    const error = propagateError(args);
+    if (error) return error;
+    
+    const value = args[0];
+    const format = args[1];
+    
+    if (format === undefined || format === null) {
+      return '#VALUE!';
+    }
+    
+    const formatStr = String(format);
+    
+    // Handle number formatting
+    if (typeof value === 'number') {
+      // Basic format handling - more complex formatting could be added later
+      if (formatStr === '0') {
+        return Math.round(value).toString();
+      } else if (formatStr === '0.0') {
+        return value.toFixed(1);
+      } else if (formatStr === '0.00') {
+        return value.toFixed(2);
+      } else if (formatStr === '0.000') {
+        return value.toFixed(3);
+      } else if (formatStr === '#,##0') {
+        return Math.round(value).toLocaleString();
+      } else if (formatStr === '#,##0.00') {
+        return value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      } else if (formatStr === '0%') {
+        return (value * 100).toFixed(0) + '%';
+      } else if (formatStr === '0.0%') {
+        return (value * 100).toFixed(1) + '%';
+      } else if (formatStr === '0.00%') {
+        return (value * 100).toFixed(2) + '%';
+      } else {
+        // For unrecognized formats, just return the number as string
+        return value.toString();
+      }
+    }
+    
+    // For non-numbers, convert to string
+    return value === undefined || value === null ? '' : String(value);
+  }
+};
+
 // Export all text functions
 export const textFunctions: FunctionDefinition[] = [
   CONCATENATE,
@@ -409,5 +508,8 @@ export const textFunctions: FunctionDefinition[] = [
   FIND,
   SEARCH,
   SUBSTITUTE,
-  REPLACE
+  REPLACE,
+  FE_CONCAT,
+  EXACT,
+  TEXT
 ];

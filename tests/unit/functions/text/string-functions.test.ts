@@ -429,4 +429,121 @@ describe('Text Functions Tests', () => {
       });
     });
   });
+
+  describe('Additional Text Functions', () => {
+    describe('FE.CONCAT', () => {
+      test('should concatenate two strings', () => {
+        const address = { sheet: sheetId, col: 0, row: 0 };
+        engine.setCellContents(address, '=FE.CONCAT("Hello", " World")');
+        
+        const result = engine.getCellValue(address);
+        expect(result).toBe('Hello World');
+      });
+
+      test('should handle numbers and booleans', () => {
+        const address1 = { sheet: sheetId, col: 0, row: 0 };
+        engine.setCellContents(address1, '=FE.CONCAT(123, 456)');
+        expect(engine.getCellValue(address1)).toBe('123456');
+
+        const address2 = { sheet: sheetId, col: 0, row: 1 };
+        engine.setCellContents(address2, '=FE.CONCAT(TRUE, FALSE)');
+        expect(engine.getCellValue(address2)).toBe('truefalse');
+      });
+
+      test('should handle null/undefined as empty strings', () => {
+        const testData = new Map([['A1', '']]);
+        engine.setSheetContents(sheetId, testData);
+        
+        const address = { sheet: sheetId, col: 1, row: 0 };
+        engine.setCellContents(address, '=FE.CONCAT("Hello", A1)');
+        
+        const result = engine.getCellValue(address);
+        expect(result).toBe('Hello');
+      });
+    });
+
+    describe('EXACT', () => {
+      test('should perform case-sensitive string comparison', () => {
+        const address1 = { sheet: sheetId, col: 0, row: 0 };
+        engine.setCellContents(address1, '=EXACT("Hello", "Hello")');
+        expect(engine.getCellValue(address1)).toBe(true);
+
+        const address2 = { sheet: sheetId, col: 0, row: 1 };
+        engine.setCellContents(address2, '=EXACT("Hello", "hello")');
+        expect(engine.getCellValue(address2)).toBe(false);
+
+        const address3 = { sheet: sheetId, col: 0, row: 2 };
+        engine.setCellContents(address3, '=EXACT("ABC", "ABC")');
+        expect(engine.getCellValue(address3)).toBe(true);
+      });
+
+      test('should handle different types', () => {
+        const address1 = { sheet: sheetId, col: 0, row: 0 };
+        engine.setCellContents(address1, '=EXACT(123, "123")');
+        expect(engine.getCellValue(address1)).toBe(true);
+
+        const address2 = { sheet: sheetId, col: 0, row: 1 };
+        engine.setCellContents(address2, '=EXACT(TRUE, "true")');
+        expect(engine.getCellValue(address2)).toBe(true);
+      });
+
+      test('should handle empty strings', () => {
+        const address = { sheet: sheetId, col: 0, row: 0 };
+        engine.setCellContents(address, '=EXACT("", "")');
+        expect(engine.getCellValue(address)).toBe(true);
+      });
+    });
+
+    describe('TEXT', () => {
+      test('should format numbers with basic formats', () => {
+        const address1 = { sheet: sheetId, col: 0, row: 0 };
+        engine.setCellContents(address1, '=TEXT(1234.567, "0")');
+        expect(engine.getCellValue(address1)).toBe('1235');
+
+        const address2 = { sheet: sheetId, col: 0, row: 1 };
+        engine.setCellContents(address2, '=TEXT(1234.567, "0.00")');
+        expect(engine.getCellValue(address2)).toBe('1234.57');
+
+        const address3 = { sheet: sheetId, col: 0, row: 2 };
+        engine.setCellContents(address3, '=TEXT(1234.567, "0.000")');
+        expect(engine.getCellValue(address3)).toBe('1234.567');
+      });
+
+      test('should format numbers with comma separators', () => {
+        const address1 = { sheet: sheetId, col: 0, row: 0 };
+        engine.setCellContents(address1, '=TEXT(1234567, "#,##0")');
+        expect(engine.getCellValue(address1)).toBe('1,234,567');
+
+        const address2 = { sheet: sheetId, col: 0, row: 1 };
+        engine.setCellContents(address2, '=TEXT(1234.56, "#,##0.00")');
+        expect(engine.getCellValue(address2)).toBe('1,234.56');
+      });
+
+      test('should format percentages', () => {
+        const address1 = { sheet: sheetId, col: 0, row: 0 };
+        engine.setCellContents(address1, '=TEXT(0.1234, "0%")');
+        expect(engine.getCellValue(address1)).toBe('12%');
+
+        const address2 = { sheet: sheetId, col: 0, row: 1 };
+        engine.setCellContents(address2, '=TEXT(0.1234, "0.00%")');
+        expect(engine.getCellValue(address2)).toBe('12.34%');
+      });
+
+      test('should handle non-number values', () => {
+        const address1 = { sheet: sheetId, col: 0, row: 0 };
+        engine.setCellContents(address1, '=TEXT("Hello", "0")');
+        expect(engine.getCellValue(address1)).toBe('Hello');
+
+        const address2 = { sheet: sheetId, col: 0, row: 1 };
+        engine.setCellContents(address2, '=TEXT(TRUE, "0.00")');
+        expect(engine.getCellValue(address2)).toBe('true');
+      });
+
+      test('should handle unrecognized formats', () => {
+        const address = { sheet: sheetId, col: 0, row: 0 };
+        engine.setCellContents(address, '=TEXT(123.45, "custom")');
+        expect(engine.getCellValue(address)).toBe('123.45');
+      });
+    });
+  });
 });

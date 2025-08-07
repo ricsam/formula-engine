@@ -306,7 +306,7 @@ Error management:
 - ✅ FE.UPLUS(a) - Unary plus
 - ✅ FE.UNARY_PERCENT(a) - Percent operator
 
-#### `src/functions/math/advanced.ts` - ✅ TODO
+#### `src/functions/math/advanced.ts` - ✅ DONE (2024-12-31)
 - ✅ ABS(number) - Absolute value
 - ✅ SIGN(number) - Sign function
 - ✅ SQRT(number) - Square root
@@ -369,7 +369,7 @@ Error management:
 - ✅ IFERROR(value, errorValue) - Error handling
 - ✅ IFNA(value, naValue) - N/A error handling
 
-#### `src/functions/logical/comparisons.ts` - ✅ TODO
+#### `src/functions/logical/comparisons.ts` - ✅ DONE (2024-12-31)
 - ✅ FE.EQ(a, b) - Equality comparison
 - ✅ FE.NE(a, b) - Inequality comparison
 - ✅ FE.LT(a, b) - Less than comparison
@@ -392,9 +392,9 @@ Error management:
 - ✅ SEARCH(findText, withinText, startPos) - Find text (case-insensitive, wildcards) ✅ DONE (2024-12-30)
 - ✅ SUBSTITUTE(text, oldText, newText, instanceNum) - Replace text ✅ DONE (2024-12-30)
 - ✅ REPLACE(oldText, startPos, numChars, newText) - Replace characters at position ✅ DONE (2024-12-30)
-- 🔵 FE.CONCAT(text1, text2) - Binary concatenation (not implemented, use CONCATENATE)
-- 🔵 EXACT(text1, text2) - Exact string comparison (not implemented)
-- 🔵 TEXT(number, format) - Format number as text (not implemented)
+- ✅ FE.CONCAT(text1, text2) - Binary concatenation ✅ DONE (2024-12-31)
+- ✅ EXACT(text1, text2) - Exact string comparison ✅ DONE (2024-12-31)
+- ✅ TEXT(number, format) - Format number as text ✅ DONE (2024-12-31)
 
 ### Lookup Functions
 

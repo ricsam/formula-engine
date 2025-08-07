@@ -1,47 +1,31 @@
 import "./index.css";
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
 import { EventsDemo } from "./EventsDemo";
 import { FullSpreadsheetDemo } from "./FullSpreadsheetDemo";
 import { MultiSheetDemo } from "./MultiSheetDemo";
 
+/**
+ * Legacy App component - now replaced by TanStack Router
+ * This component is kept for reference but is no longer used in the routing system
+ * Individual demo components are now accessed via their respective routes:
+ * - /events -> EventsDemo
+ * - /spreadsheet -> FullSpreadsheetDemo  
+ * - /multisheet -> MultiSheetDemo
+ */
 export function App() {
-  const [currentView, setCurrentView] = useState<'spreadsheet' | 'events' | 'multisheet'>('events');
-
   return (
     <div className="container mx-auto p-4 relative z-10 flex flex-col gap-4 h-screen">
-      {/* Tab Navigation */}
-      <div className="flex justify-center gap-2 mb-4">
-        <Button 
-          variant={currentView === 'events' ? 'default' : 'outline'}
-          onClick={() => setCurrentView('events')}
-        >
-          Events & Hooks Demo
-        </Button>
-        <Button 
-          variant={currentView === 'spreadsheet' ? 'default' : 'outline'}
-          onClick={() => setCurrentView('spreadsheet')}
-        >
-          Full Spreadsheet
-        </Button>
-        <Button 
-          variant={currentView === 'multisheet' ? 'default' : 'outline'}
-          onClick={() => setCurrentView('multisheet')}
-        >
-          Multi-Sheet Demo
-        </Button>
+      <div className="text-center p-8">
+        <h1 className="text-2xl font-bold mb-4">FormulaEngine Demo</h1>
+        <p className="text-gray-600">
+          This component is now replaced by TanStack Router. 
+          Please use the navigation above to access the different demos.
+        </p>
       </div>
-
-      {/* Content */}
-      {currentView === 'events' ? (
-        <EventsDemo />
-      ) : currentView === 'spreadsheet' ? (
-        <FullSpreadsheetDemo />
-      ) : (
-        <MultiSheetDemo />
-      )}
     </div>
   );
 }
 
 export default App;
+
+// Re-export demo components for easy access
+export { EventsDemo, FullSpreadsheetDemo, MultiSheetDemo };

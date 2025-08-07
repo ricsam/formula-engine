@@ -2,9 +2,11 @@ import type { CellValue, FormulaError } from '../core/types';
 import type { ASTNode } from '../parser/ast';
 import type { EvaluationContext, FunctionDefinition } from '../evaluator/evaluator';
 import { basicMathFunctions } from './math/basic';
+import { advancedMathFunctions } from './math/advanced';
 import { statisticalFunctions } from './math/statistical';
 import { lookupFunctions } from './lookup/lookup-functions';
 import { logicalConditionFunctions } from './logical/conditions';
+import { logicalComparisonFunctions } from './logical/comparisons';
 import { infoFunctions } from './info/info-functions';
 import { arrayFunctions } from './array/array-functions';
 import { textFunctions } from './text/string-functions';
@@ -52,6 +54,8 @@ export class FunctionRegistry {
   private registerMathFunctions(): void {
     // Register basic math functions
     basicMathFunctions.forEach(func => this.register(func));
+    // Register advanced math functions
+    advancedMathFunctions.forEach(func => this.register(func));
   }
 
   private registerStatisticalFunctions(): void {
@@ -62,6 +66,8 @@ export class FunctionRegistry {
   private registerLogicalFunctions(): void {
     // Register logical condition functions
     logicalConditionFunctions.forEach(func => this.register(func));
+    // Register logical comparison functions
+    logicalComparisonFunctions.forEach(func => this.register(func));
   }
 
   private registerTextFunctions(): void {
