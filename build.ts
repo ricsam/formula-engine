@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import plugin from "bun-plugin-tailwind";
 import { existsSync } from "fs";
-import { rm } from "fs/promises";
+import { rm, copyFile } from "fs/promises";
 import path from "path";
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
@@ -158,6 +158,16 @@ const outputTable = result.outputs.map((output) => ({
 }));
 
 console.table(outputTable);
+
+// Copy _redirects file for Vercel SPA routing
+const redirectsSource = path.join("demo", "_redirects");
+const redirectsTarget = path.join(outdir, "_redirects");
+
+if (existsSync(redirectsSource)) {
+  await copyFile(redirectsSource, redirectsTarget);
+  console.log("📋 Copied _redirects file for SPA routing");
+}
+
 const buildTime = (end - start).toFixed(2);
 
 console.log(`\n✅ Build completed in ${buildTime}ms\n`);
