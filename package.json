@@ -7,7 +7,7 @@
     "typecheck": "tsc --noEmit",
     "dev": "bun --hot demo/index.tsx",
     "start": "NODE_ENV=production bun demo/index.tsx",
-    "build": "bun run build.ts",
+    "build": "tsr generate && bun run build.ts",
     "generate-routes": "tsr generate",
     "watch-routes": "tsr watch"
   },
