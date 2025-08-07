@@ -51,6 +51,7 @@ export const ISODD: FunctionDefinition = {
 // ISBLANK(value)
 export const ISBLANK: FunctionDefinition = {
   name: 'ISBLANK',
+  acceptsArrays: true,
   evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
     if (args.length !== 1) {
       throw new Error('#VALUE!');
@@ -58,6 +59,20 @@ export const ISBLANK: FunctionDefinition = {
 
     // Don't propagate errors for IS* functions - they test the value
     const value = args[0];
+    
+    // If the value is an array (range), check if all cells are blank
+    if (Array.isArray(value)) {
+      // Flatten the array and check if all values are blank
+      const checkBlank = (v: CellValue): boolean => {
+        if (Array.isArray(v)) {
+          return v.every(checkBlank);
+        }
+        return v === undefined || v === null || v === '';
+      };
+      return checkBlank(value);
+    }
+    
+    // Single value check
     return value === undefined || value === null || value === '';
   }
 };

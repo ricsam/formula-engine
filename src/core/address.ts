@@ -17,6 +17,9 @@ import {
 const A1_CELL_REGEX = /^(\$?)([A-Z]+)(\$?)(\d+)$/i;
 const A1_RANGE_REGEX = /^(\$?)([A-Z]+)(\$?)(\d+):(\$?)([A-Z]+)(\$?)(\d+)$/i;
 const SHEET_NAME_REGEX = /^'?([^'!]+)'?!(.+)$/;
+// Infinite range patterns
+const INFINITE_COLUMN_REGEX = /^(\$?)([A-Z]+):(\$?)([A-Z]+)$/i;
+const INFINITE_ROW_REGEX = /^(\$?)(\d+):(\$?)(\d+)$/;
 
 /**
  * Parse an A1-style cell address (e.g., "A1", "$B$2", "Sheet1!C3")
@@ -62,7 +65,7 @@ export function parseCellAddress(address: string, contextSheetId: number): Simpl
 }
 
 /**
- * Parse an A1-style range (e.g., "A1:B2", "$A$1:$B$2")
+ * Parse an A1-style range (e.g., "A1:B2", "$A$1:$B$2", "A:A", "5:5")
  */
 export function parseCellRange(range: string, contextSheetId: number): SimpleCellRange | null {
   if (!range || typeof range !== 'string') {
@@ -87,7 +90,69 @@ export function parseCellRange(range: string, contextSheetId: number): SimpleCel
     };
   }
 
-  // Parse as range
+  // Check for infinite column range (e.g., A:A, B:D)
+  const colMatch = rangePart.match(INFINITE_COLUMN_REGEX);
+  if (colMatch) {
+    const [, startColAbs, startColLetters, endColAbs, endColLetters] = colMatch;
+    
+    if (!startColLetters || !endColLetters) {
+      return null;
+    }
+    
+    const startCol = letterToColNumber(startColLetters.toUpperCase());
+    const endCol = letterToColNumber(endColLetters.toUpperCase());
+    
+    if (startCol < 0 || endCol < 0) {
+      return null;
+    }
+    
+    // Use MAX_SAFE_INTEGER to indicate infinite row range
+    return {
+      start: {
+        sheet: sheetId,
+        col: Math.min(startCol, endCol),
+        row: 0  // Start from row 0
+      },
+      end: {
+        sheet: sheetId,
+        col: Math.max(startCol, endCol),
+        row: Number.MAX_SAFE_INTEGER  // Infinite rows
+      }
+    };
+  }
+
+  // Check for infinite row range (e.g., 5:5, 1:10)
+  const rowMatch = rangePart.match(INFINITE_ROW_REGEX);
+  if (rowMatch) {
+    const [, startRowAbs, startRowDigits, endRowAbs, endRowDigits] = rowMatch;
+    
+    if (!startRowDigits || !endRowDigits) {
+      return null;
+    }
+    
+    const startRow = parseInt(startRowDigits, 10) - 1;
+    const endRow = parseInt(endRowDigits, 10) - 1;
+    
+    if (startRow < 0 || endRow < 0) {
+      return null;
+    }
+    
+    // Use MAX_SAFE_INTEGER to indicate infinite column range
+    return {
+      start: {
+        sheet: sheetId,
+        col: 0,  // Start from column 0
+        row: Math.min(startRow, endRow)
+      },
+      end: {
+        sheet: sheetId,
+        col: Number.MAX_SAFE_INTEGER,  // Infinite columns
+        row: Math.max(startRow, endRow)
+      }
+    };
+  }
+
+  // Parse as normal range
   const match = rangePart.match(A1_RANGE_REGEX);
   if (!match) {
     return null;

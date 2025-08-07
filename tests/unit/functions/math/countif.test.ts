@@ -13,7 +13,7 @@ describe('COUNTIF Function Tests', () => {
 
   test('should work with COUNTIF function', () => {
     // Set up data similar to the demo
-    const testData = new Map([
+    const testData = new Map<string, any>([
       ['A2', 'Laptop'],
       ['A3', 'Mouse'], 
       ['A4', 'Keyboard'],
@@ -32,7 +32,7 @@ describe('COUNTIF Function Tests', () => {
 
   test('should support nested COUNTIF in IF function', () => {
     // Set up data similar to the demo
-    const testData = new Map([
+    const testData = new Map<string, any>([
       ['A2', 'Laptop'],
       ['A3', 'Mouse'], 
       ['A4', 'Keyboard'],
@@ -50,7 +50,7 @@ describe('COUNTIF Function Tests', () => {
   });
 
   test('COUNTIF basic functionality', () => {
-    const testData = new Map([
+    const testData = new Map<string, any>([
       ['A1', 1],
       ['A2', 2],
       ['A3', 1],
@@ -68,7 +68,7 @@ describe('COUNTIF Function Tests', () => {
   });
 
   test('COUNTIF with text criteria', () => {
-    const testData = new Map([
+    const testData = new Map<string, any>([
       ['A1', 'Apple'],
       ['A2', 'Banana'],
       ['A3', 'Apple'],
@@ -86,7 +86,7 @@ describe('COUNTIF Function Tests', () => {
   });
 
   test('COUNTIF with comparison operators', () => {
-    const testData = new Map([
+    const testData = new Map<string, any>([
       ['A1', 10],
       ['A2', 20],
       ['A3', 15],
@@ -110,7 +110,7 @@ describe('COUNTIF Function Tests', () => {
   });
 
   test('COUNTIF edge cases', () => {
-    const testData = new Map([
+    const testData = new Map<string, any>([
       ['A1', 0],
       ['A2', ''],
       ['A3', false],

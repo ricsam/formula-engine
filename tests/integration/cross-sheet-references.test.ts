@@ -209,7 +209,7 @@ describe('Cross-Sheet References Integration Tests', () => {
   describe('Complex Cross-Sheet Scenarios', () => {
     test('should handle VLOOKUP across sheets', () => {
       // Set up lookup table in Sheet1
-      const lookupData = new Map([
+      const lookupData = new Map<string, any>([
         ['A1', 'Product'],
         ['B1', 'Price'],
         ['A2', 'Apple'],

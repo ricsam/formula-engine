@@ -224,16 +224,16 @@ export function serializeCell(cell: Cell | undefined, address?: SimpleCellAddres
     return undefined;
   }
 
-  // If it's an array cell but not the origin, return the value
-  // This ensures spilled cells copy their values, not the formula
+  // If it's an array cell but not the origin, return undefined (empty)
+  // This ensures spilled cells are empty in serialized format (Excel compatibility)
   if (cell.type === 'ARRAY' && cell.arrayFormula && address) {
     const isOrigin = cell.arrayFormula.originAddress.sheet === address.sheet &&
                      cell.arrayFormula.originAddress.row === address.row &&
                      cell.arrayFormula.originAddress.col === address.col;
     
     if (!isOrigin) {
-      // This is a spilled cell, return the value
-      return cell.value;
+      // This is a spilled cell, should be empty in serialized format
+      return undefined;
     }
   }
 
@@ -245,6 +245,8 @@ export function serializeCell(cell: Cell | undefined, address?: SimpleCellAddres
   // Otherwise return the value
   return cell.value;
 }
+
+
 
 /**
  * Create a cell from serialized content

@@ -222,7 +222,7 @@ function updateSheetDimensions(sheet: Sheet): void {
  * Parse an A1 key back to an address
  * This is a simplified version - assumes keys are in format "A1", "B2", etc.
  */
-function parseA1Key(key: string, sheetId: number): SimpleCellAddress | null {
+export function parseA1Key(key: string, sheetId: number): SimpleCellAddress | null {
   const match = key.match(/^([A-Z]+)(\d+)$/);
   if (!match) {
     return null;

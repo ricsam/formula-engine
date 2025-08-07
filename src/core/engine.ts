@@ -68,7 +68,8 @@ import {
   getBoundingRect as getSheetBoundingRect,
   getAllCells,
   shiftCells,
-  getFormulaCells
+  getFormulaCells,
+  parseA1Key
 } from './sheet';
 
 import { parseFormula, type SheetResolver, ParseError } from '../parser/parser';
@@ -221,6 +222,8 @@ export class FormulaEngine {
     for (const [key, cell] of sheet.cells) {
       const address = parseCellAddress(key, sheetId);
       const serialized = serializeCell(cell, address || undefined);
+      // Only include cells that have content when serialized
+      // Spilled array cells return undefined and should not be included
       if (serialized !== undefined) {
         result.set(key, serialized);
       }
@@ -367,7 +370,7 @@ export class FormulaEngine {
           currentCell: address,
           namedExpressions: this.namedExpressions,
           getCellValue: (addr: SimpleCellAddress) => this.getCellValueInternal(addr, context.evaluationStack),
-          getRangeValues: (range: SimpleCellRange) => this.getRangeValuesInternal(range),
+          getRangeValues: (range: SimpleCellRange) => this.getRangeValuesInternal(range, context.evaluationStack),
           getFunction: (name: string) => functionRegistry.get(name),
           errorHandler: this.errorHandler,
           evaluationStack: new Set<string>(),
@@ -541,10 +544,25 @@ export class FormulaEngine {
       }
     }
     
-    // Remove cells not in the new contents
+    // Remove cells not in the new contents, but preserve spilled array cells
     const keysToRemove: string[] = [];
     for (const key of sheet.cells.keys()) {
       if (!processedKeys.has(key)) {
+        const address = parseCellAddress(key, sheetId);
+        if (address) {
+          const cell = getCell(sheet, address);
+          // Don't remove spilled array cells (they are auto-generated)
+          if (cell && cell.type === 'ARRAY' && cell.arrayFormula) {
+            const isOrigin = cell.arrayFormula.originAddress.sheet === address.sheet &&
+                            cell.arrayFormula.originAddress.row === address.row &&
+                            cell.arrayFormula.originAddress.col === address.col;
+            
+            if (!isOrigin) {
+              // This is a spilled cell, don't remove it
+              continue;
+            }
+          }
+        }
         keysToRemove.push(key);
       }
     }
@@ -573,10 +591,8 @@ export class FormulaEngine {
   }
 
   getRangeValues(source: SimpleCellRange): CellValue[][] {
-    const sheet = this.sheets.get(source.start.sheet);
-    if (!sheet) return [];
-    
-    return getSheetRangeValues(sheet, source);
+    // Use the internal method that handles infinite ranges
+    return this.getRangeValuesInternal(source);
   }
 
   getRangeFormulas(source: SimpleCellRange): (string | undefined)[][] {
@@ -1003,11 +1019,10 @@ export class FormulaEngine {
     const values = this.getRangeValues(source);
     const serializedData = this.getRangeSerialized(source);
     
-    // Store in clipboard
     this.clipboard = {
       range: source,
       data: serializedData,
-      isValues: this.shouldCopyAsValues(source)
+      isValues: false
     };
     
     return values;
@@ -1580,7 +1595,7 @@ export class FormulaEngine {
             currentCell: address,
             namedExpressions: this.namedExpressions,
             getCellValue: (addr: SimpleCellAddress) => this.getCellValueInternal(addr, evaluationStack),
-            getRangeValues: (range: SimpleCellRange) => this.getRangeValuesInternal(range),
+            getRangeValues: (range: SimpleCellRange) => this.getRangeValuesInternal(range, evaluationStack),
             getFunction: (name: string) => functionRegistry.get(name),
             errorHandler: this.errorHandler,
             evaluationStack: new Set(evaluationStack),
@@ -1604,17 +1619,33 @@ export class FormulaEngine {
     return cell?.value;
   }
 
-  private getRangeValuesInternal(range: SimpleCellRange): CellValue[][] {
+  private getRangeValuesInternal(range: SimpleCellRange, evaluationStack?: Set<string>): CellValue[][] {
     const sheet = this.sheets.get(range.start.sheet);
     if (!sheet) return [];
     
+    // Check if this is an infinite range
+    const isInfiniteColumn = range.end.row === Number.MAX_SAFE_INTEGER;
+    const isInfiniteRow = range.end.col === Number.MAX_SAFE_INTEGER;
+    
+    if (isInfiniteColumn || isInfiniteRow) {
+      // Handle infinite ranges using sparse iteration
+      return this.getInfiniteRangeValues(sheet, range, isInfiniteColumn, isInfiniteRow, evaluationStack);
+    }
+    
+    // Normal range handling
     const result: CellValue[][] = [];
     
     for (let row = range.start.row; row <= range.end.row; row++) {
       const rowValues: CellValue[] = [];
       for (let col = range.start.col; col <= range.end.col; col++) {
-        const cell = getCell(sheet, { sheet: range.start.sheet, row, col });
-        rowValues.push(cell?.value ?? undefined);
+        const cellAddress = { sheet: range.start.sheet, row, col };
+        
+        // Use getCellValueInternal with evaluation stack for cycle detection
+        const value = evaluationStack 
+          ? this.getCellValueInternal(cellAddress, evaluationStack)
+          : this.getCellValue(cellAddress);
+          
+        rowValues.push(value);
       }
       result.push(rowValues);
     }
@@ -1622,22 +1653,111 @@ export class FormulaEngine {
     return result;
   }
 
-  // ===== Array Spilling Helper Methods =====
-
-  private shouldCopyAsValues(range: SimpleCellRange): boolean {
-    // When copying a range that contains array cells (including spilled cells),
-    // we should copy values instead of formulas
-    const sheet = this.sheets.get(range.start.sheet);
-    if (!sheet) return false;
+  private getInfiniteRangeValues(
+    sheet: Sheet,
+    range: SimpleCellRange,
+    isInfiniteColumn: boolean,
+    isInfiniteRow: boolean,
+    evaluationStack?: Set<string>
+  ): CellValue[][] {
+    const result: CellValue[][] = [];
     
-    for (const address of iterateRange(range)) {
-      const cell = getCell(sheet, address);
-      if (cell && cell.type === 'ARRAY') {
-        return true;
+    if (isInfiniteColumn && !isInfiniteRow) {
+      // Infinite column range (e.g., A:A, B:D)
+      // For functions like INDEX to work, we need to return all rows up to the highest populated row
+      // Find the highest populated row in the specified columns
+      let maxRow = -1;
+      
+      for (const [key, cell] of sheet.cells) {
+        const address = parseA1Key(key, sheet.id);
+        if (address && 
+            address.col >= range.start.col && 
+            address.col <= range.end.col) {
+          maxRow = Math.max(maxRow, address.row);
+        }
+      }
+      
+      // If no cells found, return empty array
+      if (maxRow === -1) {
+        return [];
+      }
+      
+      // Create array from row 0 to maxRow
+      for (let row = 0; row <= maxRow; row++) {
+        const rowValues: CellValue[] = [];
+        for (let col = range.start.col; col <= range.end.col; col++) {
+          const cellAddress = { sheet: sheet.id, row, col };
+          const value = evaluationStack
+            ? this.getCellValueInternal(cellAddress, evaluationStack)
+            : (getCell(sheet, cellAddress)?.value ?? undefined);
+          rowValues.push(value);
+        }
+        result.push(rowValues);
+      }
+    } else if (isInfiniteRow && !isInfiniteColumn) {
+      // Infinite row range (e.g., 5:5, 1:10)
+      // For functions like INDEX to work, we need to return all columns up to the highest populated column
+      // Find the highest populated column in the specified rows
+      let maxCol = -1;
+      
+      for (const [key, cell] of sheet.cells) {
+        const address = parseA1Key(key, sheet.id);
+        if (address && 
+            address.row >= range.start.row && 
+            address.row <= range.end.row) {
+          maxCol = Math.max(maxCol, address.col);
+        }
+      }
+      
+      // If no cells found, return empty array for each row
+      if (maxCol === -1) {
+        const rows = range.end.row - range.start.row + 1;
+        for (let i = 0; i < rows; i++) {
+          result.push([]);
+        }
+        return result;
+      }
+      
+      // Create array with all columns from 0 to maxCol
+      for (let row = range.start.row; row <= range.end.row; row++) {
+        const rowValues: CellValue[] = [];
+        for (let col = 0; col <= maxCol; col++) {
+          const cellAddress = { sheet: sheet.id, row, col };
+          const value = evaluationStack
+            ? this.getCellValueInternal(cellAddress, evaluationStack)
+            : (getCell(sheet, cellAddress)?.value ?? undefined);
+          rowValues.push(value);
+        }
+        result.push(rowValues);
+      }
+    } else {
+      // Both infinite (entire sheet) - not typically used but handle it
+      // Return all populated cells
+      const cellMap = new Map<string, CellValue>();
+      let maxRow = 0;
+      let maxCol = 0;
+      
+      for (const [key, cell] of sheet.cells) {
+        const address = parseA1Key(key, sheet.id);
+        if (address) {
+          cellMap.set(`${address.row},${address.col}`, cell.value);
+          maxRow = Math.max(maxRow, address.row);
+          maxCol = Math.max(maxCol, address.col);
+        }
+      }
+      
+      // Create result array
+      for (let row = 0; row <= maxRow; row++) {
+        const rowValues: CellValue[] = [];
+        for (let col = 0; col <= maxCol; col++) {
+          const value = cellMap.get(`${row},${col}`);
+          rowValues.push(value ?? undefined);
+        }
+        result.push(rowValues);
       }
     }
     
-    return false;
+    return result;
   }
 
   private canSpillArray(spillRange: SimpleCellRange, originAddress: SimpleCellAddress): boolean {
@@ -1724,10 +1844,81 @@ export class FormulaEngine {
     const colOffset = targetAddress.col - sourceAddress.col;
     
     // Use regex to find cell references and ranges
-    // Matches: A1, $A$1, A$1, $A1, A1:B2, etc.
+    // Matches: A1, $A$1, A$1, $A1, A1:B2, A:A, 1:1, etc.
+    // First try to match infinite column ranges (A:A)
+    const infiniteColRegex = /(\$?)([A-Z]+):(\$?)([A-Z]+)/g;
+    // Then infinite row ranges (1:1)
+    const infiniteRowRegex = /(\$?)(\d+):(\$?)(\d+)/g;
+    // Then normal cell references
     const cellRefRegex = /(\$?)([A-Z]+)(\$?)(\d+)(?::(\$?)([A-Z]+)(\$?)(\d+))?/g;
     
-    return formula.replace(cellRefRegex, (match, col1Dollar, col1, row1Dollar, row1, 
+    // Handle infinite column ranges first (A:A)
+    let result = formula.replace(infiniteColRegex, (match, startDollar, startCol, endDollar, endCol) => {
+      // Helper to adjust column
+      const adjustCol = (dollar: string, col: string) => {
+        if (dollar) return dollar + col; // Absolute reference
+        
+        // Convert column letters to number
+        let colNum = 0;
+        for (let i = 0; i < col.length; i++) {
+          colNum = colNum * 26 + (col.charCodeAt(i) - 64);
+        }
+        colNum--; // Zero-based
+        
+        // Adjust
+        colNum += colOffset;
+        if (colNum < 0) return '#REF!';
+        
+        // Convert back to letters
+        let newCol = '';
+        let tempCol = colNum + 1;
+        while (tempCol > 0) {
+          tempCol--;
+          newCol = String.fromCharCode(65 + (tempCol % 26)) + newCol;
+          tempCol = Math.floor(tempCol / 26);
+        }
+        
+        return newCol;
+      };
+      
+      const newStart = adjustCol(startDollar, startCol);
+      const newEnd = adjustCol(endDollar, endCol);
+      
+      if (newStart === '#REF!' || newEnd === '#REF!') return '#REF!';
+      return newStart + ':' + newEnd;
+    });
+    
+    // Handle infinite row ranges (1:1)
+    result = result.replace(infiniteRowRegex, (match, startDollar, startRow, endDollar, endRow) => {
+      // In Excel, row numbers in ranges like 1:1 are absolute by default
+      // Only adjust if explicitly marked as relative with $ (which is rare)
+      // Since our regex captures $ for absolute, no $ means it's already absolute
+      if (!startDollar && !endDollar) {
+        // No dollar signs means absolute in row ranges
+        return match; // Keep as-is
+      }
+      
+      // If there are dollar signs, they indicate relative references (opposite of normal cells)
+      const adjustRow = (dollar: string, row: string) => {
+        if (!dollar) return row; // No dollar = absolute for row ranges
+        
+        // Dollar sign present = relative (unusual but possible)
+        let rowNum = parseInt(row) - 1; // Zero-based
+        rowNum += rowOffset;
+        
+        if (rowNum < 0) return '#REF!';
+        return dollar + String(rowNum + 1);
+      };
+      
+      const newStart = adjustRow(startDollar, startRow);
+      const newEnd = adjustRow(endDollar, endRow);
+      
+      if (newStart === '#REF!' || newEnd === '#REF!') return '#REF!';
+      return newStart + ':' + newEnd;
+    });
+    
+    // Handle normal cell references
+    return result.replace(cellRefRegex, (match, col1Dollar, col1, row1Dollar, row1, 
                                           col2Dollar, col2, row2Dollar, row2) => {
       // Helper function to adjust a single cell reference
       const adjustCell = (colDollar: string, col: string, rowDollar: string, row: string) => {
@@ -1776,15 +1967,70 @@ export class FormulaEngine {
   // ===== Recalculation Methods =====
 
   private recalculateDependents(address: SimpleCellAddress): void {
-    const addressKey = addressToKey(address);
-    const dependents = this.dependencyGraph.getDependents(addressKey);
+    // Use a set to track all cells that need recalculation
+    const cellsToRecalculate = new Set<string>();
+    const visited = new Set<string>();
+    
+    // Helper function to collect all transitive dependents
+    const collectDependents = (cellAddress: SimpleCellAddress) => {
+      const addressKey = addressToKey(cellAddress);
+      if (visited.has(addressKey)) return;
+      visited.add(addressKey);
+      
+      // Get direct dependents
+      const directDependents = this.dependencyGraph.getDependents(addressKey);
+      for (const dep of directDependents) {
+        cellsToRecalculate.add(dep);
+      }
+      
+      // Get dependents of any ranges that contain this cell
+      const rangeKeys = this.dependencyGraph.getRangesContainingCell(cellAddress);
+      for (const rangeKey of rangeKeys) {
+        const deps = this.dependencyGraph.getDependents(rangeKey);
+        for (const dep of deps) {
+          cellsToRecalculate.add(dep);
+        }
+      }
+    };
+    
+    // Start collecting from the initial cell
+    collectDependents(address);
     
     // Sort dependents in topological order to ensure correct calculation order
-    const sortedDependents = this.sortDependentsTopologically(dependents);
+    const sortedDependents = this.sortDependentsTopologically([...cellsToRecalculate]);
+    
+    // Track which cells we've already recalculated to avoid infinite loops
+    const recalculated = new Set<string>();
     
     // Recalculate each dependent
     for (const depKey of sortedDependents) {
-      this.recalculateCell(depKey);
+      if (!recalculated.has(depKey)) {
+        recalculated.add(depKey);
+        this.recalculateCell(depKey);
+        
+        // After recalculating, collect its dependents too
+        const parts = depKey.split(':');
+        if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
+          const depAddress: SimpleCellAddress = {
+            sheet: parseInt(parts[0]),
+            col: parseInt(parts[1]),
+            row: parseInt(parts[2])
+          };
+          collectDependents(depAddress);
+        }
+      }
+    }
+    
+    // Recalculate any newly discovered dependents
+    const newDependents = [...cellsToRecalculate].filter(dep => !recalculated.has(dep));
+    if (newDependents.length > 0) {
+      const sortedNewDependents = this.sortDependentsTopologically(newDependents);
+      for (const depKey of sortedNewDependents) {
+        if (!recalculated.has(depKey)) {
+          recalculated.add(depKey);
+          this.recalculateCell(depKey);
+        }
+      }
     }
   }
 
@@ -1821,13 +2067,16 @@ export class FormulaEngine {
         currentSheet: address.sheet,
         currentCell: address,
         namedExpressions: this.namedExpressions,
-        getCellValue: (addr: SimpleCellAddress) => this.getCellValueInternal(addr),
-        getRangeValues: (range: SimpleCellRange) => this.getRangeValuesInternal(range),
+        getCellValue: (addr: SimpleCellAddress) => this.getCellValueInternal(addr, context.evaluationStack),
+        getRangeValues: (range: SimpleCellRange) => this.getRangeValuesInternal(range, context.evaluationStack),
         getFunction: (name: string) => functionRegistry.get(name),
         errorHandler: this.errorHandler,
         evaluationStack: new Set<string>(),
         sheetResolver: (sheetName: string) => this.getSheetId(sheetName)
       };
+      
+      // Add current cell to evaluation stack to detect cycles
+      context.evaluationStack.add(cellKey);
       
       const result = this.evaluator.evaluate(ast, context);
       

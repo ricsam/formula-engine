@@ -8,7 +8,7 @@ describe('Demo Formula Integration Test', () => {
     const sheetId = engine.getSheetId(sheetName);
 
     // Set up data exactly like in the demo
-    const testData = new Map([
+    const testData = new Map<string, any>([
       ['A2', 'Laptop'],
       ['A3', 'Mouse'], 
       ['A4', 'Keyboard'],
@@ -30,7 +30,7 @@ describe('Demo Formula Integration Test', () => {
     const sheetName = engine.addSheet('TestSheet');
     const sheetId = engine.getSheetId(sheetName);
 
-    const testData = new Map([
+    const testData = new Map<string, any>([
       ['A1', 'laptop'],
       ['A2', 'LAPTOP'],
       ['A3', 'Laptop'],
@@ -51,7 +51,7 @@ describe('Demo Formula Integration Test', () => {
     const sheetName = engine.addSheet('TestSheet');
     const sheetId = engine.getSheetId(sheetName);
 
-    const testData = new Map([
+    const testData = new Map<string, any>([
       ['A1', 'Laptop'],
       ['A2', 'Mouse'],
       ['A3', 'Laptop'],

@@ -47,7 +47,7 @@ export interface EvaluationContext {
   currentCell?: SimpleCellAddress;
   namedExpressions: Map<string, NamedExpression>;
   getCellValue: (address: SimpleCellAddress) => CellValue;
-  getRangeValues: (range: SimpleCellRange) => CellValue[][];
+  getRangeValues: (range: SimpleCellRange, evaluationStack?: Set<string>) => CellValue[][];
   getFunction: (name: string) => FunctionDefinition | undefined;
   errorHandler: ErrorHandler;
   evaluationStack: Set<string>; // For cycle detection
@@ -275,6 +275,15 @@ export class Evaluator {
   }
   
   /**
+   * Helper to check if a cell is within a range
+   */
+  private isCellInRange(cell: SimpleCellAddress, range: SimpleCellRange): boolean {
+    return cell.sheet === range.start.sheet &&
+           cell.row >= range.start.row && cell.row <= range.end.row &&
+           cell.col >= range.start.col && cell.col <= range.end.col;
+  }
+  
+  /**
    * Evaluates a reference node
    */
   private evaluateReference(
@@ -308,19 +317,50 @@ export class Evaluator {
     const key = DependencyGraph.getRangeKey(range);
     dependencies.add(key);
     
-    // Add individual cells to dependencies
-    for (let row = range.start.row; row <= range.end.row; row++) {
-      for (let col = range.start.col; col <= range.end.col; col++) {
-        const cellKey = DependencyGraph.getCellKey({
-          sheet: range.start.sheet,
-          col,
-          row
-        });
-        dependencies.add(cellKey);
+    // Check if this is an infinite range
+    const isInfiniteColumn = range.end.row === Number.MAX_SAFE_INTEGER;
+    const isInfiniteRow = range.end.col === Number.MAX_SAFE_INTEGER;
+    
+    // Check for circular reference: if current cell is within this range
+    if (context.currentCell && this.isCellInRange(context.currentCell, range)) {
+      // We're trying to evaluate a range that includes the current cell
+      const cellKey = DependencyGraph.getCellKey(context.currentCell);
+      if (context.evaluationStack.has(cellKey)) {
+        // This creates a circular reference
+        // Return an array filled with #CYCLE! errors
+        const rows = isInfiniteColumn ? 1 : Math.min(range.end.row - range.start.row + 1, 1000);
+        const cols = isInfiniteRow ? 1 : Math.min(range.end.col - range.start.col + 1, 1000);
+        const result: CellValue[][] = [];
+        for (let r = 0; r < rows; r++) {
+          const row: CellValue[] = [];
+          for (let c = 0; c < cols; c++) {
+            row.push('#CYCLE!');
+          }
+          result.push(row);
+        }
+        return result;
       }
     }
     
-    return context.getRangeValues(range);
+    if (!isInfiniteColumn && !isInfiniteRow) {
+      // Normal range - add individual cells to dependencies
+      for (let row = range.start.row; row <= range.end.row; row++) {
+        for (let col = range.start.col; col <= range.end.col; col++) {
+          const cellKey = DependencyGraph.getCellKey({
+            sheet: range.start.sheet,
+            col,
+            row
+          });
+          dependencies.add(cellKey);
+        }
+      }
+    } else {
+      // For infinite ranges, we'll let getRangeValues handle the sparse iteration
+      // and add dependencies dynamically based on actual populated cells
+      // This is handled by the getRangeValues implementation
+    }
+    
+    return context.getRangeValues(range, context.evaluationStack);
   }
   
   /**

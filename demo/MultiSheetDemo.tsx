@@ -99,56 +99,56 @@ const createEngineWithMultiSheetData = () => {
     ["A2", "S001"],
     ["B2", "2024-01-15"],
     ["C2", "P001"],
-    ["D2", "=INDEX(Products.B:B,MATCH(C2,Products.A:A,0))"],
+    ["D2", "=INDEX(Products!B:B,MATCH(C2,Products!A:A,0))"],
     ["E2", 2],
-    ["F2", "=INDEX(Products.D:D,MATCH(C2,Products.A:A,0))"],
+    ["F2", "=INDEX(Products!D:D,MATCH(C2,Products!A:A,0))"],
     ["G2", "=E2*F2"],
-    ["H2", "=INDEX(Products.C:C,MATCH(C2,Products.A:A,0))"],
+    ["H2", "=INDEX(Products!C:C,MATCH(C2,Products!A:A,0))"],
 
     ["A3", "S002"],
     ["B3", "2024-01-16"],
     ["C3", "P002"],
-    ["D3", "=INDEX(Products.B:B,MATCH(C3,Products.A:A,0))"],
+    ["D3", "=INDEX(Products!B:B,MATCH(C3,Products!A:A,0))"],
     ["E3", 5],
-    ["F3", "=INDEX(Products.D:D,MATCH(C3,Products.A:A,0))"],
+    ["F3", "=INDEX(Products!D:D,MATCH(C3,Products!A:A,0))"],
     ["G3", "=E3*F3"],
-    ["H3", "=INDEX(Products.C:C,MATCH(C3,Products.A:A,0))"],
+    ["H3", "=INDEX(Products!C:C,MATCH(C3,Products!A:A,0))"],
 
     ["A4", "S003"],
     ["B4", "2024-01-17"],
     ["C4", "P003"],
-    ["D4", "=INDEX(Products.B:B,MATCH(C4,Products.A:A,0))"],
+    ["D4", "=INDEX(Products!B:B,MATCH(C4,Products!A:A,0))"],
     ["E4", 3],
-    ["F4", "=INDEX(Products.D:D,MATCH(C4,Products.A:A,0))"],
+    ["F4", "=INDEX(Products!D:D,MATCH(C4,Products!A:A,0))"],
     ["G4", "=E4*F4"],
-    ["H4", "=INDEX(Products.C:C,MATCH(C4,Products.A:A,0))"],
+    ["H4", "=INDEX(Products!C:C,MATCH(C4,Products!A:A,0))"],
 
     ["A5", "S004"],
     ["B5", "2024-01-18"],
     ["C5", "P004"],
-    ["D5", "=INDEX(Products.B:B,MATCH(C5,Products.A:A,0))"],
+    ["D5", "=INDEX(Products!B:B,MATCH(C5,Products!A:A,0))"],
     ["E5", 1],
-    ["F5", "=INDEX(Products.D:D,MATCH(C5,Products.A:A,0))"],
+    ["F5", "=INDEX(Products!D:D,MATCH(C5,Products!A:A,0))"],
     ["G5", "=E5*F5"],
-    ["H5", "=INDEX(Products.C:C,MATCH(C5,Products.A:A,0))"],
+    ["H5", "=INDEX(Products!C:C,MATCH(C5,Products!A:A,0))"],
 
     ["A6", "S005"],
     ["B6", "2024-01-19"],
     ["C6", "P005"],
-    ["D6", "=INDEX(Products.B:B,MATCH(C6,Products.A:A,0))"],
+    ["D6", "=INDEX(Products!B:B,MATCH(C6,Products!A:A,0))"],
     ["E6", 2],
-    ["F6", "=INDEX(Products.D:D,MATCH(C6,Products.A:A,0))"],
+    ["F6", "=INDEX(Products!D:D,MATCH(C6,Products!A:A,0))"],
     ["G6", "=E6*F6"],
-    ["H6", "=INDEX(Products.C:C,MATCH(C6,Products.A:A,0))"],
+    ["H6", "=INDEX(Products!C:C,MATCH(C6,Products!A:A,0))"],
 
     ["A7", "S006"],
     ["B7", "2024-01-20"],
     ["C7", "P001"],
-    ["D7", "=INDEX(Products.B:B,MATCH(C7,Products.A:A,0))"],
+    ["D7", "=INDEX(Products!B:B,MATCH(C7,Products!A:A,0))"],
     ["E7", 1],
-    ["F7", "=INDEX(Products.D:D,MATCH(C7,Products.A:A,0))"],
+    ["F7", "=INDEX(Products!D:D,MATCH(C7,Products!A:A,0))"],
     ["G7", "=E7*F7"],
-    ["H7", "=INDEX(Products.C:C,MATCH(C7,Products.A:A,0))"],
+    ["H7", "=INDEX(Products!C:C,MATCH(C7,Products!A:A,0))"],
 
     // Sales summary
     ["A9", "Sales Summary:"],
@@ -181,40 +181,40 @@ const createEngineWithMultiSheetData = () => {
     // Product overview
     ["A3", "PRODUCT OVERVIEW"],
     ["A4", "Total Products"],
-    ["B4", "=Products.B9"],
+    ["B4", "=Products!B9"],
     ["A5", "Average Price"],
-    ["B5", "=Products.B10"],
+    ["B5", "=Products!B10"],
     ["A6", "Average Margin"],
-    ["B6", '=CONCATENATE(ROUND(Products.B11*100,1),"%")'],
+    ["B6", '=CONCATENATE(ROUND(Products!B11*100,1),"%")'],
 
     // Sales overview
     ["A8", "SALES OVERVIEW"],
     ["A9", "Total Revenue"],
-    ["B9", "=Sales.B10"],
+    ["B9", "=Sales!B10"],
     ["A10", "Total Units Sold"],
-    ["B10", "=Sales.B11"],
+    ["B10", "=Sales!B11"],
     ["A11", "Average Sale Value"],
-    ["B11", "=Sales.B12"],
+    ["B11", "=Sales!B12"],
 
     // Category performance
     ["D3", "CATEGORY PERFORMANCE"],
     ["D4", "Electronics"],
     ["E4", "Products:"],
-    ["F4", "=Products.E9"],
+    ["F4", "=Products!E9"],
     ["G4", "Sales:"],
     ["H4", "=Sales.E10"],
     ["D5", "Accessories"],
     ["E5", "Products:"],
-    ["F5", "=Products.E10"],
+    ["F5", "=Products!E10"],
     ["G5", "Sales:"],
     ["H5", "=Sales.E11"],
 
     // Performance metrics
     ["A13", "PERFORMANCE METRICS"],
     ["A14", "Revenue per Product"],
-    ["B14", "=Sales.B10/Products.B9"],
+    ["B14", "=Sales!B10/Products!B9"],
     ["A15", "Conversion Rate"],
-    ["B15", '=CONCATENATE(ROUND((Sales.B11/Products.B9)*100,1),"%")'],
+    ["B15", '=CONCATENATE(ROUND((Sales!B11/Products!B9)*100,1),"%")'],
 
     // Top performing products
     ["D7", "TOP PRODUCTS"],
@@ -228,22 +228,22 @@ const createEngineWithMultiSheetData = () => {
     ["A18", "Product ID:"],
     ["B18", "P001"],
     ["A19", "Product Name:"],
-    ["B19", "=INDEX(Products.B:B,MATCH(B18,Products.A:A,0))"],
+    ["B19", "=INDEX(Products!B:B,MATCH(B18,Products!A:A,0))"],
     ["A20", "Category:"],
-    ["B20", "=INDEX(Products.C:C,MATCH(B18,Products.A:A,0))"],
+    ["B20", "=INDEX(Products!C:C,MATCH(B18,Products!A:A,0))"],
     ["A21", "Unit Price:"],
-    ["B21", "=INDEX(Products.D:D,MATCH(B18,Products.A:A,0))"],
+    ["B21", "=INDEX(Products!D:D,MATCH(B18,Products!A:A,0))"],
     ["A22", "Total Sales:"],
     ["B22", "=SUMIF(Sales.C:C,B18,Sales.G:G)"],
 
     // Text functions showcase
     ["D11", "TEXT ANALYSIS"],
     ["D12", "Best Category"],
-    ["E12", '=IF(Sales.E10>Sales.E11,"Electronics","Accessories")'],
+    ["E12", '=IF(Sales!E10>Sales!E11,"Electronics","Accessories")'],
     ["D13", "Report Title"],
     ["E13", '=CONCATENATE("Sales Report - ",UPPER(E12)," LEADING")'],
     ["D14", "Summary"],
-    ["E14", '=CONCATENATE("Total: $",Sales.B10," from ",Sales.B11," units")'],
+    ["E14", '=CONCATENATE("Total: $",Sales!B10," from ",Sales!B11," units")'],
   ]);
 
   // Populate all sheets
@@ -315,16 +315,22 @@ export function MultiSheetDemo() {
 
   const handleFormulaSubmit = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter' && selectedCell) {
+      if (e.key === "Enter" && selectedCell) {
         try {
           const { columnIndex, rowIndex } = parseCellReference(selectedCell);
-          const address = { sheet: activeSheetId, col: columnIndex, row: rowIndex };
-          
+          const address = {
+            sheet: activeSheetId,
+            col: columnIndex,
+            row: rowIndex,
+          };
+
           // If the input starts with =, it's a formula; otherwise it's a value
-          const content = formulaInput.startsWith('=') ? formulaInput : formulaInput;
+          const content = formulaInput.startsWith("=")
+            ? formulaInput
+            : formulaInput;
           engine.setCellContents(address, content || undefined);
         } catch (error) {
-          console.error('Error updating cell:', error);
+          console.error("Error updating cell:", error);
         }
       }
     },
@@ -358,11 +364,11 @@ export function MultiSheetDemo() {
       [`A${newRow}`, `S${String(newRow - 1).padStart(3, "0")}`],
       [`B${newRow}`, "2024-01-21"],
       [`C${newRow}`, randomProductId],
-      [`D${newRow}`, `=INDEX(Products.B:B,MATCH(C${newRow},Products.A:A,0))`],
+      [`D${newRow}`, `=INDEX(Products!B:B,MATCH(C${newRow},Products!A:A,0))`],
       [`E${newRow}`, randomQuantity],
-      [`F${newRow}`, `=INDEX(Products.D:D,MATCH(C${newRow},Products.A:A,0))`],
+      [`F${newRow}`, `=INDEX(Products!D:D,MATCH(C${newRow},Products!A:A,0))`],
       [`G${newRow}`, `=E${newRow}*F${newRow}`],
-      [`H${newRow}`, `=INDEX(Products.C:C,MATCH(C${newRow},Products.A:A,0))`],
+      [`H${newRow}`, `=INDEX(Products!C:C,MATCH(C${newRow},Products!A:A,0))`],
     ]);
 
     newSaleData.forEach((value, key) => {
@@ -388,7 +394,10 @@ export function MultiSheetDemo() {
           )}
         </div>
       </div>
-      <div className="border rounded-lg overflow-hidden bg-white" style={{ height: "400px" }}>
+      <div
+        className="border rounded-lg overflow-hidden bg-white"
+        style={{ height: "400px" }}
+      >
         <Spreadsheet
           style={{ width: "100%", height: "100%" }}
           cellData={spreadsheets[sheetName]}
@@ -406,10 +415,10 @@ export function MultiSheetDemo() {
           selection={{
             onStateChange: (state) => {
               // Set this sheet as active when user interacts with it
-              setActiveSheet(sheetName);
-              
+
               if (state.isSelecting?.type === "drag") {
                 const cell = state.isSelecting.start;
+                setActiveSheet(sheetName);
                 setSelectedCell(
                   getCellReference({ rowIndex: cell.row, colIndex: cell.col })
                 );
@@ -417,6 +426,7 @@ export function MultiSheetDemo() {
               }
               const cell = state.selections[state.selections.length - 1]?.start;
               if (cell) {
+                setActiveSheet(sheetName);
                 setSelectedCell(
                   getCellReference({ rowIndex: cell.row, colIndex: cell.col })
                 );
@@ -432,7 +442,9 @@ export function MultiSheetDemo() {
     <div className="flex flex-col gap-4 h-full">
       {/* Header with controls */}
       <div className="flex items-center gap-4 p-4 border-b">
-        <h2 className="text-xl font-bold">Multi-Sheet Demo - Cross-Sheet References</h2>
+        <h2 className="text-xl font-bold">
+          Multi-Sheet Demo - Cross-Sheet References
+        </h2>
         <Button onClick={addNewSale} variant="outline">
           Add Random Sale
         </Button>
@@ -448,7 +460,9 @@ export function MultiSheetDemo() {
           onChange={handleFormulaChange}
           onKeyDown={handleFormulaSubmit}
           className="flex-1 font-mono"
-          placeholder={selectedCell ? "Enter formula or value..." : "Select a cell to edit"}
+          placeholder={
+            selectedCell ? "Enter formula or value..." : "Select a cell to edit"
+          }
           disabled={!selectedCell}
         />
       </div>
@@ -476,9 +490,18 @@ export function MultiSheetDemo() {
       <div className="px-4 py-2 bg-blue-50 text-xs">
         <strong>Live Summary:</strong>
         <div className="grid grid-cols-3 gap-4 mt-1">
-          <div>Products: {spreadsheets.Products?.get('B9')} items, Avg: ${spreadsheets.Products?.get('B10')}</div>
-          <div>Sales: ${spreadsheets.Sales?.get('B10')} revenue from {spreadsheets.Sales?.get('B11')} units</div>
-          <div>Dashboard: Revenue per product: ${spreadsheets.Dashboard?.get('B14')}</div>
+          <div>
+            Products: {spreadsheets.Products?.get("B9")} items, Avg: $
+            {spreadsheets.Products?.get("B10")}
+          </div>
+          <div>
+            Sales: ${spreadsheets.Sales?.get("B10")} revenue from{" "}
+            {spreadsheets.Sales?.get("B11")} units
+          </div>
+          <div>
+            Dashboard: Revenue per product: $
+            {spreadsheets.Dashboard?.get("B14")}
+          </div>
         </div>
       </div>
     </div>

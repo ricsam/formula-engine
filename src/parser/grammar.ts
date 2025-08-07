@@ -228,6 +228,12 @@ export const CELL_REFERENCE_PATTERNS = {
   
   // Sheet qualified reference (e.g., Sheet1!A1, 'My Sheet'!$A$1)
   SHEET_QUALIFIED: /^(?:([A-Za-z_][A-Za-z0-9_]*)|'([^']+)')!(.+)$/,
+  
+  // Infinite column range (e.g., A:A, $B:$B)
+  INFINITE_COLUMN: /^(\$)?([A-Z]+):(\$)?([A-Z]+)$/i,
+  
+  // Infinite row range (e.g., 5:5, $10:$10)
+  INFINITE_ROW: /^(\$)?([1-9][0-9]*):(\$)?([1-9][0-9]*)$/i,
 };
 
 /**
@@ -253,6 +259,15 @@ export interface ParsedCellReference {
   col: string;
   rowAbsolute: boolean;
   row: string;
+}
+
+export interface ParsedInfiniteRange {
+  sheet?: string;
+  type: 'column' | 'row';
+  startAbsolute: boolean;
+  start: string;
+  endAbsolute: boolean;
+  end: string;
 }
 
 export function parseCellReference(ref: string): ParsedCellReference | null {
@@ -281,6 +296,48 @@ export function parseCellReference(ref: string): ParsedCellReference | null {
     rowAbsolute: cellMatch[3] === '$',
     row: cellMatch[4],
   };
+}
+
+export function parseInfiniteRange(ref: string): ParsedInfiniteRange | null {
+  // Check for sheet qualifier
+  const sheetMatch = ref.match(CELL_REFERENCE_PATTERNS.SHEET_QUALIFIED);
+  let sheet: string | undefined;
+  let rangePart: string;
+  
+  if (sheetMatch && sheetMatch[3]) {
+    sheet = sheetMatch[1] || sheetMatch[2]; // Either unquoted or quoted sheet name
+    rangePart = sheetMatch[3];
+  } else {
+    rangePart = ref;
+  }
+  
+  // Check for infinite column range (e.g., A:A, B:C)
+  const colMatch = rangePart.match(CELL_REFERENCE_PATTERNS.INFINITE_COLUMN);
+  if (colMatch && colMatch[2] && colMatch[4]) {
+    return {
+      sheet,
+      type: 'column',
+      startAbsolute: colMatch[1] === '$',
+      start: colMatch[2].toUpperCase(),
+      endAbsolute: colMatch[3] === '$',
+      end: colMatch[4].toUpperCase(),
+    };
+  }
+  
+  // Check for infinite row range (e.g., 5:5, 1:10)
+  const rowMatch = rangePart.match(CELL_REFERENCE_PATTERNS.INFINITE_ROW);
+  if (rowMatch && rowMatch[2] && rowMatch[4]) {
+    return {
+      sheet,
+      type: 'row',
+      startAbsolute: rowMatch[1] === '$',
+      start: rowMatch[2],
+      endAbsolute: rowMatch[3] === '$',
+      end: rowMatch[4],
+    };
+  }
+  
+  return null;
 }
 
 /**

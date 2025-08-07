@@ -45,20 +45,73 @@ function flattenToArray(value: CellValue): CellValue[] {
 }
 
 // Helper to get dimensions of an array
-function getArrayDimensions(value: CellValue): { rows: number; cols: number } {
+function getArrayDimensions(value: CellValue): { rows: number; cols: number; isRowRange: boolean; isColumnRange: boolean } {
   if (!Array.isArray(value)) {
-    return { rows: 1, cols: 1 };
+    return { rows: 1, cols: 1, isRowRange: false, isColumnRange: false };
   }
   
   if (Array.isArray(value[0])) {
     // 2D array
     const rows = value.length;
     const cols = Math.max(...value.map(row => Array.isArray(row) ? row.length : 1));
-    return { rows, cols };
+    
+    // Row range: 1 row, multiple columns
+    const isRowRange = rows === 1 && cols > 1;
+    
+    // Column range: multiple rows, 1 column each
+    const isColumnRange = rows > 1 && value.every(row => Array.isArray(row) && row.length === 1);
+    
+    return { rows, cols, isRowRange, isColumnRange };
   }
   
-  // 1D array
-  return { rows: value.length, cols: 1 };
+  // 1D array - treat as column range
+  return { rows: value.length, cols: 1, isRowRange: false, isColumnRange: true };
+}
+
+// Helper function to filter row ranges (columns within a row)
+function filterRowRange(sourceArray: CellValue[][], conditionArrays: CellValue[]): CellValue {
+  const sourceRow = sourceArray[0]; // Single row with multiple columns
+  if (!sourceRow) {
+    throw new Error('#VALUE!');
+  }
+  
+  const result: CellValue[] = [];
+  
+  // Validate all condition arrays are also row ranges with same column count
+  for (const condArray of conditionArrays) {
+    if (!Array.isArray(condArray) || condArray.length !== 1 || 
+        !Array.isArray(condArray[0]) || condArray[0].length !== sourceRow.length) {
+      throw new Error('#VALUE!');
+    }
+  }
+  
+  // Filter columns based on conditions
+  for (let colIndex = 0; colIndex < sourceRow.length; colIndex++) {
+    let includeColumn = true;
+    
+    // Check all conditions for this column
+    for (const condArray of conditionArrays) {
+      if (Array.isArray(condArray) && Array.isArray(condArray[0])) {
+        const conditionRow = condArray[0] as CellValue[];
+        if (!coerceToBoolean(conditionRow[colIndex])) {
+          includeColumn = false;
+          break;
+        }
+      }
+    }
+    
+    if (includeColumn) {
+      result.push(sourceRow[colIndex]);
+    }
+  }
+  
+  // If no results, return #N/A
+  if (result.length === 0) {
+    return '#N/A';
+  }
+  
+  // Return as column vector (standard FILTER output format)
+  return result.map(value => [value]) as unknown as CellValue;
 }
 
 // FILTER(sourceArray, ...boolArrays)
@@ -91,6 +144,11 @@ export const FILTER: FunctionDefinition = {
     // Get dimensions of source array
     const sourceDims = getArrayDimensions(sourceArray);
     const is2D = Array.isArray(sourceArray[0]);
+    
+    // Detect if this is a row range (1 row, multiple columns)
+    if (sourceDims.isRowRange) {
+      return filterRowRange(sourceArray as CellValue[][], args.slice(1));
+    }
     
     // Validate all condition arrays have compatible dimensions
     for (let i = 1; i < args.length; i++) {

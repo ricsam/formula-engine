@@ -483,6 +483,17 @@ export class TokenStream {
   }
   
   /**
+   * Peek at the next token without consuming
+   */
+  peekNext(): Token | null {
+    const pos = this.position + 1;
+    if (pos >= this.tokens.length) {
+      return null;
+    }
+    return this.tokens[pos] ?? null;
+  }
+  
+  /**
    * Consume current token and advance
    */
   consume(): Token {

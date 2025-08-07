@@ -155,6 +155,8 @@ export function FullSpreadsheetDemo() {
   );
   const [formulaInput, setFormulaInput] = useState<string>("");
 
+  console.log(spreadsheet, engine.getSheetValues(sheetId));
+
   useEffect(() => {
     const unsubscribe = engine.on("cell-changed", () => {
       const data = engine.getSheetSerialized(sheetId);
@@ -238,6 +240,7 @@ export function FullSpreadsheetDemo() {
             engine.setSheetContents(sheetId, updatedSpreadsheet);
           }}
           customCellRenderer={(cell) => {
+           
             const value = engine.getCellValue({
               sheet: sheetId,
               col: cell.colIndex,

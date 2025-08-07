@@ -33,6 +33,7 @@ import {
   getOperatorPrecedence,
   getOperatorAssociativity,
   parseCellReference,
+  parseInfiniteRange,
   validateFunctionArgCount,
   SPECIAL_FUNCTIONS
 } from './grammar';
@@ -304,10 +305,32 @@ export class Parser {
   }
   
   /**
-   * Parse a number literal
+   * Parse a number literal or row range
    */
   private parseNumber(): ASTNode {
-    const token = this.tokens.consume();
+    const token = this.tokens.peek();
+    const start = token.position.start;
+    
+    // Check if this could be a row range (e.g., 5:5, 1:10)
+    if (this.tokens.peekNext() && this.tokens.peekNext()!.type === 'COLON') {
+      // This is a row range
+      const startRow = this.tokens.consume().value;
+      this.tokens.consume(); // Consume ':'
+      
+      // Get the end row
+      let endRow: string;
+      if (this.tokens.match('NUMBER')) {
+        endRow = this.tokens.consume().value;
+      } else {
+        throw new ParseError('Expected row number after :', this.tokens.peek().position);
+      }
+      
+      // Parse as an infinite row range
+      return this.parseRange(startRow, endRow, start, this.tokens.peek().position.start);
+    }
+    
+    // Otherwise, parse as a regular number
+    this.tokens.consume();
     const value = parseFloat(token.value);
     
     if (isNaN(value)) {
@@ -517,31 +540,35 @@ export class Parser {
   }
   
   /**
-   * Parse the end part of a range (handling $ signs)
+   * Parse the end part of a range (handling $ signs and infinite ranges)
    */
   private parseRangeEnd(): string {
     let result = '';
     
-    // Check for $ before column
+    // Check for $ before column or row
     if (this.tokens.match('DOLLAR')) {
       result += this.tokens.consume().value;
     }
     
-    // Get identifier part
+    // Get identifier part (for column) or number part (for row)
     if (this.tokens.match('IDENTIFIER')) {
+      result += this.tokens.consume().value;
+      
+      // For normal ranges, check for $ before row
+      if (this.tokens.match('DOLLAR')) {
+        result += this.tokens.consume().value;
+      }
+      
+      // Get number part if present (normal range)
+      if (this.tokens.match('NUMBER')) {
+        result += this.tokens.consume().value;
+      }
+      // If no number, it's an infinite column range (e.g., A:A)
+    } else if (this.tokens.match('NUMBER')) {
+      // Infinite row range (e.g., 5:5)
       result += this.tokens.consume().value;
     } else {
       throw new ParseError('Expected cell reference after :', this.tokens.peek().position);
-    }
-    
-    // Check for $ before row
-    if (this.tokens.match('DOLLAR')) {
-      result += this.tokens.consume().value;
-    }
-    
-    // Get number part
-    if (this.tokens.match('NUMBER')) {
-      result += this.tokens.consume().value;
     }
     
     return result;
@@ -674,9 +701,128 @@ export class Parser {
   }
   
   /**
-   * Parse a range reference
+   * Parse a range reference (including infinite ranges)
    */
   private parseRange(startRef: string, endRef: string, startPos: number, endPos: number): ASTNode {
+    // For cross-sheet ranges, handle the case where only startRef includes the sheet
+    let fullRange = `${startRef}:${endRef}`;
+    let sheetName: string | undefined;
+    
+    // Check if start has a sheet prefix
+    const sheetMatch = startRef.match(/^(?:([A-Za-z_][A-Za-z0-9_]*)|'([^']+)')!/);
+    if (sheetMatch) {
+      sheetName = sheetMatch[1] || sheetMatch[2];
+      
+      // First, try to parse as an infinite range without modifying the range
+      // This handles cases like Sheet1!A:A or Sheet1!5:5
+      const infiniteTest = parseInfiniteRange(fullRange);
+      if (infiniteTest) {
+        // It's an infinite range, skip to processing it below
+      } else {
+        // Not an infinite range, so handle normal cross-sheet ranges
+        const endSheetMatch = endRef.match(/^(?:([A-Za-z_][A-Za-z0-9_]*)|'([^']+)')!/);
+        if (!endSheetMatch && sheetName) {
+          // Normal case: prepend sheet name to endRef for consistent parsing
+          const quotedSheetName = sheetName.includes(' ') ? `'${sheetName}'` : sheetName;
+          endRef = `${quotedSheetName}!${endRef}`;
+          fullRange = `${startRef}:${endRef}`;
+        }
+      }
+    }
+    
+    // Try to parse as an infinite range
+    const infiniteParsed = parseInfiniteRange(fullRange);
+    
+    if (infiniteParsed) {
+      // Handle infinite range
+      const sheetId = infiniteParsed.sheet ? this.getSheetId(infiniteParsed.sheet) : this.contextSheetId;
+      
+      if (infiniteParsed.type === 'column') {
+        // Infinite column range (e.g., A:A, B:D)
+        const startCol = letterToColNumber(infiniteParsed.start);
+        const endCol = letterToColNumber(infiniteParsed.end);
+        
+        if (startCol < 0 || endCol < 0) {
+          throw new ParseError(
+            `Invalid column range: ${startRef}:${endRef}`,
+            { start: startPos, end: endPos }
+          );
+        }
+        
+        // Use special row values to indicate infinite range
+        // We'll use -1 to indicate infinite
+        const range: SimpleCellRange = {
+          start: {
+            sheet: sheetId,
+            col: Math.min(startCol, endCol),
+            row: 0  // Start from row 0
+          },
+          end: {
+            sheet: sheetId,
+            col: Math.max(startCol, endCol),
+            row: Number.MAX_SAFE_INTEGER  // Use max value to indicate infinite
+          }
+        };
+        
+        return createRangeNode(
+          range,
+          {
+            start: {
+              col: infiniteParsed.startAbsolute,
+              row: false
+            },
+            end: {
+              col: infiniteParsed.endAbsolute,
+              row: false
+            }
+          },
+          startPos,
+          endPos
+        );
+      } else {
+        // Infinite row range (e.g., 5:5, 1:10)
+        const startRow = parseInt(infiniteParsed.start) - 1;
+        const endRow = parseInt(infiniteParsed.end) - 1;
+        
+        if (startRow < 0 || endRow < 0) {
+          throw new ParseError(
+            `Invalid row range: ${startRef}:${endRef}`,
+            { start: startPos, end: endPos }
+          );
+        }
+        
+        const range: SimpleCellRange = {
+          start: {
+            sheet: sheetId,
+            col: 0,  // Start from column 0
+            row: Math.min(startRow, endRow)
+          },
+          end: {
+            sheet: sheetId,
+            col: Number.MAX_SAFE_INTEGER,  // Use max value to indicate infinite
+            row: Math.max(startRow, endRow)
+          }
+        };
+        
+        return createRangeNode(
+          range,
+          {
+            start: {
+              col: false,
+              row: infiniteParsed.startAbsolute
+            },
+            end: {
+              col: false,
+              row: infiniteParsed.endAbsolute
+            }
+          },
+          startPos,
+          endPos
+        );
+      }
+    }
+    
+    // Otherwise, parse as normal range
     const startParsed = parseCellReference(startRef);
     const endParsed = parseCellReference(endRef);
     
@@ -760,6 +906,15 @@ export class Parser {
       const identifier = this.tokens.consume();
       ref += identifier.value;
       
+      // Check if this is an infinite column range (Sheet1!A:A)
+      if (this.tokens.match('COLON')) {
+        this.tokens.consume();
+        const endRef = this.parseRangeEnd();
+        // For cross-sheet ranges, do NOT prepend the sheet name to the end reference
+        // parseRange will handle sheet name extraction from the start reference
+        return this.parseRange(ref, endRef, startPos, this.tokens.peek().position.start);
+      }
+      
       // Check for $ before row or just row number
       if (this.tokens.match('DOLLAR')) {
         ref += this.tokens.consume().value;
@@ -768,17 +923,30 @@ export class Parser {
       if (this.tokens.match('NUMBER')) {
         ref += this.tokens.consume().value;
       }
+    } else if (this.tokens.match('NUMBER')) {
+      // Handle infinite row range (Sheet1!5:5)
+      const number = this.tokens.consume();
+      ref += number.value;
+      
+      // Check for range
+      if (this.tokens.match('COLON')) {
+        this.tokens.consume();
+        const endRef = this.parseRangeEnd();
+        // For cross-sheet ranges, do NOT prepend the sheet name to the end reference
+        // parseRange will handle sheet name extraction from the start reference
+        return this.parseRange(ref, endRef, startPos, this.tokens.peek().position.start);
+      }
     } else {
       throw new ParseError(`Expected cell reference after ${sheetName}!`, this.tokens.peek().position);
     }
     
-    // Check for range
+    // Check for range (normal cell range like Sheet1!A1:B2)
     if (this.tokens.match('COLON')) {
       this.tokens.consume();
       const endRef = this.parseRangeEnd();
-      // For cross-sheet ranges, we need to prepend the sheet name to the end reference
-      const fullEndRef = sheetName.includes(' ') ? `'${sheetName}'!${endRef}` : `${sheetName}!${endRef}`;
-      return this.parseRange(ref, fullEndRef, startPos, this.tokens.peek().position.start);
+      // For cross-sheet ranges, do NOT prepend the sheet name to the end reference
+      // parseRange will handle sheet name extraction from the start reference
+      return this.parseRange(ref, endRef, startPos, this.tokens.peek().position.start);
     }
     
     // Parse as single cell reference
