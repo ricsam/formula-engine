@@ -15,22 +15,7 @@ function Index() {
         </p>
       </div>
       
-      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6 mb-12">
-        <Link 
-          to="/events" 
-          className="group p-6 bg-white border rounded-xl hover:shadow-lg transition-all duration-200 hover:border-blue-200"
-        >
-          <div className="flex items-center mb-4">
-            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center mr-3">
-              <span className="text-blue-600 font-semibold">🔗</span>
-            </div>
-            <h3 className="text-lg font-semibold text-gray-800 group-hover:text-blue-600">Events & Hooks</h3>
-          </div>
-          <p className="text-gray-600 leading-relaxed text-sm">
-            Explore React integration with custom hooks and event system for reactive spreadsheet updates.
-          </p>
-        </Link>
-        
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-6 mb-12">      
         <Link 
           to="/spreadsheet" 
           className="group p-6 bg-white border rounded-xl hover:shadow-lg transition-all duration-200 hover:border-green-200"

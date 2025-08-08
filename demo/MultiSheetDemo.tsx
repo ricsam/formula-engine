@@ -115,16 +115,31 @@ export function MultiSheetDemo() {
     Products: engine.getSheetSerialized(sheets.products.id),
   }));
 
-  // Update all spreadsheets when any cell changes
+  // Update all spreadsheets when any cell in any sheet changes
   useEffect(() => {
-    const unsubscribe = engine.on("cell-changed", () => {
-      setSpreadsheets({
+    const unsubDashboard = engine.onCellsUpdate(sheets.dashboard.id, () => {
+      setSpreadsheets((prev) => ({
+        ...prev,
         Dashboard: engine.getSheetSerialized(sheets.dashboard.id),
-        Sales: engine.getSheetSerialized(sheets.sales.id),
-        Products: engine.getSheetSerialized(sheets.products.id),
-      });
+      }));
     });
-    return () => unsubscribe();
+    const unsubSales = engine.onCellsUpdate(sheets.sales.id, () => {
+      setSpreadsheets((prev) => ({
+        ...prev,
+        Sales: engine.getSheetSerialized(sheets.sales.id),
+      }));
+    });
+    const unsubProducts = engine.onCellsUpdate(sheets.products.id, () => {
+      setSpreadsheets((prev) => ({
+        ...prev,
+        Products: engine.getSheetSerialized(sheets.products.id),
+      }));
+    });
+    return () => {
+      unsubDashboard();
+      unsubSales();
+      unsubProducts();
+    };
   }, [engine, sheets]);
 
   const activeSheetId = useMemo(() => {

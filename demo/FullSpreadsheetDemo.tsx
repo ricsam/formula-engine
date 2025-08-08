@@ -158,7 +158,7 @@ export function FullSpreadsheetDemo() {
   console.log(spreadsheet, engine.getSheetValues(sheetId));
 
   useEffect(() => {
-    const unsubscribe = engine.on("cell-changed", () => {
+    const unsubscribe = engine.onCellsUpdate(sheetId, () => {
       const data = engine.getSheetSerialized(sheetId);
       setSpreadsheet(data);
     });

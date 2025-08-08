@@ -146,10 +146,11 @@ export interface CellChangeEvent {
   newValue: CellValue;
 }
 
+// Preferred name for cell update event in the public API
+export type CellUpdateEvent = CellChangeEvent;
+
 // Event types
 export interface FormulaEngineEvents {
-  "cell-changed": CellChangeEvent;
-  "cells-changed": CellChangeEvent[];
   "sheet-added": {
     sheetId: number;
     sheetName: string;

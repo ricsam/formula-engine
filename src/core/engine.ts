@@ -135,6 +135,11 @@ export class FormulaEngine {
   private evaluator: Evaluator;
   private errorHandler: ErrorHandler;
   private eventEmitter: EventEmitter<FormulaEngineEvents>;
+  // New event system: cell-level immediate and sheet-level batched updates
+  private cellUpdateListeners: Map<string, Set<(event: { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }) => void>> = new Map();
+  private cellsUpdateListeners: Map<number, Set<(events: { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }[]) => void>> = new Map();
+  private pendingSheetUpdates: Map<number, { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }[]> = new Map();
+  private batchDepth: number = 0;
 
   constructor(options: FormulaEngineOptions = {}) {
     this.options = {
@@ -291,6 +296,7 @@ export class FormulaEngine {
     topLeftCornerAddress: SimpleCellAddress,
     cellContents: RawCellContent[][] | RawCellContent
   ): ExportedChange[] {
+    this.beginBatch();
     const changes: ExportedChange[] = [];
 
     if (Array.isArray(cellContents)) {
@@ -320,6 +326,7 @@ export class FormulaEngine {
       }
     }
 
+    this.endBatch();
     return this.evaluationSuspended ? [] : changes;
   }
 
@@ -330,6 +337,7 @@ export class FormulaEngine {
     const sheet = this.sheets.get(sheetId);
     if (!sheet) return [];
 
+    this.beginBatch();
     const changes: ExportedChange[] = [];
     const processedKeys = new Set<string>();
 
@@ -383,6 +391,7 @@ export class FormulaEngine {
       }
     }
 
+    this.endBatch();
     return this.evaluationSuspended ? [] : changes;
   }
 
@@ -409,13 +418,8 @@ export class FormulaEngine {
       this.dependencyGraph.removeNode(addressKey);
 
       if (oldValue !== undefined) {
-        // Emit cell-changed event for cleared cell
-        this.emit("cell-changed", {
-          address,
-          oldValue,
-          newValue: undefined,
-        });
-
+        // Notify listeners about single cell update and collect for sheet batch
+        this.emitCellUpdate({ address, oldValue, newValue: undefined });
         return {
           address,
           oldValue,
@@ -597,8 +601,8 @@ export class FormulaEngine {
         type: "cell-change",
       };
 
-      // Emit cell-changed event for the main cell first
-      this.emit("cell-changed", {
+      // Notify listeners for the primary changed cell
+      this.emitCellUpdate({
         address,
         oldValue: oldValue ?? undefined,
         newValue: newCell.value,
@@ -2305,9 +2309,9 @@ export class FormulaEngine {
       }
     }
 
-    // Emit cell-changed event if the value actually changed
+    // Notify listeners if the value actually changed
     if (oldValue !== cell.value) {
-      this.emit("cell-changed", {
+      this.emitCellUpdate({
         address,
         oldValue: oldValue ?? undefined,
         newValue: cell.value,
@@ -2418,6 +2422,100 @@ export class FormulaEngine {
     data: FormulaEngineEvents[K]
   ): void {
     this.eventEmitter.emit(event, data);
+  }
+
+  // ===== New Event API: Cell and Sheet Updates =====
+
+  /**
+   * Register listener for specific cell updates. Returns an unsubscribe function.
+   */
+  onCellUpdate(
+    address: SimpleCellAddress,
+    listener: (event: { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }) => void
+  ): () => void {
+    const key = addressToKey(address);
+    if (!this.cellUpdateListeners.has(key)) {
+      this.cellUpdateListeners.set(key, new Set());
+    }
+    const set = this.cellUpdateListeners.get(key)!;
+    set.add(listener);
+    return () => {
+      const listeners = this.cellUpdateListeners.get(key);
+      if (listeners) {
+        listeners.delete(listener);
+        if (listeners.size === 0) this.cellUpdateListeners.delete(key);
+      }
+    };
+  }
+
+  /**
+   * Register listener for batched sheet updates. Returns an unsubscribe function.
+   */
+  onCellsUpdate(
+    sheetId: number,
+    listener: (events: { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }[]) => void
+  ): () => void {
+    if (!this.cellsUpdateListeners.has(sheetId)) {
+      this.cellsUpdateListeners.set(sheetId, new Set());
+    }
+    const set = this.cellsUpdateListeners.get(sheetId)!;
+    set.add(listener);
+    return () => {
+      const listeners = this.cellsUpdateListeners.get(sheetId);
+      if (listeners) {
+        listeners.delete(listener);
+        if (listeners.size === 0) this.cellsUpdateListeners.delete(sheetId);
+      }
+    };
+  }
+
+  private beginBatch(): void {
+    this.batchDepth++;
+  }
+
+  private endBatch(): void {
+    this.batchDepth = Math.max(0, this.batchDepth - 1);
+    if (this.batchDepth === 0) {
+      this.flushSheetUpdates();
+    }
+  }
+
+  private queueSheetUpdate(event: { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }): void {
+    const SheetId = event.address.sheet;
+    if (!this.pendingSheetUpdates.has(SheetId)) {
+      this.pendingSheetUpdates.set(SheetId, []);
+    }
+    this.pendingSheetUpdates.get(SheetId)!.push(event);
+  }
+
+  private flushSheetUpdates(): void {
+    if (this.pendingSheetUpdates.size === 0) return;
+    const updates = this.pendingSheetUpdates;
+    this.pendingSheetUpdates = new Map();
+    for (const [sheetId, events] of updates) {
+      const listeners = this.cellsUpdateListeners.get(sheetId);
+      if (listeners && events.length > 0) {
+        // Deliver one batched callback per listener
+        for (const listener of listeners) {
+          listener(events);
+        }
+      }
+    }
+  }
+
+  private emitCellUpdate(event: { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }): void {
+    // Immediate cell listener callbacks
+    const key = addressToKey(event.address);
+    const listeners = this.cellUpdateListeners.get(key);
+    if (listeners) {
+      for (const listener of listeners) listener(event);
+    }
+    // Queue for batched sheet listeners
+    this.queueSheetUpdate(event);
+    // If not in a batch, flush immediately for sheet listeners
+    if (this.batchDepth === 0) {
+      this.flushSheetUpdates();
+    }
   }
 }
 

@@ -547,6 +547,8 @@ Error management:
 ### React Integration - ✅ TODO
 - ✅ useSpreadsheet(engine: FormulaEngine, sheetName: string): Map<string, CellValue>
 - ✅ useCell(engine: FormulaEngine, sheetName: string, cellAddress: string): CellValue
+- ✅ onCellUpdate(address: SimpleCellAddress, listener: (event) => void): () => void
+- ✅ onCellsUpdate(sheetId: number, listener: (events) => void): () => void
 
 ## LLM Coding Instructions
 

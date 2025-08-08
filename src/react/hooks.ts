@@ -94,11 +94,9 @@ export function useSpreadsheet(
       return;
     }
 
-    // Subscribe to cell changes
-    const unsubscribeCellChanges = engine.on("cell-changed", (event) => {
-      if (event.address.sheet === sheetId) {
-        debouncedUpdate();
-      }
+    // Subscribe to batched sheet updates
+    const unsubscribeCellChanges = engine.onCellsUpdate(sheetId, () => {
+      debouncedUpdate();
     });
 
     // Subscribe to sheet operations that affect this sheet
@@ -136,9 +134,8 @@ export function useSerializedSheet(
   );
 
   React.useEffect(() => {
-    return engine.subscribe("cells-changed", (events) => {
-      const changes = events.filter((event) => event.address.sheet === sheetId);
-      if (changes.length > 0) {
+    return engine.onCellsUpdate(sheetId, (events) => {
+      if (events.length > 0) {
         setSerialized(engine.getSheetSerialized(sheetId));
       }
     });
