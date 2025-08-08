@@ -3,93 +3,72 @@
  */
 
 // Export the main engine
-export { FormulaEngine } from './src/core/engine';
+export { FormulaEngine } from "./src/core/engine";
 
 // Export core types
 export type {
+  // Sheet structure
+  BoundingRect,
+  CellType,
+  // Cell values and types
+  CellValue,
+  CellValueDetailedType,
+  CellValueType,
+  // Changes and events
+  ExportedChange,
+  FormatInfo,
+  FormulaEngineEvents,
+  // Configuration
+  FormulaEngineOptions,
+  FormulaError,
+  // Named expressions
+  NamedExpression,
+  NamedExpressionOptions,
+  RawCellContent,
+  // Results
+  Result,
+  SerializedNamedExpression,
   // Cell addressing
   SimpleCellAddress,
   SimpleCellRange,
-  
-  // Cell values and types
-  CellValue,
-  RawCellContent,
-  CellType,
-  CellValueType,
-  CellValueDetailedType,
-  FormulaError,
-  
-  // Sheet structure
-  BoundingRect,
-  FormatInfo,
-  
-  // Changes and events
-  ExportedChange,
-  FormulaEngineEvents,
-  
-  // Named expressions
-  NamedExpression,
-  SerializedNamedExpression,
-  NamedExpressionOptions,
-  
-  // Configuration
-  FormulaEngineOptions,
-  
-  // Results
-  Result
-} from './src/core/types';
+} from "./src/core/types";
 
 // Export utility functions
 export {
+  addressToKey,
   // Address conversion
   colNumberToLetter,
-  letterToColNumber,
-  addressToKey,
-  keyToAddress,
-  
+  getCellValueType,
+  isBoolean,
+  isCellEmpty,
   // Type guards
   isFormulaError,
-  isCellEmpty,
   isNumber,
   isString,
-  isBoolean,
-  getCellValueType
-} from './src/core/types';
+  keyToAddress,
+  letterToColNumber,
+} from "./src/core/types";
 
 // Export address utilities
 export {
-  parseCellAddress,
-  parseCellRange,
   addressToA1,
-  rangeToA1,
-  isAddressInRange,
+  adjustReferences,
+  createRange,
   doRangesOverlap,
+  expandRangeToInclude,
   getRangeSize,
+  isAddressInRange,
+  isValidAddress,
+  iterateRange,
   offsetAddress,
   offsetRange,
-  expandRangeToInclude,
-  iterateRange,
-  adjustReferences,
-  isValidAddress,
-  createRange
-} from './src/core/address';
+  parseCellAddress,
+  parseCellRange,
+  rangeToA1,
+} from "./src/core/address";
 
 // Export React integration (optional - only import if using React)
-export {
-  useSpreadsheet,
-  useCell,
-  useSpreadsheetRange,
-  useFormulaEngineEvents
-} from './src/react/hooks';
-
-export type {
-  UseSpreadsheetOptions,
-  UseCellOptions,
-  UseSpreadsheetRangeOptions,
-  SpreadsheetHookResult,
-  CellHookResult,
-  SpreadsheetRangeHookResult
-} from './src/react/types';
+export { useSerializedSheet } from "./src/react/hooks";
 
 // Version
-export const VERSION = '0.1.0';
+export const VERSION = "0.1.0";

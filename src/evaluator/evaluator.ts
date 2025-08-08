@@ -3,15 +3,15 @@
  * Handles AST evaluation, context management, value coercion, and evaluation strategies
  */
 
-import type { 
-  CellValue, 
-  SimpleCellAddress, 
+import type {
+  CellValue,
+  SimpleCellAddress,
   SimpleCellRange,
   FormulaError,
-  NamedExpression
-} from '../core/types';
-import type { 
-  ASTNode, 
+  NamedExpression,
+} from "../core/types";
+import type {
+  ASTNode,
   ValueNode,
   ReferenceNode,
   RangeNode,
@@ -20,24 +20,24 @@ import type {
   UnaryOpNode,
   ArrayNode,
   NamedExpressionNode,
-  ErrorNode
-} from '../parser/ast';
-import { DependencyGraph } from './dependency-graph';
-import { 
-  isFormulaError, 
+  ErrorNode,
+} from "../parser/ast";
+import { DependencyGraph } from "./dependency-graph";
+import {
+  isFormulaError,
   createStandardError,
   validateNumericArgument,
   ErrorHandler,
-  mapJSErrorToFormulaError
-} from './error-handler';
+  mapJSErrorToFormulaError,
+} from "./error-handler";
 import {
   to2DArray,
   elementWiseBinaryOp,
   elementWiseUnaryOp,
   getArrayDimensions,
-  broadcastToSize
-} from './array-evaluator';
-import { parseFormula, type SheetResolver } from '../parser/parser';
+  broadcastToSize,
+} from "./array-evaluator";
+import { parseFormula, type SheetResolver } from "../parser/parser";
 
 /**
  * Evaluation context containing necessary information
@@ -47,7 +47,10 @@ export interface EvaluationContext {
   currentCell?: SimpleCellAddress;
   namedExpressions: Map<string, NamedExpression>;
   getCellValue: (address: SimpleCellAddress) => CellValue;
-  getRangeValues: (range: SimpleCellRange, evaluationStack?: Set<string>) => CellValue[][];
+  getRangeValues: (
+    range: SimpleCellRange,
+    evaluationStack?: Set<string>
+  ) => CellValue[][];
   getFunction: (name: string) => FunctionDefinition | undefined;
   errorHandler: ErrorHandler;
   evaluationStack: Set<string>; // For cycle detection
@@ -71,10 +74,12 @@ export interface FunctionDefinition {
   name: string;
   minArgs?: number;
   maxArgs?: number;
-  evaluate: (args: CellValue[], context: EvaluationContext) => CellValue;
+  evaluate: (args: {
+    argValues: CellValue[];
+    argNodes: ASTNode[];
+    context: EvaluationContext;
+  }) => CellValue;
   isVolatile?: boolean;
-  acceptsArrays?: boolean;
-  returnsArray?: boolean;
 }
 
 /**
@@ -95,7 +100,7 @@ export class Evaluator {
   private functions: Map<string, FunctionDefinition>;
   private errorHandler: ErrorHandler;
   private evaluationCache: Map<string, CellValue>;
-  
+
   constructor(
     dependencyGraph: DependencyGraph,
     functions: Map<string, FunctionDefinition>,
@@ -106,43 +111,41 @@ export class Evaluator {
     this.errorHandler = errorHandler;
     this.evaluationCache = new Map();
   }
-  
+
   /**
    * Evaluates an AST node
    */
-  evaluate(
-    node: ASTNode,
-    context: EvaluationContext
-  ): EvaluationResult {
+  evaluate(node: ASTNode, context: EvaluationContext): EvaluationResult {
     const dependencies = new Set<string>();
-    
+
     try {
       const value = this.evaluateNode(node, context, dependencies);
-      
+
       // Check if result is an array
       const isArrayResult = Array.isArray(value);
-      const arrayDimensions = isArrayResult ? getArrayDimensions(value) : undefined;
-      
+      const arrayDimensions = isArrayResult
+        ? getArrayDimensions(value)
+        : undefined;
+
       return {
         value,
         dependencies,
         isArrayResult,
-        arrayDimensions
+        arrayDimensions,
       };
     } catch (error) {
       // Convert JavaScript errors to formula errors
-      const formulaError = error instanceof Error
-        ? mapJSErrorToFormulaError(error)
-        : '#ERROR!';
-        
+      const formulaError =
+        error instanceof Error ? mapJSErrorToFormulaError(error) : "#ERROR!";
+
       return {
         value: formulaError,
         dependencies,
-        isArrayResult: false
+        isArrayResult: false,
       };
     }
   }
-  
+
   /**
    * Evaluates a single node
    */
@@ -152,58 +155,82 @@ export class Evaluator {
     dependencies: Set<string>
   ): CellValue {
     switch (node.type) {
-      case 'value':
+      case "value":
         return this.evaluateValue(node as ValueNode);
-        
-      case 'reference':
-        return this.evaluateReference(node as ReferenceNode, context, dependencies);
-        
-      case 'range': {
-        const result = this.evaluateRange(node as RangeNode, context, dependencies);
+
+      case "reference":
+        return this.evaluateReference(
+          node as ReferenceNode,
+          context,
+          dependencies
+        );
+
+      case "range": {
+        const result = this.evaluateRange(
+          node as RangeNode,
+          context,
+          dependencies
+        );
         return result as unknown as CellValue;
       }
-        
-      case 'function':
-        return this.evaluateFunction(node as FunctionNode, context, dependencies);
-        
-      case 'binary-op':
-        return this.evaluateBinaryOp(node as BinaryOpNode, context, dependencies);
-        
-      case 'unary-op':
+
+      case "function":
+        return this.evaluateFunction(
+          node as FunctionNode,
+          context,
+          dependencies
+        );
+
+      case "binary-op":
+        return this.evaluateBinaryOp(
+          node as BinaryOpNode,
+          context,
+          dependencies
+        );
+
+      case "unary-op":
         return this.evaluateUnaryOp(node as UnaryOpNode, context, dependencies);
-        
-      case 'array': {
-        const result = this.evaluateArray(node as ArrayNode, context, dependencies);
+
+      case "array": {
+        const result = this.evaluateArray(
+          node as ArrayNode,
+          context,
+          dependencies
+        );
         return result as unknown as CellValue;
       }
-        
-      case 'named-expression':
-        return this.evaluateNamedExpression(node as NamedExpressionNode, context, dependencies);
-        
-      case 'error':
+
+      case "named-expression":
+        return this.evaluateNamedExpression(
+          node as NamedExpressionNode,
+          context,
+          dependencies
+        );
+
+      case "error":
         return this.evaluateError(node as ErrorNode);
-        
+
       default:
-        return createStandardError('#ERROR!', {
-          message: `Unknown node type: ${(node as any).type}`
+        return createStandardError("#ERROR!", {
+          message: `Unknown node type: ${(node as any).type}`,
         }).type;
     }
   }
-  
+
   /**
    * Evaluates a value node
    */
   private evaluateValue(node: ValueNode): CellValue {
     return node.value;
   }
-  
+
   /**
    * Evaluates an error node
    */
   private evaluateError(node: ErrorNode): FormulaError {
     return node.error;
   }
-  
+
   /**
    * Evaluates a named expression node
    */
@@ -214,75 +241,86 @@ export class Evaluator {
   ): CellValue {
     const namedExpr = this.resolveNamedExpression(node.name, context);
     if (!namedExpr) {
-      return '#NAME?';
+      return "#NAME?";
     }
-    
+
     const key = DependencyGraph.getNamedExpressionKey(
       namedExpr.name,
       namedExpr.scope
     );
     dependencies.add(key);
-    
+
     // Check for circular reference
     if (context.evaluationStack.has(key)) {
-      return '#CYCLE!';
+      return "#CYCLE!";
     }
-    
+
     // Parse and evaluate named expression
-    if (typeof namedExpr.expression === 'string') {
-      if (!namedExpr.expression.startsWith('=')) {
+    if (typeof namedExpr.expression === "string") {
+      if (!namedExpr.expression.startsWith("=")) {
         // Simple value
         const num = parseFloat(namedExpr.expression);
         if (!isNaN(num)) return num;
-        if (namedExpr.expression === 'TRUE') return true;
-        if (namedExpr.expression === 'FALSE') return false;
+        if (namedExpr.expression === "TRUE") return true;
+        if (namedExpr.expression === "FALSE") return false;
         return namedExpr.expression;
       } else {
         // Formula expression - need to evaluate it
         try {
           // Add this named expression to the evaluation stack to detect cycles
           context.evaluationStack.add(key);
-          
+
           // Parse the formula (remove the = prefix)
           const formula = namedExpr.expression.substring(1);
-          const ast = parseFormula(formula, context.currentSheet, context.sheetResolver);
-          
+          const ast = parseFormula(
+            formula,
+            context.currentSheet,
+            context.sheetResolver
+          );
+
           // Create a new context for evaluating the named expression
           const nestedContext: EvaluationContext = {
             ...context,
-            evaluationStack: new Set(context.evaluationStack)
+            evaluationStack: new Set(context.evaluationStack),
           };
-          
+
           const result = this.evaluate(ast, nestedContext);
-          
+
           // Merge dependencies from the nested evaluation
           for (const dep of result.dependencies) {
             dependencies.add(dep);
           }
-          
+
           // Remove from evaluation stack
           context.evaluationStack.delete(key);
-          
+
           return result.value;
         } catch (error) {
           context.evaluationStack.delete(key);
-          return '#NAME?';
+          return "#NAME?";
         }
       }
     }
-    
-    return '#NAME?';
+
+    return "#NAME?";
   }
-  
+
   /**
    * Helper to check if a cell is within a range
    */
-  private isCellInRange(cell: SimpleCellAddress, range: SimpleCellRange): boolean {
-    return cell.sheet === range.start.sheet &&
-           cell.row >= range.start.row && cell.row <= range.end.row &&
-           cell.col >= range.start.col && cell.col <= range.end.col;
+  private isCellInRange(
+    cell: SimpleCellAddress,
+    range: SimpleCellRange
+  ): boolean {
+    return (
+      cell.sheet === range.start.sheet &&
+      cell.row >= range.start.row &&
+      cell.row <= range.end.row &&
+      cell.col >= range.start.col &&
+      cell.col <= range.end.col
+    );
   }
-  
+
   /**
    * Evaluates a reference node
    */
@@ -294,15 +332,15 @@ export class Evaluator {
     const address = node.address;
     const key = DependencyGraph.getCellKey(address);
     dependencies.add(key);
-    
+
     // Check for circular reference
     if (context.evaluationStack.has(key)) {
-      return '#CYCLE!';
+      return "#CYCLE!";
     }
-    
+
     return context.getCellValue(address);
   }
-  
+
   /**
    * Evaluates a range node
    */
@@ -312,15 +350,15 @@ export class Evaluator {
     dependencies: Set<string>
   ): CellValue[][] {
     const range = node.range;
-    
+
     // Add range to dependencies
     const key = DependencyGraph.getRangeKey(range);
     dependencies.add(key);
-    
+
     // Check if this is an infinite range
     const isInfiniteColumn = range.end.row === Number.MAX_SAFE_INTEGER;
     const isInfiniteRow = range.end.col === Number.MAX_SAFE_INTEGER;
-    
+
     // Check for circular reference: if current cell is within this range
     if (context.currentCell && this.isCellInRange(context.currentCell, range)) {
       // We're trying to evaluate a range that includes the current cell
@@ -328,20 +366,24 @@ export class Evaluator {
       if (context.evaluationStack.has(cellKey)) {
         // This creates a circular reference
         // Return an array filled with #CYCLE! errors
-        const rows = isInfiniteColumn ? 1 : Math.min(range.end.row - range.start.row + 1, 1000);
-        const cols = isInfiniteRow ? 1 : Math.min(range.end.col - range.start.col + 1, 1000);
+        const rows = isInfiniteColumn
+          ? 1
+          : Math.min(range.end.row - range.start.row + 1, 1000);
+        const cols = isInfiniteRow
+          ? 1
+          : Math.min(range.end.col - range.start.col + 1, 1000);
         const result: CellValue[][] = [];
         for (let r = 0; r < rows; r++) {
           const row: CellValue[] = [];
           for (let c = 0; c < cols; c++) {
-            row.push('#CYCLE!');
+            row.push("#CYCLE!");
           }
           result.push(row);
         }
         return result;
       }
     }
-    
+
     if (!isInfiniteColumn && !isInfiniteRow) {
       // Normal range - add individual cells to dependencies
       for (let row = range.start.row; row <= range.end.row; row++) {
@@ -349,7 +391,7 @@ export class Evaluator {
           const cellKey = DependencyGraph.getCellKey({
             sheet: range.start.sheet,
             col,
-            row
+            row,
           });
           dependencies.add(cellKey);
         }
@@ -359,10 +401,10 @@ export class Evaluator {
       // and add dependencies dynamically based on actual populated cells
       // This is handled by the getRangeValues implementation
     }
-    
+
     return context.getRangeValues(range, context.evaluationStack);
   }
-  
+
   /**
    * Evaluates a function call
    */
@@ -373,66 +415,76 @@ export class Evaluator {
   ): CellValue {
     const func = context.getFunction(node.name.toUpperCase());
     if (!func) {
-      return createStandardError('#NAME?', {
+      return createStandardError("#NAME?", {
         functionName: node.name,
-        message: `Unknown function: ${node.name}`
+        message: `Unknown function: ${node.name}`,
       }).type;
     }
-    
+
     // Evaluate arguments
-    const args: CellValue[] = [];
-    
+    const argValues: CellValue[] = [];
+
     // IS* functions should receive errors as arguments without propagation
-    const isErrorCheckingFunction = node.name.toUpperCase().startsWith('IS');
-    
+    const upperName = node.name.toUpperCase();
+    const isErrorCheckingFunction = upperName.startsWith("IS");
+
     // IF function needs special handling - only propagate errors from condition
-    const isIfFunction = node.name.toUpperCase() === 'IF';
-    
+    const isIfFunction = upperName === "IF";
+
+    // Error-handling functions like IFERROR must also receive error args
+    const isErrorHandlingFunction =
+      upperName === "IFERROR" || upperName === "IFNA";
+
     for (let i = 0; i < node.args.length; i++) {
       const argNode = node.args[i];
       if (!argNode) continue;
       const argValue = this.evaluateNode(argNode, context, dependencies);
-      
+
       // Check for errors in arguments
-      if (isFormulaError(argValue) && !isErrorCheckingFunction) {
+      if (
+        isFormulaError(argValue) &&
+        !isErrorCheckingFunction &&
+        !isErrorHandlingFunction
+      ) {
         // For IF, only propagate errors from the condition (first argument)
         if (!isIfFunction || i === 0) {
           return argValue;
         }
       }
-      args.push(argValue);
+      argValues.push(argValue);
     }
-    
+
     // Check argument count
-    if (func.minArgs !== undefined && args.length < func.minArgs) {
-      return createStandardError('#VALUE!', {
+    if (func.minArgs !== undefined && argValues.length < func.minArgs) {
+      return createStandardError("#VALUE!", {
         functionName: node.name,
-        message: `Too few arguments for ${node.name}`
+        message: `Too few arguments for ${node.name}`,
       }).type;
     }
-    
-    if (func.maxArgs !== undefined && args.length > func.maxArgs) {
-      return createStandardError('#VALUE!', {
+
+    if (func.maxArgs !== undefined && argValues.length > func.maxArgs) {
+      return createStandardError("#VALUE!", {
         functionName: node.name,
-        message: `Too many arguments for ${node.name}`
+        message: `Too many arguments for ${node.name}`,
       }).type;
     }
-    
+
     // Execute function
     try {
-      return func.evaluate(args, context);
+      return func.evaluate({ argValues, argNodes: node.args, context });
     } catch (error) {
-      if (typeof error === 'string' && isFormulaError(error)) {
+      if (typeof error === "string" && isFormulaError(error)) {
         return error;
       }
-      
-      return createStandardError('#ERROR!', {
+
+      return createStandardError("#ERROR!", {
         functionName: node.name,
-        message: error instanceof Error ? error.message : 'Function evaluation failed'
+        message:
+          error instanceof Error ? error.message : "Function evaluation failed",
       }).type;
     }
   }
-  
+
   /**
    * Evaluates a binary operation
    */
@@ -443,29 +495,29 @@ export class Evaluator {
   ): CellValue {
     const left = this.evaluateNode(node.left, context, dependencies);
     const right = this.evaluateNode(node.right, context, dependencies);
-    
+
     // Handle array operations
     if (Array.isArray(left) || Array.isArray(right)) {
       const leftArray = to2DArray(left);
       const rightArray = to2DArray(right);
-      
+
       const operation = this.getBinaryOperation(node.operator);
       const result = elementWiseBinaryOp(leftArray, rightArray, operation);
-      
-      if (typeof result === 'string' && isFormulaError(result)) return result;
-      
+
+      if (typeof result === "string" && isFormulaError(result)) return result;
+
       // Return as single value if 1x1 array
       if (result.length === 1 && result[0]?.length === 1) {
         return result[0][0];
       }
-      
+
       return result as unknown as CellValue;
     }
-    
+
     // Scalar operation
     return this.evaluateBinaryScalar(node.operator, left, right);
   }
-  
+
   /**
    * Evaluates a unary operation
    */
@@ -475,25 +527,25 @@ export class Evaluator {
     dependencies: Set<string>
   ): CellValue {
     const operand = this.evaluateNode(node.operand, context, dependencies);
-    
+
     // Handle array operations
     if (Array.isArray(operand)) {
       const array = to2DArray(operand);
       const operation = this.getUnaryOperation(node.operator);
       const result = elementWiseUnaryOp(array, operation);
-      
+
       // Return as single value if 1x1 array
       if (result.length === 1 && result[0]?.length === 1) {
         return result[0][0];
       }
-      
+
       return result as unknown as CellValue;
     }
-    
+
     // Scalar operation
     return this.evaluateUnaryScalar(node.operator, operand);
   }
-  
+
   /**
    * Evaluates an array node
    */
@@ -503,13 +555,13 @@ export class Evaluator {
     dependencies: Set<string>
   ): CellValue[][] {
     const result: CellValue[][] = [];
-    
+
     for (const row of node.elements) {
       const evaluatedRow: CellValue[] = [];
-      
+
       for (const element of row) {
         const value = this.evaluateNode(element, context, dependencies);
-        
+
         // Flatten nested arrays in array literals
         if (Array.isArray(value) && Array.isArray(value[0])) {
           // This is a 2D array - take first element
@@ -521,224 +573,230 @@ export class Evaluator {
           evaluatedRow.push(value);
         }
       }
-      
+
       result.push(evaluatedRow);
     }
-    
+
     return result;
   }
-  
+
   /**
    * Binary scalar operations
    */
-  private evaluateBinaryScalar(operator: string, left: CellValue, right: CellValue): CellValue {
+  private evaluateBinaryScalar(
+    operator: string,
+    left: CellValue,
+    right: CellValue
+  ): CellValue {
     // Check for errors
     if (isFormulaError(left)) return left;
     if (isFormulaError(right)) return right;
-    
+
     switch (operator) {
-      case '+':
+      case "+":
         return this.add(left, right);
-      case '-':
+      case "-":
         return this.subtract(left, right);
-      case '*':
+      case "*":
         return this.multiply(left, right);
-      case '/':
+      case "/":
         return this.divide(left, right);
-      case '^':
+      case "^":
         return this.power(left, right);
-      case '&':
+      case "&":
         return this.concatenate(left, right);
-      case '=':
+      case "=":
         return this.equals(left, right);
-      case '<>':
+      case "<>":
         return this.notEquals(left, right);
-      case '<':
+      case "<":
         return this.lessThan(left, right);
-      case '<=':
+      case "<=":
         return this.lessThanOrEqual(left, right);
-      case '>':
+      case ">":
         return this.greaterThan(left, right);
-      case '>=':
+      case ">=":
         return this.greaterThanOrEqual(left, right);
       default:
-        return '#ERROR!';
+        return "#ERROR!";
     }
   }
-  
+
   /**
    * Unary scalar operations
    */
   private evaluateUnaryScalar(operator: string, operand: CellValue): CellValue {
     if (isFormulaError(operand)) return operand;
-    
+
     switch (operator) {
-      case '-':
+      case "-":
         return this.negate(operand);
-      case '+':
+      case "+":
         return this.unaryPlus(operand);
-      case '%':
+      case "%":
         return this.percent(operand);
       default:
-        return '#ERROR!';
+        return "#ERROR!";
     }
   }
-  
+
   /**
    * Gets binary operation function
    */
-  private getBinaryOperation(operator: string): (a: CellValue, b: CellValue) => CellValue {
+  private getBinaryOperation(
+    operator: string
+  ): (a: CellValue, b: CellValue) => CellValue {
     return (a, b) => this.evaluateBinaryScalar(operator, a, b);
   }
-  
+
   /**
    * Gets unary operation function
    */
   private getUnaryOperation(operator: string): (value: CellValue) => CellValue {
     return (value) => this.evaluateUnaryScalar(operator, value);
   }
-  
+
   // Arithmetic operations
-  
+
   private add(left: CellValue, right: CellValue): CellValue {
     const leftNum = this.coerceToNumber(left);
     const rightNum = this.coerceToNumber(right);
-    
+
     if (isFormulaError(leftNum)) return leftNum;
     if (isFormulaError(rightNum)) return rightNum;
-    
+
     return leftNum + rightNum;
   }
-  
+
   private subtract(left: CellValue, right: CellValue): CellValue {
     const leftNum = this.coerceToNumber(left);
     const rightNum = this.coerceToNumber(right);
-    
+
     if (isFormulaError(leftNum)) return leftNum;
     if (isFormulaError(rightNum)) return rightNum;
-    
+
     return leftNum - rightNum;
   }
-  
+
   private multiply(left: CellValue, right: CellValue): CellValue {
     const leftNum = this.coerceToNumber(left);
     const rightNum = this.coerceToNumber(right);
-    
+
     if (isFormulaError(leftNum)) return leftNum;
     if (isFormulaError(rightNum)) return rightNum;
-    
+
     return leftNum * rightNum;
   }
-  
+
   private divide(left: CellValue, right: CellValue): CellValue {
     const leftNum = this.coerceToNumber(left);
     const rightNum = this.coerceToNumber(right);
-    
+
     if (isFormulaError(leftNum)) return leftNum;
     if (isFormulaError(rightNum)) return rightNum;
-    
+
     if (rightNum === 0) {
-      return '#DIV/0!';
+      return "#DIV/0!";
     }
-    
+
     return leftNum / rightNum;
   }
-  
+
   private power(left: CellValue, right: CellValue): CellValue {
     const leftNum = this.coerceToNumber(left);
     const rightNum = this.coerceToNumber(right);
-    
+
     if (isFormulaError(leftNum)) return leftNum;
     if (isFormulaError(rightNum)) return rightNum;
-    
+
     const result = Math.pow(leftNum, rightNum);
-    
+
     if (!isFinite(result)) {
-      return '#NUM!';
+      return "#NUM!";
     }
-    
+
     return result;
   }
-  
+
   private negate(operand: CellValue): CellValue {
     const num = this.coerceToNumber(operand);
     if (isFormulaError(num)) return num;
     return -num;
   }
-  
+
   private unaryPlus(operand: CellValue): CellValue {
     const num = this.coerceToNumber(operand);
     if (isFormulaError(num)) return num;
     return num;
   }
-  
+
   private percent(operand: CellValue): CellValue {
     const num = this.coerceToNumber(operand);
     if (isFormulaError(num)) return num;
     return num / 100;
   }
-  
+
   // String operations
-  
+
   private concatenate(left: CellValue, right: CellValue): CellValue {
     const leftStr = this.coerceToString(left);
     const rightStr = this.coerceToString(right);
-    
+
     if (isFormulaError(leftStr)) return leftStr;
     if (isFormulaError(rightStr)) return rightStr;
-    
+
     return leftStr + rightStr;
   }
-  
+
   // Comparison operations
-  
+
   private equals(left: CellValue, right: CellValue): boolean {
     // Handle errors
     if (isFormulaError(left) || isFormulaError(right)) {
       return left === right;
     }
-    
+
     // Handle undefined (empty cells)
     if (left === undefined && right === undefined) return true;
     if (left === undefined || right === undefined) return false;
-    
+
     // Same type comparison
     if (typeof left === typeof right) {
       return left === right;
     }
-    
+
     // Different types are not equal in Excel
     return false;
   }
-  
+
   private notEquals(left: CellValue, right: CellValue): boolean {
     return !this.equals(left, right);
   }
-  
+
   private lessThan(left: CellValue, right: CellValue): CellValue {
     const result = this.compare(left, right);
     if (isFormulaError(result)) return result;
     return result < 0;
   }
-  
+
   private lessThanOrEqual(left: CellValue, right: CellValue): CellValue {
     const result = this.compare(left, right);
     if (isFormulaError(result)) return result;
     return result <= 0;
   }
-  
+
   private greaterThan(left: CellValue, right: CellValue): CellValue {
     const result = this.compare(left, right);
     if (isFormulaError(result)) return result;
     return result > 0;
   }
-  
+
   private greaterThanOrEqual(left: CellValue, right: CellValue): CellValue {
     const result = this.compare(left, right);
     if (isFormulaError(result)) return result;
     return result >= 0;
   }
-  
+
   /**
    * Compares two values according to Excel rules
    */
@@ -746,91 +804,89 @@ export class Evaluator {
     // Handle errors
     if (isFormulaError(left)) return left;
     if (isFormulaError(right)) return right;
-    
+
     // Handle empty cells
     if (left === undefined) left = 0;
     if (right === undefined) right = 0;
-    
+
     // Numbers
-    if (typeof left === 'number' && typeof right === 'number') {
+    if (typeof left === "number" && typeof right === "number") {
       return left - right;
     }
-    
+
     // Strings
-    if (typeof left === 'string' && typeof right === 'string') {
+    if (typeof left === "string" && typeof right === "string") {
       return left.localeCompare(right);
     }
-    
+
     // Booleans
-    if (typeof left === 'boolean' && typeof right === 'boolean') {
+    if (typeof left === "boolean" && typeof right === "boolean") {
       return (left ? 1 : 0) - (right ? 1 : 0);
     }
-    
+
     // Mixed types - Excel type hierarchy: number < string < boolean
     const typeOrder = { number: 0, string: 1, boolean: 2 };
     const leftType = typeof left as keyof typeof typeOrder;
     const rightType = typeof right as keyof typeof typeOrder;
-    
+
     return typeOrder[leftType] - typeOrder[rightType];
   }
-  
+
   // Type coercion
-  
+
   /**
    * Coerces a value to number
    */
   coerceToNumber(value: CellValue): number | FormulaError {
     if (isFormulaError(value)) return value;
-    
-    if (typeof value === 'number') return value;
-    if (typeof value === 'boolean') return value ? 1 : 0;
+
+    if (typeof value === "number") return value;
+    if (typeof value === "boolean") return value ? 1 : 0;
     if (value === undefined) return 0;
-    
-    if (typeof value === 'string') {
-      if (value === '') return 0;
+
+    if (typeof value === "string") {
+      if (value === "") return 0;
       const num = parseFloat(value);
-      if (isNaN(num)) return '#VALUE!';
+      if (isNaN(num)) return "#VALUE!";
       return num;
     }
-    
-    return '#VALUE!';
+
+    return "#VALUE!";
   }
-  
+
   /**
    * Coerces a value to string
    */
   coerceToString(value: CellValue): string | FormulaError {
     if (isFormulaError(value)) return value;
-    
-    if (typeof value === 'string') return value;
-    if (typeof value === 'number') return value.toString();
-    if (typeof value === 'boolean') return value ? 'TRUE' : 'FALSE';
-    if (value === undefined) return '';
-    
-    return '#VALUE!';
+
+    if (typeof value === "string") return value;
+    if (typeof value === "number") return value.toString();
+    if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+    if (value === undefined) return "";
+
+    return "#VALUE!";
   }
-  
+
   /**
    * Coerces a value to boolean
    */
   coerceToBoolean(value: CellValue): boolean | FormulaError {
     if (isFormulaError(value)) return value;
-    
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'number') return value !== 0;
-    if (typeof value === 'string') {
+
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    if (typeof value === "string") {
       const upper = value.toUpperCase();
-      if (upper === 'TRUE') return true;
-      if (upper === 'FALSE') return false;
+      if (upper === "TRUE") return true;
+      if (upper === "FALSE") return false;
       return value.length > 0;
     }
     if (value === undefined) return false;
-    
-    return '#VALUE!';
-  }
-  
 
-  
+    return "#VALUE!";
+  }
+
   /**
    * Resolves a named expression
    */
@@ -845,11 +901,11 @@ export class Evaluator {
         return context.namedExpressions.get(sheetScoped);
       }
     }
-    
+
     // Check global names
     return context.namedExpressions.get(name);
   }
-  
+
   /**
    * Clears evaluation cache
    */

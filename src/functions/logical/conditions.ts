@@ -25,7 +25,7 @@ function coerceToBoolean(value: CellValue): boolean {
 // IF(condition, value_if_true, value_if_false)
 export const IF: FunctionDefinition = {
   name: 'IF',
-  evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
+  evaluate: ({ argValues: args }): CellValue => {
     if (args.length < 2 || args.length > 3) {
       throw new Error('#VALUE!');
     }
@@ -46,7 +46,7 @@ export const IF: FunctionDefinition = {
 // NOT(logical)
 export const NOT: FunctionDefinition = {
   name: 'NOT',
-  evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
+  evaluate: ({ argValues: args }): CellValue => {
     if (args.length !== 1) {
       throw new Error('#VALUE!');
     }
@@ -63,7 +63,7 @@ export const NOT: FunctionDefinition = {
 // OR(logical1, [logical2], ...)
 export const OR: FunctionDefinition = {
   name: 'OR',
-  evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
+  evaluate: ({ argValues: args }): CellValue => {
     if (args.length === 0) {
       throw new Error('#VALUE!');
     }
@@ -85,7 +85,7 @@ export const OR: FunctionDefinition = {
 // AND(logical1, [logical2], ...)
 export const AND: FunctionDefinition = {
   name: 'AND',
-  evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
+  evaluate: ({ argValues: args }): CellValue => {
     if (args.length === 0) {
       throw new Error('#VALUE!');
     }
@@ -107,7 +107,7 @@ export const AND: FunctionDefinition = {
 // TRUE()
 export const TRUE_FUNC: FunctionDefinition = {
   name: 'TRUE',
-  evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
+  evaluate: ({ argValues: args }): CellValue => {
     if (args.length !== 0) {
       throw new Error('#VALUE!');
     }
@@ -118,11 +118,26 @@ export const TRUE_FUNC: FunctionDefinition = {
 // FALSE()
 export const FALSE_FUNC: FunctionDefinition = {
   name: 'FALSE',
-  evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
+  evaluate: ({ argValues: args }): CellValue => {
     if (args.length !== 0) {
       throw new Error('#VALUE!');
     }
     return false;
+  }
+};
+
+// IFERROR(value, value_if_error)
+export const IFERROR: FunctionDefinition = {
+  name: 'IFERROR',
+  evaluate: ({ argValues: args }): CellValue => {
+    if (args.length !== 2) {
+      throw new Error('#VALUE!');
+    }
+    const value = args[0];
+    if (isFormulaError(value)) {
+      return args[1];
+    }
+    return value;
   }
 };
 
@@ -133,5 +148,6 @@ export const logicalConditionFunctions: FunctionDefinition[] = [
   OR,
   AND,
   TRUE_FUNC,
-  FALSE_FUNC
+  FALSE_FUNC,
+  IFERROR
 ];

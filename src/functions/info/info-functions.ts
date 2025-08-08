@@ -1,13 +1,16 @@
-import type { CellValue } from '../../core/types';
-import type { FunctionDefinition, EvaluationContext } from '../../evaluator/evaluator';
-import { isFormulaError, coerceToNumber, propagateError } from '../index';
+import type { CellValue } from "../../core/types";
+import type {
+  FunctionDefinition,
+  EvaluationContext,
+} from "../../evaluator/evaluator";
+import { isFormulaError, coerceToNumber, propagateError } from "../index";
 
 // ISEVEN(number)
 export const ISEVEN: FunctionDefinition = {
-  name: 'ISEVEN',
-  evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
+  name: "ISEVEN",
+  evaluate: ({ argValues: args }): CellValue => {
     if (args.length !== 1) {
-      throw new Error('#VALUE!');
+      throw new Error("#VALUE!");
     }
 
     // Check for errors
@@ -22,15 +25,15 @@ export const ISEVEN: FunctionDefinition = {
     } catch {
       return false;
     }
-  }
+  },
 };
 
 // ISODD(number)
 export const ISODD: FunctionDefinition = {
-  name: 'ISODD',
-  evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
+  name: "ISODD",
+  evaluate: ({ argValues: args }): CellValue => {
     if (args.length !== 1) {
-      throw new Error('#VALUE!');
+      throw new Error("#VALUE!");
     }
 
     // Check for errors
@@ -45,21 +48,20 @@ export const ISODD: FunctionDefinition = {
     } catch {
       return false;
     }
-  }
+  },
 };
 
 // ISBLANK(value)
 export const ISBLANK: FunctionDefinition = {
-  name: 'ISBLANK',
-  acceptsArrays: true,
-  evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
+  name: "ISBLANK",
+  evaluate: ({ argValues: args }): CellValue => {
     if (args.length !== 1) {
-      throw new Error('#VALUE!');
+      throw new Error("#VALUE!");
     }
 
     // Don't propagate errors for IS* functions - they test the value
     const value = args[0];
-    
+
     // If the value is an array (range), check if all cells are blank
     if (Array.isArray(value)) {
       // Flatten the array and check if all values are blank
@@ -67,95 +69,95 @@ export const ISBLANK: FunctionDefinition = {
         if (Array.isArray(v)) {
           return v.every(checkBlank);
         }
-        return v === undefined || v === null || v === '';
+        return v === undefined || v === null || v === "";
       };
       return checkBlank(value);
     }
-    
+
     // Single value check
-    return value === undefined || value === null || value === '';
-  }
+    return value === undefined || value === null || value === "";
+  },
 };
 
 // ISERROR(value)
 export const ISERROR: FunctionDefinition = {
-  name: 'ISERROR',
-  evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
+  name: "ISERROR",
+  evaluate: ({ argValues: args }): CellValue => {
     if (args.length !== 1) {
-      throw new Error('#VALUE!');
+      throw new Error("#VALUE!");
     }
 
     // Don't propagate errors for IS* functions - they test the value
     const value = args[0];
     return isFormulaError(value);
-  }
+  },
 };
 
 // ISNA(value)
 export const ISNA: FunctionDefinition = {
-  name: 'ISNA',
-  evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
+  name: "ISNA",
+  evaluate: ({ argValues: args }): CellValue => {
     if (args.length !== 1) {
-      throw new Error('#VALUE!');
+      throw new Error("#VALUE!");
     }
 
     // Don't propagate errors for IS* functions - they test the value
     const value = args[0];
-    return value === '#N/A';
-  }
+    return value === "#N/A";
+  },
 };
 
 // ISNUMBER(value)
 export const ISNUMBER: FunctionDefinition = {
-  name: 'ISNUMBER',
-  evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
+  name: "ISNUMBER",
+  evaluate: ({ argValues: args }): CellValue => {
     if (args.length !== 1) {
-      throw new Error('#VALUE!');
+      throw new Error("#VALUE!");
     }
 
     // Don't propagate errors for IS* functions - they test the value
     const value = args[0];
-    return typeof value === 'number';
-  }
+    return typeof value === "number";
+  },
 };
 
 // ISTEXT(value)
 export const ISTEXT: FunctionDefinition = {
-  name: 'ISTEXT',
-  evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
+  name: "ISTEXT",
+  evaluate: ({ argValues: args }): CellValue => {
     if (args.length !== 1) {
-      throw new Error('#VALUE!');
+      throw new Error("#VALUE!");
     }
 
     // Don't propagate errors for IS* functions - they test the value
     const value = args[0];
-    return typeof value === 'string' && !isFormulaError(value);
-  }
+    return typeof value === "string" && !isFormulaError(value);
+  },
 };
 
 // ISLOGICAL(value)
 export const ISLOGICAL: FunctionDefinition = {
-  name: 'ISLOGICAL',
-  evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
+  name: "ISLOGICAL",
+  evaluate: ({ argValues: args }): CellValue => {
     if (args.length !== 1) {
-      throw new Error('#VALUE!');
+      throw new Error("#VALUE!");
     }
 
     // Don't propagate errors for IS* functions - they test the value
     const value = args[0];
-    return typeof value === 'boolean';
-  }
+    return typeof value === "boolean";
+  },
 };
 
 // NA() - returns #N/A error
 export const NA: FunctionDefinition = {
-  name: 'NA',
-  evaluate: (args: CellValue[], context: EvaluationContext): CellValue => {
+  name: "NA",
+  evaluate: ({ argValues: args }): CellValue => {
     if (args.length !== 0) {
-      throw new Error('#VALUE!');
+      throw new Error("#VALUE!");
     }
-    return '#N/A';
-  }
+    return "#N/A";
+  },
 };
 
 // Export all info functions
@@ -168,5 +170,5 @@ export const infoFunctions: FunctionDefinition[] = [
   ISNUMBER,
   ISTEXT,
   ISLOGICAL,
-  NA
+  NA,
 ];

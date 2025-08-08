@@ -134,6 +134,24 @@ describe('Statistical Functions', () => {
     });
   });
 
+  describe('SUMPRODUCT function', () => {
+    test('basic element-wise product sum with rows', () => {
+      expect(evaluateFormula('=SUMPRODUCT({1;2;3},{4;5;6})')).toBe(32);
+    });
+
+    test('element-wise product sum with columns', () => {
+      expect(evaluateFormula('=SUMPRODUCT({1,2,3},{4,5,6})')).toBe(32);
+    });
+
+    test('numeric strings are coerced; text treated as 0; booleans to 1/0', () => {
+      expect(evaluateFormula('=SUMPRODUCT({"1","2","x"},{TRUE,FALSE,3})')).toBe(1);
+    });
+
+    test('mismatched dimensions return #VALUE!', () => {
+      expect(evaluateFormula('=SUMPRODUCT({1,2},{3,4,5})')).toBe('#VALUE!');
+    });
+  });
+
   describe('MEDIAN function', () => {
     test('Median of odd number of values', () => {
       expect(evaluateFormula('=MEDIAN(1, 2, 3, 4, 5)')).toBe(3);

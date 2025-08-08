@@ -107,11 +107,13 @@ export interface ArrayFormula {
 // Function definition types
 export interface FunctionDefinition {
   name: string;
-  evaluate: (...args: any[]) => CellValue;
-  validateArgs?: (args: unknown[]) => boolean;
+  evaluate: (args: {
+    argValues: CellValue[];
+    argNodes: ASTNode[];
+    context: EvaluationContext;
+  }) => CellValue;
   minArgs?: number;
   maxArgs?: number;
-  isVolatile?: boolean; // Functions like NOW(), RAND() that should recalculate on every change
 }
 
 // Parser and AST types

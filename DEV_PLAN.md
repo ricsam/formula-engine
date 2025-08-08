@@ -353,6 +353,7 @@ Error management:
 - ✅ VAR(...numbers) - Variance
 - ✅ COVAR(data1, data2) - Covariance
 - ✅ GAMMA(number) - Gamma function
+ - ✅ SUMPRODUCT(array1, array2, ...) - Sum of element-wise products
 
 ### Logical Functions
 
@@ -412,6 +413,7 @@ Error management:
 - ✅ ROWS(array) - Count rows
 - ✅ ADDRESS(row, col, absMode, a1Style, sheet) - Create address string
 - ✅ FORMULATEXT(reference) - Get formula as text
+ - ✅ INDIRECT(ref_text) - Indirect reference
 
 ### Info Functions
 

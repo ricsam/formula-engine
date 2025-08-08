@@ -31,7 +31,7 @@ describe('Evaluator Integration Tests', () => {
   functions.set('SUM', {
     name: 'SUM',
     minArgs: 1,
-    evaluate: (args: CellValue[]) => {
+    evaluate: ({ argValues: args }) => {
       let sum = 0;
       for (const arg of args) {
         if (Array.isArray(arg)) {
@@ -50,7 +50,7 @@ describe('Evaluator Integration Tests', () => {
   functions.set('AVERAGE', {
     name: 'AVERAGE',
     minArgs: 1,
-    evaluate: (args: CellValue[]) => {
+    evaluate: ({ argValues: args }) => {
       let sum = 0;
       let count = 0;
       for (const arg of args) {
@@ -74,7 +74,7 @@ describe('Evaluator Integration Tests', () => {
   functions.set('MAX', {
     name: 'MAX',
     minArgs: 1,
-    evaluate: (args: CellValue[]) => {
+    evaluate: ({ argValues: args }) => {
       let max = -Infinity;
       let hasNumbers = false;
       for (const arg of args) {
@@ -98,7 +98,7 @@ describe('Evaluator Integration Tests', () => {
   functions.set('MIN', {
     name: 'MIN',
     minArgs: 1,
-    evaluate: (args: CellValue[]) => {
+    evaluate: ({ argValues: args }) => {
       let min = Infinity;
       let hasNumbers = false;
       for (const arg of args) {
@@ -123,7 +123,7 @@ describe('Evaluator Integration Tests', () => {
   functions.set('CONCATENATE', {
     name: 'CONCATENATE',
     minArgs: 1,
-    evaluate: (args: CellValue[]) => {
+    evaluate: ({ argValues: args }) => {
       let result = '';
       for (const arg of args) {
         if (Array.isArray(arg)) {
@@ -143,7 +143,7 @@ describe('Evaluator Integration Tests', () => {
     name: 'UPPER',
     minArgs: 1,
     maxArgs: 1,
-    evaluate: (args: CellValue[]) => {
+    evaluate: ({ argValues: args }) => {
       const text = args[0];
       if (typeof text !== 'string') return '#VALUE!';
       return text.toUpperCase();
@@ -155,7 +155,7 @@ describe('Evaluator Integration Tests', () => {
     name: 'IF',
     minArgs: 3,
     maxArgs: 3,
-    evaluate: (args: CellValue[]) => {
+    evaluate: ({ argValues: args }) => {
       const condition = args[0];
       const trueValue = args[1];
       const falseValue = args[2];
@@ -173,7 +173,7 @@ describe('Evaluator Integration Tests', () => {
   functions.set('AND', {
     name: 'AND',
     minArgs: 1,
-    evaluate: (args: CellValue[]) => {
+    evaluate: ({ argValues: args }) => {
       for (const arg of args) {
         if (Array.isArray(arg)) {
           const flat = arg.flat();

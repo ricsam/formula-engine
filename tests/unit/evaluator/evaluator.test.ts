@@ -42,7 +42,7 @@ describe('Evaluator', () => {
     functions.set('SUM', {
       name: 'SUM',
       minArgs: 1,
-      evaluate: (args: CellValue[]) => {
+      evaluate: ({ argValues: args }) => {
         let sum = 0;
         for (const arg of args) {
           if (Array.isArray(arg)) {
@@ -63,7 +63,7 @@ describe('Evaluator', () => {
       name: 'UPPER',
       minArgs: 1,
       maxArgs: 1,
-      evaluate: (args: CellValue[]) => {
+      evaluate: ({ argValues: args }) => {
         const text = args[0];
         if (typeof text !== 'string') return '#VALUE!';
         return text.toUpperCase();

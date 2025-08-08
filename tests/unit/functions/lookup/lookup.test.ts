@@ -70,6 +70,128 @@ describe('Lookup Functions', () => {
     });
   });
 
+  describe('ROW/COLUMN/ROWS/COLUMNS/CHOOSE', () => {
+    test('ROW no-arg returns current row (1-based)', () => {
+      // Simulate current cell via evaluator context
+      const ast = Parser.parse('=ROW()', 0);
+      const context: EvaluationContext = {
+        currentSheet: 0,
+        currentCell: { sheet: 0, col: 0, row: 4 },
+        namedExpressions: new Map(),
+        getCellValue: () => undefined,
+        getRangeValues: () => [[]],
+        getFunction: (name: string) => functionRegistry.get(name),
+        errorHandler,
+        evaluationStack: new Set(),
+      };
+      const result = evaluator.evaluate(ast, context).value;
+      expect(result).toBe(5);
+    });
+
+    test('COLUMN no-arg returns current column (1-based)', () => {
+      const ast = Parser.parse('=COLUMN()', 0);
+      const context: EvaluationContext = {
+        currentSheet: 0,
+        currentCell: { sheet: 0, col: 2, row: 2 },
+        namedExpressions: new Map(),
+        getCellValue: () => undefined,
+        getRangeValues: () => [[]],
+        getFunction: (name: string) => functionRegistry.get(name),
+        errorHandler,
+        evaluationStack: new Set(),
+      };
+      const result = evaluator.evaluate(ast, context).value;
+      expect(result).toBe(3);
+    });
+
+    test('ROWS returns number of rows in array', () => {
+      expect(evaluateFormula('=ROWS({1;2;3})')).toBe(3);
+    });
+
+    test('COLUMNS returns number of columns in array', () => {
+      expect(evaluateFormula('=COLUMNS({1,2,3})')).toBe(3);
+    });
+
+    test('CHOOSE returns value by index', () => {
+      expect(evaluateFormula('=CHOOSE(2, "a", "b", "c")')).toBe('b');
+    });
+  });
+
+  describe('INDIRECT function', () => {
+    test('should dereference single cell address', () => {
+      // Mock getCellValue via context by setting a tiny sheet map
+      const ast = Parser.parse('=INDIRECT("A1")', 0);
+      const context: EvaluationContext = {
+        currentSheet: 0,
+        currentCell: { sheet: 0, col: 0, row: 0 },
+        namedExpressions: new Map(),
+        getCellValue: (addr) => (addr.col === 0 && addr.row === 0 ? 42 : undefined),
+        getRangeValues: () => [[]],
+        getFunction: (name: string) => functionRegistry.get(name),
+        errorHandler,
+        evaluationStack: new Set(),
+      };
+      const result = evaluator.evaluate(ast, context).value;
+      expect(result).toBe(42);
+    });
+
+    test('should dereference range address and return 2D array', () => {
+      const ast = Parser.parse('=INDIRECT("A1:B2")', 0);
+      const context: EvaluationContext = {
+        currentSheet: 0,
+        currentCell: { sheet: 0, col: 0, row: 0 },
+        namedExpressions: new Map(),
+        getCellValue: () => undefined,
+        getRangeValues: (range) => {
+          return [[1, 2], [3, 4]];
+        },
+        getFunction: (name: string) => functionRegistry.get(name),
+        errorHandler,
+        evaluationStack: new Set(),
+      };
+      const result = evaluator.evaluate(ast, context).value as unknown as number[][];
+      expect(result).toEqual([[1, 2], [3, 4]]);
+    });
+
+    test('invalid reference returns #REF!', () => {
+      expect(evaluateFormula('=INDIRECT("not_an_addr")')).toBe('#REF!');
+    });
+  });
+
+  describe('OFFSET function', () => {
+    test('OFFSET with text reference single cell', () => {
+      const ast = Parser.parse('=OFFSET("A1", 1, 2)', 0);
+      const context: EvaluationContext = {
+        currentSheet: 0,
+        currentCell: { sheet: 0, col: 0, row: 0 },
+        namedExpressions: new Map(),
+        getCellValue: (addr) => (addr.col === 2 && addr.row === 1 ? 99 : undefined),
+        getRangeValues: () => [[99]],
+        getFunction: (name: string) => functionRegistry.get(name),
+        errorHandler,
+        evaluationStack: new Set(),
+      };
+      const result = evaluator.evaluate(ast, context).value;
+      expect(result).toBe(99);
+    });
+
+    test('OFFSET with resize returns range', () => {
+      const ast = Parser.parse('=OFFSET("A1", 0, 0, 2, 2)', 0);
+      const context: EvaluationContext = {
+        currentSheet: 0,
+        currentCell: { sheet: 0, col: 0, row: 0 },
+        namedExpressions: new Map(),
+        getCellValue: () => undefined,
+        getRangeValues: () => [[1,2],[3,4]],
+        getFunction: (name: string) => functionRegistry.get(name),
+        errorHandler,
+        evaluationStack: new Set(),
+      };
+      const result = evaluator.evaluate(ast, context).value as unknown as number[][];
+      expect(result).toEqual([[1,2],[3,4]]);
+    });
+  });
+
   describe('MATCH function', () => {
     test('MATCH exact match', () => {
       // MATCH(5, {1,3,5,7,9}, 0) = 3
