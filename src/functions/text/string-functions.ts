@@ -1,16 +1,19 @@
-import type { CellValue } from "../../core/types";
-import type { FunctionDefinition } from "../../evaluator/evaluator";
-import { isFormulaError, propagateError } from "../../evaluator/error-handler";
+import { FormulaError, type CellValue } from "../../core/types";
+import type {
+  FunctionDefinition,
+  FunctionEvaluationResult,
+} from "../../evaluator/evaluator";
+import { isFormulaError, propagateError } from "../utils";
 
 /**
  * CONCATENATE function - Concatenates multiple text values
  */
-export const CONCATENATE: FunctionDefinition = {
+const CONCATENATE: FunctionDefinition = {
   name: "CONCATENATE",
   minArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     let result = "";
     for (const arg of args) {
@@ -21,162 +24,162 @@ export const CONCATENATE: FunctionDefinition = {
       result += String(arg);
     }
 
-    return result;
+    return { type: "value", value: result };
   },
 };
 
 /**
  * LEN function - Returns the length of a text string
  */
-export const LEN: FunctionDefinition = {
+const LEN: FunctionDefinition = {
   name: "LEN",
   minArgs: 1,
   maxArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const value = args[0];
     if (value === undefined || value === null) {
-      return 0;
+      return { type: "value", value: 0 };
     }
 
-    return String(value).length;
+    return { type: "value", value: String(value).length };
   },
 };
 
 /**
  * UPPER function - Converts text to uppercase
  */
-export const UPPER: FunctionDefinition = {
+const UPPER: FunctionDefinition = {
   name: "UPPER",
   minArgs: 1,
   maxArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const value = args[0];
     if (value === undefined || value === null) {
-      return "";
+      return { type: "value", value: "" };
     }
 
-    return String(value).toUpperCase();
+    return { type: "value", value: String(value).toUpperCase() };
   },
 };
 
 /**
  * LOWER function - Converts text to lowercase
  */
-export const LOWER: FunctionDefinition = {
+const LOWER: FunctionDefinition = {
   name: "LOWER",
   minArgs: 1,
   maxArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const value = args[0];
     if (value === undefined || value === null) {
-      return "";
+      return { type: "value", value: "" };
     }
 
-    return String(value).toLowerCase();
+    return { type: "value", value: String(value).toLowerCase() };
   },
 };
 
 /**
  * TRIM function - Removes extra spaces from text
  */
-export const TRIM: FunctionDefinition = {
+const TRIM: FunctionDefinition = {
   name: "TRIM",
   minArgs: 1,
   maxArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const value = args[0];
     if (value === undefined || value === null) {
-      return "";
+      return { type: "value", value: "" };
     }
 
-    return String(value).trim().replace(/\s+/g, " ");
+    return { type: "value", value: String(value).trim().replace(/\s+/g, " ") };
   },
 };
 
 /**
  * LEFT function - Returns the leftmost characters from a text string
  */
-export const LEFT: FunctionDefinition = {
+const LEFT: FunctionDefinition = {
   name: "LEFT",
   minArgs: 1,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const text = args[0];
     const numChars = args.length > 1 ? args[1] : 1;
 
     if (text === undefined || text === null) {
-      return "";
+      return { type: "value", value: "" };
     }
 
     if (typeof numChars !== "number" || numChars < 0) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     const textStr = String(text);
-    return textStr.substring(0, Math.floor(numChars));
+    return { type: "value", value: textStr.substring(0, Math.floor(numChars)) };
   },
 };
 
 /**
  * RIGHT function - Returns the rightmost characters from a text string
  */
-export const RIGHT: FunctionDefinition = {
+const RIGHT: FunctionDefinition = {
   name: "RIGHT",
   minArgs: 1,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const text = args[0];
     const numChars = args.length > 1 ? args[1] : 1;
 
     if (text === undefined || text === null) {
-      return "";
+      return { type: "value", value: "" };
     }
 
     if (typeof numChars !== "number" || numChars < 0) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     const textStr = String(text);
     const start = Math.max(0, textStr.length - Math.floor(numChars));
-    return textStr.substring(start);
+    return { type: "value", value: textStr.substring(start) };
   },
 };
 
 /**
  * MID function - Returns characters from the middle of a text string
  */
-export const MID: FunctionDefinition = {
+const MID: FunctionDefinition = {
   name: "MID",
   minArgs: 3,
   maxArgs: 3,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const text = args[0];
     const startNum = args[1];
     const numChars = args[2];
 
     if (text === undefined || text === null) {
-      return "";
+      return { type: "value", value: "" };
     }
 
     if (
@@ -185,7 +188,7 @@ export const MID: FunctionDefinition = {
       startNum < 1 ||
       numChars < 0
     ) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     const textStr = String(text);
@@ -193,23 +196,23 @@ export const MID: FunctionDefinition = {
     const length = Math.floor(numChars);
 
     if (start >= textStr.length) {
-      return "";
+      return { type: "value", value: "" };
     }
 
-    return textStr.substring(start, start + length);
+    return { type: "value", value: textStr.substring(start, start + length) };
   },
 };
 
 /**
  * FIND function - Finds one text string within another (case-sensitive)
  */
-export const FIND: FunctionDefinition = {
+const FIND: FunctionDefinition = {
   name: "FIND",
   minArgs: 2,
   maxArgs: 3,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const findText = args[0];
     const withinText = args[1];
@@ -221,11 +224,11 @@ export const FIND: FunctionDefinition = {
       withinText === undefined ||
       withinText === null
     ) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     if (typeof startNum !== "number" || startNum < 1) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     const findStr = String(findText);
@@ -233,24 +236,27 @@ export const FIND: FunctionDefinition = {
     const start = Math.floor(startNum) - 1; // Convert to 0-based index
 
     if (start >= withinStr.length) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     const index = withinStr.indexOf(findStr, start);
-    return index === -1 ? "#VALUE!" : index + 1; // Convert back to 1-based index
+    return {
+      type: "value",
+      value: index === -1 ? FormulaError.VALUE : index + 1,
+    }; // Convert back to 1-based index
   },
 };
 
 /**
  * SEARCH function - Finds one text string within another (case-insensitive, supports wildcards)
  */
-export const SEARCH: FunctionDefinition = {
+const SEARCH: FunctionDefinition = {
   name: "SEARCH",
   minArgs: 2,
   maxArgs: 3,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const findText = args[0];
     const withinText = args[1];
@@ -262,11 +268,11 @@ export const SEARCH: FunctionDefinition = {
       withinText === undefined ||
       withinText === null
     ) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     if (typeof startNum !== "number" || startNum < 1) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     const findStr = String(findText).toLowerCase();
@@ -274,7 +280,7 @@ export const SEARCH: FunctionDefinition = {
     const start = Math.floor(startNum) - 1; // Convert to 0-based index
 
     if (start >= withinStr.length) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     // Handle wildcards
@@ -288,13 +294,16 @@ export const SEARCH: FunctionDefinition = {
       const regex = new RegExp(pattern);
       const match = withinStr.substring(start).match(regex);
       if (match) {
-        return start + match.index! + 1; // Convert back to 1-based index
+        return { type: "value", value: start + match.index! + 1 }; // Convert back to 1-based index
       } else {
-        return "#VALUE!";
+        return { type: "value", value: FormulaError.VALUE };
       }
     } else {
       const index = withinStr.indexOf(findStr, start);
-      return index === -1 ? "#VALUE!" : index + 1; // Convert back to 1-based index
+      return {
+        type: "value",
+        value: index === -1 ? FormulaError.VALUE : index + 1,
+      }; // Convert back to 1-based index
     }
   },
 };
@@ -302,13 +311,13 @@ export const SEARCH: FunctionDefinition = {
 /**
  * SUBSTITUTE function - Substitutes new text for old text in a text string
  */
-export const SUBSTITUTE: FunctionDefinition = {
+const SUBSTITUTE: FunctionDefinition = {
   name: "SUBSTITUTE",
   minArgs: 3,
   maxArgs: 4,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const text = args[0];
     const oldText = args[1];
@@ -323,14 +332,14 @@ export const SUBSTITUTE: FunctionDefinition = {
       newText === undefined ||
       newText === null
     ) {
-      return String(text || "");
+      return { type: "value", value: String(text || "") };
     }
 
     if (
       instanceNum !== undefined &&
       (typeof instanceNum !== "number" || instanceNum < 1)
     ) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     const textStr = String(text);
@@ -338,12 +347,12 @@ export const SUBSTITUTE: FunctionDefinition = {
     const newStr = String(newText);
 
     if (oldStr === "") {
-      return textStr; // Can't substitute empty string
+      return { type: "value", value: textStr }; // Can't substitute empty string
     }
 
     if (instanceNum === undefined) {
       // Replace all instances
-      return textStr.replaceAll(oldStr, newStr);
+      return { type: "value", value: textStr.replaceAll(oldStr, newStr) };
     } else {
       // Replace specific instance
       const instance = Math.floor(instanceNum);
@@ -363,7 +372,7 @@ export const SUBSTITUTE: FunctionDefinition = {
         index += oldStr.length;
       }
 
-      return result;
+      return { type: "value", value: result };
     }
   },
 };
@@ -371,13 +380,13 @@ export const SUBSTITUTE: FunctionDefinition = {
 /**
  * REPLACE function - Replaces part of a text string with different text
  */
-export const REPLACE: FunctionDefinition = {
+const REPLACE: FunctionDefinition = {
   name: "REPLACE",
   minArgs: 4,
   maxArgs: 4,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const oldText = args[0];
     const startNum = args[1];
@@ -390,7 +399,7 @@ export const REPLACE: FunctionDefinition = {
       newText === undefined ||
       newText === null
     ) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     if (
@@ -399,7 +408,7 @@ export const REPLACE: FunctionDefinition = {
       startNum < 1 ||
       numChars < 0
     ) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     const oldStr = String(oldText);
@@ -408,25 +417,27 @@ export const REPLACE: FunctionDefinition = {
     const length = Math.floor(numChars);
 
     if (start >= oldStr.length) {
-      return oldStr + newStr;
+      return { type: "value", value: oldStr + newStr };
     }
 
-    return (
-      oldStr.substring(0, start) + newStr + oldStr.substring(start + length)
-    );
+    return {
+      type: "value",
+      value:
+        oldStr.substring(0, start) + newStr + oldStr.substring(start + length),
+    };
   },
 };
 
 /**
  * FE.CONCAT function - Binary concatenation (simpler than CONCATENATE)
  */
-export const FE_CONCAT: FunctionDefinition = {
+const FE_CONCAT: FunctionDefinition = {
   name: "FE.CONCAT",
   minArgs: 2,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const text1 = args[0];
     const text2 = args[1];
@@ -435,20 +446,20 @@ export const FE_CONCAT: FunctionDefinition = {
     const str1 = text1 === undefined || text1 === null ? "" : String(text1);
     const str2 = text2 === undefined || text2 === null ? "" : String(text2);
 
-    return str1 + str2;
+    return { type: "value", value: str1 + str2 };
   },
 };
 
 /**
  * EXACT function - Exact string comparison (case-sensitive)
  */
-export const EXACT: FunctionDefinition = {
+const EXACT: FunctionDefinition = {
   name: "EXACT",
   minArgs: 2,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const text1 = args[0];
     const text2 = args[1];
@@ -457,26 +468,26 @@ export const EXACT: FunctionDefinition = {
     const str1 = text1 === undefined || text1 === null ? "" : String(text1);
     const str2 = text2 === undefined || text2 === null ? "" : String(text2);
 
-    return str1 === str2;
+    return { type: "value", value: str1 === str2 };
   },
 };
 
 /**
  * TEXT function - Format number as text (basic implementation)
  */
-export const TEXT: FunctionDefinition = {
+const TEXT: FunctionDefinition = {
   name: "TEXT",
   minArgs: 2,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const value = args[0];
     const format = args[1];
 
     if (format === undefined || format === null) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     const formatStr = String(format);
@@ -485,31 +496,37 @@ export const TEXT: FunctionDefinition = {
     if (typeof value === "number") {
       // Basic format handling - more complex formatting could be added later
       if (formatStr === "0") {
-        return Math.round(value).toString();
+        return { type: "value", value: Math.round(value).toString() };
       } else if (formatStr === "0.0") {
-        return value.toFixed(1);
+        return { type: "value", value: value.toFixed(1) };
       } else if (formatStr === "0.00") {
-        return value.toFixed(2);
+        return { type: "value", value: value.toFixed(2) };
       } else if (formatStr === "0.000") {
-        return value.toFixed(3);
+        return { type: "value", value: value.toFixed(3) };
       } else if (formatStr === "#,##0") {
-        return Math.round(value).toLocaleString();
+        return { type: "value", value: Math.round(value).toLocaleString() };
       } else if (formatStr === "#,##0.00") {
-        return value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+        return {
+          type: "value",
+          value: value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ","),
+        };
       } else if (formatStr === "0%") {
-        return (value * 100).toFixed(0) + "%";
+        return { type: "value", value: (value * 100).toFixed(0) + "%" };
       } else if (formatStr === "0.0%") {
-        return (value * 100).toFixed(1) + "%";
+        return { type: "value", value: (value * 100).toFixed(1) + "%" };
       } else if (formatStr === "0.00%") {
-        return (value * 100).toFixed(2) + "%";
+        return { type: "value", value: (value * 100).toFixed(2) + "%" };
       } else {
         // For unrecognized formats, just return the number as string
-        return value.toString();
+        return { type: "value", value: value.toString() };
       }
     }
 
     // For non-numbers, convert to string
-    return value === undefined || value === null ? "" : String(value);
+    return {
+      type: "value",
+      value: value === undefined || value === null ? "" : String(value),
+    };
   },
 };
 

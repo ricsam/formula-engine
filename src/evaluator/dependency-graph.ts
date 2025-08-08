@@ -8,7 +8,7 @@ import type { SimpleCellAddress, SimpleCellRange } from '../core/types';
 /**
  * Node in the dependency graph
  */
-export interface DependencyNode {
+interface DependencyNode {
   id: string;
   type: 'cell' | 'range' | 'named-expression';
   address?: SimpleCellAddress;
@@ -18,17 +18,9 @@ export interface DependencyNode {
 }
 
 /**
- * Edge in the dependency graph
- */
-export interface DependencyEdge {
-  from: string;
-  to: string;
-}
-
-/**
  * Dependency information for a node
  */
-export interface DependencyInfo {
+interface DependencyInfo {
   precedents: Set<string>; // Nodes this depends on
   dependents: Set<string>; // Nodes that depend on this
 }
@@ -36,7 +28,7 @@ export interface DependencyInfo {
 /**
  * Result of cycle detection
  */
-export interface CycleDetectionResult {
+interface CycleDetectionResult {
   hasCycle: boolean;
   cycle?: string[];
 }

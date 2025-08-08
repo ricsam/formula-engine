@@ -1,9 +1,20 @@
-import type { ASTNode, CellValue } from "../../core/types";
+import { FormulaError, type ASTNode, type CellValue } from "../../core/types";
 import type {
   FunctionDefinition,
   EvaluationContext,
+  EvaluationResult,
+  FunctionEvaluationResult,
 } from "../../evaluator/evaluator";
-import { isFormulaError, propagateError } from "../index";
+import {
+  isFormulaError,
+  propagateError,
+  propagateErrorFromEvalResults,
+  getArrayFromEvalResult,
+  getScalarValue,
+  safeGetScalarValue,
+  assertScalarArg,
+  assertArrayArg,
+} from "../utils";
 
 // Helper function to coerce values to boolean
 function coerceToBoolean(value: CellValue): boolean {
@@ -26,37 +37,27 @@ function coerceToBoolean(value: CellValue): boolean {
 }
 
 // Helper to flatten a value into a 1D array
-function flattenToArray(value: CellValue): CellValue[] {
-  if (!Array.isArray(value)) {
-    return [value];
+function flattenToArray(result: EvaluationResult): CellValue[] {
+  if (result.type === "2d-array") {
+    return result.value.flat();
+  } else if (result.type === "value") {
+    return [result.value];
+  } else {
+    throw new Error("#VALUE!");
   }
-
-  // If it's a 2D array, flatten it
-  if (Array.isArray(value[0])) {
-    const result: CellValue[] = [];
-    for (const row of value) {
-      if (Array.isArray(row)) {
-        result.push(...row);
-      } else {
-        result.push(row);
-      }
-    }
-    return result;
-  }
-
-  return value;
 }
 
 // Helper to get dimensions of an array
-function getArrayDimensions(value: CellValue): {
+function getArrayDimensions(result: EvaluationResult): {
   rows: number;
   cols: number;
   isRowRange: boolean;
   isColumnRange: boolean;
 } {
-  if (!Array.isArray(value)) {
+  if (result.type === "value") {
     return { rows: 1, cols: 1, isRowRange: false, isColumnRange: false };
   }
+  const value = result.value;
 
   if (Array.isArray(value[0])) {
     // 2D array
@@ -87,8 +88,8 @@ function getArrayDimensions(value: CellValue): {
 // Helper function to filter row ranges (columns within a row)
 function filterRowRange(
   sourceArray: CellValue[][],
-  conditionArrays: CellValue[]
-): CellValue {
+  conditionArrays: CellValue[][][]
+): CellValue | CellValue[][] {
   const sourceRow = sourceArray[0]; // Single row with multiple columns
   if (!sourceRow) {
     throw new Error("#VALUE!");
@@ -114,12 +115,13 @@ function filterRowRange(
 
     // Check all conditions for this column
     for (const condArray of conditionArrays) {
-      if (Array.isArray(condArray) && Array.isArray(condArray[0])) {
-        const conditionRow = condArray[0] as CellValue[];
-        if (!coerceToBoolean(conditionRow[colIndex])) {
-          includeColumn = false;
-          break;
-        }
+      const conditionRow = condArray[0];
+      if (!conditionRow) {
+        continue;
+      }
+      if (!coerceToBoolean(conditionRow[colIndex])) {
+        includeColumn = false;
+        break;
       }
     }
 
@@ -130,53 +132,72 @@ function filterRowRange(
 
   // If no results, return #N/A
   if (result.length === 0) {
-    return "#N/A";
+    return FormulaError.NA;
   }
 
   // Return as column vector (standard FILTER output format)
-  return result.map((value) => [value]) as unknown as CellValue;
+  return result.map((value) => [value]);
 }
 
 // FILTER(sourceArray, ...boolArrays)
-export const FILTER: FunctionDefinition = {
+const FILTER: FunctionDefinition = {
   name: "FILTER",
-  evaluate: ({ argValues: args }): CellValue => {
-    if (args.length < 2) {
+  evaluate: ({
+    argEvaluatedValues,
+  }): ReturnType<FunctionDefinition["evaluate"]> => {
+    if (argEvaluatedValues.length < 2) {
       throw new Error("#VALUE!");
     }
 
     // Check for errors
-    const error = propagateError(args);
-    if (error) return error;
+    const error = propagateErrorFromEvalResults(argEvaluatedValues);
+    if (error) return { type: "value", value: error };
 
-    const sourceArray = args[0];
+    const firstArg = argEvaluatedValues[0];
+    if (!firstArg) {
+      throw new Error("#VALUE!");
+    }
 
-    // Handle non-array source
-    if (!Array.isArray(sourceArray)) {
+    if (firstArg.type === "value") {
       // Single value - check if all conditions are true
-      for (let i = 1; i < args.length; i++) {
-        const condition = args[i];
+      for (const val of argEvaluatedValues.slice(1)) {
+        const condition = getScalarValue(val);
         if (
           !coerceToBoolean(Array.isArray(condition) ? condition[0] : condition)
         ) {
-          return "#N/A"; // No matching values
+          return { type: "value", value: FormulaError.NA };
         }
       }
-      return [[sourceArray]] as unknown as CellValue; // Return as 2D array
+      return {
+        type: "2d-array",
+        value: [[firstArg.value]],
+        dimensions: { rows: 1, cols: 1 },
+      }; // Return as 2D array
     }
 
     // Get dimensions of source array
-    const sourceDims = getArrayDimensions(sourceArray);
-    const is2D = Array.isArray(sourceArray[0]);
+    const sourceDims = getArrayDimensions(firstArg);
 
     // Detect if this is a row range (1 row, multiple columns)
-    if (sourceDims.isRowRange) {
-      return filterRowRange(sourceArray as CellValue[][], args.slice(1));
+    if (sourceDims.rows === 1 && sourceDims.cols > 1) {
+      const conditionArrays: CellValue[][][] = [];
+      for (const val of argEvaluatedValues.slice(1)) {
+        if (val.type === "2d-array") {
+          conditionArrays.push(val.value);
+        } else {
+          // Convert scalar to single-cell 2D array
+          conditionArrays.push([[val.value]]);
+        }
+      }
+      return {
+        type: "2d-array",
+        value: filterRowRange(firstArg.value, conditionArrays) as CellValue[][],
+        dimensions: { rows: 1, cols: firstArg.value[0]?.length ?? 0 },
+      };
     }
 
     // Validate all condition arrays have compatible dimensions
-    for (let i = 1; i < args.length; i++) {
-      const condArray = args[i];
+    for (const condArray of argEvaluatedValues.slice(1)) {
       const condDims = getArrayDimensions(condArray);
 
       // Condition must have same number of rows
@@ -185,7 +206,7 @@ export const FILTER: FunctionDefinition = {
       }
 
       // For 2D source arrays, condition can be either 1D (applied row-wise) or 2D (exact match)
-      if (is2D && condDims.cols !== 1 && condDims.cols !== sourceDims.cols) {
+      if (condDims.cols !== 1 && condDims.cols !== sourceDims.cols) {
         throw new Error("#VALUE!");
       }
     }
@@ -193,99 +214,84 @@ export const FILTER: FunctionDefinition = {
     // Filter the array
     const result: CellValue[][] = [];
 
-    if (is2D) {
-      // 2D array filtering
-      for (let r = 0; r < sourceDims.rows; r++) {
-        let includeRow = true;
+    // 2D array filtering
+    for (let r = 0; r < sourceDims.rows; r++) {
+      let includeRow = true;
 
-        // Check all conditions for this row
-        for (let i = 1; i < args.length; i++) {
-          const condArray = args[i];
+      // Check all conditions for this row
+      for (const condArray of argEvaluatedValues.slice(1)) {
+        if (condArray.type === "value") {
+          // 1D condition array - check the single value for this row
+          const condValue = Array.isArray(condArray)
+            ? Array.isArray(condArray[r])
+              ? condArray[r][0]
+              : condArray[r]
+            : condArray;
+          if (!coerceToBoolean(condValue)) {
+            includeRow = false;
+            break;
+          }
+        } else {
           const condDims = getArrayDimensions(condArray);
-
-          if (condDims.cols === 1) {
-            // 1D condition array - check the single value for this row
-            const condValue = Array.isArray(condArray)
-              ? Array.isArray(condArray[r])
-                ? condArray[r][0]
-                : condArray[r]
-              : condArray;
-            if (!coerceToBoolean(condValue)) {
-              includeRow = false;
-              break;
-            }
-          } else {
-            // 2D condition array - check if any value in this row is true
-            const condRow = (condArray as unknown as CellValue[][])[r];
-            let rowHasTrue = false;
-            for (let c = 0; c < condDims.cols; c++) {
-              const condValue = condRow?.[c];
-              if (coerceToBoolean(condValue)) {
-                rowHasTrue = true;
-                break;
-              }
-            }
-            if (!rowHasTrue) {
-              includeRow = false;
+          // 2D condition array - check if any value in this row is true
+          const condRow = condArray.value[r];
+          let rowHasTrue = false;
+          if (!condRow) {
+            continue;
+          }
+          for (let c = 0; c < condDims.cols; c++) {
+            const condValue = condRow[c];
+            if (coerceToBoolean(condValue)) {
+              rowHasTrue = true;
               break;
             }
           }
-        }
-
-        if (includeRow) {
-          result.push(sourceArray[r] as CellValue[]);
-        }
-      }
-    } else {
-      // 1D array filtering
-      const sourceFlat = sourceArray as CellValue[];
-      const tempResult: CellValue[] = [];
-
-      for (let i = 0; i < sourceFlat.length; i++) {
-        let includeValue = true;
-
-        // Check all conditions for this value
-        for (let j = 1; j < args.length; j++) {
-          const condArray = flattenToArray(args[j]);
-          if (!coerceToBoolean(condArray[i])) {
-            includeValue = false;
+          if (!rowHasTrue) {
+            includeRow = false;
             break;
           }
         }
-
-        if (includeValue) {
-          tempResult.push(sourceFlat[i]);
-        }
       }
 
-      // Convert to 2D array (single column)
-      tempResult.forEach((val) => result.push([val]));
+      const val = firstArg.value[r];
+      if (includeRow && val) {
+        result.push(val);
+      }
     }
 
     // If no results, return #N/A
     if (result.length === 0) {
-      return "#N/A";
+      return { type: "value", value: FormulaError.NA };
     }
 
-    return result as unknown as CellValue;
+    return {
+      type: "2d-array",
+      value: result,
+      dimensions: { rows: result.length, cols: result[0]?.length ?? 1 },
+    };
   },
 };
 
 // SORT(array, [sort_index], [sort_order], [by_col])
-export const SORT: FunctionDefinition = {
+const SORT: FunctionDefinition = {
   name: "SORT",
-  evaluate: ({ argValues: args }): CellValue => {
-    if (args.length < 1) {
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
+    if (argEvaluatedValues.length < 1) {
       throw new Error("#VALUE!");
     }
 
-    const error = propagateError(args);
-    if (error) return error;
+    const error = propagateErrorFromEvalResults(argEvaluatedValues);
+    if (error) return { type: "value", value: error };
 
-    const source = args[0];
-    const sortIndexRaw = args.length >= 2 ? args[1] : 1;
-    const sortOrderRaw = args.length >= 3 ? args[2] : 1; // 1 asc, -1 desc
-    const byColRaw = args.length >= 4 ? args[3] : false;
+    const firstArg = argEvaluatedValues[0];
+    if (!firstArg) {
+      throw new Error("#VALUE!");
+    }
+
+    const source = getArrayFromEvalResult(firstArg);
+    const sortIndexRaw = safeGetScalarValue(argEvaluatedValues, 1, 1);
+    const sortOrderRaw = safeGetScalarValue(argEvaluatedValues, 2, 1); // 1 asc, -1 desc
+    const byColRaw = safeGetScalarValue(argEvaluatedValues, 3, false);
 
     const byCol =
       typeof byColRaw === "boolean"
@@ -300,32 +306,21 @@ export const SORT: FunctionDefinition = {
     const sortOrder =
       typeof sortOrderRaw === "number" && sortOrderRaw < 0 ? -1 : 1;
 
-    // Normalize to 2D array
-    let array2D: CellValue[][];
-    if (!Array.isArray(source)) {
-      array2D = [[source]];
-    } else if (Array.isArray(source[0])) {
-      array2D = source as CellValue[][];
-    } else {
-      // 1D column vector
-      const arr1D = source as CellValue[];
-      array2D = arr1D.map((v) => [v]);
-    }
-
-    const rows = array2D.length;
+    const rows = source.length;
     const cols =
-      rows > 0
-        ? Array.isArray(array2D[0])
-          ? (array2D[0] as CellValue[]).length
-          : 1
-        : 0;
+      rows > 0 ? (Array.isArray(source[0]) ? source[0].length : 1) : 0;
 
     // Edge cases
-    if (rows === 0 || cols === 0) return [[]] as unknown as CellValue;
+    if (rows === 0 || cols === 0)
+      return {
+        type: "2d-array",
+        value: [[]],
+        dimensions: { rows: 1, cols: 1 },
+      };
 
     // Clone data for sorting
-    const clone2D = array2D.map((r) =>
-      Array.isArray(r) ? [...(r as CellValue[])] : [r]
+    const clone2D = source.map((r) =>
+      Array.isArray(r) ? [...r] : [r]
     ) as CellValue[][];
 
     // Comparator
@@ -357,27 +352,40 @@ export const SORT: FunctionDefinition = {
       for (let c = 0; c < columns.length; c++) {
         for (let r = 0; r < rows; r++) sorted[r]?.push(columns[c]?.[r]);
       }
-      return sorted as unknown as CellValue;
+      return {
+        type: "2d-array",
+        value: sorted,
+        dimensions: { rows: sorted.length, cols: sorted[0]?.length ?? 1 },
+      };
     }
 
     // Sort rows by column sortIndex
     const idx = Math.min(sortIndex - 1, Math.max(0, cols - 1));
     clone2D.sort((r1, r2) => cmp(r1[idx], r2[idx]));
-    return clone2D as unknown as CellValue;
+    return {
+      type: "2d-array",
+      value: clone2D,
+      dimensions: { rows: clone2D.length, cols: clone2D[0]?.length ?? 1 },
+    };
   },
 };
 
 // UNIQUE(array, [by_col], [exactly_once])
-export const UNIQUE: FunctionDefinition = {
+const UNIQUE: FunctionDefinition = {
   name: "UNIQUE",
-  evaluate: ({ argValues: args }): CellValue => {
-    if (args.length < 1) throw new Error("#VALUE!");
-    const error = propagateError(args);
-    if (error) return error;
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
+    if (argEvaluatedValues.length < 1) throw new Error("#VALUE!");
+    const error = propagateErrorFromEvalResults(argEvaluatedValues);
+    if (error) return { type: "value", value: error };
 
-    const source = args[0];
-    const byColRaw = args.length >= 2 ? args[1] : false;
-    const exactlyOnceRaw = args.length >= 3 ? args[2] : false;
+    const firstArg = argEvaluatedValues[0];
+    if (!firstArg) {
+      throw new Error("#VALUE!");
+    }
+
+    const source = getArrayFromEvalResult(firstArg);
+    const byColRaw = safeGetScalarValue(argEvaluatedValues, 1, false);
+    const exactlyOnceRaw = safeGetScalarValue(argEvaluatedValues, 2, false);
     const byCol =
       typeof byColRaw === "boolean"
         ? byColRaw
@@ -391,19 +399,8 @@ export const UNIQUE: FunctionDefinition = {
           ? exactlyOnceRaw !== 0
           : false;
 
-    // Normalize to 2D
-    let array2D: CellValue[][];
-    if (!Array.isArray(source)) {
-      array2D = [[source]];
-    } else if (Array.isArray(source[0])) {
-      array2D = source as CellValue[][];
-    } else {
-      const arr1D = source as CellValue[];
-      array2D = arr1D.map((v) => [v]);
-    }
-
-    const rows = array2D.length;
-    const cols = rows > 0 ? (array2D[0] as CellValue[]).length : 0;
+    const rows = source.length;
+    const cols = rows > 0 ? (source[0] as CellValue[]).length : 0;
 
     if (byCol) {
       // Unique columns
@@ -411,7 +408,7 @@ export const UNIQUE: FunctionDefinition = {
       const columns: CellValue[][] = [];
       for (let c = 0; c < cols; c++) {
         const col: CellValue[] = [];
-        for (let r = 0; r < rows; r++) col.push(array2D[r]?.[c]);
+        for (let r = 0; r < rows; r++) col.push(source[r]?.[c]);
         const key = JSON.stringify(col);
         seen.set(key, (seen.get(key) ?? 0) + 1);
         columns.push(col);
@@ -434,16 +431,20 @@ export const UNIQUE: FunctionDefinition = {
       for (const col of uniques) {
         for (let r = 0; r < rows; r++) result[r]?.push(col[r]);
       }
-      return result as unknown as CellValue;
+      return {
+        type: "2d-array",
+        value: result,
+        dimensions: { rows: result.length, cols: result[0]?.length ?? 1 },
+      };
     } else {
       // Unique rows
       const seen = new Map<string, number>();
-      for (const row of array2D) {
+      for (const row of source) {
         const key = JSON.stringify(row);
         seen.set(key, (seen.get(key) ?? 0) + 1);
       }
       const result: CellValue[][] = [];
-      for (const row of array2D) {
+      for (const row of source) {
         const key = JSON.stringify(row);
         const count = seen.get(key) ?? 0;
         if (
@@ -455,33 +456,45 @@ export const UNIQUE: FunctionDefinition = {
           result.push(row);
         }
       }
-      return result as unknown as CellValue;
+      return {
+        type: "2d-array",
+        value: result,
+        dimensions: { rows: result.length, cols: result[0]?.length ?? 1 },
+      };
     }
   },
 };
 
 // SEQUENCE(rows, [columns], [start], [step])
-export const SEQUENCE: FunctionDefinition = {
+const SEQUENCE: FunctionDefinition = {
   name: "SEQUENCE",
-  evaluate: ({ argValues: args }): CellValue => {
-    if (args.length < 1) throw new Error("#VALUE!");
-    const error = propagateError(args);
-    if (error) return error;
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
+    if (argEvaluatedValues.length < 1) throw new Error("#VALUE!");
+    const error = propagateErrorFromEvalResults(argEvaluatedValues);
+    if (error) return { type: "value", value: error };
 
+    const rowsValue = safeGetScalarValue(argEvaluatedValues, 0, 0);
     const rows =
-      typeof args[0] === "number"
-        ? Math.max(0, Math.floor(args[0] as number))
-        : 0;
+      typeof rowsValue === "number" ? Math.max(0, Math.floor(rowsValue)) : 0;
+
+    const colsValue = safeGetScalarValue(argEvaluatedValues, 1, 1);
     const cols =
-      typeof args[1] === "number"
-        ? Math.max(0, Math.floor(args[1] as number))
-        : 1;
-    const start = typeof args[2] === "number" ? (args[2] as number) : 1;
-    const step = typeof args[3] === "number" ? (args[3] as number) : 1;
+      typeof colsValue === "number" ? Math.max(0, Math.floor(colsValue)) : 1;
+
+    const startValue = safeGetScalarValue(argEvaluatedValues, 2, 1);
+    const start = typeof startValue === "number" ? startValue : 1;
+
+    const stepValue = safeGetScalarValue(argEvaluatedValues, 3, 1);
+    const step = typeof stepValue === "number" ? stepValue : 1;
 
     const result: CellValue[][] = [];
     let current = start;
-    if (rows === 0 || cols === 0) return [[]] as unknown as CellValue;
+    if (rows === 0 || cols === 0)
+      return {
+        type: "2d-array",
+        value: [[]],
+        dimensions: { rows: 1, cols: 1 },
+      };
     for (let r = 0; r < rows; r++) {
       const row: CellValue[] = [];
       for (let c = 0; c < cols; c++) {
@@ -490,25 +503,34 @@ export const SEQUENCE: FunctionDefinition = {
       }
       result.push(row);
     }
-    return result as unknown as CellValue;
+    return {
+      type: "2d-array",
+      value: result,
+      dimensions: { rows: result.length, cols: result[0]?.length ?? 1 },
+    };
   },
 };
 
 // ARRAY_CONSTRAIN(array, height, width)
-export const ARRAY_CONSTRAIN: FunctionDefinition = {
+const ARRAY_CONSTRAIN: FunctionDefinition = {
   name: "ARRAY_CONSTRAIN",
-  evaluate: ({ argValues: args }): CellValue => {
-    if (args.length !== 3) {
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
+    if (argEvaluatedValues.length !== 3) {
       throw new Error("#VALUE!");
     }
 
     // Check for errors
-    const error = propagateError(args);
-    if (error) return error;
+    const error = propagateErrorFromEvalResults(argEvaluatedValues);
+    if (error) return { type: "value", value: error };
 
-    const array = args[0];
-    const height = args[1];
-    const width = args[2];
+    const firstArg = argEvaluatedValues[0];
+    if (!firstArg) {
+      throw new Error("#VALUE!");
+    }
+
+    const array = getArrayFromEvalResult(firstArg);
+    const height = safeGetScalarValue(argEvaluatedValues, 1, 1);
+    const width = safeGetScalarValue(argEvaluatedValues, 2, 1);
 
     // Validate height and width are positive integers
     if (typeof height !== "number" || height < 1 || !Number.isInteger(height)) {
@@ -519,8 +541,12 @@ export const ARRAY_CONSTRAIN: FunctionDefinition = {
     }
 
     // Handle non-array input
-    if (!Array.isArray(array)) {
-      return [[array]] as unknown as CellValue; // Return as 1x1 array
+    if (firstArg.type === "value") {
+      return {
+        type: "2d-array",
+        value: [[firstArg.value]],
+        dimensions: { rows: 1, cols: 1 },
+      }; // Return as 1x1 array
     }
 
     // Get dimensions
@@ -529,10 +555,9 @@ export const ARRAY_CONSTRAIN: FunctionDefinition = {
 
     if (is2D) {
       // Constrain 2D array
-      const sourceArray = array as CellValue[][];
-      for (let r = 0; r < Math.min(height, sourceArray.length); r++) {
+      for (let r = 0; r < Math.min(height, array.length); r++) {
         const row: CellValue[] = [];
-        const sourceRow = sourceArray[r];
+        const sourceRow = array[r];
 
         if (Array.isArray(sourceRow)) {
           for (let c = 0; c < Math.min(width, sourceRow.length); c++) {
@@ -540,24 +565,6 @@ export const ARRAY_CONSTRAIN: FunctionDefinition = {
           }
         } else {
           row.push(sourceRow);
-        }
-
-        // Pad with undefined if needed
-        while (row.length < width) {
-          row.push(undefined);
-        }
-
-        result.push(row);
-      }
-    } else {
-      // Convert 1D to 2D and constrain
-      const sourceArray = array as CellValue[];
-      let idx = 0;
-
-      for (let r = 0; r < height && idx < sourceArray.length; r++) {
-        const row: CellValue[] = [];
-        for (let c = 0; c < width && idx < sourceArray.length; c++) {
-          row.push(sourceArray[idx++]);
         }
 
         // Pad with undefined if needed
@@ -578,7 +585,11 @@ export const ARRAY_CONSTRAIN: FunctionDefinition = {
       result.push(emptyRow);
     }
 
-    return result as unknown as CellValue;
+    return {
+      type: "2d-array",
+      value: result,
+      dimensions: { rows: result.length, cols: result[0]?.length ?? 1 },
+    };
   },
 };
 

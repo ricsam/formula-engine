@@ -1,0 +1,29 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "project": ["src/**/*.{ts,tsx}"],
+  "ignore": [
+    "demo/**/*",
+    "tests/**/*",
+    "build.ts"
+  ],
+  "ignoreDependencies": [
+    "@anocca-pub/components",
+    "@radix-ui/react-label", 
+    "@radix-ui/react-select",
+    "@radix-ui/react-slot",
+    "@ricsam/selection-manager",
+    "@tanstack/react-router",
+    "@tanstack/react-router-devtools",
+    "@tanstack/router-plugin",
+    "@types/react-dom",
+    "@xyflow/react",
+    "class-variance-authority",
+    "clsx",
+    "lucide-react",
+    "react-dom",
+    "react-hook-form",
+    "tailwind-merge",
+    "tailwindcss",
+    "tailwindcss-animate"
+  ]
+}

@@ -34,7 +34,7 @@ export const OPERATOR_PRECEDENCE: Record<string, number> = {
 /**
  * Operator associativity
  */
-export type Associativity = 'left' | 'right';
+type Associativity = 'left' | 'right';
 
 export const OPERATOR_ASSOCIATIVITY: Record<string, Associativity> = {
   '=': 'left',
@@ -253,7 +253,7 @@ export function isValidRow(row: string): boolean {
 /**
  * Parse a cell reference into components
  */
-export interface ParsedCellReference {
+interface ParsedCellReference {
   sheet?: string;
   colAbsolute: boolean;
   col: string;
@@ -261,7 +261,7 @@ export interface ParsedCellReference {
   row: string;
 }
 
-export interface ParsedInfiniteRange {
+interface ParsedInfiniteRange {
   sheet?: string;
   type: 'column' | 'row';
   startAbsolute: boolean;
@@ -340,21 +340,12 @@ export function parseInfiniteRange(ref: string): ParsedInfiniteRange | null {
   return null;
 }
 
-/**
- * R1C1 reference style patterns (for future support)
- */
-export const R1C1_PATTERNS = {
-  // R1C1, R[1]C[1], R[-1]C[-1]
-  CELL: /^R(\[?-?\d+\]?)C(\[?-?\d+\]?)$/i,
-  
-  // R1C1:R2C2
-  RANGE: /^R(\[?-?\d+\]?)C(\[?-?\d+\]?):R(\[?-?\d+\]?)C(\[?-?\d+\]?)$/i,
-};
+
 
 /**
  * Function argument count constraints
  */
-export interface FunctionConstraints {
+interface FunctionConstraints {
   minArgs?: number;
   maxArgs?: number;
   exactArgs?: number;

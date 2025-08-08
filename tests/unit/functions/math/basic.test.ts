@@ -13,7 +13,7 @@ describe('Basic Math Functions', () => {
   let dependencyGraph: DependencyGraph;
 
   // Helper function to evaluate a formula
-  const evaluateFormula = (formula: string): CellValue => {
+  const evaluateFormula = (formula: string): CellValue | CellValue[][] => {
     const ast = Parser.parse(formula, 0);
     
     const context: EvaluationContext = {

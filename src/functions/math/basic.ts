@@ -1,108 +1,108 @@
-import type { CellValue } from "../../core/types";
-import type { FunctionDefinition } from "../../evaluator/evaluator";
+import { FormulaError } from "../../core/types";
+import type { FunctionDefinition, FunctionEvaluationResult } from "../../evaluator/evaluator";
 import {
   coerceToNumber,
   isFormulaError,
   propagateError,
   validateArgCount,
-} from "../index";
+} from "../utils";
 
 // Basic arithmetic operators
 
-export const ADD: FunctionDefinition = {
+const ADD: FunctionDefinition = {
   name: "FE.ADD",
   minArgs: 2,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     validateArgCount("FE.ADD", args, 2, 2);
 
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     try {
       const a = coerceToNumber(args[0]);
       const b = coerceToNumber(args[1]);
-      return a + b;
+      return { type: "value", value: a + b };
     } catch (e) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
   },
 };
 
-export const MINUS: FunctionDefinition = {
+const MINUS: FunctionDefinition = {
   name: "FE.MINUS",
   minArgs: 2,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     validateArgCount("FE.MINUS", args, 2, 2);
 
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     try {
       const a = coerceToNumber(args[0]);
       const b = coerceToNumber(args[1]);
-      return a - b;
+      return { type: "value", value: a - b };
     } catch (e) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
   },
 };
 
-export const MULTIPLY: FunctionDefinition = {
+const MULTIPLY: FunctionDefinition = {
   name: "FE.MULTIPLY",
   minArgs: 2,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     validateArgCount("FE.MULTIPLY", args, 2, 2);
 
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     try {
       const a = coerceToNumber(args[0]);
       const b = coerceToNumber(args[1]);
-      return a * b;
+      return { type: "value", value: a * b };
     } catch (e) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
   },
 };
 
-export const DIVIDE: FunctionDefinition = {
+const DIVIDE: FunctionDefinition = {
   name: "FE.DIVIDE",
   minArgs: 2,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     validateArgCount("FE.DIVIDE", args, 2, 2);
 
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     try {
       const a = coerceToNumber(args[0]);
       const b = coerceToNumber(args[1]);
 
       if (b === 0) {
-        return "#DIV/0!";
+        return { type: "value", value: FormulaError.DIV0 };
       }
 
-      return a / b;
+      return { type: "value", value: a / b };
     } catch (e) {
-      return "#VALUE!";
+        return { type: "value", value: FormulaError.VALUE };
     }
   },
 };
 
-export const POW: FunctionDefinition = {
+const POW: FunctionDefinition = {
   name: "FE.POW",
   minArgs: 2,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     validateArgCount("FE.POW", args, 2, 2);
 
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     try {
       const base = coerceToNumber(args[0]);
@@ -111,71 +111,71 @@ export const POW: FunctionDefinition = {
       const result = Math.pow(base, exponent);
 
       if (!isFinite(result)) {
-        return "#NUM!";
+        return { type: "value", value: FormulaError.NUM };
       }
 
-      return result;
+      return { type: "value", value: result };
     } catch (e) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
   },
 };
 
-export const UMINUS: FunctionDefinition = {
+const UMINUS: FunctionDefinition = {
   name: "FE.UMINUS",
   minArgs: 1,
   maxArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     validateArgCount("FE.UMINUS", args, 1, 1);
 
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     try {
       const value = coerceToNumber(args[0]);
       const result = -value;
       // Handle JavaScript's -0 case
-      return Object.is(result, -0) ? 0 : result;
+      return { type: "value", value: Object.is(result, -0) ? 0 : result };
     } catch (e) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
   },
 };
 
-export const UPLUS: FunctionDefinition = {
+const UPLUS: FunctionDefinition = {
   name: "FE.UPLUS",
   minArgs: 1,
   maxArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     validateArgCount("FE.UPLUS", args, 1, 1);
 
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     try {
       const value = coerceToNumber(args[0]);
-      return +value;
+      return { type: "value", value: +value };
     } catch (e) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
   },
 };
 
-export const UNARY_PERCENT: FunctionDefinition = {
+const UNARY_PERCENT: FunctionDefinition = {
   name: "FE.UNARY_PERCENT",
   minArgs: 1,
   maxArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     validateArgCount("FE.UNARY_PERCENT", args, 1, 1);
 
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     try {
       const value = coerceToNumber(args[0]);
-      return value / 100;
+      return { type: "value", value: value / 100 };
     } catch (e) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
   },
 };

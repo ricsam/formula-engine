@@ -11,7 +11,7 @@ describe('IFERROR function', () => {
   let errorHandler: ErrorHandler;
   let dependencyGraph: DependencyGraph;
 
-  const evalFormula = (formula: string): CellValue => {
+  const evalFormula = (formula: string): CellValue | CellValue[][] => {
     const ast = Parser.parse(formula, 0);
     const ctx = {
       currentSheet: 0,

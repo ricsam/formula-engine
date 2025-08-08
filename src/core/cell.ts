@@ -202,19 +202,7 @@ export function extractFormula(input: string): string {
   return input.trim().substring(1);
 }
 
-/**
- * Clone a cell (deep copy)
- */
-export function cloneCell(cell: Cell): Cell {
-  return {
-    value: cell.value,
-    type: cell.type,
-    formula: cell.formula,
-    dependencies: cell.dependencies ? new Set(cell.dependencies) : undefined,
-    dependents: cell.dependents ? new Set(cell.dependents) : undefined,
-    arrayFormula: cell.arrayFormula ? { ...cell.arrayFormula } : undefined
-  };
-}
+
 
 /**
  * Convert a cell to a serializable format
@@ -266,130 +254,10 @@ export function deserializeCell(content: CellValue | string): Cell {
   return createValueCell(value);
 }
 
-/**
- * Compare two cell values for equality
- */
-export function areCellValuesEqual(a: CellValue, b: CellValue): boolean {
-  // Both undefined
-  if (a === undefined && b === undefined) {
-    return true;
-  }
 
-  // One undefined
-  if (a === undefined || b === undefined) {
-    return false;
-  }
 
-  // Direct equality (handles numbers, strings, booleans, errors)
-  return a === b;
-}
 
-/**
- * Get the numeric value of a cell (for calculations)
- */
-export function getNumericValue(value: CellValue): number | null {
-  if (isNumber(value)) {
-    return value;
-  }
 
-  if (isBoolean(value)) {
-    return value ? 1 : 0;
-  }
 
-  if (isString(value)) {
-    // Try to parse as number
-    const trimmed = value.trim();
-    if (trimmed === '') {
-      return 0;
-    }
-    const num = parseFloat(trimmed);
-    if (!isNaN(num) && isFinite(num)) {
-      return num;
-    }
-  }
 
-  return null;
-}
 
-/**
- * Coerce a value to boolean (for logical operations)
- */
-export function coerceToBoolean(value: CellValue): boolean {
-  if (isBoolean(value)) {
-    return value;
-  }
-
-  if (isNumber(value)) {
-    return value !== 0;
-  }
-
-  if (isString(value)) {
-    const upper = value.toUpperCase();
-    if (upper === 'TRUE') return true;
-    if (upper === 'FALSE') return false;
-    
-    // Non-empty strings are truthy
-    return value.length > 0;
-  }
-
-  // undefined and errors are falsy
-  return false;
-}
-
-/**
- * Coerce a value to string (for text operations)
- */
-export function coerceToString(value: CellValue): string {
-  if (value === undefined) {
-    return '';
-  }
-
-  if (isString(value)) {
-    return value;
-  }
-
-  if (isNumber(value)) {
-    return value.toString();
-  }
-
-  if (isBoolean(value)) {
-    return value ? 'TRUE' : 'FALSE';
-  }
-
-  if (isFormulaError(value)) {
-    return value;
-  }
-
-  return '';
-}
-
-/**
- * Get cell metadata for debugging/inspection
- */
-export interface CellMetadata {
-  type: CellType;
-  valueType: CellValueType;
-  hasFormula: boolean;
-  hasDependencies: boolean;
-  hasDependents: boolean;
-  isArrayFormula: boolean;
-  dependencyCount: number;
-  dependentCount: number;
-}
-
-export function getCellMetadata(cell: Cell | undefined): CellMetadata | null {
-  if (!cell) {
-    return null;
-  }
-
-  return {
-    type: cell.type,
-    valueType: getCellValueType(cell.value),
-    hasFormula: !!cell.formula,
-    hasDependencies: !!cell.dependencies && cell.dependencies.size > 0,
-    hasDependents: !!cell.dependents && cell.dependents.size > 0,
-    isArrayFormula: !!cell.arrayFormula,
-    dependencyCount: cell.dependencies ? cell.dependencies.size : 0,
-    dependentCount: cell.dependents ? cell.dependents.size : 0
-  };
-}

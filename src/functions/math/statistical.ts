@@ -1,17 +1,20 @@
-import type { CellValue } from "../../core/types";
+import { FormulaError, type CellValue } from "../../core/types";
 import type {
   FunctionDefinition,
   EvaluationContext,
+  FunctionEvaluationResult,
 } from "../../evaluator/evaluator";
-import { coerceToNumber, isFormulaError, propagateError } from "../index";
+import { coerceToNumber, isFormulaError, propagateError, propagateErrorFromEvalResults } from "../utils";
 
 /**
  * Helper function to flatten nested arrays (including 2D arrays from ranges)
  */
-function flattenValues(values: CellValue[]): CellValue[] {
+function flattenValues(
+  values: CellValue | CellValue[] | CellValue[][]
+): CellValue[] {
   const result: CellValue[] = [];
 
-  function flatten(val: CellValue): void {
+  function flatten(val: CellValue | CellValue[] | CellValue[][]): void {
     if (Array.isArray(val)) {
       // Handle both 1D and 2D arrays
       for (const item of val) {
@@ -21,8 +24,10 @@ function flattenValues(values: CellValue[]): CellValue[] {
       result.push(val);
     }
   }
-
-  values.forEach(flatten);
+  if (!values) {
+    return [values];
+  }
+  flatten(values);
   return result;
 }
 
@@ -30,12 +35,12 @@ function flattenValues(values: CellValue[]): CellValue[] {
  * SUM function - Adds all numbers in the arguments
  * Ignores text, logical values, and empty cells
  */
-export const SUM: FunctionDefinition = {
+const SUM: FunctionDefinition = {
   name: "SUM",
   minArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const flattened = flattenValues(args);
     let sum = 0;
@@ -43,7 +48,7 @@ export const SUM: FunctionDefinition = {
 
     for (const value of flattened) {
       if (isFormulaError(value)) {
-        return value;
+        return { type: "value", value: value };
       }
 
       // Skip empty, text, and boolean values (Excel behavior)
@@ -62,7 +67,7 @@ export const SUM: FunctionDefinition = {
       }
     }
 
-    return sum;
+    return { type: "value", value: sum };
   },
 };
 
@@ -70,12 +75,12 @@ export const SUM: FunctionDefinition = {
  * PRODUCT function - Multiplies all numbers in the arguments
  * Ignores text, logical values, and empty cells
  */
-export const PRODUCT: FunctionDefinition = {
+const PRODUCT: FunctionDefinition = {
   name: "PRODUCT",
   minArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const flattened = flattenValues(args);
     let product = 1;
@@ -83,7 +88,7 @@ export const PRODUCT: FunctionDefinition = {
 
     for (const value of flattened) {
       if (isFormulaError(value)) {
-        return value;
+        return { type: "value", value: value };
       }
 
       // Skip empty, text, and boolean values (Excel behavior)
@@ -102,7 +107,7 @@ export const PRODUCT: FunctionDefinition = {
       }
     }
 
-    return hasNumbers ? product : 0;
+    return { type: "value", value: hasNumbers ? product : 0 };
   },
 };
 
@@ -110,10 +115,10 @@ export const PRODUCT: FunctionDefinition = {
  * COUNT function - Counts cells containing numbers
  * Ignores text, logical values, errors, and empty cells
  */
-export const COUNT: FunctionDefinition = {
+const COUNT: FunctionDefinition = {
   name: "COUNT",
   minArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     // Note: COUNT doesn't propagate errors, it just ignores them
     const flattened = flattenValues(args);
     let count = 0;
@@ -125,20 +130,20 @@ export const COUNT: FunctionDefinition = {
       }
     }
 
-    return count;
+    return { type: "value", value: count };
   },
 };
 
 /**
  * COUNTBLANK function - Counts empty cells in a range
  */
-export const COUNTBLANK: FunctionDefinition = {
+const COUNTBLANK: FunctionDefinition = {
   name: "COUNTBLANK",
   minArgs: 1,
   maxArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const flattened = flattenValues(args);
     let count = 0;
@@ -149,67 +154,85 @@ export const COUNTBLANK: FunctionDefinition = {
       }
     }
 
-    return count;
+    return { type: "value", value: count };
   },
 };
 
 /**
  * COUNTIF function - Counts cells that meet a criteria
  */
-export const COUNTIF: FunctionDefinition = {
+const COUNTIF: FunctionDefinition = {
   name: "COUNTIF",
   minArgs: 2,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
-    const error = propagateError(args);
-    if (error) return error;
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
+    // Only propagate errors from the argument structure, not from data values
+    for (const arg of argEvaluatedValues) {
+      if (arg.type === "value" && typeof arg.value === "string" && isFormulaError(arg.value)) {
+        return { type: "value", value: arg.value };
+      }
+    }
 
-    const range = args[0];
-    const criteria = args[1];
+    const range = argEvaluatedValues[0];
+    const criteria = argEvaluatedValues[1];
+
+    if (!range || !criteria) {
+      return { type: "value", value: 0 };
+    }
 
     // Flatten the range values
-    const flattened = flattenValues([range]);
+    const flattened = flattenValues(range.value);
     let count = 0;
 
     for (const value of flattened) {
-      if (matchesCriteria(value, criteria)) {
+      if (matchesCriteria(value, flattenValues(criteria.value)[0])) {
         count++;
       }
     }
 
-    return count;
+    return { type: "value", value: count };
   },
 };
 
 /**
  * SUMIF function - Sums cells that meet a criteria
  */
-export const SUMIF: FunctionDefinition = {
+const SUMIF: FunctionDefinition = {
   name: "SUMIF",
   minArgs: 2,
   maxArgs: 3,
-  evaluate: ({ argValues: args }): CellValue => {
-    const error = propagateError(args);
-    if (error) return error;
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
+    const error = propagateErrorFromEvalResults(argEvaluatedValues);
+    if (error) return { type: "value", value: error };
 
-    const range = args[0];
-    const criteria = args[1];
-    const sumRange = args.length === 3 ? args[2] : range;
+    const range = argEvaluatedValues[0];
+    const criteria = argEvaluatedValues[1];
+    const sumRange = argEvaluatedValues.length === 3 ? argEvaluatedValues[2] : range;
+
+    if (!sumRange) {
+      throw new Error("#VALUE!");
+    }
+
+    if (!range || !criteria) {
+      return { type: "value", value: 0 };
+    }
 
     // Flatten the range and sum range values
-    const rangeFlattened = flattenValues([range]);
-    const sumFlattened = flattenValues([sumRange]);
+    const rangeFlattened = flattenValues(range.value);
+    const sumFlattened = flattenValues(sumRange.value);
 
     // Ensure both arrays are the same length
     if (rangeFlattened.length !== sumFlattened.length) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     let sum = 0;
     let hasNumbers = false;
 
+    const criteriaValue = flattenValues(criteria.value)[0];
+
     for (let i = 0; i < rangeFlattened.length; i++) {
-      if (matchesCriteria(rangeFlattened[i], criteria)) {
+      if (matchesCriteria(rangeFlattened[i], criteriaValue)) {
         const value = sumFlattened[i];
         if (typeof value === "number") {
           sum += value;
@@ -221,7 +244,7 @@ export const SUMIF: FunctionDefinition = {
       }
     }
 
-    return hasNumbers ? sum : 0;
+    return { type: "value", value: hasNumbers ? sum : 0 };
   },
 };
 
@@ -328,12 +351,12 @@ function matchesCriteria(value: CellValue, criteria: CellValue): boolean {
  * AVERAGE function - Returns the average of numbers
  * Ignores text, logical values, and empty cells
  */
-export const AVERAGE: FunctionDefinition = {
+const AVERAGE: FunctionDefinition = {
   name: "AVERAGE",
   minArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const flattened = flattenValues(args);
     let sum = 0;
@@ -341,7 +364,7 @@ export const AVERAGE: FunctionDefinition = {
 
     for (const value of flattened) {
       if (isFormulaError(value)) {
-        return value;
+        return { type: "value", value: value };
       }
 
       if (typeof value === "number") {
@@ -351,10 +374,10 @@ export const AVERAGE: FunctionDefinition = {
     }
 
     if (count === 0) {
-      return "#DIV/0!";
+      return { type: "value", value: FormulaError.DIV0 };
     }
 
-    return sum / count;
+    return { type: "value", value: sum / count };
   },
 };
 
@@ -362,19 +385,19 @@ export const AVERAGE: FunctionDefinition = {
  * MAX function - Returns the maximum value
  * Ignores text, logical values, and empty cells
  */
-export const MAX: FunctionDefinition = {
+const MAX: FunctionDefinition = {
   name: "MAX",
   minArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const flattened = flattenValues(args);
     let max: number | null = null;
 
     for (const value of flattened) {
       if (isFormulaError(value)) {
-        return value;
+        return { type: "value", value: value };
       }
 
       if (typeof value === "number") {
@@ -384,7 +407,7 @@ export const MAX: FunctionDefinition = {
       }
     }
 
-    return max === null ? 0 : max;
+    return { type: "value", value: max === null ? 0 : max };
   },
 };
 
@@ -392,19 +415,19 @@ export const MAX: FunctionDefinition = {
  * MIN function - Returns the minimum value
  * Ignores text, logical values, and empty cells
  */
-export const MIN: FunctionDefinition = {
+const MIN: FunctionDefinition = {
   name: "MIN",
   minArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const flattened = flattenValues(args);
     let min: number | null = null;
 
     for (const value of flattened) {
       if (isFormulaError(value)) {
-        return value;
+        return { type: "value", value: value };
       }
 
       if (typeof value === "number") {
@@ -414,7 +437,7 @@ export const MIN: FunctionDefinition = {
       }
     }
 
-    return min === null ? 0 : min;
+    return { type: "value", value: min === null ? 0 : min };
   },
 };
 
@@ -422,19 +445,19 @@ export const MIN: FunctionDefinition = {
  * MEDIAN function - Returns the median value
  * Ignores text, logical values, and empty cells
  */
-export const MEDIAN: FunctionDefinition = {
+const MEDIAN: FunctionDefinition = {
   name: "MEDIAN",
   minArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const flattened = flattenValues(args);
     const numbers: number[] = [];
 
     for (const value of flattened) {
       if (isFormulaError(value)) {
-        return value;
+        return { type: "value", value: value };
       }
 
       if (typeof value === "number") {
@@ -443,7 +466,7 @@ export const MEDIAN: FunctionDefinition = {
     }
 
     if (numbers.length === 0) {
-      return "#NUM!";
+      return { type: "value", value: FormulaError.NUM };
     }
 
     // Sort numbers
@@ -451,9 +474,9 @@ export const MEDIAN: FunctionDefinition = {
 
     const mid = Math.floor(numbers.length / 2);
     if (numbers.length % 2 === 0) {
-      return (numbers[mid - 1]! + numbers[mid]!) / 2;
+      return { type: "value", value: (numbers[mid - 1]! + numbers[mid]!) / 2 };
     } else {
-      return numbers[mid]!;
+      return { type: "value", value: numbers[mid]! };
     }
   },
 };
@@ -462,19 +485,19 @@ export const MEDIAN: FunctionDefinition = {
  * STDEV function - Sample standard deviation
  * Ignores text, logical values, and empty cells
  */
-export const STDEV: FunctionDefinition = {
+const STDEV: FunctionDefinition = {
   name: "STDEV",
   minArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const flattened = flattenValues(args);
     const numbers: number[] = [];
 
     for (const value of flattened) {
       if (isFormulaError(value)) {
-        return value;
+        return { type: "value", value: value };
       }
 
       if (typeof value === "number") {
@@ -483,7 +506,7 @@ export const STDEV: FunctionDefinition = {
     }
 
     if (numbers.length < 2) {
-      return "#DIV/0!";
+      return { type: "value", value: FormulaError.DIV0 };
     }
 
     const mean = numbers.reduce((sum, n) => sum + n, 0) / numbers.length;
@@ -491,7 +514,7 @@ export const STDEV: FunctionDefinition = {
     const variance =
       squaredDiffs.reduce((sum, d) => sum + d, 0) / (numbers.length - 1);
 
-    return Math.sqrt(variance);
+    return { type: "value", value: Math.sqrt(variance) };
   },
 };
 
@@ -499,19 +522,19 @@ export const STDEV: FunctionDefinition = {
  * VAR function - Sample variance
  * Ignores text, logical values, and empty cells
  */
-export const VAR: FunctionDefinition = {
+const VAR: FunctionDefinition = {
   name: "VAR",
   minArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     const flattened = flattenValues(args);
     const numbers: number[] = [];
 
     for (const value of flattened) {
       if (isFormulaError(value)) {
-        return value;
+        return { type: "value", value: value };
       }
 
       if (typeof value === "number") {
@@ -520,7 +543,7 @@ export const VAR: FunctionDefinition = {
     }
 
     if (numbers.length < 2) {
-      return "#DIV/0!";
+        return { type: "value", value: FormulaError.DIV0 };
     }
 
     const mean = numbers.reduce((sum, n) => sum + n, 0) / numbers.length;
@@ -528,7 +551,7 @@ export const VAR: FunctionDefinition = {
     const variance =
       squaredDiffs.reduce((sum, d) => sum + d, 0) / (numbers.length - 1);
 
-    return variance;
+    return { type: "value", value: variance };
   },
 };
 
@@ -536,29 +559,27 @@ export const VAR: FunctionDefinition = {
  * SUMPRODUCT function - Returns the sum of the products of corresponding values
  * SUMPRODUCT(array1, [array2], ...)
  */
-export const SUMPRODUCT: FunctionDefinition = {
+const SUMPRODUCT: FunctionDefinition = {
   name: "SUMPRODUCT",
   minArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
-    const error = propagateError(args);
-    if (error) return error;
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
+    const error = propagateErrorFromEvalResults(argEvaluatedValues);
+    if (error) return { type: "value", value: error };
 
-    const arrays: CellValue[][][] = args.map((arg) => {
-      if (Array.isArray(arg)) {
-        if (arg.length > 0 && Array.isArray(arg[0])) {
-          return arg as CellValue[][];
-        }
-        return [arg as CellValue[]];
+    const arrays: CellValue[][][] = argEvaluatedValues.map((evalResult) => {
+      if (evalResult.type === '2d-array') {
+        return evalResult.value as CellValue[][];
       }
-      return [[arg]];
+      // Convert scalar to 1x1 array
+      return [[evalResult.value]];
     });
 
     const rows = arrays[0]?.length ?? 0;
     const cols = rows > 0 ? (arrays[0]![0]?.length ?? 0) : 0;
     for (const arr of arrays) {
-      if (arr.length !== rows) return "#VALUE!";
+      if (arr.length !== rows) return { type: "value", value: FormulaError.VALUE };
       for (let r = 0; r < rows; r++) {
-        if ((arr[r]?.length ?? 0) !== cols) return "#VALUE!";
+        if ((arr[r]?.length ?? 0) !== cols) return { type: "value", value: FormulaError.VALUE };
       }
     }
 
@@ -568,7 +589,7 @@ export const SUMPRODUCT: FunctionDefinition = {
         let product = 1;
         for (const arr of arrays) {
           const v = arr[r]![c]!;
-          if (isFormulaError(v)) return v;
+          if (isFormulaError(v)) return { type: "value", value: v };
           let num = 0;
           if (typeof v === "number") num = v;
           else if (typeof v === "boolean") num = v ? 1 : 0;
@@ -583,7 +604,7 @@ export const SUMPRODUCT: FunctionDefinition = {
         sum += product;
       }
     }
-    return sum;
+    return { type: "value", value: sum };
   },
 };
 

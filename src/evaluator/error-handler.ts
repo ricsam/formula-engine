@@ -3,12 +3,16 @@
  * Handles error propagation, recovery, and formatting
  */
 
-import type { FormulaError, CellValue, SimpleCellAddress } from '../core/types';
+import {
+  FormulaError,
+  type CellValue,
+  type SimpleCellAddress,
+} from "../core/types";
 
 /**
  * Error context information for debugging
  */
-export interface ErrorContext {
+interface ErrorContext {
   formula?: string;
   cellAddress?: SimpleCellAddress;
   functionName?: string;
@@ -19,7 +23,7 @@ export interface ErrorContext {
 /**
  * Extended error information
  */
-export interface ExtendedError {
+interface ExtendedError {
   type: FormulaError;
   context: ErrorContext;
   cause?: Error | ExtendedError;
@@ -29,20 +33,11 @@ export interface ExtendedError {
  * Checks if a value is a formula error
  */
 export function isFormulaError(value: CellValue): value is FormulaError {
-  if (typeof value !== 'string') return false;
-  
+  if (typeof value !== "string") return false;
+
   // Check for all known formula errors
-  const errors: FormulaError[] = [
-    '#DIV/0!',
-    '#N/A',
-    '#NAME?',
-    '#NUM!',
-    '#REF!',
-    '#VALUE!',
-    '#CYCLE!',
-    '#ERROR!'
-  ];
-  
+  const errors: FormulaError[] = Object.values(FormulaError);
+
   return errors.includes(value as FormulaError);
 }
 
@@ -51,30 +46,47 @@ export function isFormulaError(value: CellValue): value is FormulaError {
  */
 export function mapJSErrorToFormulaError(error: Error): FormulaError {
   const message = error.message.toLowerCase();
-  
-  if (message.includes('division by zero') || message.includes('divide by zero')) {
-    return '#DIV/0!';
+
+  if (isFormulaError(error.message)) {
+    return error.message as FormulaError;
   }
-  if (message.includes('circular') || message.includes('cycle')) {
-    return '#CYCLE!';
+
+  if (
+    message.includes("division by zero") ||
+    message.includes("divide by zero")
+  ) {
+    return FormulaError.DIV0;
   }
-  if (message.includes('invalid reference') || (message.includes('reference') && !message.includes('circular'))) {
-    return '#REF!';
+  if (message.includes("circular") || message.includes("cycle")) {
+    return FormulaError.CYCLE;
   }
-  if (message.includes('invalid name') || message.includes('unknown function')) {
-    return '#NAME?';
+  if (
+    message.includes("invalid reference") ||
+    (message.includes("reference") && !message.includes("circular"))
+  ) {
+    return FormulaError.REF;
   }
-  if (message.includes('invalid number') || message.includes('nan') || message.includes('infinity')) {
-    return '#NUM!';
+  if (
+    message.includes("invalid name") ||
+    message.includes("unknown function")
+  ) {
+    return FormulaError.NAME;
   }
-  if (message.includes('type') || message.includes('invalid argument')) {
-    return '#VALUE!';
+  if (
+    message.includes("invalid number") ||
+    message.includes("nan") ||
+    message.includes("infinity")
+  ) {
+    return FormulaError.NUM;
   }
-  if (message.includes('not available') || message.includes('n/a')) {
-    return '#N/A';
+  if (message.includes("type") || message.includes("invalid argument")) {
+    return FormulaError.VALUE;
   }
-  
-  return '#ERROR!';
+  if (message.includes("not available") || message.includes("n/a")) {
+    return FormulaError.NA;
+  }
+
+  return FormulaError.ERROR;
 }
 
 /**
@@ -86,7 +98,7 @@ export function createFormulaError(
 ): ExtendedError {
   return {
     type,
-    context: context || {}
+    context: context || {},
   };
 }
 
@@ -123,19 +135,19 @@ export function validateNumericArgument(
   if (isFormulaError(value)) {
     return value;
   }
-  
-  if (typeof value === 'number') {
+
+  if (typeof value === "number") {
     if (!isFinite(value)) {
-      return '#NUM!';
+      return FormulaError.NUM;
     }
     return null;
   }
-  
-  if (typeof value === 'string') {
+
+  if (typeof value === "string") {
     // Trim whitespace
     const trimmed = value.trim();
-    if (trimmed === '') return '#VALUE!';
-    
+    if (trimmed === "") return FormulaError.VALUE;
+
     const num = parseFloat(trimmed);
     if (!isNaN(num) && isFinite(num)) {
       // Check for valid number format (reject things like "12.34.56")
@@ -143,18 +155,18 @@ export function validateNumericArgument(
         return null;
       }
     }
-    return '#VALUE!';
+    return FormulaError.VALUE;
   }
-  
-  if (typeof value === 'boolean') {
+
+  if (typeof value === "boolean") {
     return null; // Booleans can be coerced to numbers
   }
-  
+
   if (value === undefined) {
     return null; // Empty cells treated as 0
   }
-  
-  return '#VALUE!';
+
+  return FormulaError.VALUE;
 }
 
 /**
@@ -167,7 +179,7 @@ export function validateTextArgument(
   if (isFormulaError(value)) {
     return value;
   }
-  
+
   // All non-error values can be converted to text
   return null;
 }
@@ -182,31 +194,31 @@ export function validateBooleanArgument(
   if (isFormulaError(value)) {
     return value;
   }
-  
-  if (typeof value === 'boolean') {
+
+  if (typeof value === "boolean") {
     return null;
   }
-  
-  if (typeof value === 'number' || typeof value === 'string') {
+
+  if (typeof value === "number" || typeof value === "string") {
     // Numbers and strings can be coerced to booleans
     return null;
   }
-  
+
   if (value === undefined) {
     return null; // Empty cells treated as FALSE
   }
-  
-  return '#VALUE!';
+
+  return FormulaError.VALUE;
 }
 
 /**
  * Formats error for display
  */
 export function formatError(error: FormulaError | ExtendedError): string {
-  if (typeof error === 'string') {
+  if (typeof error === "string") {
     return error;
   }
-  
+
   return error.type;
 }
 
@@ -215,34 +227,34 @@ export function formatError(error: FormulaError | ExtendedError): string {
  */
 export function getDetailedErrorMessage(error: ExtendedError): string {
   const parts: string[] = [error.type];
-  
+
   if (error.context.message) {
     parts.push(`: ${error.context.message}`);
   }
-  
+
   if (error.context.cellAddress) {
     const addr = error.context.cellAddress;
     parts.push(` at cell ${addr.sheet}:${addr.col}:${addr.row}`);
   }
-  
+
   if (error.context.functionName) {
     parts.push(` in function ${error.context.functionName}`);
     if (error.context.argumentIndex !== undefined) {
       parts.push(` (argument ${error.context.argumentIndex + 1})`);
     }
   }
-  
+
   if (error.context.formula) {
     parts.push(` in formula: ${error.context.formula}`);
   }
-  
-  return parts.join('');
+
+  return parts.join("");
 }
 
 /**
  * Error recovery strategies
  */
-export interface ErrorRecoveryStrategy {
+interface ErrorRecoveryStrategy {
   onError: (error: ExtendedError) => CellValue;
 }
 
@@ -250,7 +262,7 @@ export interface ErrorRecoveryStrategy {
  * Default error recovery - just returns the error
  */
 export const defaultErrorRecovery: ErrorRecoveryStrategy = {
-  onError: (error) => error.type
+  onError: (error) => error.type,
 };
 
 /**
@@ -258,11 +270,11 @@ export const defaultErrorRecovery: ErrorRecoveryStrategy = {
  */
 export const suppressErrorsRecovery: ErrorRecoveryStrategy = {
   onError: (error) => {
-    if (error.type === '#N/A') {
+    if (error.type === "#N/A") {
       return undefined; // Keep N/A as undefined
     }
     return 0; // Convert other errors to 0
-  }
+  },
 };
 
 /**
@@ -271,11 +283,11 @@ export const suppressErrorsRecovery: ErrorRecoveryStrategy = {
 export class ErrorHandler {
   private errors: Map<string, ExtendedError> = new Map();
   private strategy: ErrorRecoveryStrategy;
-  
+
   constructor(strategy: ErrorRecoveryStrategy = defaultErrorRecovery) {
     this.strategy = strategy;
   }
-  
+
   /**
    * Records an error for a cell
    */
@@ -284,52 +296,52 @@ export class ErrorHandler {
     error: FormulaError | ExtendedError,
     context?: ErrorContext
   ): void {
-    const extendedError = typeof error === 'string' 
-      ? createFormulaError(error, context)
-      : { ...error, context: { ...error.context, ...context } };
-      
+    const extendedError =
+      typeof error === "string"
+        ? createFormulaError(error, context)
+        : { ...error, context: { ...error.context, ...context } };
+
     this.errors.set(cellKey, extendedError);
   }
-  
+
   /**
    * Gets error for a cell
    */
   getError(cellKey: string): ExtendedError | undefined {
     return this.errors.get(cellKey);
   }
-  
+
   /**
    * Clears error for a cell
    */
   clearError(cellKey: string): void {
     this.errors.delete(cellKey);
   }
-  
+
   /**
    * Clears all errors
    */
   clearAllErrors(): void {
     this.errors.clear();
   }
-  
+
   /**
    * Gets all cells with errors
    */
   getErrorCells(): string[] {
     return Array.from(this.errors.keys());
   }
-  
+
   /**
    * Handles error with recovery strategy
    */
   handleError(error: FormulaError | ExtendedError): CellValue {
-    const extendedError = typeof error === 'string'
-      ? createFormulaError(error)
-      : error;
-      
+    const extendedError =
+      typeof error === "string" ? createFormulaError(error) : error;
+
     return this.strategy.onError(extendedError);
   }
-  
+
   /**
    * Sets error recovery strategy
    */
@@ -342,15 +354,15 @@ export class ErrorHandler {
  * Global error messages for common errors
  */
 export const ERROR_MESSAGES = {
-  DIVISION_BY_ZERO: 'Division by zero',
-  INVALID_REFERENCE: 'Invalid cell reference',
-  UNKNOWN_NAME: 'Unknown name or function',
-  INVALID_NUMBER: 'Invalid numeric value',
-  TYPE_MISMATCH: 'Type mismatch in operation',
-  CIRCULAR_REFERENCE: 'Circular reference detected',
-  VALUE_NOT_AVAILABLE: 'Value not available',
-  GENERAL_ERROR: 'Formula evaluation error',
-  SPILL_BLOCKED: 'Spill range isn\'t blank'
+  DIVISION_BY_ZERO: "Division by zero",
+  INVALID_REFERENCE: "Invalid cell reference",
+  UNKNOWN_NAME: "Unknown name or function",
+  INVALID_NUMBER: "Invalid numeric value",
+  TYPE_MISMATCH: "Type mismatch in operation",
+  CIRCULAR_REFERENCE: "Circular reference detected",
+  VALUE_NOT_AVAILABLE: "Value not available",
+  GENERAL_ERROR: "Formula evaluation error",
+  SPILL_BLOCKED: "Spill range isn't blank",
 };
 
 /**
@@ -361,19 +373,19 @@ export function createStandardError(
   additionalContext?: Partial<ErrorContext>
 ): ExtendedError {
   const messageMap: Record<FormulaError, string> = {
-    '#DIV/0!': ERROR_MESSAGES.DIVISION_BY_ZERO,
-    '#REF!': ERROR_MESSAGES.INVALID_REFERENCE,
-    '#NAME?': ERROR_MESSAGES.UNKNOWN_NAME,
-    '#NUM!': ERROR_MESSAGES.INVALID_NUMBER,
-    '#VALUE!': ERROR_MESSAGES.TYPE_MISMATCH,
-    '#CYCLE!': ERROR_MESSAGES.CIRCULAR_REFERENCE,
-    '#N/A': ERROR_MESSAGES.VALUE_NOT_AVAILABLE,
-    '#ERROR!': ERROR_MESSAGES.GENERAL_ERROR,
-    '#SPILL!': ERROR_MESSAGES.SPILL_BLOCKED
+    "#DIV/0!": ERROR_MESSAGES.DIVISION_BY_ZERO,
+    "#REF!": ERROR_MESSAGES.INVALID_REFERENCE,
+    "#NAME?": ERROR_MESSAGES.UNKNOWN_NAME,
+    "#NUM!": ERROR_MESSAGES.INVALID_NUMBER,
+    "#VALUE!": ERROR_MESSAGES.TYPE_MISMATCH,
+    "#CYCLE!": ERROR_MESSAGES.CIRCULAR_REFERENCE,
+    "#N/A": ERROR_MESSAGES.VALUE_NOT_AVAILABLE,
+    "#ERROR!": ERROR_MESSAGES.GENERAL_ERROR,
+    "#SPILL!": ERROR_MESSAGES.SPILL_BLOCKED,
   };
-  
+
   return createFormulaError(type, {
     message: messageMap[type],
-    ...additionalContext
+    ...additionalContext,
   });
 }

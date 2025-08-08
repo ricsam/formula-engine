@@ -253,12 +253,7 @@ function letterToColNumber(letters: string): number {
   return result - 1;
 }
 
-/**
- * Count non-empty cells in a sheet
- */
-export function countNonEmptyCells(sheet: Sheet): number {
-  return sheet.cells.size;
-}
+
 
 /**
  * Get all non-empty cells as a Map
@@ -267,51 +262,9 @@ export function getAllCells(sheet: Sheet): Map<string, Cell> {
   return new Map(sheet.cells);
 }
 
-/**
- * Copy cells from one range to another within the same sheet
- */
-export function copyCellsInSheet(
-  sheet: Sheet,
-  sourceRange: SimpleCellRange,
-  targetTopLeft: SimpleCellAddress
-): void {
-  const cells = getCellsInRange(sheet, sourceRange);
-  const offsetCol = targetTopLeft.col - sourceRange.start.col;
-  const offsetRow = targetTopLeft.row - sourceRange.start.row;
-  
-  // First collect all the cells to copy (to avoid modifying while iterating)
-  const cellsToCopy: Array<[SimpleCellAddress, Cell]> = [];
-  
-  for (const [key, cell] of cells) {
-    const sourceAddr = parseA1Key(key, sheet.id);
-    if (sourceAddr) {
-      const targetAddr: SimpleCellAddress = {
-        sheet: sheet.id,
-        col: sourceAddr.col + offsetCol,
-        row: sourceAddr.row + offsetRow
-      };
-      cellsToCopy.push([targetAddr, cell]);
-    }
-  }
-  
-  // Then apply all the copies
-  for (const [addr, cell] of cellsToCopy) {
-    setCell(sheet, addr, cell);
-  }
-}
 
-/**
- * Remove cells in a range
- */
-export function removeCellsInRange(sheet: Sheet, range: SimpleCellRange): void {
-  const cellsToRemove = getCellsInRange(sheet, range);
-  
-  for (const key of cellsToRemove.keys()) {
-    sheet.cells.delete(key);
-  }
-  
-  updateSheetDimensions(sheet);
-}
+
+
 
 /**
  * Shift cells when inserting/deleting rows or columns
@@ -366,17 +319,7 @@ export function shiftCells(
   updateSheetDimensions(sheet);
 }
 
-/**
- * Check if a sheet has any formulas
- */
-export function hasFormulas(sheet: Sheet): boolean {
-  for (const cell of sheet.cells.values()) {
-    if (cell.formula) {
-      return true;
-    }
-  }
-  return false;
-}
+
 
 /**
  * Get all cells with formulas

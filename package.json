@@ -9,7 +9,8 @@
     "start": "NODE_ENV=production bun demo/index.tsx",
     "build": "tsr generate && bun run build.ts",
     "generate-routes": "tsr generate",
-    "watch-routes": "tsr watch"
+    "watch-routes": "tsr watch",
+    "knip": "knip"
   },
   "devDependencies": {
     "@anocca-pub/components": "^0.0.26",
@@ -22,21 +23,22 @@
     "@tanstack/router-cli": "^1.130.15",
     "@tanstack/router-plugin": "^1.130.15",
     "@types/bun": "latest",
+    "@types/node": "^24.2.0",
     "@types/react": "^19",
-    "react-hook-form": "^7.62.0",
     "@types/react-dom": "^19",
     "@xyflow/react": "^12.8.2",
     "bun-plugin-tailwind": "^0.0.15",
-    "chevrotain": "^11.0.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "knip": "^5.62.0",
     "lucide-react": "^0.525.0",
     "react": "^19",
     "react-dom": "^19",
+    "react-hook-form": "^7.62.0",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.11",
     "tailwindcss-animate": "^1.0.7",
-    "zod": "^4.0.14"
+    "typescript": "^5.9.2"
   },
   "peerDependencies": {
     "typescript": "^5"

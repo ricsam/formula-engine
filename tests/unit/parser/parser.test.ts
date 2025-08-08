@@ -20,6 +20,7 @@ import type {
   NamedExpressionNode,
   ErrorNode
 } from '../../../src/parser/ast';
+import { FormulaError } from "../../../src/core/types";
 
 describe('Parser - Basic Values', () => {
   test('should parse numbers', () => {
@@ -58,7 +59,7 @@ describe('Parser - Basic Values', () => {
   test('should parse error values', () => {
     const ast = parseFormula('#DIV/0!') as ErrorNode;
     expect(ast.type).toBe('error');
-    expect(ast.error).toBe('#DIV/0!');
+    expect(ast.error).toBe(FormulaError.DIV0);
   });
 
   test('should parse empty formula', () => {

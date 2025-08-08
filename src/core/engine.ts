@@ -136,9 +136,32 @@ export class FormulaEngine {
   private errorHandler: ErrorHandler;
   private eventEmitter: EventEmitter<FormulaEngineEvents>;
   // New event system: cell-level immediate and sheet-level batched updates
-  private cellUpdateListeners: Map<string, Set<(event: { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }) => void>> = new Map();
-  private cellsUpdateListeners: Map<number, Set<(events: { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }[]) => void>> = new Map();
-  private pendingSheetUpdates: Map<number, { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }[]> = new Map();
+  private cellUpdateListeners: Map<
+    string,
+    Set<
+      (event: {
+        address: SimpleCellAddress;
+        oldValue: CellValue;
+        newValue: CellValue;
+      }) => void
+    >
+  > = new Map();
+  private cellsUpdateListeners: Map<
+    number,
+    Set<
+      (
+        events: {
+          address: SimpleCellAddress;
+          oldValue: CellValue;
+          newValue: CellValue;
+        }[]
+      ) => void
+    >
+  > = new Map();
+  private pendingSheetUpdates: Map<
+    number,
+    { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }[]
+  > = new Map();
   private batchDepth: number = 0;
 
   constructor(options: FormulaEngineOptions = {}) {
@@ -345,7 +368,6 @@ export class FormulaEngine {
     for (const [key, content] of contents) {
       const address = parseCellAddress(key, sheetId);
       if (address) {
-        console.log("setting cell", address, content);
         const change = this.setCellValue(address, content);
         if (change) {
           changes.push(change);
@@ -523,14 +545,10 @@ export class FormulaEngine {
         }
 
         // Handle array results
-        if (
-          result.isArrayResult &&
-          Array.isArray(result.value) &&
-          result.arrayDimensions
-        ) {
+        if (result.type === "2d-array") {
           // Implement array spilling
-          const arrayValue = result.value as CellValue[][];
-          const { rows, cols } = result.arrayDimensions;
+          const arrayValue = result.value;
+          const { rows, cols } = result.dimensions;
 
           // Calculate spill range
           const spillRange: SimpleCellRange = {
@@ -1736,7 +1754,7 @@ export class FormulaEngine {
           context.evaluationStack.add(key);
 
           const result = this.evaluator.evaluate(ast, context);
-          return result.value;
+          return result.type === "value" ? result.value : result.value[0]?.[0];
         } catch (error) {
           if (
             error instanceof ParseError &&
@@ -2166,7 +2184,8 @@ export class FormulaEngine {
       for (const dep of direct) cellsToRecalculate.add(dep);
 
       // Dependents from ranges containing this cell
-      const rangeKeys = this.dependencyGraph.getRangesContainingCell(cellAddress);
+      const rangeKeys =
+        this.dependencyGraph.getRangesContainingCell(cellAddress);
       for (const rangeKey of rangeKeys) {
         const deps = this.dependencyGraph.getDependents(rangeKey);
         for (const dep of deps) cellsToRecalculate.add(dep);
@@ -2181,7 +2200,9 @@ export class FormulaEngine {
 
     // Iteratively process until no new dependents remain
     while (true) {
-      const pending = [...cellsToRecalculate].filter((k) => !recalculated.has(k));
+      const pending = [...cellsToRecalculate].filter(
+        (k) => !recalculated.has(k)
+      );
       if (pending.length === 0) break;
 
       const ordered = this.sortDependentsTopologically(pending);
@@ -2255,13 +2276,9 @@ export class FormulaEngine {
       const result = this.evaluator.evaluate(ast, context);
 
       // Update the cell value
-      if (
-        result.isArrayResult &&
-        Array.isArray(result.value) &&
-        result.arrayDimensions
-      ) {
+      if (result.type === "2d-array") {
         // Handle array spilling for recalculation
-        const arrayValue = result.value as CellValue[][];
+        const arrayValue = result.value;
         cell.value = arrayValue[0]?.[0] ?? undefined;
 
         // If this is an array formula origin, update the spilled values
@@ -2411,7 +2428,11 @@ export class FormulaEngine {
    */
   onCellUpdate(
     address: SimpleCellAddress,
-    listener: (event: { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }) => void
+    listener: (event: {
+      address: SimpleCellAddress;
+      oldValue: CellValue;
+      newValue: CellValue;
+    }) => void
   ): () => void {
     const key = addressToKey(address);
     if (!this.cellUpdateListeners.has(key)) {
@@ -2433,7 +2454,13 @@ export class FormulaEngine {
    */
   onCellsUpdate(
     sheetId: number,
-    listener: (events: { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }[]) => void
+    listener: (
+      events: {
+        address: SimpleCellAddress;
+        oldValue: CellValue;
+        newValue: CellValue;
+      }[]
+    ) => void
   ): () => void {
     if (!this.cellsUpdateListeners.has(sheetId)) {
       this.cellsUpdateListeners.set(sheetId, new Set());
@@ -2460,7 +2487,11 @@ export class FormulaEngine {
     }
   }
 
-  private queueSheetUpdate(event: { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }): void {
+  private queueSheetUpdate(event: {
+    address: SimpleCellAddress;
+    oldValue: CellValue;
+    newValue: CellValue;
+  }): void {
     const SheetId = event.address.sheet;
     if (!this.pendingSheetUpdates.has(SheetId)) {
       this.pendingSheetUpdates.set(SheetId, []);
@@ -2483,7 +2514,11 @@ export class FormulaEngine {
     }
   }
 
-  private emitCellUpdate(event: { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }): void {
+  private emitCellUpdate(event: {
+    address: SimpleCellAddress;
+    oldValue: CellValue;
+    newValue: CellValue;
+  }): void {
     // Immediate cell listener callbacks
     const key = addressToKey(event.address);
     const listeners = this.cellUpdateListeners.get(key);

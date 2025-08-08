@@ -27,7 +27,7 @@ describe('Advanced Math Functions', () => {
     };
     
     const result = evaluator.evaluate(ast, context);
-    return result.value;
+    return result.value as any;
   };
 
   beforeEach(() => {

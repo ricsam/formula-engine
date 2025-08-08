@@ -1,15 +1,25 @@
-import type { CellValue, SimpleCellRange } from "../../core/types";
-import type {
-  FunctionDefinition,
-  EvaluationContext,
-} from "../../evaluator/evaluator";
+import type { ASTNode, RangeNode, ReferenceNode } from "src/parser/ast";
 import {
+  offsetRange,
   parseCellAddress,
   parseCellRange,
-  offsetRange,
 } from "../../core/address";
-import { coerceToNumber, isFormulaError, propagateError } from "../index";
-import type { ASTNode, RangeNode, ReferenceNode } from "src/parser/ast";
+import {
+  FormulaError,
+  type SimpleCellRange,
+  type CellValue,
+} from "../../core/types";
+import type {
+  FunctionDefinition,
+  FunctionEvaluationResult,
+} from "../../evaluator/evaluator";
+import {
+  coerceToNumber,
+  getArrayFromEvalResult,
+  isFormulaError,
+  propagateErrorFromEvalResults,
+  safeGetScalarValue,
+} from "../utils";
 
 /**
  * Helper to get a 2D array from arguments
@@ -46,46 +56,54 @@ function flatten2D(array: CellValue[][]): CellValue[] {
  * INDEX function - Returns a value from a table or array
  * INDEX(array, row_num, [column_num])
  */
-export const INDEX: FunctionDefinition = {
+const INDEX: FunctionDefinition = {
   name: "INDEX",
   minArgs: 2,
   maxArgs: 3,
-  evaluate: ({ argValues: args }): CellValue => {
-    const error = propagateError(args);
-    if (error) return error;
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
+    const error = propagateErrorFromEvalResults(argEvaluatedValues);
+    if (error) return { type: "value", value: error };
 
-    // Get the array/range
-    const array = getArrayFromArg(args[0]);
+    // Get the array/range (with bounds check)
+    if (!argEvaluatedValues[0])
+      return { type: "value", value: FormulaError.VALUE };
+    if (!argEvaluatedValues[0])
+      return { type: "value", value: FormulaError.VALUE };
+    const array = getArrayFromEvalResult(argEvaluatedValues[0]);
 
     // Get row number (1-based)
     let rowNum: number;
     try {
-      rowNum = Math.floor(coerceToNumber(args[1]));
+      rowNum = Math.floor(
+        coerceToNumber(safeGetScalarValue(argEvaluatedValues, 1, 1))
+      );
     } catch {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     // Get column number (1-based, optional)
     let colNum = 1;
-    if (args.length >= 3) {
+    if (argEvaluatedValues.length >= 3) {
       try {
-        colNum = Math.floor(coerceToNumber(args[2]));
+        colNum = Math.floor(
+          coerceToNumber(safeGetScalarValue(argEvaluatedValues, 2, 1))
+        );
       } catch {
-        return "#VALUE!";
+        return { type: "value", value: FormulaError.VALUE };
       }
     }
 
     // Validate indices
     if (rowNum < 1 || rowNum > array.length) {
-      return "#REF!";
+      return { type: "value", value: FormulaError.REF };
     }
 
     const row = array[rowNum - 1];
     if (!row || colNum < 1 || colNum > row.length) {
-      return "#REF!";
+      return { type: "value", value: FormulaError.REF };
     }
 
-    return row[colNum - 1];
+    return { type: "value", value: row[colNum - 1] };
   },
 };
 
@@ -94,28 +112,32 @@ export const INDEX: FunctionDefinition = {
  * MATCH(lookup_value, lookup_array, [match_type])
  * match_type: 1 = less than or equal (default), 0 = exact match, -1 = greater than or equal
  */
-export const MATCH: FunctionDefinition = {
+const MATCH: FunctionDefinition = {
   name: "MATCH",
   minArgs: 2,
   maxArgs: 3,
-  evaluate: ({ argValues: args }): CellValue => {
-    const error = propagateError(args);
-    if (error) return error;
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
+    const error = propagateErrorFromEvalResults(argEvaluatedValues);
+    if (error) return { type: "value", value: error };
 
-    const lookupValue = args[0];
-    const lookupArray = getArrayFromArg(args[1]);
+    const lookupValue = safeGetScalarValue(argEvaluatedValues, 0, 0);
+    if (!argEvaluatedValues[1])
+      return { type: "value", value: FormulaError.VALUE };
+    const lookupArray = getArrayFromEvalResult(argEvaluatedValues[1]);
     const flatArray = flatten2D(lookupArray);
 
     // Get match type (default is 1)
     let matchType = 1;
-    if (args.length >= 3) {
+    if (argEvaluatedValues.length >= 3) {
       try {
-        matchType = Math.floor(coerceToNumber(args[2]));
+        matchType = Math.floor(
+          coerceToNumber(safeGetScalarValue(argEvaluatedValues, 2, 1))
+        );
         if (matchType !== -1 && matchType !== 0 && matchType !== 1) {
-          return "#VALUE!";
+          return { type: "value", value: FormulaError.VALUE };
         }
       } catch {
-        return "#VALUE!";
+        return { type: "value", value: FormulaError.VALUE };
       }
     }
 
@@ -123,10 +145,10 @@ export const MATCH: FunctionDefinition = {
     if (matchType === 0) {
       for (let i = 0; i < flatArray.length; i++) {
         if (compareValues(flatArray[i], lookupValue) === 0) {
-          return i + 1; // 1-based index
+          return { type: "value", value: i + 1 }; // 1-based index
         }
       }
-      return "#N/A";
+      return { type: "value", value: FormulaError.NA };
     }
 
     // For matchType 1 or -1, array must be sorted
@@ -143,17 +165,20 @@ export const MATCH: FunctionDefinition = {
           break; // Array is sorted ascending, so we can stop
         }
       }
-      return lastValidIndex >= 0 ? lastValidIndex + 1 : "#N/A";
+      return {
+        type: "value",
+        value: lastValidIndex >= 0 ? lastValidIndex + 1 : FormulaError.NA,
+      };
     } else {
       // matchType === -1
       // For descending arrays, find the first value >= lookupValue
       for (let i = 0; i < flatArray.length; i++) {
         const cmp = compareValues(flatArray[i], lookupValue);
         if (cmp >= 0) {
-          return i + 1;
+          return { type: "value", value: i + 1 };
         }
       }
-      return "#N/A";
+      return { type: "value", value: FormulaError.NA };
     }
   },
 };
@@ -162,22 +187,30 @@ export const MATCH: FunctionDefinition = {
  * VLOOKUP function - Vertical lookup
  * VLOOKUP(lookup_value, table_array, col_index_num, [range_lookup])
  */
-export const VLOOKUP: FunctionDefinition = {
+const VLOOKUP: FunctionDefinition = {
   name: "VLOOKUP",
   minArgs: 3,
   maxArgs: 4,
-  evaluate: ({ argValues: args }): CellValue => {
-    const error = propagateError(args);
-    if (error) return error;
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
+    const error = propagateErrorFromEvalResults(argEvaluatedValues);
+    if (error)
+      return {
+        type: "value",
+        value: error,
+      };
 
-    const lookupValue = args[0];
-    const tableArray = getArrayFromArg(args[1]);
+    const lookupValue = safeGetScalarValue(argEvaluatedValues, 0, 0);
+    if (!argEvaluatedValues[1])
+      return { type: "value", value: FormulaError.VALUE };
+    const tableArray = getArrayFromEvalResult(argEvaluatedValues[1]);
 
     let colIndex: number;
     try {
-      colIndex = Math.floor(coerceToNumber(args[2]));
+      colIndex = Math.floor(
+        coerceToNumber(safeGetScalarValue(argEvaluatedValues, 2, 1))
+      );
     } catch {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     // Validate column index
@@ -187,13 +220,13 @@ export const VLOOKUP: FunctionDefinition = {
         tableArray[0] &&
         colIndex > tableArray[0].length)
     ) {
-      return "#REF!";
+      return { type: "value", value: FormulaError.REF };
     }
 
     // Get range lookup flag (default is TRUE for approximate match)
     let rangeLookup = true;
-    if (args.length >= 4) {
-      const rl = args[3];
+    if (argEvaluatedValues.length >= 4) {
+      const rl = safeGetScalarValue(argEvaluatedValues, 3, false);
       if (typeof rl === "boolean") {
         rangeLookup = rl;
       } else if (typeof rl === "number") {
@@ -220,19 +253,25 @@ export const VLOOKUP: FunctionDefinition = {
 
       if (lastValidRow >= 0 && tableArray[lastValidRow]) {
         const row = tableArray[lastValidRow]!;
-        return row[colIndex - 1];
+        return {
+          type: "value",
+          value: row[colIndex - 1],
+        };
       }
-      return "#N/A";
+      return { type: "value", value: FormulaError.NA };
     } else {
       // Exact match
       for (let i = 0; i < tableArray.length; i++) {
         const row = tableArray[i];
         if (!row || row.length === 0) continue;
         if (compareValues(row[0], lookupValue) === 0) {
-          return row[colIndex - 1];
+          return {
+            type: "value",
+            value: row[colIndex - 1],
+          };
         }
       }
-      return "#N/A";
+      return { type: "value", value: FormulaError.NA };
     }
   },
 };
@@ -241,33 +280,41 @@ export const VLOOKUP: FunctionDefinition = {
  * HLOOKUP function - Horizontal lookup
  * HLOOKUP(lookup_value, table_array, row_index_num, [range_lookup])
  */
-export const HLOOKUP: FunctionDefinition = {
+const HLOOKUP: FunctionDefinition = {
   name: "HLOOKUP",
   minArgs: 3,
   maxArgs: 4,
-  evaluate: ({ argValues: args }): CellValue => {
-    const error = propagateError(args);
-    if (error) return error;
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
+    const error = propagateErrorFromEvalResults(argEvaluatedValues);
+    if (error)
+      return {
+        type: "value",
+        value: error,
+      };
 
-    const lookupValue = args[0];
-    const tableArray = getArrayFromArg(args[1]);
+    const lookupValue = safeGetScalarValue(argEvaluatedValues, 0, 0);
+    if (!argEvaluatedValues[1])
+      return { type: "value", value: FormulaError.VALUE };
+    const tableArray = getArrayFromEvalResult(argEvaluatedValues[1]);
 
     let rowIndex: number;
     try {
-      rowIndex = Math.floor(coerceToNumber(args[2]));
+      rowIndex = Math.floor(
+        coerceToNumber(safeGetScalarValue(argEvaluatedValues, 2, 1))
+      );
     } catch {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     // Validate row index
     if (rowIndex < 1 || rowIndex > tableArray.length) {
-      return "#REF!";
+      return { type: "value", value: FormulaError.REF };
     }
 
     // Get range lookup flag (default is TRUE)
     let rangeLookup = true;
-    if (args.length >= 4) {
-      const rl = args[3];
+    if (argEvaluatedValues.length >= 4) {
+      const rl = safeGetScalarValue(argEvaluatedValues, 3, false);
       if (typeof rl === "boolean") {
         rangeLookup = rl;
       } else if (typeof rl === "number") {
@@ -277,9 +324,10 @@ export const HLOOKUP: FunctionDefinition = {
       }
     }
 
-    if (tableArray.length === 0) return "#N/A";
+    if (tableArray.length === 0)
+      return { type: "value", value: FormulaError.NA };
     const firstRow = tableArray[0];
-    if (!firstRow) return "#N/A";
+    if (!firstRow) return { type: "value", value: FormulaError.NA };
 
     // Search in first row
     if (rangeLookup) {
@@ -296,18 +344,24 @@ export const HLOOKUP: FunctionDefinition = {
 
       if (lastValidCol >= 0 && tableArray[rowIndex - 1]) {
         const row = tableArray[rowIndex - 1]!;
-        return row[lastValidCol];
+        return {
+          type: "value",
+          value: row[lastValidCol],
+        };
       }
-      return "#N/A";
+      return { type: "value", value: FormulaError.NA };
     } else {
       // Exact match
       for (let i = 0; i < firstRow.length; i++) {
         if (compareValues(firstRow[i], lookupValue) === 0) {
           const targetRow = tableArray[rowIndex - 1];
-          return targetRow ? targetRow[i] : "#N/A";
+          return {
+            type: "value",
+            value: targetRow ? targetRow[i] : FormulaError.NA,
+          };
         }
       }
-      return "#N/A";
+      return { type: "value", value: FormulaError.NA };
     }
   },
 };
@@ -316,44 +370,59 @@ export const HLOOKUP: FunctionDefinition = {
  * XLOOKUP function - Modern lookup function
  * XLOOKUP(lookup_value, lookup_array, return_array, [if_not_found], [match_mode], [search_mode])
  */
-export const XLOOKUP: FunctionDefinition = {
+const XLOOKUP: FunctionDefinition = {
   name: "XLOOKUP",
   minArgs: 3,
   maxArgs: 6,
-  evaluate: ({ argValues: args }): CellValue => {
-    const error = propagateError(args);
-    if (error) return error;
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
+    const error = propagateErrorFromEvalResults(argEvaluatedValues);
+    if (error)
+      return {
+        type: "value",
+        value: error,
+      };
 
-    const lookupValue = args[0];
-    const lookupArray = getArrayFromArg(args[1]);
-    const returnArray = getArrayFromArg(args[2]);
+    const lookupValue = safeGetScalarValue(argEvaluatedValues, 0, 0);
+    if (!argEvaluatedValues[1])
+      return { type: "value", value: FormulaError.VALUE };
+    const lookupArray = getArrayFromEvalResult(argEvaluatedValues[1]);
+    if (!argEvaluatedValues[2])
+      return { type: "value", value: FormulaError.VALUE };
+    const returnArray = getArrayFromEvalResult(argEvaluatedValues[2]);
 
     // Get if_not_found value (optional)
-    const ifNotFound = args.length >= 4 ? args[3] : "#N/A";
+    const ifNotFound =
+      argEvaluatedValues.length >= 4
+        ? safeGetScalarValue(argEvaluatedValues, 3, "#N/A")
+        : "#N/A";
 
     // Get match mode (default is 0 for exact match)
     let matchMode = 0;
-    if (args.length >= 5) {
+    if (argEvaluatedValues.length >= 5) {
       try {
-        matchMode = Math.floor(coerceToNumber(args[4]));
+        matchMode = Math.floor(
+          coerceToNumber(safeGetScalarValue(argEvaluatedValues, 4, 0))
+        );
         if (matchMode < -1 || matchMode > 2) {
-          return "#VALUE!";
+          return { type: "value", value: FormulaError.VALUE };
         }
       } catch {
-        return "#VALUE!";
+        return { type: "value", value: FormulaError.VALUE };
       }
     }
 
     // Get search mode (default is 1 for first to last)
     let searchMode = 1;
-    if (args.length >= 6) {
+    if (argEvaluatedValues.length >= 6) {
       try {
-        searchMode = Math.floor(coerceToNumber(args[5]));
+        searchMode = Math.floor(
+          coerceToNumber(safeGetScalarValue(argEvaluatedValues, 5, 1))
+        );
         if (![1, -1, 2, -2].includes(searchMode)) {
-          return "#VALUE!";
+          return { type: "value", value: FormulaError.VALUE };
         }
       } catch {
-        return "#VALUE!";
+        return { type: "value", value: FormulaError.VALUE };
       }
     }
 
@@ -363,7 +432,7 @@ export const XLOOKUP: FunctionDefinition = {
 
     // Arrays must be same size
     if (flatLookup.length !== flatReturn.length) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     // Determine search direction and method
@@ -372,7 +441,7 @@ export const XLOOKUP: FunctionDefinition = {
 
     if (isBinary && matchMode !== 0) {
       // Binary search only works with exact match
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
 
     // Search based on match mode
@@ -418,7 +487,7 @@ export const XLOOKUP: FunctionDefinition = {
     } else if (matchMode === 2) {
       // Wildcard match (only for strings)
       if (typeof lookupValue !== "string") {
-        return "#VALUE!";
+        return { type: "value", value: FormulaError.VALUE };
       }
 
       const pattern = wildcardToRegex(lookupValue);
@@ -433,7 +502,10 @@ export const XLOOKUP: FunctionDefinition = {
       }
     }
 
-    return foundIndex >= 0 ? flatReturn[foundIndex] : ifNotFound;
+    return {
+      type: "value",
+      value: foundIndex >= 0 ? flatReturn[foundIndex] : ifNotFound,
+    };
   },
 };
 
@@ -441,18 +513,18 @@ export const XLOOKUP: FunctionDefinition = {
  * ROW function - Returns the row number of the current cell when no argument is provided
  * ROW([reference]) - For now, we support no-arg form only and return current row (1-based)
  */
-export const ROW_FN: FunctionDefinition = {
+const ROW_FN: FunctionDefinition = {
   name: "ROW",
   minArgs: 0,
   maxArgs: 1,
-  evaluate: ({ argValues: args, context }): CellValue => {
+  evaluate: ({ argEvaluatedValues, context }): FunctionEvaluationResult => {
     // Support only no-arg form reliably
-    if (args.length === 0) {
+    if (argEvaluatedValues.length === 0) {
       const row = context.currentCell?.row ?? 0;
-      return row + 1;
+      return { type: "value", value: row + 1 };
     }
     // Reference-aware ROW(reference) not yet supported due to lack of address metadata in values
-    return "#VALUE!";
+    return { type: "value", value: FormulaError.VALUE };
   },
 };
 
@@ -460,43 +532,47 @@ export const ROW_FN: FunctionDefinition = {
  * COLUMN function - Returns the column number of the current cell when no argument is provided
  * COLUMN([reference]) - For now, we support no-arg form only and return current column (1-based)
  */
-export const COLUMN_FN: FunctionDefinition = {
+const COLUMN_FN: FunctionDefinition = {
   name: "COLUMN",
   minArgs: 0,
   maxArgs: 1,
-  evaluate: ({ argValues: args, context }): CellValue => {
-    if (args.length === 0) {
+  evaluate: ({ argEvaluatedValues, context }): FunctionEvaluationResult => {
+    if (argEvaluatedValues.length === 0) {
       const col = context.currentCell?.col ?? 0;
-      return col + 1;
+      return { type: "value", value: col + 1 };
     }
-    return "#VALUE!";
+    return { type: "value", value: FormulaError.VALUE };
   },
 };
 
 /**
  * ROWS function - Returns the number of rows in an array or reference
  */
-export const ROWS_FN: FunctionDefinition = {
+const ROWS_FN: FunctionDefinition = {
   name: "ROWS",
   minArgs: 1,
   maxArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
-    const array = getArrayFromArg(args[0]);
-    return array.length;
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
+    if (!argEvaluatedValues[0])
+      return { type: "value", value: FormulaError.VALUE };
+    const array = getArrayFromEvalResult(argEvaluatedValues[0]);
+    return { type: "value", value: array.length };
   },
 };
 
 /**
  * COLUMNS function - Returns the number of columns in an array or reference
  */
-export const COLUMNS_FN: FunctionDefinition = {
+const COLUMNS_FN: FunctionDefinition = {
   name: "COLUMNS",
   minArgs: 1,
   maxArgs: 1,
-  evaluate: ({ argValues: args }): CellValue => {
-    const array = getArrayFromArg(args[0]);
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
+    if (!argEvaluatedValues[0])
+      return { type: "value", value: FormulaError.VALUE };
+    const array = getArrayFromEvalResult(argEvaluatedValues[0]);
     const firstRow = array[0] ?? [];
-    return (firstRow as CellValue[]).length;
+    return { type: "value", value: (firstRow as CellValue[]).length };
   },
 };
 
@@ -504,20 +580,23 @@ export const COLUMNS_FN: FunctionDefinition = {
  * CHOOSE function - Returns a value from a list of values based on an index
  * CHOOSE(index, value1, value2, ...)
  */
-export const CHOOSE_FN: FunctionDefinition = {
+const CHOOSE_FN: FunctionDefinition = {
   name: "CHOOSE",
   minArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
     // First arg is index (1-based)
-    const indexRaw = args[0];
+    const indexRaw = safeGetScalarValue(argEvaluatedValues, 0, 1);
     if (typeof indexRaw !== "number") {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
     const index = Math.floor(indexRaw);
-    if (index < 1 || index >= args.length) {
-      return "#VALUE!";
+    if (index < 1 || index >= argEvaluatedValues.length) {
+      return { type: "value", value: FormulaError.VALUE };
     }
-    return args[index];
+    return {
+      type: "value",
+      value: safeGetScalarValue(argEvaluatedValues, index, 0),
+    };
   },
 };
 
@@ -528,19 +607,20 @@ export const CHOOSE_FN: FunctionDefinition = {
  * - Returns value for single cell; for ranges returns 2D array of values
  * - Does not support R1C1 or external workbook references in this minimal impl
  */
-export const INDIRECT_FN: FunctionDefinition = {
+const INDIRECT_FN: FunctionDefinition = {
   name: "INDIRECT",
   minArgs: 1,
   maxArgs: 1,
-  evaluate: ({ argValues: args, context }): CellValue => {
-    const ref = args[0];
-    if (typeof ref !== "string" || ref.trim() === "") return "#REF!";
+  evaluate: ({ argEvaluatedValues, context }): FunctionEvaluationResult => {
+    const ref = safeGetScalarValue(argEvaluatedValues, 0, "");
+    if (typeof ref !== "string" || ref.trim() === "")
+      return { type: "value", value: FormulaError.REF };
     const refStr = ref.trim();
 
     // Prefer single address first to avoid ambiguous single-cell ranges
     const addr = parseCellAddress(refStr, context.currentSheet ?? 0);
     if (addr) {
-      return context.getCellValue(addr);
+      return { type: "value", value: context.getCellValue(addr) };
     }
 
     // Try range next
@@ -549,12 +629,12 @@ export const INDIRECT_FN: FunctionDefinition = {
       const values = context.getRangeValues(range, context.evaluationStack);
       // If 1x1, return scalar when available
       if (values.length === 1 && (values[0]?.length ?? 0) === 1) {
-        return values[0]![0]!;
+        return { type: "value", value: values[0]![0]! };
       }
-      return values as unknown as CellValue;
+      return { type: "value", value: values as unknown as CellValue };
     }
 
-    return "#REF!";
+    return { type: "value", value: FormulaError.REF };
   },
 };
 
@@ -570,16 +650,21 @@ function astNodeIsRange(node: ASTNode): node is RangeNode {
  * OFFSET(reference, rows, cols, [height], [width])
  * Returns a range offset from a starting reference. If height/width provided, returns a resized range.
  */
-export const OFFSET_FN: FunctionDefinition = {
+const OFFSET_FN: FunctionDefinition = {
   name: "OFFSET",
   minArgs: 3,
   maxArgs: 5,
-  evaluate: ({ argValues: args, argNodes, context }): CellValue => {
-    const error = propagateError(args);
-    if (error) return error;
+  evaluate: ({
+    argEvaluatedValues,
+    argNodes,
+    context,
+  }): FunctionEvaluationResult => {
+    const error = propagateErrorFromEvalResults(argEvaluatedValues);
+    if (error) return { type: "value", value: error };
 
     // Reference can be a raw node (reference/range), text address, or array value
-    const [refVal, rowsVal, colsVal, heightVal, widthVal] = args;
+    const [refVal, rowsVal, colsVal, heightVal, widthVal] =
+      argEvaluatedValues.map((r) => r.value);
     const [refNode] = argNodes;
     const rows = typeof rowsVal === "number" ? Math.floor(rowsVal) : 0;
     const cols = typeof colsVal === "number" ? Math.floor(colsVal) : 0;
@@ -628,7 +713,7 @@ export const OFFSET_FN: FunctionDefinition = {
       };
     }
 
-    if (!baseRange) return "#REF!";
+    if (!baseRange) return { type: "value", value: FormulaError.REF };
 
     // Apply offset
     let target = offsetRange(baseRange, cols, rows);
@@ -649,8 +734,8 @@ export const OFFSET_FN: FunctionDefinition = {
 
     const values = context.getRangeValues(target, context.evaluationStack);
     if (values.length === 1 && (values[0]?.length ?? 0) === 1)
-      return values[0]![0]!;
-    return values as unknown as CellValue;
+      return { type: "value", value: values[0]![0]! };
+    return { type: "value", value: values as unknown as CellValue };
   },
 };
 

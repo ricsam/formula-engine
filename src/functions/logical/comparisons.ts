@@ -1,12 +1,15 @@
-import type { CellValue } from "../../core/types";
-import type { FunctionDefinition } from "../../evaluator/evaluator";
+import { FormulaError, type CellValue } from "../../core/types";
+import type {
+  FunctionDefinition,
+  FunctionEvaluationResult,
+} from "../../evaluator/evaluator";
 import {
   coerceToString,
   coerceToNumber,
   isFormulaError,
   propagateError,
   validateArgCount,
-} from "../index";
+} from "../utils";
 
 // Helper function to compare two values
 function compareValues(a: CellValue, b: CellValue): number {
@@ -47,115 +50,115 @@ function compareValues(a: CellValue, b: CellValue): number {
 }
 
 // FE.EQ(a, b) - Equality comparison
-export const EQ: FunctionDefinition = {
+const EQ: FunctionDefinition = {
   name: "FE.EQ",
   minArgs: 2,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     validateArgCount("FE.EQ", args, 2, 2);
 
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     try {
-      return compareValues(args[0], args[1]) === 0;
+      return { type: "value", value: compareValues(args[0], args[1]) === 0 };
     } catch (e) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
   },
 };
 
 // FE.NE(a, b) - Inequality comparison
-export const NE: FunctionDefinition = {
+const NE: FunctionDefinition = {
   name: "FE.NE",
   minArgs: 2,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     validateArgCount("FE.NE", args, 2, 2);
 
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     try {
-      return compareValues(args[0], args[1]) !== 0;
+      return { type: "value", value: compareValues(args[0], args[1]) !== 0 };
     } catch (e) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
   },
 };
 
 // FE.LT(a, b) - Less than comparison
-export const LT: FunctionDefinition = {
+const LT: FunctionDefinition = {
   name: "FE.LT",
   minArgs: 2,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     validateArgCount("FE.LT", args, 2, 2);
 
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     try {
-      return compareValues(args[0], args[1]) < 0;
+      return { type: "value", value: compareValues(args[0], args[1]) < 0 };
     } catch (e) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
   },
 };
 
 // FE.LTE(a, b) - Less than or equal comparison
-export const LTE: FunctionDefinition = {
+const LTE: FunctionDefinition = {
   name: "FE.LTE",
   minArgs: 2,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     validateArgCount("FE.LTE", args, 2, 2);
 
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     try {
-      return compareValues(args[0], args[1]) <= 0;
+      return { type: "value", value: compareValues(args[0], args[1]) <= 0 };
     } catch (e) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
   },
 };
 
 // FE.GT(a, b) - Greater than comparison
-export const GT: FunctionDefinition = {
+const GT: FunctionDefinition = {
   name: "FE.GT",
   minArgs: 2,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     validateArgCount("FE.GT", args, 2, 2);
 
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     try {
-      return compareValues(args[0], args[1]) > 0;
+      return { type: "value", value: compareValues(args[0], args[1]) > 0 };
     } catch (e) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
   },
 };
 
 // FE.GTE(a, b) - Greater than or equal comparison
-export const GTE: FunctionDefinition = {
+const GTE: FunctionDefinition = {
   name: "FE.GTE",
   minArgs: 2,
   maxArgs: 2,
-  evaluate: ({ argValues: args }): CellValue => {
+  evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
     validateArgCount("FE.GTE", args, 2, 2);
 
     const error = propagateError(args);
-    if (error) return error;
+    if (error) return { type: "value", value: error };
 
     try {
-      return compareValues(args[0], args[1]) >= 0;
+      return { type: "value", value: compareValues(args[0], args[1]) >= 0 };
     } catch (e) {
-      return "#VALUE!";
+      return { type: "value", value: FormulaError.VALUE };
     }
   },
 };

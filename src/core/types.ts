@@ -61,16 +61,17 @@ export interface NamedExpressionOptions {
 }
 
 // Formula errors
-export type FormulaError =
-  | "#DIV/0!" // Division by zero
-  | "#N/A" // Value not available
-  | "#NAME?" // Invalid name/function
-  | "#NUM!" // Invalid numeric value
-  | "#REF!" // Invalid reference
-  | "#VALUE!" // Wrong argument type
-  | "#CYCLE!" // Circular reference detected
-  | "#ERROR!" // General error
-  | "#SPILL!"; // Array spill blocked
+export enum FormulaError {
+  DIV0 = "#DIV/0!",
+  NA = "#N/A",
+  NAME = "#NAME?",
+  NUM = "#NUM!",
+  REF = "#REF!",
+  VALUE = "#VALUE!",
+  CYCLE = "#CYCLE!",
+  ERROR = "#ERROR!",
+  SPILL = "#SPILL!",
+}
 
 // Internal cell structure
 export interface Cell {
@@ -104,18 +105,6 @@ export interface ArrayFormula {
   spillRange: SimpleCellRange;
 }
 
-// Function definition types
-export interface FunctionDefinition {
-  name: string;
-  evaluate: (args: {
-    argValues: CellValue[];
-    argNodes: ASTNode[];
-    context: EvaluationContext;
-  }) => CellValue;
-  minArgs?: number;
-  maxArgs?: number;
-}
-
 // Parser and AST types
 export interface ASTNode {
   type: "function" | "reference" | "value" | "operator" | "array" | "range";
@@ -125,31 +114,6 @@ export interface ASTNode {
   operator?: string;
   reference?: SimpleCellAddress | SimpleCellRange;
 }
-
-// Evaluation context
-export interface EvaluationContext {
-  currentSheet: number;
-  currentAddress: SimpleCellAddress;
-  engine: any; // Will be FormulaEngine type when circular deps are resolved
-  visitedCells?: Set<string>; // For cycle detection
-}
-
-// Command pattern for undo/redo
-export interface Command {
-  execute(): ExportedChange[];
-  undo(): ExportedChange[];
-  redo(): ExportedChange[];
-  description?: string;
-}
-
-export interface CellChangeEvent {
-  address: SimpleCellAddress;
-  oldValue: CellValue;
-  newValue: CellValue;
-}
-
-// Preferred name for cell update event in the public API
-export type CellUpdateEvent = CellChangeEvent;
 
 // Event types
 export interface FormulaEngineEvents {
@@ -169,7 +133,7 @@ export interface FormulaEngineEvents {
 }
 
 // Utility types
-export type AddressKey = string; // Format: "sheet:col:row" e.g., "0:1:2"
+type AddressKey = string; // Format: "sheet:col:row" e.g., "0:1:2"
 
 // Helper function to create address keys
 export function addressToKey(address: SimpleCellAddress): AddressKey {
@@ -254,6 +218,3 @@ export interface FormulaEngineOptions {
   enableNamedExpressions?: boolean;
   locale?: string;
 }
-
-// Export everything for easy access
-export * from "./types";

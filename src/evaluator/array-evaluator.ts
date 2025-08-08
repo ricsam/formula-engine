@@ -3,59 +3,60 @@
  * Handles spilling behavior and array operation optimization
  */
 
-import type { CellValue, FormulaError } from '../core/types';
-import { isFormulaError, propagateError, propagateError2D } from './error-handler';
+import { FormulaError, type CellValue } from "../core/types";
+import { isFormulaError, propagateError2D } from "./error-handler";
 
 /**
  * Array dimensions
  */
-export interface ArrayDimensions {
+interface ArrayDimensions {
   rows: number;
   cols: number;
 }
 
 /**
- * Broadcasting result
- */
-export interface BroadcastResult {
-  values: CellValue[][];
-  dimensions: ArrayDimensions;
-}
-
-/**
  * Gets dimensions of an array or scalar
  */
-export function getArrayDimensions(value: CellValue | CellValue[] | CellValue[][]): ArrayDimensions {
+export function getArrayDimensions(
+  value: CellValue | CellValue[] | CellValue[][]
+): ArrayDimensions {
   if (!Array.isArray(value)) {
     return { rows: 1, cols: 1 };
   }
-  
+
   if (!Array.isArray(value[0])) {
     // 1D array - treat as column vector
-    return { rows: (value as CellValue[]).length, cols: 1 };
+    return { rows: value.length, cols: 1 };
   }
-  
+
   // 2D array
-  const array2d = value as CellValue[][];
+  const array2d = value;
+  const firstRow = array2d[0];
+  if (!Array.isArray(firstRow)) {
+    return { rows: array2d.length, cols: 1 };
+  }
+
   return {
     rows: array2d.length,
-    cols: array2d[0]?.length || 0
+    cols: firstRow.length,
   };
 }
 
 /**
  * Converts a value to a 2D array
  */
-export function to2DArray(value: CellValue | CellValue[] | CellValue[][]): CellValue[][] {
+export function to2DArray(
+  value: CellValue | CellValue[] | CellValue[][]
+): CellValue[][] {
   if (!Array.isArray(value)) {
     return [[value]];
   }
-  
+
   if (!Array.isArray(value[0])) {
     // 1D array - convert to column vector
-    return (value as CellValue[]).map(v => [v]);
+    return (value as CellValue[]).map((v) => [v]);
   }
-  
+
   return value as CellValue[][];
 }
 
@@ -73,22 +74,27 @@ export function flatten(array: CellValue[][]): CellValue[] {
 /**
  * Checks if dimensions are compatible for broadcasting
  */
-export function areDimensionsCompatible(dim1: ArrayDimensions, dim2: ArrayDimensions): boolean {
+export function areDimensionsCompatible(
+  dim1: ArrayDimensions,
+  dim2: ArrayDimensions
+): boolean {
   // Scalars are always compatible
   if (dim1.rows === 1 && dim1.cols === 1) return true;
   if (dim2.rows === 1 && dim2.cols === 1) return true;
-  
+
   // Check NumPy-style broadcasting rules
-  const rowsCompatible = dim1.rows === dim2.rows || dim1.rows === 1 || dim2.rows === 1;
-  const colsCompatible = dim1.cols === dim2.cols || dim1.cols === 1 || dim2.cols === 1;
-  
+  const rowsCompatible =
+    dim1.rows === dim2.rows || dim1.rows === 1 || dim2.rows === 1;
+  const colsCompatible =
+    dim1.cols === dim2.cols || dim1.cols === 1 || dim2.cols === 1;
+
   return rowsCompatible && colsCompatible;
 }
 
 /**
  * Result of broadcast operation
  */
-export interface BroadcastArrayResult {
+interface BroadcastArrayResult {
   array1: CellValue[][];
   array2: CellValue[][];
   dimensions: ArrayDimensions;
@@ -103,29 +109,31 @@ export function broadcast(
 ): BroadcastArrayResult | FormulaError {
   const dim1 = getArrayDimensions(array1);
   const dim2 = getArrayDimensions(array2);
-  
+
   if (!areDimensionsCompatible(dim1, dim2)) {
-    return '#VALUE!';
+    return FormulaError.VALUE;
   }
-  
+
   // Calculate broadcast dimensions
   const resultDims: ArrayDimensions = {
     rows: Math.max(dim1.rows, dim2.rows),
-    cols: Math.max(dim1.cols, dim2.cols)
+    cols: Math.max(dim1.cols, dim2.cols),
   };
-  
+
   // Broadcast array1
   const broadcast1 = broadcastToSize(array1, resultDims);
-  if (typeof broadcast1 === 'string' && isFormulaError(broadcast1)) return broadcast1;
-  
+  if (typeof broadcast1 === "string" && isFormulaError(broadcast1))
+    return broadcast1;
+
   // Broadcast array2
   const broadcast2 = broadcastToSize(array2, resultDims);
-  if (typeof broadcast2 === 'string' && isFormulaError(broadcast2)) return broadcast2;
-  
+  if (typeof broadcast2 === "string" && isFormulaError(broadcast2))
+    return broadcast2;
+
   return {
     array1: broadcast1 as CellValue[][],
     array2: broadcast2 as CellValue[][],
-    dimensions: resultDims
+    dimensions: resultDims,
   };
 }
 
@@ -137,7 +145,7 @@ export function broadcastToSize(
   targetDims: ArrayDimensions
 ): CellValue[][] | FormulaError {
   const sourceDims = getArrayDimensions(array);
-  
+
   // Handle empty arrays
   if (sourceDims.rows === 0 || sourceDims.cols === 0) {
     // Create array filled with undefined
@@ -151,29 +159,29 @@ export function broadcastToSize(
     }
     return result;
   }
-  
+
   // Check if broadcasting is valid
   if (sourceDims.rows !== 1 && sourceDims.rows !== targetDims.rows) {
-    return '#VALUE!';
+    return FormulaError.VALUE;
   }
   if (sourceDims.cols !== 1 && sourceDims.cols !== targetDims.cols) {
-    return '#VALUE!';
+    return FormulaError.VALUE;
   }
-  
+
   const result: CellValue[][] = [];
-  
+
   for (let row = 0; row < targetDims.rows; row++) {
     const resultRow: CellValue[] = [];
     const sourceRow = sourceDims.rows === 1 ? 0 : row;
-    
+
     for (let col = 0; col < targetDims.cols; col++) {
       const sourceCol = sourceDims.cols === 1 ? 0 : col;
       resultRow.push(array[sourceRow]?.[sourceCol] ?? undefined);
     }
-    
+
     result.push(resultRow);
   }
-  
+
   return result;
 }
 
@@ -187,18 +195,23 @@ export function elementWiseBinaryOp(
 ): CellValue[][] | FormulaError {
   // Broadcast arrays to compatible dimensions
   const broadcastResult = broadcast(array1, array2);
-  if (typeof broadcastResult === 'string' && isFormulaError(broadcastResult)) return broadcastResult;
-  
-  const { array1: broadcast1, array2: broadcast2, dimensions } = broadcastResult;
+  if (typeof broadcastResult === "string" && isFormulaError(broadcastResult))
+    return broadcastResult;
+
+  const {
+    array1: broadcast1,
+    array2: broadcast2,
+    dimensions,
+  } = broadcastResult;
   const result: CellValue[][] = [];
-  
+
   for (let row = 0; row < dimensions.rows; row++) {
     const resultRow: CellValue[] = [];
-    
+
     for (let col = 0; col < dimensions.cols; col++) {
       const value1 = broadcast1[row]?.[col];
       const value2 = broadcast2[row]?.[col];
-      
+
       // Propagate errors
       if (isFormulaError(value1)) {
         resultRow.push(value1);
@@ -208,10 +221,10 @@ export function elementWiseBinaryOp(
         resultRow.push(operation(value1, value2));
       }
     }
-    
+
     result.push(resultRow);
   }
-  
+
   return result;
 }
 
@@ -222,8 +235,8 @@ export function elementWiseUnaryOp(
   array: CellValue[][],
   operation: (value: CellValue) => CellValue
 ): CellValue[][] {
-  return array.map(row =>
-    row.map(value => {
+  return array.map((row) =>
+    row.map((value) => {
       if (isFormulaError(value)) {
         return value;
       }
@@ -244,7 +257,7 @@ export function reduceArray(
   // Check for errors first
   const error = propagateError2D(array);
   if (error) return error;
-  
+
   if (axis === null || axis === undefined) {
     // Reduce to scalar
     let result = initialValue;
@@ -257,12 +270,12 @@ export function reduceArray(
     }
     return result;
   }
-  
+
   if (axis === 0) {
     // Reduce along rows (result is a row)
     const cols = array[0]?.length || 0;
     const result: CellValue[] = new Array(cols).fill(initialValue);
-    
+
     for (let col = 0; col < cols; col++) {
       for (let row = 0; row < array.length; row++) {
         const value = array[row]?.[col];
@@ -271,13 +284,13 @@ export function reduceArray(
         }
       }
     }
-    
+
     return [result]; // Return as 2D array with single row
   }
-  
+
   if (axis === 1) {
     // Reduce along columns (result is a column)
-    return array.map(row => {
+    return array.map((row) => {
       let result = initialValue;
       for (const value of row) {
         if (!isFormulaError(value)) {
@@ -287,42 +300,8 @@ export function reduceArray(
       return [result]; // Return as column
     });
   }
-  
-  return '#VALUE!';
-}
 
-/**
- * Filters an array based on a condition array
- */
-export function filterArray(
-  dataArray: CellValue[][],
-  conditionArray: CellValue[][]
-): CellValue[][] | FormulaError {
-  // Broadcast arrays to same size
-  const broadcastResult = broadcast(dataArray, conditionArray);
-  if (typeof broadcastResult === 'string' && isFormulaError(broadcastResult)) return broadcastResult;
-  
-  const { array1: data, array2: conditions } = broadcastResult;
-  const result: CellValue[] = [];
-  
-  for (let row = 0; row < data.length; row++) {
-    for (let col = 0; col < (data[row]?.length || 0); col++) {
-      const condition = conditions[row]?.[col];
-      
-      // Check for errors in condition
-      if (isFormulaError(condition)) {
-        return condition;
-      }
-      
-      // Evaluate condition as boolean
-      if (coerceToBoolean(condition)) {
-        result.push(data[row]?.[col]);
-      }
-    }
-  }
-  
-  // Return as column vector
-  return result.length > 0 ? result.map(v => [v]) : [[undefined]];
+  return "#VALUE!";
 }
 
 /**
@@ -336,9 +315,9 @@ export function constrainArray(
   const dims = getArrayDimensions(array);
   const resultRows = Math.min(dims.rows, maxRows);
   const resultCols = Math.min(dims.cols, maxCols);
-  
+
   const result: CellValue[][] = [];
-  
+
   for (let row = 0; row < resultRows; row++) {
     const resultRow: CellValue[] = [];
     for (let col = 0; col < resultCols; col++) {
@@ -346,7 +325,7 @@ export function constrainArray(
     }
     result.push(resultRow);
   }
-  
+
   return result;
 }
 
@@ -355,11 +334,11 @@ export function constrainArray(
  */
 export function transpose(array: CellValue[][]): CellValue[][] {
   if (array.length === 0) return [];
-  
+
   const rows = array.length;
   const cols = array[0]?.length || 0;
   const result: CellValue[][] = [];
-  
+
   for (let col = 0; col < cols; col++) {
     const newRow: CellValue[] = [];
     for (let row = 0; row < rows; row++) {
@@ -367,7 +346,7 @@ export function transpose(array: CellValue[][]): CellValue[][] {
     }
     result.push(newRow);
   }
-  
+
   return result;
 }
 
@@ -375,9 +354,9 @@ export function transpose(array: CellValue[][]): CellValue[][] {
  * Coerces a value to boolean for array conditions
  */
 export function coerceToBoolean(value: CellValue): boolean {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') return value !== 0;
-  if (typeof value === 'string') {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
     // Check if it's an error first
     if (isFormulaError(value)) return false;
     return value.length > 0;
@@ -399,15 +378,17 @@ export function willSpill(
   if (dimensions.rows === 1 && dimensions.cols === 1) {
     return false; // Single values don't spill
   }
-  
-  return (targetRow + dimensions.rows - 1 > maxRow) ||
-         (targetCol + dimensions.cols - 1 > maxCol);
+
+  return (
+    targetRow + dimensions.rows - 1 > maxRow ||
+    targetCol + dimensions.cols - 1 > maxCol
+  );
 }
 
 /**
  * Calculates spill range for an array formula
  */
-export interface SpillRange {
+interface SpillRange {
   startRow: number;
   startCol: number;
   endRow: number;
@@ -420,12 +401,12 @@ export function calculateSpillRange(
   array: CellValue[][]
 ): SpillRange {
   const dims = getArrayDimensions(array);
-  
+
   return {
     startRow: targetRow,
     startCol: targetCol,
     endRow: targetRow + dims.rows - 1,
-    endCol: targetCol + dims.cols - 1
+    endCol: targetCol + dims.cols - 1,
   };
 }
 
@@ -435,18 +416,18 @@ export function calculateSpillRange(
 export class ArrayOperationCache {
   private cache: Map<string, CellValue[][]> = new Map();
   private maxSize: number;
-  
+
   constructor(maxSize: number = 1000) {
     this.maxSize = maxSize;
   }
-  
+
   /**
    * Creates a cache key from operation parameters
    */
   private createKey(operation: string, ...args: any[]): string {
     return `${operation}:${JSON.stringify(args)}`;
   }
-  
+
   /**
    * Gets cached result
    */
@@ -454,7 +435,7 @@ export class ArrayOperationCache {
     const key = this.createKey(operation, ...args);
     return this.cache.get(key);
   }
-  
+
   /**
    * Sets cached result
    */
@@ -466,11 +447,11 @@ export class ArrayOperationCache {
         this.cache.delete(firstKey);
       }
     }
-    
+
     const key = this.createKey(operation, ...args);
     this.cache.set(key, result);
   }
-  
+
   /**
    * Clears the cache
    */
@@ -485,20 +466,20 @@ export class ArrayOperationCache {
 export function arraySum(array: CellValue[][]): number {
   let sum = 0;
   let hasNumbers = false;
-  
+
   for (const row of array) {
     for (const value of row) {
-      if (typeof value === 'number') {
+      if (typeof value === "number") {
         sum += value;
         hasNumbers = true;
-      } else if (typeof value === 'boolean') {
+      } else if (typeof value === "boolean") {
         sum += value ? 1 : 0;
         hasNumbers = true;
       }
       // Skip strings, undefined, and errors
     }
   }
-  
+
   return hasNumbers ? sum : 0;
 }
 
@@ -508,20 +489,20 @@ export function arraySum(array: CellValue[][]): number {
 export function arrayProduct(array: CellValue[][]): number {
   let product = 1;
   let hasNumbers = false;
-  
+
   for (const row of array) {
     for (const value of row) {
-      if (typeof value === 'number') {
+      if (typeof value === "number") {
         product *= value;
         hasNumbers = true;
-      } else if (typeof value === 'boolean') {
+      } else if (typeof value === "boolean") {
         product *= value ? 1 : 0;
         hasNumbers = true;
       }
       // Skip strings, undefined, and errors
     }
   }
-  
+
   return hasNumbers ? product : 1;
 }
 
@@ -530,14 +511,14 @@ export function arrayProduct(array: CellValue[][]): number {
  */
 export function arrayCount(array: CellValue[][]): number {
   let count = 0;
-  
+
   for (const row of array) {
     for (const value of row) {
-      if (typeof value === 'number' || typeof value === 'boolean') {
+      if (typeof value === "number" || typeof value === "boolean") {
         count++;
       }
     }
   }
-  
+
   return count;
 }

@@ -39,12 +39,6 @@ const navigationData: NavigationItem[] = [
     icon: <Grid3x3 className="w-4 h-4" />,
     children: [
       {
-        id: 'events',
-        label: 'Events & Hooks',
-        to: '/events',
-        icon: <Activity className="w-4 h-4" />
-      },
-      {
         id: 'spreadsheet',
         label: 'Full Spreadsheet',
         to: '/spreadsheet',
