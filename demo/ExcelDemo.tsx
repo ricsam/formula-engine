@@ -1,5 +1,4 @@
-import React, { useState, useCallback, useMemo, useRef } from "react";
-import { parseCellReference } from "@anocca-pub/components";
+import { useState, useCallback, useMemo } from "react";
 import { FormulaEngine } from "../src/core/engine";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -9,7 +8,6 @@ import { SpreadsheetWithFormulaBar } from "./components/SpreadsheetWithFormulaBa
 interface SheetTab {
   id: number;
   name: string;
-  data: Map<string, any>;
 }
 
 const createEngine = () => {
@@ -33,26 +31,12 @@ export function ExcelDemo() {
     {
       id: initialSheetId,
       name: initialSheetName,
-      data: engine.getSheetSerialized(initialSheetId),
     },
   ]);
 
   const [activeSheetId, setActiveSheetId] = useState(initialSheetId);
   const [editingSheetId, setEditingSheetId] = useState<number | null>(null);
   const [editingName, setEditingName] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // Handle sheet data changes from the spreadsheet component
-  const handleSheetDataChange = useCallback(
-    (sheetId: number, newData: Map<string, any>) => {
-      setSheets((prevSheets) =>
-        prevSheets.map((sheet) =>
-          sheet.id === sheetId ? { ...sheet, data: newData } : sheet
-        )
-      );
-    },
-    []
-  );
 
   // Add new sheet
   const addSheet = useCallback(() => {
@@ -64,7 +48,6 @@ export function ExcelDemo() {
     const newSheet: SheetTab = {
       id: newSheetId,
       name: addedSheetName,
-      data: new Map(),
     };
 
     setSheets((prev) => [...prev, newSheet]);
@@ -97,7 +80,6 @@ export function ExcelDemo() {
     (sheetId: number, currentName: string) => {
       setEditingSheetId(sheetId);
       setEditingName(currentName);
-      setTimeout(() => inputRef.current?.focus(), 0);
     },
     []
   );
@@ -166,7 +148,6 @@ export function ExcelDemo() {
           key={activeSheetId} // Re-mount component when sheet changes
           sheetId={activeSheetId}
           engine={engine}
-          onSheetDataChange={handleSheetDataChange}
         />
       </div>
 
@@ -190,7 +171,6 @@ export function ExcelDemo() {
               {editingSheetId === sheet.id ? (
                 <div className="flex items-center gap-1">
                   <Input
-                    ref={inputRef}
                     value={editingName}
                     onChange={(e) => setEditingName(e.target.value)}
                     onKeyDown={handleKeyPress}

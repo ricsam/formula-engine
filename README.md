@@ -32,17 +32,17 @@ const sheetName = engine.addSheet('Sheet1');
 const sheetId = engine.getSheetId(sheetName);
 
 // Set cell values
-engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 42);
-engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, 58);
+engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 42);
+engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, 58);
 
 // Set a formula (evaluation not yet implemented)
-engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=A1+B1');
+engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=A1+B1');
 
 // Get cell value
 const value = engine.getCellValue({ sheet: sheetId, col: 0, row: 0 }); // 42
 
 // Set multiple values at once
-engine.setCellContents({ sheet: sheetId, col: 0, row: 2 }, [
+engine.setCellContent({ sheet: sheetId, col: 0, row: 2 }, [
   [1, 2, 3],
   [4, 5, 6],
   [7, 8, 9]

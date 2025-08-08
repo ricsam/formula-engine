@@ -654,8 +654,8 @@ describe('Table Management', () => {
     const sheetId = engine.getSheetId(engine.addSheet('Test'));
     
     // Set up header data
-    engine.setCellContents({sheet: sheetId, col: 0, row: 0}, 'Name');
-    engine.setCellContents({sheet: sheetId, col: 1, row: 0}, 'Sales');
+    engine.setCellContent({sheet: sheetId, col: 0, row: 0}, 'Name');
+    engine.setCellContent({sheet: sheetId, col: 1, row: 0}, 'Sales');
     
     // Test table creation
     const range = {
@@ -711,9 +711,9 @@ describe('Table Management', () => {
     const sheetId = engine.getSheetId(engine.addSheet('Test'));
     
     // Set up table with headers
-    engine.setCellContents({sheet: sheetId, col: 0, row: 0}, 'Product');
-    engine.setCellContents({sheet: sheetId, col: 1, row: 0}, 'Price');
-    engine.setCellContents({sheet: sheetId, col: 2, row: 0}, 'Quantity');
+    engine.setCellContent({sheet: sheetId, col: 0, row: 0}, 'Product');
+    engine.setCellContent({sheet: sheetId, col: 1, row: 0}, 'Price');
+    engine.setCellContent({sheet: sheetId, col: 2, row: 0}, 'Quantity');
     
     const range = {
       start: {sheet: sheetId, col: 0, row: 0}, 
@@ -915,16 +915,16 @@ describe('Table dependency tracking', () => {
     const sheetId = engine.getSheetId(engine.addSheet('Test'));
     
     // Set up table data
-    engine.setCellContents({sheet: sheetId, col: 0, row: 0}, 'Amount');
-    engine.setCellContents({sheet: sheetId, col: 0, row: 1}, 100);
-    engine.setCellContents({sheet: sheetId, col: 0, row: 2}, 200);
+    engine.setCellContent({sheet: sheetId, col: 0, row: 0}, 'Amount');
+    engine.setCellContent({sheet: sheetId, col: 0, row: 1}, 100);
+    engine.setCellContent({sheet: sheetId, col: 0, row: 2}, 200);
     
     // Create table
     const range = {start: {sheet: sheetId, col: 0, row: 0}, end: {sheet: sheetId, col: 0, row: 2}};
     engine.addTable('SalesData', range, sheetId);
     
     // Create formula referencing table
-    engine.setCellContents({sheet: sheetId, col: 1, row: 0}, '=SUM(SalesData[Amount])');
+    engine.setCellContent({sheet: sheetId, col: 1, row: 0}, '=SUM(SalesData[Amount])');
     
     // Test dependency tracking
     const precedents = engine.getCellPrecedents({sheet: sheetId, col: 1, row: 0});
@@ -944,7 +944,7 @@ describe('Table dependency tracking', () => {
     // Set up initial table
     const range = {start: {sheet: sheetId, col: 0, row: 0}, end: {sheet: sheetId, col: 0, row: 2}};
     engine.addTable('SalesData', range, sheetId);
-    engine.setCellContents({sheet: sheetId, col: 1, row: 0}, '=SUM(SalesData[Amount])');
+    engine.setCellContent({sheet: sheetId, col: 1, row: 0}, '=SUM(SalesData[Amount])');
     
     // Resize table
     const newRange = {start: {sheet: sheetId, col: 0, row: 0}, end: {sheet: sheetId, col: 0, row: 5}};
@@ -967,7 +967,7 @@ describe('Table Operations Integration', () => {
     const sheetId = engine.getSheetId(engine.addSheet('Test'));
     
     // Set up initial data
-    engine.setCellContents({sheet: sheetId, col: 0, row: 0}, [
+    engine.setCellContent({sheet: sheetId, col: 0, row: 0}, [
       ['Product', 'Price', 'Quantity'],
       ['Widget A', 10, 5],
       ['Widget B', 15, 3],
@@ -979,8 +979,8 @@ describe('Table Operations Integration', () => {
     engine.addTable('Inventory', range, sheetId);
     
     // Test structured reference formulas
-    engine.setCellContents({sheet: sheetId, col: 3, row: 1}, '=[@Price]*[@Quantity]'); // Current row
-    engine.setCellContents({sheet: sheetId, col: 3, row: 4}, '=SUM(Inventory[Price])'); // Column sum
+    engine.setCellContent({sheet: sheetId, col: 3, row: 1}, '=[@Price]*[@Quantity]'); // Current row
+    engine.setCellContent({sheet: sheetId, col: 3, row: 4}, '=SUM(Inventory[Price])'); // Column sum
     
     // Verify calculations
     expect(engine.getCellValue({sheet: sheetId, col: 3, row: 1})).toBe(50); // 10*5
@@ -991,8 +991,8 @@ describe('Table Operations Integration', () => {
     engine.changeTable('Inventory', newRange, sheetId);
     
     // Add new data
-    engine.setCellContents({sheet: sheetId, col: 0, row: 4}, 'Widget D');
-    engine.setCellContents({sheet: sheetId, col: 1, row: 4}, 25);
+    engine.setCellContent({sheet: sheetId, col: 0, row: 4}, 'Widget D');
+    engine.setCellContent({sheet: sheetId, col: 1, row: 4}, 25);
     
     // Verify sum updates automatically
     expect(engine.getCellValue({sheet: sheetId, col: 3, row: 4})).toBe(70); // 10+15+20+25
@@ -1003,7 +1003,7 @@ describe('Table Operations Integration', () => {
     const sheetId = engine.getSheetId(engine.addSheet('Test'));
     
     // Set up table with headers and data
-    engine.setCellContents({sheet: sheetId, col: 0, row: 0}, [
+    engine.setCellContent({sheet: sheetId, col: 0, row: 0}, [
       ['Product', 'Sales'],
       ['A', 100],
       ['B', 200],
@@ -1014,9 +1014,9 @@ describe('Table Operations Integration', () => {
     engine.addTable('Sales', range, sheetId);
     
     // Test different selectors
-    engine.setCellContents({sheet: sheetId, col: 2, row: 0}, '=Sales[[#Headers],[Product]]'); // Header
-    engine.setCellContents({sheet: sheetId, col: 2, row: 1}, '=SUM(Sales[[#Data],[Sales]])'); // Data only
-    engine.setCellContents({sheet: sheetId, col: 2, row: 2}, '=COUNTA(Sales[[#All],[Product]])'); // All rows
+    engine.setCellContent({sheet: sheetId, col: 2, row: 0}, '=Sales[[#Headers],[Product]]'); // Header
+    engine.setCellContent({sheet: sheetId, col: 2, row: 1}, '=SUM(Sales[[#Data],[Sales]])'); // Data only
+    engine.setCellContent({sheet: sheetId, col: 2, row: 2}, '=COUNTA(Sales[[#All],[Product]])'); // All rows
     
     expect(engine.getCellValue({sheet: sheetId, col: 2, row: 0})).toBe('Product');
     expect(engine.getCellValue({sheet: sheetId, col: 2, row: 1})).toBe(600); // 100+200+300
@@ -1090,7 +1090,7 @@ describe('Table Performance', () => {
     engine.addTable('LargeTable', largeRange, sheetId);
     
     // Add formulas referencing the table
-    engine.setCellContents({sheet: sheetId, col: 10, row: 0}, '=SUM(LargeTable[Column1])');
+    engine.setCellContent({sheet: sheetId, col: 10, row: 0}, '=SUM(LargeTable[Column1])');
     
     const endTime = performance.now();
     

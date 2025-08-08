@@ -13,12 +13,12 @@ describe('Spilled Array Serialization', () => {
 
   test('should serialize spilled cells as empty (Excel compatibility)', () => {
     // Set up data that will create a spilled array
-    engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 1);
-    engine.setCellContents({ sheet: sheetId, col: 0, row: 1 }, 2);
-    engine.setCellContents({ sheet: sheetId, col: 0, row: 2 }, 3);
+    engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 1);
+    engine.setCellContent({ sheet: sheetId, col: 0, row: 1 }, 2);
+    engine.setCellContent({ sheet: sheetId, col: 0, row: 2 }, 3);
 
     // Create a FILTER formula that will spill into multiple cells
-    engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=FILTER(A1:A3, A1:A3>1)');
+    engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=FILTER(A1:A3, A1:A3>1)');
 
     // Verify the array spilled correctly (values are visible)
     expect(engine.getCellValue({ sheet: sheetId, col: 2, row: 0 })).toBe(2); // Origin cell
@@ -44,14 +44,14 @@ describe('Spilled Array Serialization', () => {
 
   test('should serialize individual cell formulas correctly in presence of spilled arrays', () => {
     // Set up data
-    engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 1);
-    engine.setCellContents({ sheet: sheetId, col: 0, row: 1 }, 2);
+    engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 1);
+    engine.setCellContent({ sheet: sheetId, col: 0, row: 1 }, 2);
     
     // Create a spilled array
-    engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=FILTER(A1:A2, A1:A2>0)');
+    engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=FILTER(A1:A2, A1:A2>0)');
     
     // Add a regular formula in a different location
-    engine.setCellContents({ sheet: sheetId, col: 4, row: 0 }, '=SUM(A1:A2)');
+    engine.setCellContent({ sheet: sheetId, col: 4, row: 0 }, '=SUM(A1:A2)');
     
     const serialized = engine.getSheetSerialized(sheetId);
     
@@ -75,10 +75,10 @@ describe('Spilled Array Serialization', () => {
       ['A1', 1], ['B1', 2],
       ['A2', 3], ['B2', 4]
     ]);
-    engine.setSheetContents(sheetId, data);
+    engine.setSheetContent(sheetId, data);
     
     // Use ARRAY_CONSTRAIN to create a 2x2 spilled array
-    engine.setCellContents({ sheet: sheetId, col: 3, row: 0 }, '=ARRAY_CONSTRAIN(A1:B2, 2, 2)');
+    engine.setCellContent({ sheet: sheetId, col: 3, row: 0 }, '=ARRAY_CONSTRAIN(A1:B2, 2, 2)');
     
     // Verify values are visible
     expect(engine.getCellValue({ sheet: sheetId, col: 3, row: 0 })).toBe(1); // D1 (origin)
@@ -99,9 +99,9 @@ describe('Spilled Array Serialization', () => {
 
   test('should serialize getCellSerialized correctly for individual spilled cells', () => {
     // Set up spilled array
-    engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 1);
-    engine.setCellContents({ sheet: sheetId, col: 0, row: 1 }, 2);
-    engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=FILTER(A1:A2, A1:A2>0)');
+    engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 1);
+    engine.setCellContent({ sheet: sheetId, col: 0, row: 1 }, 2);
+    engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=FILTER(A1:A2, A1:A2>0)');
     
     // Test individual cell serialization
     const originSerialized = engine.getCellSerialized({ sheet: sheetId, col: 2, row: 0 });

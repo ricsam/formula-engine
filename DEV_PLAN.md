@@ -455,8 +455,8 @@ Error management:
 - ✅ getAllSheetsSerialized(): Record<string, Map<string, RawCellContent>>
 
 ### Data Manipulation - ✅ TODO
-- ✅ setCellContents(topLeftCornerAddress: SimpleCellAddress, cellContents: RawCellContent[][] | RawCellContent): ExportedChange[]
-- ✅ setSheetContents(sheetId: number, contents: Map<string, RawCellContent>): ExportedChange[]
+- ✅ setCellContent(topLeftCornerAddress: SimpleCellAddress, cellContents: RawCellContent[][] | RawCellContent): ExportedChange[]
+- ✅ setSheetContent(sheetId: number, contents: Map<string, RawCellContent>): ExportedChange[]
 - ✅ getSheetContents(sheetId: number): Map<string, CellValue>
 - ✅ getRangeValues(source: SimpleCellRange): CellValue[][]
 - ✅ getRangeFormulas(source: SimpleCellRange): (string | undefined)[][]
@@ -471,7 +471,6 @@ Error management:
 - ✅ isItPossibleToClearSheet(sheetId: number): boolean
 - ✅ clearSheet(sheetId: number): ExportedChange[]
 - ✅ isItPossibleToReplaceSheetContent(sheetId: number, values: RawCellContent[][]): boolean
-- ✅ setSheetContent(sheetId: number, values: RawCellContent[][]): ExportedChange[]
 - ✅ getSheetName(sheetId: number): string
 - ✅ getSheetNames(): string[]
 - ✅ getSheetId(sheetName: string): number

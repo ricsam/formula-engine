@@ -21,7 +21,7 @@ export function EventsDemo() {
       ['C2', '=B1+B2']
     ]);
     
-    eng.setSheetContents(sheetId, initialData);
+    eng.setSheetContent(sheetId, initialData);
     return eng;
   }, []);
 
@@ -72,7 +72,7 @@ export function EventsDemo() {
     try {
       const sheetId = engine.getSheetId('Demo');
       const address = engine.simpleCellAddressFromString(cellAddress, sheetId);
-      engine.setCellContents(address, inputValue);
+      engine.setCellContent(address, inputValue);
       setInputValue('');
     } catch (error) {
       console.error('Error updating cell:', error);

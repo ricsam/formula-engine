@@ -30,7 +30,7 @@ describe('FILTER with Infinite Ranges - Spilling Bug', () => {
       ['R1', '=FILTER(P:P, Q:Q="Yes")']
     ]);
 
-    engine.setSheetContents(sheetId, data);
+    engine.setSheetContent(sheetId, data);
 
     // Verify input data
     expect(engine.getCellValue({ sheet: sheetId, col: 15, row: 0 })).toBe('Apple');
@@ -71,7 +71,7 @@ describe('FILTER with Infinite Ranges - Spilling Bug', () => {
       ['C1', '=FILTER(A:A, B:B="Yes")']
     ]);
 
-    engine.setSheetContents(sheetId, data);
+    engine.setSheetContent(sheetId, data);
 
     // This should work correctly
     expect(engine.getCellValue({ sheet: sheetId, col: 2, row: 0 })).toBe('Apple');

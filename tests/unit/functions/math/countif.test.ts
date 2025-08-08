@@ -20,11 +20,11 @@ describe('COUNTIF Function Tests', () => {
       ['A5', 'Monitor']
     ]);
     
-    engine.setSheetContents(sheetId, testData);
+    engine.setSheetContent(sheetId, testData);
     
     // This should now work because COUNTIF is implemented
     const address = { sheet: sheetId, col: 1, row: 1 };
-    engine.setCellContents(address, '=COUNTIF(A2:A5,"Laptop")');
+    engine.setCellContent(address, '=COUNTIF(A2:A5,"Laptop")');
     
     const result = engine.getCellValue(address);
     expect(result).toBe(1);
@@ -39,11 +39,11 @@ describe('COUNTIF Function Tests', () => {
       ['A5', 'Monitor']
     ]);
     
-    engine.setSheetContents(sheetId, testData);
+    engine.setSheetContent(sheetId, testData);
     
     // This should now work because COUNTIF is implemented
     const address = { sheet: sheetId, col: 1, row: 1 };
-    engine.setCellContents(address, '=IF(COUNTIF(A2:A5,"Laptop")>0,"Yes","No")');
+    engine.setCellContent(address, '=IF(COUNTIF(A2:A5,"Laptop")>0,"Yes","No")');
     
     const result = engine.getCellValue(address);
     expect(result).toBe('Yes');
@@ -58,10 +58,10 @@ describe('COUNTIF Function Tests', () => {
       ['A5', 1]
     ]);
     
-    engine.setSheetContents(sheetId, testData);
+    engine.setSheetContent(sheetId, testData);
     
     const address = { sheet: sheetId, col: 1, row: 0 };
-    engine.setCellContents(address, '=COUNTIF(A1:A5,1)');
+    engine.setCellContent(address, '=COUNTIF(A1:A5,1)');
     
     const result = engine.getCellValue(address);
     expect(result).toBe(3);
@@ -76,10 +76,10 @@ describe('COUNTIF Function Tests', () => {
       ['A5', 'Apple']
     ]);
     
-    engine.setSheetContents(sheetId, testData);
+    engine.setSheetContent(sheetId, testData);
     
     const address = { sheet: sheetId, col: 1, row: 0 };
-    engine.setCellContents(address, '=COUNTIF(A1:A5,"Apple")');
+    engine.setCellContent(address, '=COUNTIF(A1:A5,"Apple")');
     
     const result = engine.getCellValue(address);
     expect(result).toBe(3);
@@ -94,17 +94,17 @@ describe('COUNTIF Function Tests', () => {
       ['A5', 5]
     ]);
     
-    engine.setSheetContents(sheetId, testData);
+    engine.setSheetContent(sheetId, testData);
     
     // Test greater than
     const address1 = { sheet: sheetId, col: 1, row: 0 };
-    engine.setCellContents(address1, '=COUNTIF(A1:A5,">15")');
+    engine.setCellContent(address1, '=COUNTIF(A1:A5,">15")');
     const result1 = engine.getCellValue(address1);
     expect(result1).toBe(2); // 20 and 25
 
     // Test less than or equal
     const address2 = { sheet: sheetId, col: 1, row: 1 };
-    engine.setCellContents(address2, '=COUNTIF(A1:A5,"<=15")');
+    engine.setCellContent(address2, '=COUNTIF(A1:A5,"<=15")');
     const result2 = engine.getCellValue(address2);
     expect(result2).toBe(3); // 10, 15, and 5
   });
@@ -118,17 +118,17 @@ describe('COUNTIF Function Tests', () => {
       ['A5', '#DIV/0!']
     ]);
     
-    engine.setSheetContents(sheetId, testData);
+    engine.setSheetContent(sheetId, testData);
     
     // Count empty cells
     const address1 = { sheet: sheetId, col: 1, row: 0 };
-    engine.setCellContents(address1, '=COUNTIF(A1:A5,"")');
+    engine.setCellContent(address1, '=COUNTIF(A1:A5,"")');
     const result1 = engine.getCellValue(address1);
     expect(result1).toBe(1); // Only A2 is empty string
 
     // Count boolean values
     const address2 = { sheet: sheetId, col: 1, row: 1 };
-    engine.setCellContents(address2, '=COUNTIF(A1:A5,FALSE)');
+    engine.setCellContent(address2, '=COUNTIF(A1:A5,FALSE)');
     const result2 = engine.getCellValue(address2);
     expect(result2).toBe(1); // Only A3 is false
   });

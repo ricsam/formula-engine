@@ -329,9 +329,9 @@ export const createEngineWithMultiSheetData = () => {
   ]);
 
   // Populate all sheets
-  engine.setSheetContents(productsSheetId, productsData);
-  engine.setSheetContents(salesSheetId, salesData);
-  engine.setSheetContents(dashboardSheetId, dashboardData);
+  engine.setSheetContent(productsSheetId, productsData);
+  engine.setSheetContent(salesSheetId, salesData);
+  engine.setSheetContent(dashboardSheetId, dashboardData);
 
   return {
     engine,

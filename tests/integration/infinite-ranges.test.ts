@@ -23,16 +23,16 @@ describe('Infinite Range Support', () => {
           ['A100', 40],
           ['A1000', 50],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
         // Test SUM with infinite column range
-        engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A)');
+        engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A)');
         const result = engine.getCellValue({ sheet: sheetId, col: 2, row: 0 });
         expect(result).toBe(150); // 10 + 20 + 30 + 40 + 50
       });
 
       test('should handle empty columns', () => {
-        engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=SUM(B:B)');
+        engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=SUM(B:B)');
         const result = engine.getCellValue({ sheet: sheetId, col: 2, row: 0 });
         expect(result).toBe(0);
       });
@@ -45,9 +45,9 @@ describe('Infinite Range Support', () => {
           ['A4', true],
           ['A5', 30],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
-        engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A)');
+        engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A)');
         const result = engine.getCellValue({ sheet: sheetId, col: 2, row: 0 });
         expect(result).toBe(60); // 10 + 20 + 30 (text and boolean ignored)
       });
@@ -60,9 +60,9 @@ describe('Infinite Range Support', () => {
           ['B2', 40],
           ['C1', 50],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
-        engine.setCellContents({ sheet: sheetId, col: 3, row: 0 }, '=SUM(A:A) + SUM(B:B)');
+        engine.setCellContent({ sheet: sheetId, col: 3, row: 0 }, '=SUM(A:A) + SUM(B:B)');
         const result = engine.getCellValue({ sheet: sheetId, col: 3, row: 0 });
         expect(result).toBe(100); // (10 + 20) + (30 + 40)
       });
@@ -76,18 +76,18 @@ describe('Infinite Range Support', () => {
           ['B3', 'Third'],
           ['B100', 'Hundredth'],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
         // INDEX(B:B, 2) should return "Second"
-        engine.setCellContents({ sheet: sheetId, col: 3, row: 0 }, '=INDEX(B:B, 2)');
+        engine.setCellContent({ sheet: sheetId, col: 3, row: 0 }, '=INDEX(B:B, 2)');
         expect(engine.getCellValue({ sheet: sheetId, col: 3, row: 0 })).toBe('Second');
 
         // INDEX(B:B, 100) should return "Hundredth"
-        engine.setCellContents({ sheet: sheetId, col: 3, row: 1 }, '=INDEX(B:B, 100)');
+        engine.setCellContent({ sheet: sheetId, col: 3, row: 1 }, '=INDEX(B:B, 100)');
         expect(engine.getCellValue({ sheet: sheetId, col: 3, row: 1 })).toBe('Hundredth');
 
         // INDEX(B:B, 50) should return undefined (empty cell)
-        engine.setCellContents({ sheet: sheetId, col: 3, row: 2 }, '=INDEX(B:B, 50)');
+        engine.setCellContent({ sheet: sheetId, col: 3, row: 2 }, '=INDEX(B:B, 50)');
         expect(engine.getCellValue({ sheet: sheetId, col: 3, row: 2 })).toBeUndefined();
       });
 
@@ -100,10 +100,10 @@ describe('Infinite Range Support', () => {
           ['B2', 5],
           ['C2', 6],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
         // INDEX(A:C, 2, 2) should return B2 = 5
-        engine.setCellContents({ sheet: sheetId, col: 4, row: 0 }, '=INDEX(A:C, 2, 2)');
+        engine.setCellContent({ sheet: sheetId, col: 4, row: 0 }, '=INDEX(A:C, 2, 2)');
         expect(engine.getCellValue({ sheet: sheetId, col: 4, row: 0 })).toBe(5);
       });
     });
@@ -122,10 +122,10 @@ describe('Infinite Range Support', () => {
           ['B4', false],
           ['B5', true],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
         // FILTER(A:A, B:B) should return [10, 30, 50]
-        engine.setCellContents({ sheet: sheetId, col: 3, row: 0 }, '=FILTER(A:A, B:B)');
+        engine.setCellContent({ sheet: sheetId, col: 3, row: 0 }, '=FILTER(A:A, B:B)');
         expect(engine.getCellValue({ sheet: sheetId, col: 3, row: 0 })).toBe(10);
         expect(engine.getCellValue({ sheet: sheetId, col: 3, row: 1 })).toBe(30);
         expect(engine.getCellValue({ sheet: sheetId, col: 3, row: 2 })).toBe(50);
@@ -140,9 +140,9 @@ describe('Infinite Range Support', () => {
           ['B10', false],
           ['B100', true],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
-        engine.setCellContents({ sheet: sheetId, col: 3, row: 0 }, '=FILTER(A:A, B:B)');
+        engine.setCellContent({ sheet: sheetId, col: 3, row: 0 }, '=FILTER(A:A, B:B)');
         expect(engine.getCellValue({ sheet: sheetId, col: 3, row: 0 })).toBe(100);
         expect(engine.getCellValue({ sheet: sheetId, col: 3, row: 1 })).toBe(300);
       });
@@ -151,11 +151,11 @@ describe('Infinite Range Support', () => {
     describe('ISBLANK with infinite column ranges', () => {
       test('should check if entire column is blank', () => {
         // Empty column
-        engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=ISBLANK(A:A)');
+        engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=ISBLANK(A:A)');
         expect(engine.getCellValue({ sheet: sheetId, col: 2, row: 0 })).toBe(true);
 
         // Add a value to column A
-        engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 10);
+        engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 10);
         expect(engine.getCellValue({ sheet: sheetId, col: 2, row: 0 })).toBe(false);
       });
 
@@ -163,12 +163,12 @@ describe('Infinite Range Support', () => {
         const data = new Map<string, any>([
           ['A100', 'value'],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
-        engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=ISBLANK(A:A)');
+        engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=ISBLANK(A:A)');
         expect(engine.getCellValue({ sheet: sheetId, col: 2, row: 0 })).toBe(false);
 
-        engine.setCellContents({ sheet: sheetId, col: 2, row: 1 }, '=ISBLANK(B:B)');
+        engine.setCellContent({ sheet: sheetId, col: 2, row: 1 }, '=ISBLANK(B:B)');
         expect(engine.getCellValue({ sheet: sheetId, col: 2, row: 1 })).toBe(true);
       });
     });
@@ -180,14 +180,14 @@ describe('Infinite Range Support', () => {
           ['A2', 20],
           ['A3', 30],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
         // IF(SUM(A:A) > 50, "High", "Low")
-        engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=IF(SUM(A:A) > 50, "High", "Low")');
+        engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=IF(SUM(A:A) > 50, "High", "Low")');
         expect(engine.getCellValue({ sheet: sheetId, col: 2, row: 0 })).toBe('High'); // Sum is 60
 
         // IF(ISBLANK(B:B), "Empty", "Has Data")
-        engine.setCellContents({ sheet: sheetId, col: 2, row: 1 }, '=IF(ISBLANK(B:B), "Empty", "Has Data")');
+        engine.setCellContent({ sheet: sheetId, col: 2, row: 1 }, '=IF(ISBLANK(B:B), "Empty", "Has Data")');
         expect(engine.getCellValue({ sheet: sheetId, col: 2, row: 1 })).toBe('Empty');
       });
     });
@@ -203,15 +203,15 @@ describe('Infinite Range Support', () => {
           ['Z5', 40],
           ['AA5', 50],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
-        engine.setCellContents({ sheet: sheetId, col: 0, row: 10 }, '=SUM(5:5)');
+        engine.setCellContent({ sheet: sheetId, col: 0, row: 10 }, '=SUM(5:5)');
         const result = engine.getCellValue({ sheet: sheetId, col: 0, row: 10 });
         expect(result).toBe(150); // 10 + 20 + 30 + 40 + 50
       });
 
       test('should handle empty rows', () => {
-        engine.setCellContents({ sheet: sheetId, col: 0, row: 10 }, '=SUM(100:100)');
+        engine.setCellContent({ sheet: sheetId, col: 0, row: 10 }, '=SUM(100:100)');
         const result = engine.getCellValue({ sheet: sheetId, col: 0, row: 10 });
         expect(result).toBe(0);
       });
@@ -223,10 +223,10 @@ describe('Infinite Range Support', () => {
           ['A2', 30],
           ['B2', 40],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
         // Place formula in row 5 to avoid self-reference
-        engine.setCellContents({ sheet: sheetId, col: 0, row: 4 }, '=SUM(1:1) + SUM(2:2)');
+        engine.setCellContent({ sheet: sheetId, col: 0, row: 4 }, '=SUM(1:1) + SUM(2:2)');
         const result = engine.getCellValue({ sheet: sheetId, col: 0, row: 4 });
         expect(result).toBe(100); // (10 + 20) + (30 + 40)
       });
@@ -240,14 +240,14 @@ describe('Infinite Range Support', () => {
           ['C3', 'Third'],
           ['Z3', 'Last'],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
         // INDEX(3:3, 1, 2) should return B3 = "Second"
-        engine.setCellContents({ sheet: sheetId, col: 0, row: 10 }, '=INDEX(3:3, 1, 2)');
+        engine.setCellContent({ sheet: sheetId, col: 0, row: 10 }, '=INDEX(3:3, 1, 2)');
         expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 10 })).toBe('Second');
 
         // INDEX(3:3, 1, 26) should return Z3 = "Last"
-        engine.setCellContents({ sheet: sheetId, col: 0, row: 11 }, '=INDEX(3:3, 1, 26)');
+        engine.setCellContent({ sheet: sheetId, col: 0, row: 11 }, '=INDEX(3:3, 1, 26)');
         expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 11 })).toBe('Last');
       });
     });
@@ -268,11 +268,11 @@ describe('Infinite Range Support', () => {
           ['D2', false],
           ['E2', true],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
         // FILTER(1:1, 2:2) should return [10, 30, 50]
         // Note: FILTER with row ranges returns results as a column vector
-        engine.setCellContents({ sheet: sheetId, col: 0, row: 5 }, '=FILTER(1:1, 2:2)');
+        engine.setCellContent({ sheet: sheetId, col: 0, row: 5 }, '=FILTER(1:1, 2:2)');
         expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 5 })).toBe(10);
         expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 6 })).toBe(30);
         expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 7 })).toBe(50);
@@ -282,11 +282,11 @@ describe('Infinite Range Support', () => {
     describe('ISBLANK with infinite row ranges', () => {
       test('should check if entire row is blank', () => {
         // Empty row
-        engine.setCellContents({ sheet: sheetId, col: 0, row: 10 }, '=ISBLANK(5:5)');
+        engine.setCellContent({ sheet: sheetId, col: 0, row: 10 }, '=ISBLANK(5:5)');
         expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 10 })).toBe(true);
 
         // Add a value to row 5
-        engine.setCellContents({ sheet: sheetId, col: 10, row: 4 }, 'value'); // Row 5, Col K
+        engine.setCellContent({ sheet: sheetId, col: 10, row: 4 }, 'value'); // Row 5, Col K
         expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 10 })).toBe(false);
       });
     });
@@ -298,10 +298,10 @@ describe('Infinite Range Support', () => {
           ['B1', 20],
           ['C1', 30],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
         // IF(SUM(1:1) > 50, "High", "Low")
-        engine.setCellContents({ sheet: sheetId, col: 0, row: 10 }, '=IF(SUM(1:1) > 50, "High", "Low")');
+        engine.setCellContent({ sheet: sheetId, col: 0, row: 10 }, '=IF(SUM(1:1) > 50, "High", "Low")');
         expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 10 })).toBe('High'); // Sum is 60
       });
     });
@@ -322,10 +322,10 @@ describe('Infinite Range Support', () => {
           ['A2', 20],
           ['A3', 30],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
         // Reference Sheet1!A:A from Sheet2
-        engine.setCellContents({ sheet: sheet2Id, col: 0, row: 0 }, '=SUM(Sheet1!A:A)');
+        engine.setCellContent({ sheet: sheet2Id, col: 0, row: 0 }, '=SUM(Sheet1!A:A)');
         expect(engine.getCellValue({ sheet: sheet2Id, col: 0, row: 0 })).toBe(60);
       });
 
@@ -335,17 +335,17 @@ describe('Infinite Range Support', () => {
           ['B1', 100],
           ['B2', 200],
         ]);
-        engine.setSheetContents(sheetId, sheet1Data);
+        engine.setSheetContent(sheetId, sheet1Data);
 
         // Sheet2 data
         const sheet2Data = new Map<string, any>([
           ['B1', 300],
           ['B2', 400],
         ]);
-        engine.setSheetContents(sheet2Id, sheet2Data);
+        engine.setSheetContent(sheet2Id, sheet2Data);
 
         // Sum both sheets' B columns
-        engine.setCellContents({ sheet: sheetId, col: 3, row: 0 }, '=SUM(Sheet1!B:B) + SUM(Sheet2!B:B)');
+        engine.setCellContent({ sheet: sheetId, col: 3, row: 0 }, '=SUM(Sheet1!B:B) + SUM(Sheet2!B:B)');
         expect(engine.getCellValue({ sheet: sheetId, col: 3, row: 0 })).toBe(1000); // 300 + 700
       });
 
@@ -355,9 +355,9 @@ describe('Infinite Range Support', () => {
           ['C2', 'Value2'],
           ['C3', 'Value3'],
         ]);
-        engine.setSheetContents(sheet2Id, data);
+        engine.setSheetContent(sheet2Id, data);
 
-        engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, '=INDEX(Sheet2!C:C, 2)');
+        engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, '=INDEX(Sheet2!C:C, 2)');
         expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 0 })).toBe('Value2');
       });
 
@@ -371,20 +371,20 @@ describe('Infinite Range Support', () => {
           ['B2', false],
           ['B3', true],
         ]);
-        engine.setSheetContents(sheet2Id, data);
+        engine.setSheetContent(sheet2Id, data);
 
-        engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, '=FILTER(Sheet2!A:A, Sheet2!B:B)');
+        engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, '=FILTER(Sheet2!A:A, Sheet2!B:B)');
         expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 0 })).toBe(10);
         expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 1 })).toBe(30);
       });
 
       test('should handle ISBLANK with cross-sheet infinite columns', () => {
         // Check empty column in Sheet2
-        engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, '=ISBLANK(Sheet2!D:D)');
+        engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, '=ISBLANK(Sheet2!D:D)');
         expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 0 })).toBe(true);
 
         // Add value to Sheet2 column D
-        engine.setCellContents({ sheet: sheet2Id, col: 3, row: 0 }, 'value');
+        engine.setCellContent({ sheet: sheet2Id, col: 3, row: 0 }, 'value');
         expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 0 })).toBe(false);
       });
     });
@@ -396,10 +396,10 @@ describe('Infinite Range Support', () => {
           ['B5', 20],
           ['C5', 30],
         ]);
-        engine.setSheetContents(sheetId, data);
+        engine.setSheetContent(sheetId, data);
 
         // Reference Sheet1!5:5 from Sheet2
-        engine.setCellContents({ sheet: sheet2Id, col: 0, row: 0 }, '=SUM(Sheet1!5:5)');
+        engine.setCellContent({ sheet: sheet2Id, col: 0, row: 0 }, '=SUM(Sheet1!5:5)');
         expect(engine.getCellValue({ sheet: sheet2Id, col: 0, row: 0 })).toBe(60);
       });
 
@@ -409,9 +409,9 @@ describe('Infinite Range Support', () => {
           ['B10', 'Val2'],
           ['C10', 'Val3'],
         ]);
-        engine.setSheetContents(sheet2Id, data);
+        engine.setSheetContent(sheet2Id, data);
 
-        engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, '=INDEX(Sheet2!10:10, 1, 2)');
+        engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, '=INDEX(Sheet2!10:10, 1, 2)');
         expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 0 })).toBe('Val2');
       });
     });
@@ -424,20 +424,20 @@ describe('Infinite Range Support', () => {
         ['A2', 20],
         ['A3', '=A1+A2'],
       ]);
-      engine.setSheetContents(sheetId, data);
+      engine.setSheetContent(sheetId, data);
 
       // This should work without causing infinite recursion
-      engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A)');
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A)');
       expect(engine.getCellValue({ sheet: sheetId, col: 2, row: 0 })).toBe(60); // 10 + 20 + 30
     });
 
     test('should handle circular references with infinite ranges', () => {
       // Create a circular reference: B1 = SUM(A:A), A1 = B1
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '=SUM(A:A)');
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, '=B1');
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, '=SUM(A:A)');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, '=B1');
 
       // Force recalculation by changing another cell in the range
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 1 }, 1);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 1 }, 1);
       
       // Note: With the current implementation, the values are calculated correctly
       // (A1 = 1, B1 = 1) due to the improved cascading recalculation.
@@ -456,10 +456,10 @@ describe('Infinite Range Support', () => {
         ['A10000', 2],
         ['A100000', 3],
       ]);
-      engine.setSheetContents(sheetId, data);
+      engine.setSheetContent(sheetId, data);
 
       const start = Date.now();
-      engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A)');
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A)');
       const result = engine.getCellValue({ sheet: sheetId, col: 2, row: 0 });
       const duration = Date.now() - start;
 
@@ -476,10 +476,10 @@ describe('Infinite Range Support', () => {
         ['C5', 100],
         ['D5', 200],
       ]);
-      engine.setSheetContents(sheetId, data);
+      engine.setSheetContent(sheetId, data);
 
       // Complex formula with multiple infinite ranges
-      engine.setCellContents({ sheet: sheetId, col: 5, row: 0 }, '=SUM(A:A) * SUM(B:B) + SUM(5:5)');
+      engine.setCellContent({ sheet: sheetId, col: 5, row: 0 }, '=SUM(A:A) * SUM(B:B) + SUM(5:5)');
       expect(engine.getCellValue({ sheet: sheetId, col: 5, row: 0 })).toBe(450); // (30 * 5) + 300
     });
   });
@@ -492,10 +492,10 @@ describe('Infinite Range Support', () => {
         const row = Math.floor(Math.random() * 100000);
         data.set(`A${row + 1}`, Math.random() * 100);
       }
-      engine.setSheetContents(sheetId, data);
+      engine.setSheetContent(sheetId, data);
 
       const start = Date.now();
-      engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A)');
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A)');
       const result = engine.getCellValue({ sheet: sheetId, col: 2, row: 0 });
       const duration = Date.now() - start;
 
@@ -509,17 +509,17 @@ describe('Infinite Range Support', () => {
         ['A2', 20],
         ['A3', 30],
       ]);
-      engine.setSheetContents(sheetId, data);
+      engine.setSheetContent(sheetId, data);
 
-      engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A)');
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A)');
       expect(engine.getCellValue({ sheet: sheetId, col: 2, row: 0 })).toBe(60);
 
       // Update a cell in the range
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 1 }, 25);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 1 }, 25);
       expect(engine.getCellValue({ sheet: sheetId, col: 2, row: 0 })).toBe(65);
 
       // Add a new cell far away
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 999 }, 100);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 999 }, 100);
       expect(engine.getCellValue({ sheet: sheetId, col: 2, row: 0 })).toBe(165);
     });
   });
@@ -535,10 +535,10 @@ describe('Infinite Range Support', () => {
         ['B2', 15],
         ['B3', 25],
       ]);
-      engine.setSheetContents(sheetId, data);
+      engine.setSheetContent(sheetId, data);
 
       // Create formula with infinite column range
-      engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A)');
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A)');
       expect(engine.getCellValue({ sheet: sheetId, col: 2, row: 0 })).toBe(60);
 
       // Copy the formula to another cell
@@ -553,7 +553,7 @@ describe('Infinite Range Support', () => {
 
     test('should handle absolute references in infinite ranges', () => {
       // Create formula with absolute infinite column range
-      engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=SUM($A:$A)');
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=SUM($A:$A)');
       
       // Copy and paste
       const source = engine.simpleCellRangeFromString('C1', sheetId);
@@ -574,10 +574,10 @@ describe('Infinite Range Support', () => {
         ['B2', 50],
         ['C2', 60],
       ]);
-      engine.setSheetContents(sheetId, data);
+      engine.setSheetContent(sheetId, data);
 
       // Create formula with infinite row range
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 3 }, '=SUM(1:1)');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 3 }, '=SUM(1:1)');
       expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 3 })).toBe(60);
 
       // Move the formula down
@@ -600,10 +600,10 @@ describe('Infinite Range Support', () => {
         ['A2', 200],
         ['A3', 300],
       ]);
-      engine.setSheetContents(sheet2Id, data);
+      engine.setSheetContent(sheet2Id, data);
 
       // Create formula referencing Sheet2
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, '=SUM(Sheet2!A:A)');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, '=SUM(Sheet2!A:A)');
       expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 0 })).toBe(600);
 
       // Copy and paste within Sheet1
@@ -625,10 +625,10 @@ describe('Infinite Range Support', () => {
         ['B2', 2],
         ['B3', 3],
       ]);
-      engine.setSheetContents(sheetId, data);
+      engine.setSheetContent(sheetId, data);
 
       // Formula with both finite and infinite ranges
-      engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A) + SUM(B1:B3)');
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A:A) + SUM(B1:B3)');
       expect(engine.getCellValue({ sheet: sheetId, col: 2, row: 0 })).toBe(66); // 60 + 6
 
       // Copy and paste

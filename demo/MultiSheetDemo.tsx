@@ -82,7 +82,7 @@ function SheetComponent({
           style={{ width: "100%", height: "100%" }}
           cellData={spreadsheetData}
           onCellDataChange={(updatedSpreadsheet) => {
-            engine.setSheetContents(sheetId, updatedSpreadsheet);
+            engine.setSheetContent(sheetId, updatedSpreadsheet);
           }}
           customCellRenderer={(cell) => {
             const value = engine.getCellValue({
@@ -158,7 +158,7 @@ export function MultiSheetDemo() {
             row: rowIndex,
           };
 
-          engine.setCellContents(address, e.currentTarget.value);
+          engine.setCellContent(address, e.currentTarget.value);
         } catch (error) {
           console.error("Error updating cell:", error);
         }
@@ -196,7 +196,7 @@ export function MultiSheetDemo() {
 
     newSaleData.forEach((value, key) => {
       const { columnIndex, rowIndex } = parseCellReference(key);
-      engine.setCellContents(
+      engine.setCellContent(
         { sheet: sheets.sales.id, col: columnIndex, row: rowIndex },
         value
       );

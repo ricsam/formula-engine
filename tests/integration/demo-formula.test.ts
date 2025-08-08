@@ -15,11 +15,11 @@ describe('Demo Formula Integration Test', () => {
       ['A5', 'Monitor']
     ]);
     
-    engine.setSheetContents(sheetId, testData);
+    engine.setSheetContent(sheetId, testData);
     
     // Test the exact formula that was failing
     const address = { sheet: sheetId, col: 1, row: 13 }; // B14 position from demo
-    engine.setCellContents(address, '=IF(COUNTIF(A2:A5,"Laptop")>0,"Yes","No")');
+    engine.setCellContent(address, '=IF(COUNTIF(A2:A5,"Laptop")>0,"Yes","No")');
     
     const result = engine.getCellValue(address);
     expect(result).toBe('Yes');
@@ -37,10 +37,10 @@ describe('Demo Formula Integration Test', () => {
       ['A4', 'mouse']
     ]);
     
-    engine.setSheetContents(sheetId, testData);
+    engine.setSheetContent(sheetId, testData);
     
     const address = { sheet: sheetId, col: 1, row: 0 };
-    engine.setCellContents(address, '=COUNTIF(A1:A4,"Laptop")');
+    engine.setCellContent(address, '=COUNTIF(A1:A4,"Laptop")');
     
     const result = engine.getCellValue(address);
     expect(result).toBe(3); // Should match all 3 variations of "laptop"
@@ -62,11 +62,11 @@ describe('Demo Formula Integration Test', () => {
       ['B4', 100]
     ]);
     
-    engine.setSheetContents(sheetId, testData);
+    engine.setSheetContent(sheetId, testData);
     
     // Sum prices where product is "Laptop"
     const address = { sheet: sheetId, col: 2, row: 0 };
-    engine.setCellContents(address, '=SUMIF(A1:A4,"Laptop",B1:B4)');
+    engine.setCellContent(address, '=SUMIF(A1:A4,"Laptop",B1:B4)');
     
     const result = engine.getCellValue(address);
     expect(result).toBe(2200); // 1000 + 1200

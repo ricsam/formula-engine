@@ -14,8 +14,8 @@ describe('Dependency Tracking Integration Tests', () => {
 
   describe('getCellPrecedents', () => {
     test('should track single cell reference', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 10);
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '=A1');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 10);
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, '=A1');
       
       const precedents = engine.getCellPrecedents({ sheet: sheetId, col: 1, row: 0 });
       expect(precedents).toHaveLength(1);
@@ -23,9 +23,9 @@ describe('Dependency Tracking Integration Tests', () => {
     });
 
     test('should track multiple cell references', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 10);
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, 20);
-      engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=A1+B1');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 10);
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, 20);
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=A1+B1');
       
       const precedents = engine.getCellPrecedents({ sheet: sheetId, col: 2, row: 0 });
       expect(precedents).toHaveLength(2);
@@ -34,10 +34,10 @@ describe('Dependency Tracking Integration Tests', () => {
     });
 
     test('should track range references', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 1);
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 1 }, 2);
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 2 }, 3);
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '=SUM(A1:A3)');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 1);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 1 }, 2);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 2 }, 3);
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, '=SUM(A1:A3)');
       
       const precedents = engine.getCellPrecedents({ sheet: sheetId, col: 1, row: 0 });
       expect(precedents).toHaveLength(1);
@@ -48,9 +48,9 @@ describe('Dependency Tracking Integration Tests', () => {
     });
 
     test('should track indirect references through named expressions', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 100);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 100);
       engine.addNamedExpression('MyValue', '=A1');
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '=MyValue * 2');
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, '=MyValue * 2');
       
       const precedents = engine.getCellPrecedents({ sheet: sheetId, col: 1, row: 0 });
       
@@ -70,17 +70,17 @@ describe('Dependency Tracking Integration Tests', () => {
     });
 
     test('should return empty array for cells without formulas', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 42);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 42);
       
       const precedents = engine.getCellPrecedents({ sheet: sheetId, col: 0, row: 0 });
       expect(precedents).toEqual([]);
     });
 
     test('should track precedents in complex formulas', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 1);
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, 2);
-      engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, 3);
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 1 }, '=IF(A1>0, B1, C1)');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 1);
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, 2);
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, 3);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 1 }, '=IF(A1>0, B1, C1)');
       
       const precedents = engine.getCellPrecedents({ sheet: sheetId, col: 0, row: 1 });
       expect(precedents).toHaveLength(3);
@@ -92,8 +92,8 @@ describe('Dependency Tracking Integration Tests', () => {
 
   describe('getCellDependents', () => {
     test('should track single dependent', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 10);
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '=A1');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 10);
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, '=A1');
       
       const dependents = engine.getCellDependents({ sheet: sheetId, col: 0, row: 0 });
       expect(dependents).toHaveLength(1);
@@ -101,10 +101,10 @@ describe('Dependency Tracking Integration Tests', () => {
     });
 
     test('should track multiple dependents', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 10);
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '=A1*2');
-      engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=A1+5');
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 1 }, '=A1/2');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 10);
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, '=A1*2');
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=A1+5');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 1 }, '=A1/2');
       
       const dependents = engine.getCellDependents({ sheet: sheetId, col: 0, row: 0 });
       expect(dependents).toHaveLength(3);
@@ -114,10 +114,10 @@ describe('Dependency Tracking Integration Tests', () => {
     });
 
     test('should track dependents through ranges', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 1);
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 1 }, 2);
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 2 }, 3);
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '=SUM(A1:A3)');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 1);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 1 }, 2);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 2 }, 3);
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, '=SUM(A1:A3)');
       
       // Each cell in the range should show B1 as a dependent
       const dependentsA1 = engine.getCellDependents({ sheet: sheetId, col: 0, row: 0 });
@@ -130,16 +130,16 @@ describe('Dependency Tracking Integration Tests', () => {
     });
 
     test('should return empty array for cells with no dependents', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 42);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 42);
       
       const dependents = engine.getCellDependents({ sheet: sheetId, col: 0, row: 0 });
       expect(dependents).toEqual([]);
     });
 
     test('should track transitive dependents', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 10);
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '=A1*2');
-      engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=B1+5');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 10);
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, '=A1*2');
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=B1+5');
       
       // A1 should show B1 as a direct dependent
       const directDependents = engine.getCellDependents({ sheet: sheetId, col: 0, row: 0 });
@@ -153,10 +153,10 @@ describe('Dependency Tracking Integration Tests', () => {
 
   describe('Range precedents and dependents', () => {
     test('should get precedents for a range', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 1);
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 1 }, 2);
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '=A1');
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 1 }, '=A2');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 1);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 1 }, 2);
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, '=A1');
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 1 }, '=A2');
       
       const range: SimpleCellRange = {
         start: { sheet: sheetId, col: 1, row: 0 },
@@ -170,10 +170,10 @@ describe('Dependency Tracking Integration Tests', () => {
     });
 
     test('should get dependents for a range', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 1);
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 1 }, 2);
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '=A1:A2');
-      engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A1:A2)');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 1);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 1 }, 2);
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, '=A1:A2');
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=SUM(A1:A2)');
       
       const range: SimpleCellRange = {
         start: { sheet: sheetId, col: 0, row: 0 },
@@ -188,16 +188,16 @@ describe('Dependency Tracking Integration Tests', () => {
 
   describe('Dependency updates', () => {
     test('should update dependencies when formula changes', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 10);
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, 20);
-      engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=A1');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 10);
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, 20);
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=A1');
       
       // Initially C1 depends on A1
       let dependentsA1 = engine.getCellDependents({ sheet: sheetId, col: 0, row: 0 });
       expect(dependentsA1).toContainEqual({ sheet: sheetId, col: 2, row: 0 });
       
       // Change C1 to depend on B1 instead
-      engine.setCellContents({ sheet: sheetId, col: 2, row: 0 }, '=B1');
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=B1');
       
       // Now A1 should have no dependents
       dependentsA1 = engine.getCellDependents({ sheet: sheetId, col: 0, row: 0 });
@@ -209,15 +209,15 @@ describe('Dependency Tracking Integration Tests', () => {
     });
 
     test('should remove dependencies when cell is cleared', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 10);
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '=A1');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 10);
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, '=A1');
       
       // Initially A1 has B1 as a dependent
       let dependents = engine.getCellDependents({ sheet: sheetId, col: 0, row: 0 });
       expect(dependents).toContainEqual({ sheet: sheetId, col: 1, row: 0 });
       
       // Clear B1
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '');
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, '');
       
       // Now A1 should have no dependents
       dependents = engine.getCellDependents({ sheet: sheetId, col: 0, row: 0 });
@@ -227,8 +227,8 @@ describe('Dependency Tracking Integration Tests', () => {
 
   describe('Circular dependencies', () => {
     test('should handle circular dependencies gracefully', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, '=B1');
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '=A1');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, '=B1');
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, '=A1');
       
       // Both cells should show the circular reference error
       expect(engine.getCellValue({ sheet: sheetId, col: 0, row: 0 })).toBe('#CYCLE!');
@@ -245,10 +245,10 @@ describe('Dependency Tracking Integration Tests', () => {
 
   describe('Array formula dependencies', () => {
     test('should track dependencies for array formulas', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 1);
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 1 }, 2);
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 2 }, 3);
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '=A1:A3 * 2');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 1);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 1 }, 2);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 2 }, 3);
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, '=A1:A3 * 2');
       
       // The array formula should depend on A1:A3
       const precedents = engine.getCellPrecedents({ sheet: sheetId, col: 1, row: 0 });
@@ -268,11 +268,11 @@ describe('Dependency Tracking Integration Tests', () => {
     });
 
     test('should track dependencies for spilled cells', () => {
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 1);
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 1 }, 2);
-      engine.setCellContents({ sheet: sheetId, col: 0, row: 2 }, 3);
-      engine.setCellContents({ sheet: sheetId, col: 1, row: 0 }, '=A1:A3 * 2');
-      engine.setCellContents({ sheet: sheetId, col: 2, row: 1 }, '=B2 + 10');
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 1);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 1 }, 2);
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 2 }, 3);
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, '=A1:A3 * 2');
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 1 }, '=B2 + 10');
       
       // C2 depends on B2 (which is a spilled cell)
       const precedentsC2 = engine.getCellPrecedents({ sheet: sheetId, col: 2, row: 1 });

@@ -143,7 +143,7 @@ const createEngineWithExampleData = () => {
     ['H14', '=INDEX(A2:A5,1)&" (Best)'],
   ]);
 
-  engine.setSheetContents(sheetId, exampleData);
+  engine.setSheetContent(sheetId, exampleData);
   return { engine, sheetId };
 };
 
@@ -191,7 +191,7 @@ export function FullSpreadsheetDemo() {
         
         // If the input starts with =, it's a formula; otherwise it's a value
         const content = formulaInput.startsWith('=') ? formulaInput : formulaInput;
-        engine.setCellContents(address, content || undefined);
+        engine.setCellContent(address, content || undefined);
       } catch (error) {
         console.error('Error updating cell:', error);
       }
@@ -237,7 +237,7 @@ export function FullSpreadsheetDemo() {
           style={{ width: "100%", height: "100%" }}
           cellData={spreadsheet}
           onCellDataChange={(updatedSpreadsheet) => {
-            engine.setSheetContents(sheetId, updatedSpreadsheet);
+            engine.setSheetContent(sheetId, updatedSpreadsheet);
           }}
           customCellRenderer={(cell) => {
            

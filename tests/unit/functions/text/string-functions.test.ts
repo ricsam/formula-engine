@@ -14,7 +14,7 @@ describe('Text Functions Tests', () => {
   describe('CONCATENATE function', () => {
     test('should concatenate multiple strings', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=CONCATENATE("Hello"," ","World")');
+      engine.setCellContent(address, '=CONCATENATE("Hello"," ","World")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('Hello World');
@@ -22,7 +22,7 @@ describe('Text Functions Tests', () => {
 
     test('should concatenate numbers and strings', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=CONCATENATE("Number: ",123)');
+      engine.setCellContent(address, '=CONCATENATE("Number: ",123)');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('Number: 123');
@@ -30,7 +30,7 @@ describe('Text Functions Tests', () => {
 
     test('should handle single argument', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=CONCATENATE("Hello")');
+      engine.setCellContent(address, '=CONCATENATE("Hello")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('Hello');
@@ -38,10 +38,10 @@ describe('Text Functions Tests', () => {
 
     test('should skip undefined/null values', () => {
       const testData = new Map([['A1', 'Hello'], ['A3', 'World']]);
-      engine.setSheetContents(sheetId, testData);
+      engine.setSheetContent(sheetId, testData);
       
       const address = { sheet: sheetId, col: 1, row: 0 };
-      engine.setCellContents(address, '=CONCATENATE(A1," ",A2," ",A3)');
+      engine.setCellContent(address, '=CONCATENATE(A1," ",A2," ",A3)');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('Hello  World');
@@ -51,7 +51,7 @@ describe('Text Functions Tests', () => {
   describe('LEN function', () => {
     test('should return length of string', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=LEN("Hello World")');
+      engine.setCellContent(address, '=LEN("Hello World")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe(11);
@@ -59,7 +59,7 @@ describe('Text Functions Tests', () => {
 
     test('should return length of number as string', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=LEN(12345)');
+      engine.setCellContent(address, '=LEN(12345)');
       
       const result = engine.getCellValue(address);
       expect(result).toBe(5);
@@ -67,7 +67,7 @@ describe('Text Functions Tests', () => {
 
     test('should return 0 for empty/null values', () => {
       const address = { sheet: sheetId, col: 1, row: 0 }; // B1 instead of A1
-      engine.setCellContents(address, '=LEN(A1)'); // A1 is empty
+      engine.setCellContent(address, '=LEN(A1)'); // A1 is empty
       
       const result = engine.getCellValue(address);
       expect(result).toBe(0);
@@ -75,7 +75,7 @@ describe('Text Functions Tests', () => {
 
     test('should return 0 for empty string', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=LEN("")');
+      engine.setCellContent(address, '=LEN("")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe(0);
@@ -85,7 +85,7 @@ describe('Text Functions Tests', () => {
   describe('UPPER and LOWER functions', () => {
     test('UPPER should convert to uppercase', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=UPPER("Hello World")');
+      engine.setCellContent(address, '=UPPER("Hello World")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('HELLO WORLD');
@@ -93,7 +93,7 @@ describe('Text Functions Tests', () => {
 
     test('LOWER should convert to lowercase', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=LOWER("Hello World")');
+      engine.setCellContent(address, '=LOWER("Hello World")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('hello world');
@@ -102,8 +102,8 @@ describe('Text Functions Tests', () => {
     test('should handle numbers', () => {
       const address1 = { sheet: sheetId, col: 0, row: 0 };
       const address2 = { sheet: sheetId, col: 0, row: 1 };
-      engine.setCellContents(address1, '=UPPER(123)');
-      engine.setCellContents(address2, '=LOWER(456)');
+      engine.setCellContent(address1, '=UPPER(123)');
+      engine.setCellContent(address2, '=LOWER(456)');
       
       expect(engine.getCellValue(address1)).toBe('123');
       expect(engine.getCellValue(address2)).toBe('456');
@@ -112,8 +112,8 @@ describe('Text Functions Tests', () => {
     test('should handle empty values', () => {
       const address1 = { sheet: sheetId, col: 0, row: 0 };
       const address2 = { sheet: sheetId, col: 0, row: 1 };
-      engine.setCellContents(address1, '=UPPER(A10)'); // Empty cell
-      engine.setCellContents(address2, '=LOWER(A10)'); // Empty cell
+      engine.setCellContent(address1, '=UPPER(A10)'); // Empty cell
+      engine.setCellContent(address2, '=LOWER(A10)'); // Empty cell
       
       expect(engine.getCellValue(address1)).toBe('');
       expect(engine.getCellValue(address2)).toBe('');
@@ -123,7 +123,7 @@ describe('Text Functions Tests', () => {
   describe('TRIM function', () => {
     test('should remove leading and trailing spaces', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=TRIM("  Hello World  ")');
+      engine.setCellContent(address, '=TRIM("  Hello World  ")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('Hello World');
@@ -131,7 +131,7 @@ describe('Text Functions Tests', () => {
 
     test('should replace multiple spaces with single space', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=TRIM("Hello    World")');
+      engine.setCellContent(address, '=TRIM("Hello    World")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('Hello World');
@@ -139,7 +139,7 @@ describe('Text Functions Tests', () => {
 
     test('should handle empty values', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=TRIM(A10)'); // Empty cell
+      engine.setCellContent(address, '=TRIM(A10)'); // Empty cell
       
       const result = engine.getCellValue(address);
       expect(result).toBe('');
@@ -149,7 +149,7 @@ describe('Text Functions Tests', () => {
   describe('LEFT and RIGHT functions', () => {
     test('LEFT should return leftmost characters', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=LEFT("Hello World",5)');
+      engine.setCellContent(address, '=LEFT("Hello World",5)');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('Hello');
@@ -157,7 +157,7 @@ describe('Text Functions Tests', () => {
 
     test('LEFT should default to 1 character', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=LEFT("Hello")');
+      engine.setCellContent(address, '=LEFT("Hello")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('H');
@@ -165,7 +165,7 @@ describe('Text Functions Tests', () => {
 
     test('RIGHT should return rightmost characters', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=RIGHT("Hello World",5)');
+      engine.setCellContent(address, '=RIGHT("Hello World",5)');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('World');
@@ -173,7 +173,7 @@ describe('Text Functions Tests', () => {
 
     test('RIGHT should default to 1 character', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=RIGHT("Hello")');
+      engine.setCellContent(address, '=RIGHT("Hello")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('o');
@@ -182,8 +182,8 @@ describe('Text Functions Tests', () => {
     test('should handle requests longer than string', () => {
       const address1 = { sheet: sheetId, col: 0, row: 0 };
       const address2 = { sheet: sheetId, col: 0, row: 1 };
-      engine.setCellContents(address1, '=LEFT("Hi",10)');
-      engine.setCellContents(address2, '=RIGHT("Hi",10)');
+      engine.setCellContent(address1, '=LEFT("Hi",10)');
+      engine.setCellContent(address2, '=RIGHT("Hi",10)');
       
       expect(engine.getCellValue(address1)).toBe('Hi');
       expect(engine.getCellValue(address2)).toBe('Hi');
@@ -192,8 +192,8 @@ describe('Text Functions Tests', () => {
     test('should return error for negative numbers', () => {
       const address1 = { sheet: sheetId, col: 0, row: 0 };
       const address2 = { sheet: sheetId, col: 0, row: 1 };
-      engine.setCellContents(address1, '=LEFT("Hello",-1)');
-      engine.setCellContents(address2, '=RIGHT("Hello",-1)');
+      engine.setCellContent(address1, '=LEFT("Hello",-1)');
+      engine.setCellContent(address2, '=RIGHT("Hello",-1)');
       
       expect(engine.getCellValue(address1)).toBe('#VALUE!');
       expect(engine.getCellValue(address2)).toBe('#VALUE!');
@@ -203,7 +203,7 @@ describe('Text Functions Tests', () => {
   describe('MID function', () => {
     test('should return characters from middle', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=MID("Hello World",7,5)');
+      engine.setCellContent(address, '=MID("Hello World",7,5)');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('World');
@@ -211,7 +211,7 @@ describe('Text Functions Tests', () => {
 
     test('should handle start position beyond string length', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=MID("Hello",10,5)');
+      engine.setCellContent(address, '=MID("Hello",10,5)');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('');
@@ -219,7 +219,7 @@ describe('Text Functions Tests', () => {
 
     test('should handle length longer than remaining characters', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=MID("Hello",3,10)');
+      engine.setCellContent(address, '=MID("Hello",3,10)');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('llo');
@@ -230,9 +230,9 @@ describe('Text Functions Tests', () => {
       const address2 = { sheet: sheetId, col: 0, row: 1 };
       const address3 = { sheet: sheetId, col: 0, row: 2 };
       
-      engine.setCellContents(address1, '=MID("Hello",0,3)'); // Start < 1
-      engine.setCellContents(address2, '=MID("Hello",2,-1)'); // Length < 0
-      engine.setCellContents(address3, '=MID("Hello","a",3)'); // Non-numeric start
+      engine.setCellContent(address1, '=MID("Hello",0,3)'); // Start < 1
+      engine.setCellContent(address2, '=MID("Hello",2,-1)'); // Length < 0
+      engine.setCellContent(address3, '=MID("Hello","a",3)'); // Non-numeric start
       
       expect(engine.getCellValue(address1)).toBe('#VALUE!');
       expect(engine.getCellValue(address2)).toBe('#VALUE!');
@@ -243,7 +243,7 @@ describe('Text Functions Tests', () => {
   describe('FIND function', () => {
     test('should find text (case-sensitive)', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=FIND("World","Hello World")');
+      engine.setCellContent(address, '=FIND("World","Hello World")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe(7);
@@ -251,7 +251,7 @@ describe('Text Functions Tests', () => {
 
     test('should be case-sensitive', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=FIND("world","Hello World")');
+      engine.setCellContent(address, '=FIND("world","Hello World")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('#VALUE!');
@@ -259,7 +259,7 @@ describe('Text Functions Tests', () => {
 
     test('should support start position', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=FIND("l","Hello World",4)');
+      engine.setCellContent(address, '=FIND("l","Hello World",4)');
       
       const result = engine.getCellValue(address);
       expect(result).toBe(4); // Second 'l' in "Hello"
@@ -267,7 +267,7 @@ describe('Text Functions Tests', () => {
 
     test('should return error when not found', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=FIND("xyz","Hello World")');
+      engine.setCellContent(address, '=FIND("xyz","Hello World")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('#VALUE!');
@@ -277,7 +277,7 @@ describe('Text Functions Tests', () => {
   describe('SEARCH function', () => {
     test('should find text (case-insensitive)', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=SEARCH("world","Hello World")');
+      engine.setCellContent(address, '=SEARCH("world","Hello World")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe(7);
@@ -287,8 +287,8 @@ describe('Text Functions Tests', () => {
       const address1 = { sheet: sheetId, col: 0, row: 0 };
       const address2 = { sheet: sheetId, col: 0, row: 1 };
       
-      engine.setCellContents(address1, '=SEARCH("W*d","Hello World")');
-      engine.setCellContents(address2, '=SEARCH("W?rld","Hello World")');
+      engine.setCellContent(address1, '=SEARCH("W*d","Hello World")');
+      engine.setCellContent(address2, '=SEARCH("W?rld","Hello World")');
       
       expect(engine.getCellValue(address1)).toBe(7);
       expect(engine.getCellValue(address2)).toBe(7);
@@ -296,7 +296,7 @@ describe('Text Functions Tests', () => {
 
     test('should support start position', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=SEARCH("l","Hello World",4)');
+      engine.setCellContent(address, '=SEARCH("l","Hello World",4)');
       
       const result = engine.getCellValue(address);
       expect(result).toBe(4); // Second 'l' in "Hello"
@@ -304,7 +304,7 @@ describe('Text Functions Tests', () => {
 
     test('should return error when not found', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=SEARCH("xyz","Hello World")');
+      engine.setCellContent(address, '=SEARCH("xyz","Hello World")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('#VALUE!');
@@ -314,7 +314,7 @@ describe('Text Functions Tests', () => {
   describe('SUBSTITUTE function', () => {
     test('should substitute all instances by default', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=SUBSTITUTE("Hello World Hello","Hello","Hi")');
+      engine.setCellContent(address, '=SUBSTITUTE("Hello World Hello","Hello","Hi")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('Hi World Hi');
@@ -322,7 +322,7 @@ describe('Text Functions Tests', () => {
 
     test('should substitute specific instance', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=SUBSTITUTE("Hello World Hello","Hello","Hi",2)');
+      engine.setCellContent(address, '=SUBSTITUTE("Hello World Hello","Hello","Hi",2)');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('Hello World Hi');
@@ -330,7 +330,7 @@ describe('Text Functions Tests', () => {
 
     test('should return original text when old text not found', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=SUBSTITUTE("Hello World","xyz","abc")');
+      engine.setCellContent(address, '=SUBSTITUTE("Hello World","xyz","abc")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('Hello World');
@@ -338,7 +338,7 @@ describe('Text Functions Tests', () => {
 
     test('should handle empty old text', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=SUBSTITUTE("Hello","","X")');
+      engine.setCellContent(address, '=SUBSTITUTE("Hello","","X")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('Hello');
@@ -348,7 +348,7 @@ describe('Text Functions Tests', () => {
   describe('REPLACE function', () => {
     test('should replace characters at specific position', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=REPLACE("Hello World",7,5,"Universe")');
+      engine.setCellContent(address, '=REPLACE("Hello World",7,5,"Universe")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('Hello Universe');
@@ -356,7 +356,7 @@ describe('Text Functions Tests', () => {
 
     test('should handle replacement beyond string length', () => {
       const address = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=REPLACE("Hello",10,3,"X")');
+      engine.setCellContent(address, '=REPLACE("Hello",10,3,"X")');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('HelloX');
@@ -366,8 +366,8 @@ describe('Text Functions Tests', () => {
       const address1 = { sheet: sheetId, col: 0, row: 0 };
       const address2 = { sheet: sheetId, col: 0, row: 1 };
       
-      engine.setCellContents(address1, '=REPLACE("Hello",0,3,"X")'); // Start < 1
-      engine.setCellContents(address2, '=REPLACE("Hello",2,-1,"X")'); // Length < 0
+      engine.setCellContent(address1, '=REPLACE("Hello",0,3,"X")'); // Start < 1
+      engine.setCellContent(address2, '=REPLACE("Hello",2,-1,"X")'); // Length < 0
       
       expect(engine.getCellValue(address1)).toBe('#VALUE!');
       expect(engine.getCellValue(address2)).toBe('#VALUE!');
@@ -382,7 +382,7 @@ describe('Text Functions Tests', () => {
         ['A3', 'John Doe'],
         ['A4', '  Extra Spaces  ']
       ]);
-      engine.setSheetContents(sheetId, testData);
+      engine.setSheetContent(sheetId, testData);
       
       const tests = [
         { address: { sheet: sheetId, col: 1, row: 0 }, formula: '=CONCATENATE(A1," ",A2)', expected: 'Hello World' },
@@ -395,7 +395,7 @@ describe('Text Functions Tests', () => {
       ];
       
       tests.forEach(({ address, formula, expected }) => {
-        engine.setCellContents(address, formula);
+        engine.setCellContent(address, formula);
         expect(engine.getCellValue(address)).toBe(expected);
       });
     });
@@ -404,10 +404,10 @@ describe('Text Functions Tests', () => {
   describe('Error handling', () => {
     test('should propagate errors in arguments', () => {
       const testData = new Map([['A1', '#REF!']]);
-      engine.setSheetContents(sheetId, testData);
+      engine.setSheetContent(sheetId, testData);
       
       const address = { sheet: sheetId, col: 1, row: 0 };
-      engine.setCellContents(address, '=LEN(A1)');
+      engine.setCellContent(address, '=LEN(A1)');
       
       const result = engine.getCellValue(address);
       expect(result).toBe('#REF!');
@@ -423,7 +423,7 @@ describe('Text Functions Tests', () => {
       
       tests.forEach((formula, index) => {
         const address = { sheet: sheetId, col: 0, row: index };
-        engine.setCellContents(address, formula);
+        engine.setCellContent(address, formula);
         const result = engine.getCellValue(address);
         expect(typeof result === 'string' && result.startsWith('#')).toBe(true);
       });
@@ -434,7 +434,7 @@ describe('Text Functions Tests', () => {
     describe('FE.CONCAT', () => {
       test('should concatenate two strings', () => {
         const address = { sheet: sheetId, col: 0, row: 0 };
-        engine.setCellContents(address, '=FE.CONCAT("Hello", " World")');
+        engine.setCellContent(address, '=FE.CONCAT("Hello", " World")');
         
         const result = engine.getCellValue(address);
         expect(result).toBe('Hello World');
@@ -442,20 +442,20 @@ describe('Text Functions Tests', () => {
 
       test('should handle numbers and booleans', () => {
         const address1 = { sheet: sheetId, col: 0, row: 0 };
-        engine.setCellContents(address1, '=FE.CONCAT(123, 456)');
+        engine.setCellContent(address1, '=FE.CONCAT(123, 456)');
         expect(engine.getCellValue(address1)).toBe('123456');
 
         const address2 = { sheet: sheetId, col: 0, row: 1 };
-        engine.setCellContents(address2, '=FE.CONCAT(TRUE, FALSE)');
+        engine.setCellContent(address2, '=FE.CONCAT(TRUE, FALSE)');
         expect(engine.getCellValue(address2)).toBe('truefalse');
       });
 
       test('should handle null/undefined as empty strings', () => {
         const testData = new Map([['A1', '']]);
-        engine.setSheetContents(sheetId, testData);
+        engine.setSheetContent(sheetId, testData);
         
         const address = { sheet: sheetId, col: 1, row: 0 };
-        engine.setCellContents(address, '=FE.CONCAT("Hello", A1)');
+        engine.setCellContent(address, '=FE.CONCAT("Hello", A1)');
         
         const result = engine.getCellValue(address);
         expect(result).toBe('Hello');
@@ -465,31 +465,31 @@ describe('Text Functions Tests', () => {
     describe('EXACT', () => {
       test('should perform case-sensitive string comparison', () => {
         const address1 = { sheet: sheetId, col: 0, row: 0 };
-        engine.setCellContents(address1, '=EXACT("Hello", "Hello")');
+        engine.setCellContent(address1, '=EXACT("Hello", "Hello")');
         expect(engine.getCellValue(address1)).toBe(true);
 
         const address2 = { sheet: sheetId, col: 0, row: 1 };
-        engine.setCellContents(address2, '=EXACT("Hello", "hello")');
+        engine.setCellContent(address2, '=EXACT("Hello", "hello")');
         expect(engine.getCellValue(address2)).toBe(false);
 
         const address3 = { sheet: sheetId, col: 0, row: 2 };
-        engine.setCellContents(address3, '=EXACT("ABC", "ABC")');
+        engine.setCellContent(address3, '=EXACT("ABC", "ABC")');
         expect(engine.getCellValue(address3)).toBe(true);
       });
 
       test('should handle different types', () => {
         const address1 = { sheet: sheetId, col: 0, row: 0 };
-        engine.setCellContents(address1, '=EXACT(123, "123")');
+        engine.setCellContent(address1, '=EXACT(123, "123")');
         expect(engine.getCellValue(address1)).toBe(true);
 
         const address2 = { sheet: sheetId, col: 0, row: 1 };
-        engine.setCellContents(address2, '=EXACT(TRUE, "true")');
+        engine.setCellContent(address2, '=EXACT(TRUE, "true")');
         expect(engine.getCellValue(address2)).toBe(true);
       });
 
       test('should handle empty strings', () => {
         const address = { sheet: sheetId, col: 0, row: 0 };
-        engine.setCellContents(address, '=EXACT("", "")');
+        engine.setCellContent(address, '=EXACT("", "")');
         expect(engine.getCellValue(address)).toBe(true);
       });
     });
@@ -497,51 +497,51 @@ describe('Text Functions Tests', () => {
     describe('TEXT', () => {
       test('should format numbers with basic formats', () => {
         const address1 = { sheet: sheetId, col: 0, row: 0 };
-        engine.setCellContents(address1, '=TEXT(1234.567, "0")');
+        engine.setCellContent(address1, '=TEXT(1234.567, "0")');
         expect(engine.getCellValue(address1)).toBe('1235');
 
         const address2 = { sheet: sheetId, col: 0, row: 1 };
-        engine.setCellContents(address2, '=TEXT(1234.567, "0.00")');
+        engine.setCellContent(address2, '=TEXT(1234.567, "0.00")');
         expect(engine.getCellValue(address2)).toBe('1234.57');
 
         const address3 = { sheet: sheetId, col: 0, row: 2 };
-        engine.setCellContents(address3, '=TEXT(1234.567, "0.000")');
+        engine.setCellContent(address3, '=TEXT(1234.567, "0.000")');
         expect(engine.getCellValue(address3)).toBe('1234.567');
       });
 
       test('should format numbers with comma separators', () => {
         const address1 = { sheet: sheetId, col: 0, row: 0 };
-        engine.setCellContents(address1, '=TEXT(1234567, "#,##0")');
+        engine.setCellContent(address1, '=TEXT(1234567, "#,##0")');
         expect(engine.getCellValue(address1)).toBe('1,234,567');
 
         const address2 = { sheet: sheetId, col: 0, row: 1 };
-        engine.setCellContents(address2, '=TEXT(1234.56, "#,##0.00")');
+        engine.setCellContent(address2, '=TEXT(1234.56, "#,##0.00")');
         expect(engine.getCellValue(address2)).toBe('1,234.56');
       });
 
       test('should format percentages', () => {
         const address1 = { sheet: sheetId, col: 0, row: 0 };
-        engine.setCellContents(address1, '=TEXT(0.1234, "0%")');
+        engine.setCellContent(address1, '=TEXT(0.1234, "0%")');
         expect(engine.getCellValue(address1)).toBe('12%');
 
         const address2 = { sheet: sheetId, col: 0, row: 1 };
-        engine.setCellContents(address2, '=TEXT(0.1234, "0.00%")');
+        engine.setCellContent(address2, '=TEXT(0.1234, "0.00%")');
         expect(engine.getCellValue(address2)).toBe('12.34%');
       });
 
       test('should handle non-number values', () => {
         const address1 = { sheet: sheetId, col: 0, row: 0 };
-        engine.setCellContents(address1, '=TEXT("Hello", "0")');
+        engine.setCellContent(address1, '=TEXT("Hello", "0")');
         expect(engine.getCellValue(address1)).toBe('Hello');
 
         const address2 = { sheet: sheetId, col: 0, row: 1 };
-        engine.setCellContents(address2, '=TEXT(TRUE, "0.00")');
+        engine.setCellContent(address2, '=TEXT(TRUE, "0.00")');
         expect(engine.getCellValue(address2)).toBe('true');
       });
 
       test('should handle unrecognized formats', () => {
         const address = { sheet: sheetId, col: 0, row: 0 };
-        engine.setCellContents(address, '=TEXT(123.45, "custom")');
+        engine.setCellContent(address, '=TEXT(123.45, "custom")');
         expect(engine.getCellValue(address)).toBe('123.45');
       });
     });

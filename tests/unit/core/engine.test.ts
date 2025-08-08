@@ -24,7 +24,7 @@ describe('FormulaEngine', () => {
     const sheetId = engine.getSheetId(sheetName);
     
     // Set a single value
-    engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 42);
+    engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 42);
     
     const value = engine.getCellValue({ sheet: sheetId, col: 0, row: 0 });
     expect(value).toBe(42);
@@ -51,7 +51,7 @@ describe('FormulaEngine', () => {
       [7, 8, 9]
     ];
     
-    engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, data);
+    engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, data);
     
     // Verify all values
     for (let row = 0; row < 3; row++) {
@@ -69,7 +69,7 @@ describe('FormulaEngine', () => {
     const sheetId = engine.getSheetId(sheetName);
     
     // Set some values
-    engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, [
+    engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, [
       [1, 2, 3],
       [4, 5, 6]
     ]);
@@ -91,7 +91,7 @@ describe('FormulaEngine', () => {
     const sheetName = engine.addSheet('Sheet1');
     const sheetId = engine.getSheetId(sheetName);
     
-    engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, '=A2+B2');
+    engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, '=A2+B2');
     
     const formula = engine.getCellFormula({ sheet: sheetId, col: 0, row: 0 });
     expect(formula).toBe('=A2+B2');
@@ -159,8 +159,8 @@ describe('FormulaEngine', () => {
     expect(bounds).toBeUndefined();
     
     // Add some data
-    engine.setCellContents({ sheet: sheetId, col: 1, row: 2 }, 'A');
-    engine.setCellContents({ sheet: sheetId, col: 5, row: 8 }, 'B');
+    engine.setCellContent({ sheet: sheetId, col: 1, row: 2 }, 'A');
+    engine.setCellContent({ sheet: sheetId, col: 5, row: 8 }, 'B');
     
     bounds = engine.getSheetBoundingRect(sheetId);
     expect(bounds).toEqual({
@@ -199,7 +199,7 @@ describe('FormulaEngine', () => {
     const sheetId = engine.getSheetId(sheetName);
     
     // Set source data
-    engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, [
+    engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, [
       [1, 2],
       [3, 4]
     ]);
@@ -233,7 +233,7 @@ describe('FormulaEngine', () => {
     expect(engine.isEvaluationSuspended()).toBe(true);
     
     // Changes should not return anything while suspended
-    const changes1 = engine.setCellContents({ sheet: sheetId, col: 0, row: 0 }, 42);
+    const changes1 = engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 42);
     expect(changes1).toEqual([]);
     
     // Resume evaluation

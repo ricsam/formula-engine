@@ -20,7 +20,7 @@ describe('FormulaEngine Events System', () => {
       });
 
       const address: SimpleCellAddress = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, 42);
+      engine.setCellContent(address, 42);
 
       expect(events).toHaveLength(1);
       expect(events[0]).toEqual({
@@ -37,7 +37,7 @@ describe('FormulaEngine Events System', () => {
       const address: SimpleCellAddress = { sheet: sheetId, col: 0, row: 0 };
       
       // Set initial value
-      engine.setCellContents(address, 42);
+      engine.setCellContent(address, 42);
 
       // Subscribe after initial set
       const unsubscribe = engine.on('cell-changed', (event) => {
@@ -45,7 +45,7 @@ describe('FormulaEngine Events System', () => {
       });
 
       // Update the value
-      engine.setCellContents(address, 84);
+      engine.setCellContent(address, 84);
 
       expect(events).toHaveLength(1);
       expect(events[0]).toEqual({
@@ -62,7 +62,7 @@ describe('FormulaEngine Events System', () => {
       const address: SimpleCellAddress = { sheet: sheetId, col: 0, row: 0 };
       
       // Set initial value
-      engine.setCellContents(address, 42);
+      engine.setCellContent(address, 42);
 
       // Subscribe after initial set
       const unsubscribe = engine.on('cell-changed', (event) => {
@@ -70,7 +70,7 @@ describe('FormulaEngine Events System', () => {
       });
 
       // Clear the cell
-      engine.setCellContents(address, undefined);
+      engine.setCellContent(address, undefined);
 
       expect(events).toHaveLength(1);
       expect(events[0]).toEqual({
@@ -89,7 +89,7 @@ describe('FormulaEngine Events System', () => {
       });
 
       const address: SimpleCellAddress = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, '=1+2');
+      engine.setCellContent(address, '=1+2');
 
       expect(events).toHaveLength(1);
       expect(events[0]).toEqual({
@@ -113,7 +113,7 @@ describe('FormulaEngine Events System', () => {
         ['C1', 3]
       ]);
 
-      engine.setSheetContents(sheetId, cellData);
+      engine.setSheetContent(sheetId, cellData);
 
       expect(events).toHaveLength(3);
       
@@ -146,7 +146,7 @@ describe('FormulaEngine Events System', () => {
       const address: SimpleCellAddress = { sheet: sheetId, col: 0, row: 0 };
       
       // Set initial value
-      engine.setCellContents(address, 42);
+      engine.setCellContent(address, 42);
 
       // Subscribe after initial set
       const unsubscribe = engine.on('cell-changed', (event) => {
@@ -154,7 +154,7 @@ describe('FormulaEngine Events System', () => {
       });
 
       // Set the same value again
-      engine.setCellContents(address, 42);
+      engine.setCellContent(address, 42);
 
       expect(events).toHaveLength(0);
 
@@ -281,7 +281,7 @@ describe('FormulaEngine Events System', () => {
 
       // Set a value (should trigger event)
       const address: SimpleCellAddress = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, 42);
+      engine.setCellContent(address, 42);
 
       expect(events).toHaveLength(1);
 
@@ -289,7 +289,7 @@ describe('FormulaEngine Events System', () => {
       unsubscribe();
 
       // Set another value (should not trigger event)
-      engine.setCellContents(address, 84);
+      engine.setCellContent(address, 84);
 
       expect(events).toHaveLength(1); // Still only 1 event
     });
@@ -307,7 +307,7 @@ describe('FormulaEngine Events System', () => {
       });
 
       const address: SimpleCellAddress = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, 42);
+      engine.setCellContent(address, 42);
 
       expect(events1).toHaveLength(1);
       expect(events2).toHaveLength(1);
@@ -324,7 +324,7 @@ describe('FormulaEngine Events System', () => {
       });
 
       const address: SimpleCellAddress = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, 42);
+      engine.setCellContent(address, 42);
 
       expect(events).toHaveLength(1);
 
@@ -348,7 +348,7 @@ describe('FormulaEngine Events System', () => {
 
       // Trigger events
       const address: SimpleCellAddress = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, 42);
+      engine.setCellContent(address, 42);
       engine.addSheet('NewSheet');
 
       expect(events1).toHaveLength(0);
@@ -371,7 +371,7 @@ describe('FormulaEngine Events System', () => {
       ];
 
       addresses.forEach((address, index) => {
-        engine.setCellContents(address, index);
+        engine.setCellContent(address, index);
       });
 
       expect(events).toHaveLength(3);
@@ -394,9 +394,9 @@ describe('FormulaEngine Events System', () => {
       const addressB1: SimpleCellAddress = { sheet: sheetId, col: 1, row: 0 };
       const addressC1: SimpleCellAddress = { sheet: sheetId, col: 2, row: 0 };
 
-      engine.setCellContents(addressA1, 10);
-      engine.setCellContents(addressB1, 20);
-      engine.setCellContents(addressC1, '=A1+B1');
+      engine.setCellContent(addressA1, 10);
+      engine.setCellContent(addressB1, 20);
+      engine.setCellContent(addressC1, '=A1+B1');
 
       expect(events).toHaveLength(3);
       expect(events[2]).toEqual({
@@ -417,7 +417,7 @@ describe('FormulaEngine Events System', () => {
       });
 
       const address: SimpleCellAddress = { sheet: sheetId, col: 0, row: 0 };
-      engine.setCellContents(address, 42);
+      engine.setCellContent(address, 42);
 
       // Event should have fired synchronously
       expect(eventFired).toBe(true);
@@ -439,15 +439,15 @@ describe('FormulaEngine Events System', () => {
       const addressB1: SimpleCellAddress = { sheet: sheetId, col: 1, row: 0 };
       const addressC1: SimpleCellAddress = { sheet: sheetId, col: 2, row: 0 };
 
-      engine.setCellContents(addressA1, 10);
-      engine.setCellContents(addressB1, 20);
-      engine.setCellContents(addressC1, '=A1+B1');
+      engine.setCellContent(addressA1, 10);
+      engine.setCellContent(addressB1, 20);
+      engine.setCellContent(addressC1, '=A1+B1');
 
       // Clear events and test dependency update
       events.length = 0;
       
       // Update A1, should trigger C1 recalculation
-      engine.setCellContents(addressA1, 15);
+      engine.setCellContent(addressA1, 15);
 
       // Should have exactly 2 events: A1 change and C1 recalculation
       expect(events).toHaveLength(2);

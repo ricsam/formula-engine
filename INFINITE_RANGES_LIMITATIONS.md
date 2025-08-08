@@ -10,8 +10,8 @@ The FormulaEngine currently cannot detect circular references that involve infin
 
 ```javascript
 // This should result in #CYCLE! errors but currently doesn't
-engine.setCellContents('B1', '=SUM(A:A)');  // B1 depends on all of column A
-engine.setCellContents('A1', '=B1');        // A1 (part of A:A) depends on B1
+engine.setCellContent('B1', '=SUM(A:A)');  // B1 depends on all of column A
+engine.setCellContent('A1', '=B1');        // A1 (part of A:A) depends on B1
 ```
 
 **Expected behavior**: Both A1 and B1 should show `#CYCLE!`
@@ -92,7 +92,7 @@ private getRangeValuesInternal(range: SimpleCellRange, evaluationStack?: Set<str
 Ensure the evaluation context passes the stack through:
 
 ```typescript
-// In src/core/engine.ts (setCellContents method)
+// In src/core/engine.ts (setCellContent method)
 const context: EvaluationContext = {
   currentSheet: address.sheet,
   currentCell: address,
