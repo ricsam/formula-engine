@@ -2151,51 +2151,46 @@ export class FormulaEngine {
   // ===== Recalculation Methods =====
 
   private recalculateDependents(address: SimpleCellAddress): void {
-    // Use a set to track all cells that need recalculation
+    // Use a set to track all cells that need recalculation (keys)
     const cellsToRecalculate = new Set<string>();
-    const visited = new Set<string>();
+    const visitedForCollection = new Set<string>();
 
-    // Helper function to collect all transitive dependents
+    // Collect dependents for a given cell and add to the set
     const collectDependents = (cellAddress: SimpleCellAddress) => {
       const addressKey = addressToKey(cellAddress);
-      if (visited.has(addressKey)) return;
-      visited.add(addressKey);
+      if (visitedForCollection.has(addressKey)) return;
+      visitedForCollection.add(addressKey);
 
-      // Get direct dependents
-      const directDependents = this.dependencyGraph.getDependents(addressKey);
-      for (const dep of directDependents) {
-        cellsToRecalculate.add(dep);
-      }
+      // Direct dependents
+      const direct = this.dependencyGraph.getDependents(addressKey);
+      for (const dep of direct) cellsToRecalculate.add(dep);
 
-      // Get dependents of any ranges that contain this cell
-      const rangeKeys =
-        this.dependencyGraph.getRangesContainingCell(cellAddress);
+      // Dependents from ranges containing this cell
+      const rangeKeys = this.dependencyGraph.getRangesContainingCell(cellAddress);
       for (const rangeKey of rangeKeys) {
         const deps = this.dependencyGraph.getDependents(rangeKey);
-        for (const dep of deps) {
-          cellsToRecalculate.add(dep);
-        }
+        for (const dep of deps) cellsToRecalculate.add(dep);
       }
     };
 
-    // Start collecting from the initial cell
+    // Seed with initial address dependents
     collectDependents(address);
 
-    // Sort dependents in topological order to ensure correct calculation order
-    const sortedDependents = this.sortDependentsTopologically([
-      ...cellsToRecalculate,
-    ]);
-
-    // Track which cells we've already recalculated to avoid infinite loops
+    // Track recalculated cells to avoid duplicate work
     const recalculated = new Set<string>();
 
-    // Recalculate each dependent
-    for (const depKey of sortedDependents) {
-      if (!recalculated.has(depKey)) {
+    // Iteratively process until no new dependents remain
+    while (true) {
+      const pending = [...cellsToRecalculate].filter((k) => !recalculated.has(k));
+      if (pending.length === 0) break;
+
+      const ordered = this.sortDependentsTopologically(pending);
+      for (const depKey of ordered) {
+        if (recalculated.has(depKey)) continue;
         recalculated.add(depKey);
         this.recalculateCell(depKey);
 
-        // After recalculating, collect its dependents too
+        // After recalculation, collect further dependents transitively
         const parts = depKey.split(":");
         if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
           const depAddress: SimpleCellAddress = {
@@ -2204,21 +2199,6 @@ export class FormulaEngine {
             row: parseInt(parts[2]),
           };
           collectDependents(depAddress);
-        }
-      }
-    }
-
-    // Recalculate any newly discovered dependents
-    const newDependents = [...cellsToRecalculate].filter(
-      (dep) => !recalculated.has(dep)
-    );
-    if (newDependents.length > 0) {
-      const sortedNewDependents =
-        this.sortDependentsTopologically(newDependents);
-      for (const depKey of sortedNewDependents) {
-        if (!recalculated.has(depKey)) {
-          recalculated.add(depKey);
-          this.recalculateCell(depKey);
         }
       }
     }

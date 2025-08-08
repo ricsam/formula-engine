@@ -109,6 +109,34 @@ describe("FormulaEngine Events System", () => {
       expect(events.length).toBeGreaterThan(0);
       unsubscribe();
     });
+
+    test("should deliver full chain updates for A1->B1->C1->D1 when A1 changes", () => {
+      // Setup chain: B1=A1+1, C1=B1+1, D1=C1+1
+      engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, "=A1+1");
+      engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, "=B1+1");
+      engine.setCellContent({ sheet: sheetId, col: 3, row: 0 }, "=C1+1");
+
+      const batches: any[][] = [];
+      const unsubscribe = engine.onCellsUpdate(sheetId, (events) => batches.push(events));
+
+      // Change A1 triggers the chain
+      engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 5);
+
+      // Verify values are updated immediately after setCellContent
+      expect(engine.getCellValue({ sheet: sheetId, col: 3, row: 0 })).toBe(8);
+
+      // Verify batch contains updates for A1, B1, C1, D1
+      expect(batches.length).toBeGreaterThan(0);
+      const allEvents = batches.flat();
+
+      const hasA1 = allEvents.some((e) => e.address.col === 0 && e.address.row === 0 && e.newValue === 5);
+      const hasB1 = allEvents.some((e) => e.address.col === 1 && e.address.row === 0 && e.newValue === 6);
+      const hasC1 = allEvents.some((e) => e.address.col === 2 && e.address.row === 0 && e.newValue === 7);
+      const hasD1 = allEvents.some((e) => e.address.col === 3 && e.address.row === 0 && e.newValue === 8);
+      expect(hasA1 && hasB1 && hasC1 && hasD1).toBe(true);
+
+      unsubscribe();
+    });
   });
 
   describe("sheet events", () => {
