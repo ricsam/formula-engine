@@ -29,6 +29,7 @@ import {
   getCellValueType,
   isFormulaError,
   isCellEmpty,
+  parseDependencyKey,
 } from "./types";
 
 import {
@@ -163,6 +164,10 @@ export class FormulaEngine {
     { address: SimpleCellAddress; oldValue: CellValue; newValue: CellValue }[]
   > = new Map();
   private batchDepth: number = 0;
+  private deferredEvaluations: Map<
+    string,
+    { address: SimpleCellAddress; formula: string; ast: any }
+  > = new Map();
 
   constructor(options: FormulaEngineOptions = {}) {
     this.options = {
@@ -319,7 +324,7 @@ export class FormulaEngine {
     topLeftCornerAddress: SimpleCellAddress,
     cellContents: RawCellContent[][] | RawCellContent
   ): ExportedChange[] {
-    this.beginBatch();
+    // Don't defer evaluation for setCellContent - only for setSheetContent batch operations
     const changes: ExportedChange[] = [];
 
     if (Array.isArray(cellContents)) {
@@ -349,7 +354,6 @@ export class FormulaEngine {
       }
     }
 
-    this.endBatch();
     return this.evaluationSuspended ? [] : changes;
   }
 
@@ -456,139 +460,123 @@ export class FormulaEngine {
       const addressKey = addressToKey(address);
       newCell = createFormulaCell(formula);
 
-      // Parse and evaluate the formula
+      // Parse the formula and handle evaluation
       try {
         const ast = parseFormula(formula, address.sheet, (sheetName) =>
           this.getSheetId(sheetName)
         );
 
-        // Create evaluation context
-        const context: EvaluationContext = {
-          currentSheet: address.sheet,
-          currentCell: address,
-          namedExpressions: this.namedExpressions,
-          getCellValue: (addr: SimpleCellAddress) =>
-            this.getCellValueInternal(addr, context.evaluationStack),
-          getRangeValues: (range: SimpleCellRange) =>
-            this.getRangeValuesInternal(range, context.evaluationStack),
-          getFunction: (name: string) => functionRegistry.get(name),
-          errorHandler: this.errorHandler,
-          evaluationStack: new Set<string>(),
-          sheetResolver: (sheetName: string) => this.getSheetId(sheetName),
-        };
-
-        // Add current cell to evaluation stack to detect cycles
-        context.evaluationStack.add(addressKey);
-
-        // Update dependencies
+        // Setup cell and dependencies
         this.dependencyGraph.addCell(address);
         this.dependencyGraph.clearDependencies(addressKey);
 
-        // Evaluate the formula
-        const result = this.evaluator.evaluate(ast, context);
+        // Defer evaluation if in batch mode, otherwise evaluate immediately
+        if (this.batchDepth > 0) {
+          // Store for deferred evaluation
+          this.deferredEvaluations.set(addressKey, { address, formula, ast });
 
-        // Register dependencies
-        for (const dep of result.dependencies) {
-          // Parse the dependency key to determine type
-          const parts = dep.split(":");
-
-          if (parts.length === 3 && parts[0] && parts[1] && parts[2]) {
-            // Cell dependency: sheet:col:row
-            const depAddress: SimpleCellAddress = {
-              sheet: parseInt(parts[0]),
-              col: parseInt(parts[1]),
-              row: parseInt(parts[2]),
-            };
-            this.dependencyGraph.addCell(depAddress);
-            this.dependencyGraph.addDependency(addressKey, dep);
-          } else if (
-            parts.length === 5 &&
-            parts[0] &&
-            parts[1] &&
-            parts[2] &&
-            parts[3] &&
-            parts[4]
-          ) {
-            // Range dependency: sheet:startCol:startRow:endCol:endRow
-            const depRange: SimpleCellRange = {
-              start: {
-                sheet: parseInt(parts[0]),
-                col: parseInt(parts[1]),
-                row: parseInt(parts[2]),
-              },
-              end: {
-                sheet: parseInt(parts[0]),
-                col: parseInt(parts[3]),
-                row: parseInt(parts[4]),
-              },
-            };
-            this.dependencyGraph.addRange(depRange);
-            this.dependencyGraph.addDependency(addressKey, dep);
-          } else if (dep.startsWith("name:")) {
-            // Named expression dependency: name:MyValue or name:0:MyValue
-            const nameParts = dep.split(":");
-            if (nameParts.length === 2 && nameParts[1]) {
-              // Global scope: name:MyValue
-              this.dependencyGraph.addNamedExpression(nameParts[1], undefined);
-            } else if (nameParts.length === 3 && nameParts[1] && nameParts[2]) {
-              // Sheet scope: name:0:MyValue
-              this.dependencyGraph.addNamedExpression(
-                nameParts[2],
-                parseInt(nameParts[1])
-              );
-            }
-            this.dependencyGraph.addDependency(addressKey, dep);
-          } else {
-            // Unknown dependency format, add it anyway
-            this.dependencyGraph.addDependency(addressKey, dep);
-          }
-        }
-
-        // Handle array results
-        if (result.type === "2d-array") {
-          // Implement array spilling
-          const arrayValue = result.value;
-          const { rows, cols } = result.dimensions;
-
-          // Calculate spill range
-          const spillRange: SimpleCellRange = {
-            start: address,
-            end: {
-              sheet: address.sheet,
-              row: address.row + rows - 1,
-              col: address.col + cols - 1,
-            },
+          // Set initial value to undefined for now
+          newCell.value = undefined;
+        } else {
+          // Evaluate immediately (non-batch mode)
+          // Create evaluation context
+          const context: EvaluationContext = {
+            currentSheet: address.sheet,
+            currentCell: address,
+            namedExpressions: this.namedExpressions,
+            getCellValue: (addr: SimpleCellAddress) =>
+              this.getCellValueInternal(addr, context.evaluationStack),
+            getRangeValues: (range: SimpleCellRange) =>
+              this.getRangeValuesInternal(range, context.evaluationStack),
+            getFunction: (name: string) => functionRegistry.get(name),
+            errorHandler: this.errorHandler,
+            evaluationStack: new Set<string>(),
+            sheetResolver: (sheetName: string) => this.getSheetId(sheetName),
           };
 
-          // Check if spill range is available (no non-empty cells)
-          if (this.canSpillArray(spillRange, address)) {
-            // Clear any previous spill range for this formula
-            this.clearPreviousSpillRange(address);
+          // Add current cell to evaluation stack to detect cycles
+          context.evaluationStack.add(addressKey);
 
-            // Create array formula info
-            const arrayFormula: ArrayFormula = {
-              formula,
-              originAddress: address,
-              spillRange,
+          // Evaluate the formula
+          const result = this.evaluator.evaluate(ast, context);
+
+          // Register dependencies
+          for (const dep of result.dependencies) {
+            try {
+              const parsed = parseDependencyKey(dep);
+
+              switch (parsed.type) {
+                case "cell":
+                  this.dependencyGraph.addCell(parsed.address);
+                  this.dependencyGraph.addDependency(addressKey, dep);
+                  break;
+
+                case "range":
+                  this.dependencyGraph.addRange(parsed.range);
+                  this.dependencyGraph.addDependency(addressKey, dep);
+                  break;
+
+                case "named":
+                  this.dependencyGraph.addNamedExpression(
+                    parsed.name,
+                    parsed.scope
+                  );
+                  this.dependencyGraph.addDependency(addressKey, dep);
+                  break;
+              }
+            } catch (error) {
+              // Log the error but still add the dependency to avoid breaking evaluation
+              console.warn(`Failed to parse dependency key: ${dep}`, error);
+              this.dependencyGraph.addDependency(addressKey, dep);
+            }
+          }
+
+          // Handle array results
+          if (result.type === "2d-array") {
+            // Implement array spilling
+            const arrayValue = result.value;
+            const { rows, cols } = result.dimensions;
+
+            // Calculate spill range
+            const spillRange: SimpleCellRange = {
+              start: address,
+              end: {
+                sheet: address.sheet,
+                row: address.row + rows - 1,
+                col: address.col + cols - 1,
+              },
             };
 
-            // Set the origin cell
-            newCell = createArrayCell(
-              formula,
-              arrayValue[0]?.[0] ?? undefined,
-              arrayFormula
-            );
-            newCell.dependencies = new Set();
+            // Check if spill range is available (no non-empty cells)
+            if (this.canSpillArray(spillRange, address)) {
+              // Clear any previous spill range for this formula
+              this.clearPreviousSpillRange(address);
 
-            // Spill the array values
-            this.spillArray(arrayValue, spillRange, arrayFormula);
+              // Create array formula info
+              const arrayFormula: ArrayFormula = {
+                formula,
+                originAddress: address,
+                spillRange,
+              };
+
+              // Set the origin cell
+              newCell = createArrayCell(
+                formula,
+                arrayValue[0]?.[0] ?? undefined,
+                arrayFormula
+              );
+              newCell.dependencies = new Set();
+
+              // Spill the array values
+              this.spillArray(arrayValue, spillRange, arrayFormula);
+            } else {
+              // Spill blocked - return #SPILL! error
+              newCell.value = "#SPILL!";
+            }
           } else {
-            // Spill blocked - return #SPILL! error
-            newCell.value = "#SPILL!";
+            newCell.value = result.value;
           }
-        } else {
-          newCell.value = result.value;
-        }
+        } // End of else clause for immediate evaluation
       } catch (error) {
         // If parsing or evaluation fails, store the error
         if (
@@ -2483,6 +2471,7 @@ export class FormulaEngine {
   private endBatch(): void {
     this.batchDepth = Math.max(0, this.batchDepth - 1);
     if (this.batchDepth === 0) {
+      this.processDeferredEvaluations();
       this.flushSheetUpdates();
     }
   }
@@ -2497,6 +2486,206 @@ export class FormulaEngine {
       this.pendingSheetUpdates.set(SheetId, []);
     }
     this.pendingSheetUpdates.get(SheetId)!.push(event);
+  }
+
+  private processDeferredEvaluations(): void {
+    if (this.deferredEvaluations.size === 0) return;
+
+    // Sort deferred evaluations by dependency order
+    const sortedEvaluations = this.sortByDependencyOrder(
+      Array.from(this.deferredEvaluations.values())
+    );
+
+    // Process evaluations in dependency order
+    for (const { address, formula, ast } of sortedEvaluations) {
+      const sheet = this.sheets.get(address.sheet);
+      if (!sheet) continue;
+
+      try {
+        // Create evaluation context
+        const context: EvaluationContext = {
+          currentSheet: address.sheet,
+          currentCell: address,
+          namedExpressions: this.namedExpressions,
+          getCellValue: (addr: SimpleCellAddress) =>
+            this.getCellValueInternal(addr, context.evaluationStack),
+          getRangeValues: (range: SimpleCellRange) =>
+            this.getRangeValuesInternal(range, context.evaluationStack),
+          getFunction: (name: string) => functionRegistry.get(name),
+          errorHandler: this.errorHandler,
+          evaluationStack: new Set<string>(),
+          sheetResolver: (sheetName: string) => this.getSheetId(sheetName),
+        };
+
+        const addressKey = addressToKey(address);
+        context.evaluationStack.add(addressKey);
+
+        // Evaluate the formula
+        const result = this.evaluator.evaluate(ast, context);
+
+        // Register dependencies
+        for (const dep of result.dependencies) {
+          const parsed = parseDependencyKey(dep);
+
+          switch (parsed.type) {
+            case "cell":
+              this.dependencyGraph.addCell(parsed.address);
+              this.dependencyGraph.addDependency(addressKey, dep);
+              break;
+
+            case "range":
+              this.dependencyGraph.addRange(parsed.range);
+              this.dependencyGraph.addDependency(addressKey, dep);
+              break;
+
+            case "named":
+              this.dependencyGraph.addNamedExpression(
+                parsed.name,
+                parsed.scope
+              );
+              this.dependencyGraph.addDependency(addressKey, dep);
+              break;
+
+            default:
+              throw new Error(
+                `Invalid dependency type: ${(parsed as any).type}`
+              );
+          }
+        }
+
+        // Update the cell with the evaluated value and handle array spilling
+        const currentCell = getCell(sheet, address);
+        if (currentCell && currentCell.type === "FORMULA") {
+          const oldValue = currentCell.value;
+
+          // Handle array spilling (copied from setCellValue logic)
+          if (result.type === "2d-array") {
+            // This is a 2D array - implement array spilling
+            const arrayValue = result.value;
+            const rows = arrayValue.length;
+            const cols = arrayValue[0]?.length ?? 0;
+
+            if (cols > 0) {
+              // Calculate spill range
+              const spillRange: SimpleCellRange = {
+                start: address,
+                end: {
+                  sheet: address.sheet,
+                  row: address.row + rows - 1,
+                  col: address.col + cols - 1,
+                },
+              };
+
+              // Check if spill range is available (no non-empty cells)
+              if (this.canSpillArray(spillRange, address)) {
+                // Clear any previous spill range for this formula
+                this.clearPreviousSpillRange(address);
+
+                // Create array formula info
+                const arrayFormula: ArrayFormula = {
+                  originAddress: address,
+                  spillRange,
+                  formula: formula, // Include the formula string
+                };
+
+                // Convert to array cell and set origin cell info
+                currentCell.type = "ARRAY";
+                currentCell.value = arrayValue[0]?.[0] ?? undefined;
+                currentCell.arrayFormula = arrayFormula;
+
+                // Spill the array values
+                this.spillArray(arrayValue, spillRange, arrayFormula);
+              } else {
+                // Spill blocked - return #SPILL! error
+                currentCell.value = "#SPILL!";
+              }
+            } else {
+              // Empty array - set as error
+              currentCell.value = "#N/A";
+            }
+          } else {
+            // Regular scalar value
+            currentCell.value = result.value as CellValue;
+          }
+
+          // Emit cell update
+          this.emitCellUpdate({
+            address,
+            oldValue,
+            newValue: currentCell.value,
+          });
+        }
+      } catch (error) {
+        // Handle evaluation error
+        const currentCell = getCell(sheet, address);
+        if (currentCell && currentCell.type === "FORMULA") {
+          const oldValue = currentCell.value;
+          currentCell.value = "#ERROR!";
+          this.emitCellUpdate({
+            address,
+            oldValue,
+            newValue: currentCell.value,
+          });
+        }
+      }
+    }
+
+    // Clear deferred evaluations
+    this.deferredEvaluations.clear();
+  }
+
+  private sortByDependencyOrder(
+    evaluations: { address: SimpleCellAddress; formula: string; ast: any }[]
+  ): { address: SimpleCellAddress; formula: string; ast: any }[] {
+    // Get topological sort order from dependency graph
+    const topologicalOrder = this.dependencyGraph.topologicalSort();
+
+    if (!topologicalOrder) {
+      // Cycle detected - log warning and fall back to simple heuristic
+      console.warn(
+        "Circular dependency detected during deferred evaluation. Using fallback ordering."
+      );
+      return evaluations.sort((a, b) => {
+        if (a.address.row !== b.address.row) {
+          return a.address.row - b.address.row;
+        }
+        return a.address.col - b.address.col;
+      });
+    }
+
+    // Create a map from cell key to evaluation object for quick lookup
+    const evaluationMap = new Map<
+      string,
+      { address: SimpleCellAddress; formula: string; ast: any }
+    >();
+    for (const evaluation of evaluations) {
+      const key = addressToKey(evaluation.address);
+      evaluationMap.set(key, evaluation);
+    }
+
+    // Sort evaluations based on topological order
+    const sortedEvaluations: {
+      address: SimpleCellAddress;
+      formula: string;
+      ast: any;
+    }[] = [];
+
+    // First, add evaluations that appear in the topological order
+    for (const nodeKey of topologicalOrder) {
+      const evaluation = evaluationMap.get(nodeKey);
+      if (evaluation) {
+        sortedEvaluations.push(evaluation);
+        evaluationMap.delete(nodeKey);
+      }
+    }
+
+    // Add any remaining evaluations that weren't in the dependency graph yet
+    // (this can happen if dependencies weren't registered yet)
+    for (const evaluation of evaluationMap.values()) {
+      sortedEvaluations.push(evaluation);
+    }
+
+    return sortedEvaluations;
   }
 
   private flushSheetUpdates(): void {

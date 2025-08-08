@@ -248,6 +248,62 @@ const SUMIF: FunctionDefinition = {
   },
 };
 
+const AVERAGEIF: FunctionDefinition = {
+  name: "AVERAGEIF",
+  minArgs: 2,
+  maxArgs: 3,
+  evaluate: ({ argEvaluatedValues }): FunctionEvaluationResult => {
+    const error = propagateErrorFromEvalResults(argEvaluatedValues);
+    if (error) return { type: "value", value: error };
+
+    const range = argEvaluatedValues[0];
+    const criteria = argEvaluatedValues[1];
+    const averageRange = argEvaluatedValues.length === 3 ? argEvaluatedValues[2] : range;
+
+    if (!averageRange) {
+      throw new Error("#VALUE!");
+    }
+
+    if (!range || !criteria) {
+      return { type: "value", value: FormulaError.DIV0 };
+    }
+
+    // Flatten the range and average range values
+    const rangeFlattened = flattenValues(range.value);
+    const averageFlattened = flattenValues(averageRange.value);
+
+    // Ensure both arrays are the same length
+    if (rangeFlattened.length !== averageFlattened.length) {
+      return { type: "value", value: FormulaError.VALUE };
+    }
+
+    let sum = 0;
+    let count = 0;
+
+    const criteriaValue = flattenValues(criteria.value)[0];
+
+    for (let i = 0; i < rangeFlattened.length; i++) {
+      if (matchesCriteria(rangeFlattened[i], criteriaValue)) {
+        const value = averageFlattened[i];
+        if (typeof value === "number") {
+          sum += value;
+          count++;
+        } else if (typeof value === "boolean") {
+          sum += value ? 1 : 0;
+          count++;
+        }
+      }
+    }
+
+    // Return #DIV/0! if no matching values found
+    if (count === 0) {
+      return { type: "value", value: FormulaError.DIV0 };
+    }
+
+    return { type: "value", value: sum / count };
+  },
+};
+
 /**
  * Helper function to check if a value matches criteria
  * Supports exact matches, comparison operators, and wildcards
@@ -616,6 +672,7 @@ export const statisticalFunctions: FunctionDefinition[] = [
   COUNTBLANK,
   COUNTIF,
   SUMIF,
+  AVERAGEIF,
   AVERAGE,
   MAX,
   MIN,

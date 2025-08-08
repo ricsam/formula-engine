@@ -150,6 +150,57 @@ export function keyToAddress(key: AddressKey): SimpleCellAddress {
   return { sheet: sheet!, col: col!, row: row! };
 }
 
+// Helper function to parse range keys (format: "sheet:startCol:startRow:endCol:endRow")
+export function keyToRange(key: string): SimpleCellRange | null {
+  const parts = key.split(":").map(Number);
+  if (parts.length !== 5 || parts.some(isNaN)) {
+    return null;
+  }
+  const [sheet, startCol, startRow, endCol, endRow] = parts;
+  return {
+    start: { sheet: sheet!, col: startCol!, row: startRow! },
+    end: { sheet: sheet!, col: endCol!, row: endRow! },
+  };
+}
+
+// Helper function to parse dependency keys - returns type and parsed object
+export function parseDependencyKey(key: string): 
+  | { type: 'cell'; address: SimpleCellAddress } 
+  | { type: 'range'; range: SimpleCellRange } 
+  | { type: 'named'; name: string; scope?: number } {
+  
+  if (key.startsWith("name:")) {
+    // Named expression: name:MyValue or name:0:MyValue
+    const nameParts = key.split(":");
+    if (nameParts.length === 2 && nameParts[1]) {
+      return { type: 'named', name: nameParts[1] };
+    } else if (nameParts.length === 3 && nameParts[1] && nameParts[2]) {
+      return { type: 'named', name: nameParts[2], scope: parseInt(nameParts[1]) };
+    }
+    throw new Error(`Invalid named expression dependency key: ${key}`);
+  }
+  
+  const parts = key.split(":");
+  if (parts.length === 3 && parts.every(p => !isNaN(Number(p)))) {
+    // Cell dependency: sheet:col:row
+    try {
+      const address = keyToAddress(key as AddressKey);
+      return { type: 'cell', address };
+    } catch (error) {
+      throw new Error(`Invalid cell dependency key: ${key}. ${error}`);
+    }
+  } else if (parts.length === 5 && parts.every(p => !isNaN(Number(p)))) {
+    // Range dependency: sheet:startCol:startRow:endCol:endRow
+    const range = keyToRange(key);
+    if (range) {
+      return { type: 'range', range };
+    }
+    throw new Error(`Invalid range dependency key: ${key}`);
+  }
+  
+  throw new Error(`Unknown dependency key format: ${key}`);
+}
+
 // A1 notation helpers
 export function colNumberToLetter(col: number): string {
   let result = "";
