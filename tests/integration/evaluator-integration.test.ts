@@ -58,7 +58,7 @@ describe("Evaluator Integration Tests", () => {
   functions.set("AVERAGE", {
     name: "AVERAGE",
     minArgs: 1,
-    evaluate: ({ flatArgValues: args }): FunctionEvaluationResult => {
+    evaluate: ({ flatArgValues: args }):  FunctionEvaluationResult => {
       let sum = 0;
       let count = 0;
       for (const arg of args) {
