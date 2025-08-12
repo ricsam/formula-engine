@@ -9,21 +9,21 @@ import { Button } from "@/components/ui/button";
 import { FormulaEngine } from "../src/core/engine";
 import type { SelectionManager } from "@ricsam/selection-manager";
 import { createEngineWithMultiSheetData } from "./lib/multisheet-data";
+import { useSerializedSheet } from "src/react/hooks";
+import type { CellAddress } from "src/core/types";
 
 interface SheetComponentProps {
-  sheetName: string;
-  sheetId: number;
+  sheetName: "Dashboard" | "Sales" | "Products";
   spreadsheetData: Map<string, any>;
   engine: FormulaEngine;
   activeSheet: string;
   selectedCell: string | null;
-  onSheetActivate: (sheetName: string) => void;
+  onSheetActivate: (sheetName: "Dashboard" | "Sales" | "Products") => void;
   onCellSelect: (cell: string | null) => void;
 }
 
 function SheetComponent({
   sheetName,
-  sheetId,
   spreadsheetData,
   engine,
   activeSheet,
@@ -75,20 +75,18 @@ function SheetComponent({
           )}
         </div>
       </div>
-      <div
-        className="border rounded-lg overflow-hidden bg-white flex-1"
-      >
+      <div className="border rounded-lg overflow-hidden bg-white flex-1">
         <Spreadsheet
           style={{ width: "100%", height: "100%" }}
           cellData={spreadsheetData}
           onCellDataChange={(updatedSpreadsheet) => {
-            engine.setSheetContent(sheetId, updatedSpreadsheet);
+            engine.setSheetContent(sheetName, updatedSpreadsheet);
           }}
           customCellRenderer={(cell) => {
             const value = engine.getCellValue({
-              sheet: sheetId,
-              col: cell.colIndex,
-              row: cell.rowIndex,
+              sheetName,
+              colIndex: cell.colIndex,
+              rowIndex: cell.rowIndex,
             });
             return <div>{value}</div>;
           }}
@@ -101,76 +99,33 @@ function SheetComponent({
   );
 }
 
-
-
 export function MultiSheetDemo() {
   const { engine, sheets } = useMemo(createEngineWithMultiSheetData, []);
   const [selectedCell, setSelectedCell] = useState<string | null>(null);
-  const [activeSheet, setActiveSheet] = useState<string>("Dashboard");
-  const [spreadsheets, setSpreadsheets] = useState<
-    Record<string, Map<string, any>>
-  >(() => ({
-    Dashboard: engine.getSheetSerialized(sheets.dashboard.id),
-    Sales: engine.getSheetSerialized(sheets.sales.id),
-    Products: engine.getSheetSerialized(sheets.products.id),
-  }));
-
-  // Update all spreadsheets when any cell in any sheet changes
-  useEffect(() => {
-    const unsubDashboard = engine.onCellsUpdate(sheets.dashboard.id, () => {
-      setSpreadsheets((prev) => ({
-        ...prev,
-        Dashboard: engine.getSheetSerialized(sheets.dashboard.id),
-      }));
-    });
-    const unsubSales = engine.onCellsUpdate(sheets.sales.id, () => {
-      setSpreadsheets((prev) => ({
-        ...prev,
-        Sales: engine.getSheetSerialized(sheets.sales.id),
-      }));
-    });
-    const unsubProducts = engine.onCellsUpdate(sheets.products.id, () => {
-      setSpreadsheets((prev) => ({
-        ...prev,
-        Products: engine.getSheetSerialized(sheets.products.id),
-      }));
-    });
-    return () => {
-      unsubDashboard();
-      unsubSales();
-      unsubProducts();
-    };
-  }, [engine, sheets]);
-
-  const activeSheetId = useMemo(() => {
-    const sheetEntry = Object.values(sheets).find(
-      (sheet) => sheet.name === activeSheet
-    );
-    return sheetEntry?.id ?? sheets.dashboard.id;
-  }, [activeSheet, sheets]);
+  const [activeSheet, setActiveSheet] = useState<"Dashboard" | "Sales" | "Products">("Dashboard");
+  const spreadsheets = {
+    Dashboard: useSerializedSheet(engine, sheets.dashboard.name),
+    Sales: useSerializedSheet(engine, sheets.sales.name),
+    Products: useSerializedSheet(engine, sheets.products.name),
+  };
 
   const cellSerialized = useMemo(() => {
     if (!selectedCell) {
       return;
     }
-    const { columnIndex, rowIndex } = parseCellReference(selectedCell);
-    const cellFormula = engine.getCellSerialized({
-      sheet: activeSheetId,
-      col: columnIndex,
-      row: rowIndex,
-    });
+    const cellFormula = spreadsheets[activeSheet].get(selectedCell);
     return cellFormula;
-  }, [activeSheetId, selectedCell, engine]);
+  }, [activeSheet, selectedCell, spreadsheets]);
 
   const handleFormulaSubmit = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === "Enter" && selectedCell) {
         try {
           const { columnIndex, rowIndex } = parseCellReference(selectedCell);
-          const address = {
-            sheet: activeSheetId,
-            col: columnIndex,
-            row: rowIndex,
+          const address: CellAddress = {
+            sheetName: activeSheet,
+            colIndex: columnIndex,
+            rowIndex: rowIndex,
           };
 
           engine.setCellContent(address, e.currentTarget.value);
@@ -179,11 +134,11 @@ export function MultiSheetDemo() {
         }
       }
     },
-    [selectedCell, activeSheetId, engine]
+    [selectedCell, activeSheet, engine]
   );
 
   const addNewSale = useCallback(() => {
-    const salesData = engine.getSheetContents(sheets.sales.id);
+    const salesData = engine.getSheetSerialized(sheets.sales.name);
     const salesKeys = Array.from(salesData.keys()).filter(
       (key) => key.startsWith("A") && key !== "A1"
     );
@@ -212,11 +167,11 @@ export function MultiSheetDemo() {
     newSaleData.forEach((value, key) => {
       const { columnIndex, rowIndex } = parseCellReference(key);
       engine.setCellContent(
-        { sheet: sheets.sales.id, col: columnIndex, row: rowIndex },
+        { sheetName: sheets.sales.name, colIndex: columnIndex, rowIndex: rowIndex },
         value
       );
     });
-  }, [engine, sheets.sales.id]);
+  }, [engine, sheets.sales.name]);
 
   return (
     <div className="flex flex-col gap-4 h-full w-full p-8">
@@ -251,7 +206,6 @@ export function MultiSheetDemo() {
         <div className="grid grid-cols-3 gap-4 h-full">
           <SheetComponent
             sheetName="Products"
-            sheetId={sheets.products.id}
             spreadsheetData={spreadsheets.Products ?? new Map()}
             engine={engine}
             activeSheet={activeSheet}
@@ -261,7 +215,6 @@ export function MultiSheetDemo() {
           />
           <SheetComponent
             sheetName="Sales"
-            sheetId={sheets.sales.id}
             spreadsheetData={spreadsheets.Sales ?? new Map()}
             engine={engine}
             activeSheet={activeSheet}
@@ -271,7 +224,6 @@ export function MultiSheetDemo() {
           />
           <SheetComponent
             sheetName="Dashboard"
-            sheetId={sheets.dashboard.id}
             spreadsheetData={spreadsheets.Dashboard ?? new Map()}
             engine={engine}
             activeSheet={activeSheet}

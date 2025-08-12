@@ -13,11 +13,11 @@
     "knip": "knip"
   },
   "devDependencies": {
-    "@anocca-pub/components": "^0.0.26",
+    "@anocca-pub/components": "^0.0.28",
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-select": "^2.2.5",
     "@radix-ui/react-slot": "^1.2.3",
-    "@ricsam/selection-manager": "^0.0.6",
+    "@ricsam/selection-manager": "^0.0.10",
     "@tanstack/react-router": "^1.130.12",
     "@tanstack/react-router-devtools": "^1.130.13",
     "@tanstack/router-cli": "^1.130.15",

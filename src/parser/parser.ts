@@ -1,43 +1,30 @@
-/**
- * Recursive descent parser for formula expressions
- */
-
-import type { 
-  FormulaAST, 
-  ASTNode,
-  ValueNode,
-  ReferenceNode,
-  RangeNode,
-  FunctionNode,
-  UnaryOpNode,
-  BinaryOpNode,
-  ArrayNode,
-  NamedExpressionNode,
-  ErrorNode
-} from './ast';
-import type { SimpleCellAddress, SimpleCellRange, FormulaError } from '../core/types';
-import { 
-  createValueNode, 
-  createReferenceNode, 
-  createRangeNode,
-  createFunctionNode,
-  createUnaryOpNode,
-  createBinaryOpNode,
+import { columnToIndex, indexToColumn } from "../core/utils";
+import { FormulaError, type SpreadsheetRange } from "../core/types";
+import type { ASTNode } from "./ast";
+import {
   createArrayNode,
+  createBinaryOpNode,
+  createEmptyNode,
+  createErrorNode,
+  createFunctionNode,
+  createInfinityNode,
   createNamedExpressionNode,
-  createErrorNode
-} from './ast';
-import { Lexer, TokenStream, type Token, type TokenType } from './lexer';
-import { 
-  isBinaryOperator,
-  getOperatorPrecedence,
+  createRangeNode,
+  createReferenceNode,
+  createStructuredReferenceNode,
+  createThreeDRangeNode,
+  createUnaryOpNode,
+  createValueNode,
+} from "./ast";
+import {
   getOperatorAssociativity,
+  getOperatorPrecedence,
+  isBinaryOperator,
   parseCellReference,
   parseInfiniteRange,
-  validateFunctionArgCount,
-  SPECIAL_FUNCTIONS
-} from './grammar';
-import { letterToColNumber } from '../core/types';
+  SPECIAL_FUNCTIONS,
+} from "./grammar";
+import { Lexer, TokenStream, type Token } from "./lexer";
 
 /**
  * Parser error class
@@ -48,62 +35,151 @@ export class ParseError extends Error {
     public position?: { start: number; end: number }
   ) {
     super(message);
-    this.name = 'ParseError';
+    this.name = "ParseError";
   }
 }
-
-/**
- * Sheet resolver function type
- */
-export type SheetResolver = (sheetName: string) => number;
 
 /**
  * Formula parser class
  */
 export class Parser {
   private tokens: TokenStream;
-  private contextSheetId: number;
-  private sheetResolver?: SheetResolver;
-  
-  constructor(tokens: Token[], contextSheetId: number = 0, sheetResolver?: SheetResolver) {
+
+  constructor(tokens: Token[]) {
     this.tokens = new TokenStream(tokens);
-    this.contextSheetId = contextSheetId;
-    this.sheetResolver = sheetResolver;
   }
-  
+
+  /**
+   * Parse bare column reference like [Column] or [Column1:Column2]
+   */
+  private parseBareColumnReference(): ASTNode {
+    const startPos = this.tokens.peek().position.start;
+    this.tokens.consume(); // [
+
+    let selector: "#All" | "#Data" | "#Headers" | undefined;
+    let cols: { startCol: string; endCol: string } | undefined;
+    let isCurrentRow = false;
+
+    if (this.tokens.match("HASH")) {
+      // Selector like [#Data]
+      this.tokens.consume(); // #
+      if (!this.tokens.match("IDENTIFIER")) {
+        throw new ParseError(
+          "Expected selector name after #",
+          this.tokens.peek().position
+        );
+      }
+      const selectorName = this.tokens.consume().value;
+      selector = `#${selectorName}` as any;
+    } else if (this.tokens.match("IDENTIFIER")) {
+      // Column reference like [Column] or [Column1:Column2]
+      const colStart = this.parseColumnName();
+
+      // Check if it's a column range Column1:Column2
+      if (this.tokens.match("COLON")) {
+        this.tokens.consume(); // :
+        const colEnd = this.parseColumnName();
+
+        cols = {
+          startCol: colStart,
+          endCol: colEnd,
+        };
+      } else {
+        // Single column
+        cols = {
+          startCol: colStart,
+          endCol: colStart,
+        };
+      }
+    } else {
+      throw new ParseError(
+        "Expected column name or selector in bare column reference",
+        this.tokens.peek().position
+      );
+    }
+
+    if (!this.tokens.match("RBRACKET")) {
+      throw new ParseError(
+        "Expected ] to close column reference",
+        this.tokens.peek().position
+      );
+    }
+    this.tokens.consume(); // ]
+
+    return createStructuredReferenceNode({
+      tableName: undefined, // No table name for bare references
+      cols,
+      selector,
+      isCurrentRow,
+      position: {
+        start: startPos,
+        end: this.tokens.peek().position?.end ?? 0,
+      },
+    });
+  }
+
+  /**
+   * Parse a column name that might consist of multiple identifiers separated by spaces or contain dashes
+   */
+  private parseColumnName(): string {
+    if (!this.tokens.match("IDENTIFIER")) {
+      throw new ParseError("Expected column name", this.tokens.peek().position);
+    }
+
+    let columnName = this.tokens.consume().value;
+
+    // Handle multi-word column names (e.g., "Net Sales") and column names with dashes (e.g., "ORDER-ID")
+    while (
+      this.tokens.match("IDENTIFIER") || 
+      (this.tokens.match("OPERATOR") && this.tokens.peek().value === "-")
+    ) {
+      if (this.tokens.match("IDENTIFIER")) {
+        columnName += " " + this.tokens.consume().value;
+      } else if (this.tokens.match("OPERATOR") && this.tokens.peek().value === "-") {
+        // Handle dash as part of column name
+        columnName += this.tokens.consume().value;
+        // After a dash, we expect another identifier
+        if (this.tokens.match("IDENTIFIER")) {
+          columnName += this.tokens.consume().value;
+        } else {
+          throw new ParseError("Expected identifier after dash in column name", this.tokens.peek().position);
+        }
+      }
+    }
+
+    return columnName;
+  }
+
   /**
    * Parse a formula string
    */
-  static parse(formula: string, contextSheetId: number = 0, sheetResolver?: SheetResolver): FormulaAST {
-    // Remove leading '=' if present
-    const cleanFormula = formula.startsWith('=') ? formula.substring(1) : formula;
-    
+  static parse(formula: string): ASTNode {
     // Tokenize
-    const lexer = new Lexer(cleanFormula);
+    const lexer = new Lexer(formula);
     const tokens = lexer.tokenize();
-    
+
     // Parse
-    const parser = new Parser(tokens, contextSheetId, sheetResolver);
+    const parser = new Parser(tokens);
     return parser.parseFormula();
   }
-  
+
   /**
    * Parse the entire formula
    */
-  parseFormula(): FormulaAST {
+  parseFormula(): ASTNode {
     if (this.tokens.isAtEnd()) {
       // Empty formula
-      return createValueNode(undefined);
+      return createEmptyNode();
     }
-    
-    // Handle edge case of just '=' with nothing after
-    if (this.tokens.peek().type === 'EOF') {
-      return createValueNode(undefined);
+
+    if (this.tokens.peek().type === "EOF") {
+      // Handle edge case of just '=' with nothing after
+      return createErrorNode(FormulaError.ERROR, "Empty formula");
     }
-    
+
     try {
       const expr = this.parseExpression();
-      
+
       // Ensure we've consumed all tokens
       if (!this.tokens.isAtEnd()) {
         throw new ParseError(
@@ -111,8 +187,8 @@ export class Parser {
           this.tokens.peek().position
         );
       }
-      
-      return expr as FormulaAST;
+
+      return expr;
     } catch (error) {
       if (error instanceof ParseError) {
         throw error;
@@ -120,125 +196,178 @@ export class Parser {
       throw new ParseError(String(error));
     }
   }
-  
+
   /**
    * Parse an expression (entry point for recursive descent)
    */
   private parseExpression(): ASTNode {
     return this.parseBinaryExpression(0);
   }
-  
+
   /**
    * Parse binary expressions using precedence climbing
    */
   private parseBinaryExpression(minPrecedence: number): ASTNode {
     let left = this.parseUnaryExpression();
-    
+
     while (true) {
       const token = this.tokens.peek();
-      
-      if (token.type !== 'OPERATOR' || !isBinaryOperator(token.value)) {
+
+      if (token.type !== "OPERATOR" || !isBinaryOperator(token.value)) {
         break;
       }
-      
+
       const precedence = getOperatorPrecedence(token.value);
       if (precedence < minPrecedence) {
         break;
       }
-      
+
       const operator = token.value as any;
       const associativity = getOperatorAssociativity(operator);
       const start = token.position.start;
-      
+
       this.tokens.consume(); // Consume operator
-      
+
       // For right-associative operators, use same precedence
       // For left-associative, use precedence + 1
-      const nextMinPrecedence = associativity === 'right' ? precedence : precedence + 1;
+      const nextMinPrecedence =
+        associativity === "right" ? precedence : precedence + 1;
       const right = this.parseBinaryExpression(nextMinPrecedence);
-      
-      left = createBinaryOpNode(operator, left, right, start, right.position?.end);
+
+      left = createBinaryOpNode(
+        operator,
+        left,
+        right,
+        right.position?.end
+          ? {
+              start,
+              end: right.position.end,
+            }
+          : undefined
+      );
     }
-    
+
     return left;
   }
-  
+
   /**
    * Parse unary expressions
    */
   private parseUnaryExpression(): ASTNode {
     const token = this.tokens.peek();
-    
+
     // Check for unary operators
-    if (token.type === 'OPERATOR' && (token.value === '+' || token.value === '-')) {
+    if (
+      token.type === "OPERATOR" &&
+      (token.value === "+" || token.value === "-")
+    ) {
       const start = token.position.start;
-      const operator = token.value as '+' | '-';
-      
+      const operator = token.value as "+" | "-";
+
       this.tokens.consume();
       const operand = this.parseUnaryExpression();
-      
-      return createUnaryOpNode(operator, operand, start, operand.position?.end);
+
+      return createUnaryOpNode(
+        operator,
+        operand,
+        operand.position
+          ? {
+              start,
+              end: operand.position.end,
+            }
+          : undefined
+      );
     }
-    
+
     return this.parsePostfixExpression();
   }
-  
+
   /**
    * Parse postfix expressions (currently just %)
    */
   private parsePostfixExpression(): ASTNode {
     let expr = this.parsePrimaryExpression();
-    
+
     // Check for percentage operator
-    if (this.tokens.match('OPERATOR') && this.tokens.peek().value === '%') {
+    if (this.tokens.match("OPERATOR") && this.tokens.peek().value === "%") {
       const token = this.tokens.consume();
       expr = createUnaryOpNode(
-        '%',
+        "%",
         expr,
-        expr.position?.start,
-        token.position.end
+        expr.position
+          ? {
+              start: expr.position.start,
+              end: token.position.end,
+            }
+          : undefined
       );
     }
-    
+
     return expr;
   }
-  
+
   /**
    * Parse primary expressions
    */
   private parsePrimaryExpression(): ASTNode {
     const token = this.tokens.peek();
     const start = token.position.start;
-    
+
     switch (token.type) {
-      case 'NUMBER':
+      case "NUMBER":
         return this.parseNumber();
-        
-      case 'STRING':
+
+      case "STRING":
         return this.parseString();
-        
-      case 'BOOLEAN':
+
+      case "BOOLEAN":
         return this.parseBoolean();
-        
-      case 'ERROR':
+
+      case "ERROR":
         return this.parseError();
-        
-      case 'FUNCTION':
+
+      case "FUNCTION":
         return this.parseFunctionCall();
-        
-      case 'IDENTIFIER':
+
+      case "IDENTIFIER":
         return this.parseIdentifier();
-        
-      case 'DOLLAR':
+
+      case "INFINITY":
+        const infinityToken = this.tokens.consume();
+        return createInfinityNode(infinityToken.position);
+
+      case "AT":
+        return this.parseCurrentRowReference();
+
+      case "HASH":
+        return this.parseTableSelector();
+
+      case "DOLLAR":
         // Handle absolute reference starting with $
         return this.parseAbsoluteReference();
-        
-      case 'LPAREN':
+
+      case "LPAREN":
         return this.parseParenthesizedExpression();
-        
-      case 'LBRACE':
+
+      case "LBRACE":
         return this.parseArrayLiteral();
-        
+
+      case "LBRACKET":
+        // Could be [@Column], [Column], or [#Selector] syntax
+        if (this.tokens.peekAhead(1)?.type === "AT") {
+          return this.parseCurrentRowReference();
+        } else if (
+          this.tokens.peekAhead(1)?.type === "IDENTIFIER" ||
+          this.tokens.peekAhead(1)?.type === "HASH"
+        ) {
+          // Bare column reference like [result] or [#Data]
+          return this.parseBareColumnReference();
+        }
+        throw new ParseError(
+          `Unexpected bracket: ${token.value}`,
+          token.position
+        );
+
       default:
         throw new ParseError(
           `Unexpected token: ${token.value}`,
@@ -246,21 +375,21 @@ export class Parser {
         );
     }
   }
-  
+
   /**
    * Parse an absolute reference starting with $
    */
   private parseAbsoluteReference(): ASTNode {
     const start = this.tokens.peek().position.start;
-    let ref = '';
-    
+    let ref = "";
+
     // First $
     ref += this.tokens.consume().value;
-    
+
     // Get next token
-    if (this.tokens.match('IDENTIFIER')) {
+    if (this.tokens.match("IDENTIFIER")) {
       const identifier = this.tokens.consume().value;
-      
+
       // Check if this identifier contains both column and row (e.g., "C3")
       const match = identifier.match(/^([A-Z]+)(\d+)$/i);
       if (match) {
@@ -269,111 +398,163 @@ export class Parser {
       } else if (/^[A-Z]+$/i.test(identifier)) {
         // It's just the column part
         ref += identifier;
-        
+
         // Check for $ before row
-        if (this.tokens.match('DOLLAR')) {
+        if (this.tokens.match("DOLLAR")) {
           ref += this.tokens.consume().value;
         }
-        
-        // Row number
-        if (this.tokens.match('NUMBER')) {
+
+        // Row number (optional for infinite column ranges)
+        if (this.tokens.match("NUMBER")) {
           ref += this.tokens.consume().value;
-        } else {
-          throw new ParseError('Expected row number', this.tokens.peek().position);
+        } else if (!this.tokens.match("COLON")) {
+          // Only require row number if this isn't a range starting with colon
+          throw new ParseError(
+            "Expected row number",
+            this.tokens.peek().position
+          );
         }
       } else {
-        throw new ParseError('Invalid cell reference format', this.tokens.peek().position);
+        throw new ParseError(
+          "Invalid cell reference format",
+          this.tokens.peek().position
+        );
       }
+    } else if (this.tokens.match("NUMBER")) {
+      // Handle absolute row ranges like $1:$100
+      const number = this.tokens.consume().value;
+      ref += number;
     } else {
-      throw new ParseError('Expected column letter after $', this.tokens.peek().position);
+      throw new ParseError(
+        "Expected column letter or row number after $",
+        this.tokens.peek().position
+      );
     }
-    
+
     // Check for range
-    if (this.tokens.match('COLON')) {
+    if (this.tokens.match("COLON")) {
       this.tokens.consume();
       const endRef = this.parseRangeEnd();
-      return this.parseRange(ref, endRef, start, this.tokens.peek().position.start);
+      return this.parseRange(
+        ref,
+        endRef,
+        start,
+        this.tokens.peek().position.start
+      );
     }
-    
+
     // Parse as single cell reference
     const cellRef = this.parseCellReferenceString(ref);
     if (cellRef) {
       return cellRef;
     }
-    
-    throw new ParseError(`Invalid cell reference: ${ref}`, { start, end: this.tokens.peek().position.start });
+
+    throw new ParseError(`Invalid cell reference: ${ref}`, {
+      start,
+      end: this.tokens.peek().position.start,
+    });
   }
-  
+
   /**
    * Parse a number literal or row range
    */
   private parseNumber(): ASTNode {
     const token = this.tokens.peek();
     const start = token.position.start;
-    
+
     // Check if this could be a row range (e.g., 5:5, 1:10)
-    if (this.tokens.peekNext() && this.tokens.peekNext()!.type === 'COLON') {
+    if (this.tokens.peekNext() && this.tokens.peekNext()!.type === "COLON") {
       // This is a row range
       const startRow = this.tokens.consume().value;
       this.tokens.consume(); // Consume ':'
-      
+
       // Get the end row
       let endRow: string;
-      if (this.tokens.match('NUMBER')) {
+      if (this.tokens.match("NUMBER")) {
         endRow = this.tokens.consume().value;
       } else {
-        throw new ParseError('Expected row number after :', this.tokens.peek().position);
+        throw new ParseError(
+          "Expected row number after :",
+          this.tokens.peek().position
+        );
       }
-      
+
       // Parse as an infinite row range
-      return this.parseRange(startRow, endRow, start, this.tokens.peek().position.start);
+      return this.parseRange(
+        startRow,
+        endRow,
+        start,
+        this.tokens.peek().position.start
+      );
     }
-    
+
     // Otherwise, parse as a regular number
     this.tokens.consume();
     const value = parseFloat(token.value);
-    
+
     if (isNaN(value)) {
-      throw new ParseError(
-        `Invalid number: ${token.value}`,
-        token.position
-      );
+      throw new ParseError(`Invalid number: ${token.value}`, token.position);
     }
-    
-    return createValueNode(value, token.position.start, token.position.end);
+
+    return createValueNode(
+      {
+        type: "number",
+        value,
+      },
+      {
+        start: token.position.start,
+        end: token.position.end,
+      }
+    );
   }
-  
+
   /**
    * Parse a string literal
    */
   private parseString(): ASTNode {
     const token = this.tokens.consume();
-    return createValueNode(token.value, token.position.start, token.position.end);
+    return createValueNode(
+      {
+        type: "string",
+        value: token.value,
+      },
+      {
+        start: token.position.start,
+        end: token.position.end,
+      }
+    );
   }
-  
+
   /**
    * Parse a boolean literal
    */
   private parseBoolean(): ASTNode {
     const token = this.tokens.consume();
-    const value = token.value.toUpperCase() === 'TRUE';
-    return createValueNode(value, token.position.start, token.position.end);
+    const value = token.value.toUpperCase() === "TRUE";
+    return createValueNode(
+      {
+        type: "boolean",
+        value,
+      },
+      {
+        start: token.position.start,
+        end: token.position.end,
+      }
+    );
   }
-  
+
   /**
    * Parse an error literal
    */
   private parseError(): ASTNode {
     const token = this.tokens.consume();
     const error = token.value as FormulaError;
-    return createErrorNode(
-      error,
-      `Error literal: ${error}`,
-      token.position.start,
-      token.position.end
-    );
+    return createErrorNode(error, `Error literal: ${error}`, {
+      start: token.position.start,
+      end: token.position.end,
+    });
   }
-  
+
   /**
    * Parse a function call
    */
@@ -381,72 +562,58 @@ export class Parser {
     const nameToken = this.tokens.consume();
     const functionName = nameToken.value;
     const start = nameToken.position.start;
-    
+
     // Check for special functions that don't require parentheses
-    if (SPECIAL_FUNCTIONS.has(functionName.toUpperCase()) && !this.tokens.match('LPAREN')) {
-      return createFunctionNode(
-        functionName,
-        [],
-        start,
-        nameToken.position.end
-      );
+    if (
+      SPECIAL_FUNCTIONS.has(functionName.toUpperCase()) &&
+      !this.tokens.match("LPAREN")
+    ) {
+      return createFunctionNode(functionName, [], {
+        start: start,
+        end: nameToken.position.end,
+      });
     }
-    
+
     // Expect opening parenthesis
-    if (!this.tokens.match('LPAREN')) {
+    if (!this.tokens.match("LPAREN")) {
       throw new ParseError(
         `Expected '(' after function name ${functionName}`,
         this.tokens.peek().position
       );
     }
-    
+
     this.tokens.consume(); // Consume '('
-    
+
     // Parse arguments
     const args: ASTNode[] = [];
-    
+
     // Handle empty argument list
-    if (this.tokens.match('RPAREN')) {
+    if (this.tokens.match("RPAREN")) {
       const rparenToken = this.tokens.consume();
       const endPos = rparenToken.position.end;
-      const node = createFunctionNode(
-        functionName,
-        args,
-        start,
-        endPos
-      );
-      
-      // Validate argument count
-      if (!validateFunctionArgCount(functionName, args.length)) {
-        throw new ParseError(
-          `Invalid number of arguments for function ${functionName}`,
-          { start, end: endPos }
-        );
-      }
-      
+      const node = createFunctionNode(functionName, args, {
+        start: start,
+        end: endPos,
+      });
+
       return node;
     }
-    
+
     // Parse arguments
     while (true) {
       args.push(this.parseExpression());
-      
-      if (this.tokens.match('COMMA')) {
+
+      if (this.tokens.match("COMMA")) {
         this.tokens.consume();
         // Continue parsing next argument
-      } else if (this.tokens.match('RPAREN')) {
+      } else if (this.tokens.match("RPAREN")) {
         const rparenToken = this.tokens.consume();
         const end = rparenToken.position.end;
-        const node = createFunctionNode(functionName, args, start, end);
-        
-        // Validate argument count
-        if (!validateFunctionArgCount(functionName, args.length)) {
-          throw new ParseError(
-            `Invalid number of arguments for function ${functionName}`,
-            { start, end }
-          );
-        }
-        
+        const node = createFunctionNode(functionName, args, {
+          start: start,
+          end: end,
+        });
+
         return node;
       } else {
         throw new ParseError(
@@ -455,186 +622,239 @@ export class Parser {
         );
       }
     }
-    
+
     // This should never be reached
     throw new ParseError(
-      'Unexpected end of function argument parsing',
+      "Unexpected end of function argument parsing",
       this.tokens.peek().position
     );
   }
-  
+
   /**
    * Parse an identifier (cell reference, range, or named expression)
    */
   private parseIdentifier(): ASTNode {
     const start = this.tokens.peek().position.start;
-    
+
     // Regular identifier
     const token = this.tokens.consume();
     let value = token.value;
-    
+
+    // Check if this could be a 3D range (Sheet1:Sheet3!)
+    // To distinguish from normal ranges, we check:
+    // 1. If there's a colon
+    // 2. If what follows the colon is an identifier
+    // 3. If that identifier is followed by !
+    if (this.tokens.match("COLON")) {
+      const colonPos = this.tokens.getPosition();
+
+      // Look ahead to see if this looks like a 3D range
+      const nextToken = this.tokens.peekAhead(1);
+      const tokenAfterNext = this.tokens.peekAhead(2);
+
+      if (
+        nextToken?.type === "IDENTIFIER" &&
+        tokenAfterNext?.type === "EXCLAMATION"
+      ) {
+        // This looks like a 3D range, consume the tokens
+        this.tokens.consume(); // :
+        const endSheetToken = this.tokens.consume(); // sheet name
+        const endSheet = endSheetToken.value;
+        this.tokens.consume(); // !
+
+        // Extract sheet names
+        let startSheet = value;
+        if (startSheet.startsWith("'") && startSheet.endsWith("'")) {
+          startSheet = startSheet.slice(1, -1).replace(/''/g, "'");
+        }
+
+        let endSheetName = endSheet;
+        if (endSheetName.startsWith("'") && endSheetName.endsWith("'")) {
+          endSheetName = endSheetName.slice(1, -1).replace(/''/g, "'");
+        }
+
+        // Parse the reference after the sheet range
+        const ref = this.parseCellOrRangeAfterSheets();
+        return createThreeDRangeNode(
+          startSheet,
+          endSheetName,
+          ref as any, // Will be ReferenceNode or RangeNode
+          {
+            start,
+            end: this.tokens.peek().position?.end ?? 0,
+          }
+        );
+      }
+      // Not a 3D range, continue with normal parsing
+    }
+
     // Check if this is a sheet reference (Sheet1! or 'My Sheet'!)
-    if (this.tokens.match('EXCLAMATION')) {
+    if (this.tokens.match("EXCLAMATION")) {
       this.tokens.consume(); // Consume '!'
-      
+
       // Extract sheet name (remove quotes if present)
       let sheetName = value;
       if (sheetName.startsWith("'") && sheetName.endsWith("'")) {
         sheetName = sheetName.slice(1, -1).replace(/''/g, "'"); // Remove quotes and unescape
       }
-      
+
       // Now parse the cell reference after the sheet name
       const cellRef = this.parseCellOrRangeWithSheet(sheetName, start);
       return cellRef;
     }
-    
+
+    // Check if this is a table reference (Table1[Column1])
+    if (this.tokens.match("LBRACKET")) {
+      return this.parseTableReference(value, start);
+    }
+
     // Check if this could be part of a cell reference (e.g., D in D$4)
-    if (this.tokens.match('DOLLAR') && this.isColumnIdentifier(value)) {
+    if (this.tokens.match("DOLLAR") && this.isColumnIdentifier(value)) {
       // This is a mixed reference like D$4
       value += this.tokens.consume().value; // Add $
-      
+
       // Get the row number
-      if (this.tokens.match('NUMBER')) {
+      if (this.tokens.match("NUMBER")) {
         value += this.tokens.consume().value;
       } else {
-        throw new ParseError('Expected row number after $', this.tokens.peek().position);
+        throw new ParseError(
+          "Expected row number after $",
+          this.tokens.peek().position
+        );
       }
-    } else if (this.tokens.match('NUMBER') && this.isColumnIdentifier(value)) {
+    } else if (this.tokens.match("NUMBER") && this.isColumnIdentifier(value)) {
       // Regular cell reference like D4
       value += this.tokens.consume().value;
     }
-    
+
     // Check for colon (range operator)
-    if (this.tokens.match('COLON')) {
+    if (this.tokens.match("COLON")) {
       this.tokens.consume(); // Consume ':'
-      
+
       // Parse end of range with potential $ signs
       const endStart = this.tokens.peek().position.start;
       const endRef = this.parseRangeEnd();
       const endPos = this.tokens.peek().position.start;
-      
+
       // Parse as range
       return this.parseRange(value, endRef, start, endPos);
     }
-    
+
     // Try to parse as cell reference
-    const cellRef = this.parseCellReferenceString(value);
-    if (cellRef) {
-      return cellRef;
+    const parsedCellRef = this.parseCellReferenceString(value);
+    if (parsedCellRef) {
+      return parsedCellRef;
     }
-    
+
     // Otherwise, it's a named expression
-    return createNamedExpressionNode(
-      value,
-      undefined,
-      start,
-      token.position.end
-    );
+    return createNamedExpressionNode(value, {
+      start: start,
+      end: token.position.end,
+    });
   }
-  
+
   /**
    * Check if a string is a valid column identifier (A-Z, AA-ZZ, etc.)
    */
   private isColumnIdentifier(str: string): boolean {
     return /^[A-Z]+$/i.test(str);
   }
-  
+
   /**
    * Parse the end part of a range (handling $ signs and infinite ranges)
    */
   private parseRangeEnd(): string {
-    let result = '';
-    
+    let result = "";
+
     // Check for $ before column or row
-    if (this.tokens.match('DOLLAR')) {
+    if (this.tokens.match("DOLLAR")) {
       result += this.tokens.consume().value;
     }
-    
+
     // Get identifier part (for column) or number part (for row)
-    if (this.tokens.match('IDENTIFIER')) {
+    if (this.tokens.match("IDENTIFIER")) {
       result += this.tokens.consume().value;
-      
+
       // For normal ranges, check for $ before row
-      if (this.tokens.match('DOLLAR')) {
+      if (this.tokens.match("DOLLAR")) {
         result += this.tokens.consume().value;
       }
-      
+
       // Get number part if present (normal range)
-      if (this.tokens.match('NUMBER')) {
+      if (this.tokens.match("NUMBER")) {
         result += this.tokens.consume().value;
       }
       // If no number, it's an infinite column range (e.g., A:A)
-    } else if (this.tokens.match('NUMBER')) {
+    } else if (this.tokens.match("NUMBER")) {
       // Infinite row range (e.g., 5:5)
       result += this.tokens.consume().value;
     } else {
-      throw new ParseError('Expected cell reference after :', this.tokens.peek().position);
+      throw new ParseError(
+        "Expected cell reference after :",
+        this.tokens.peek().position
+      );
     }
-    
+
     return result;
   }
-  
+
   /**
    * Parse a parenthesized expression
    */
   private parseParenthesizedExpression(): ASTNode {
     const start = this.tokens.peek().position.start;
     this.tokens.consume(); // Consume '('
-    
+
     const expr = this.parseExpression();
-    
-    if (!this.tokens.match('RPAREN')) {
-      throw new ParseError(
-        `Expected ')'`,
-        this.tokens.peek().position
-      );
+
+    if (!this.tokens.match("RPAREN")) {
+      throw new ParseError(`Expected ')'`, this.tokens.peek().position);
     }
-    
+
     const end = this.tokens.peek().position.end;
     this.tokens.consume(); // Consume ')'
-    
+
     // Update position to include parentheses
     if (expr.position) {
       expr.position.start = start;
       expr.position.end = end;
     }
-    
+
     return expr;
   }
-  
+
   /**
    * Parse an array literal
    */
   private parseArrayLiteral(): ASTNode {
     const start = this.tokens.peek().position.start;
     this.tokens.consume(); // Consume '{'
-    
+
     const rows: ASTNode[][] = [];
     let currentRow: ASTNode[] = [];
-    
+
     // Handle empty array
-    if (this.tokens.match('RBRACE')) {
+    if (this.tokens.match("RBRACE")) {
       this.tokens.consume();
-      return createArrayNode(
-        [[createValueNode(undefined)]],
-        start,
-        this.tokens.peek().position.start
-      );
+      return createArrayNode([[createEmptyNode()]], {
+        start: start,
+        end: this.tokens.peek().position.start,
+      });
     }
-    
+
     // Parse array elements
     while (true) {
       currentRow.push(this.parseExpression());
-      
-      if (this.tokens.match('COMMA')) {
+
+      if (this.tokens.match("COMMA")) {
         this.tokens.consume();
         // Continue current row
-      } else if (this.tokens.match('SEMICOLON')) {
+      } else if (this.tokens.match("SEMICOLON")) {
         this.tokens.consume();
         // Start new row
         rows.push(currentRow);
         currentRow = [];
-      } else if (this.tokens.match('RBRACE')) {
+      } else if (this.tokens.match("RBRACE")) {
         this.tokens.consume();
         // End of array
         rows.push(currentRow);
@@ -646,28 +866,27 @@ export class Parser {
         );
       }
     }
-    
+
     // Validate that all rows have the same length
     if (rows.length > 0 && rows[0]) {
       const rowLength = rows[0].length;
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i];
         if (row && row.length !== rowLength) {
-          throw new ParseError(
-            `Inconsistent row lengths in array literal`,
-            { start, end: this.tokens.peek().position.start }
-          );
+          throw new ParseError(`Inconsistent row lengths in array literal`, {
+            start,
+            end: this.tokens.peek().position.start,
+          });
         }
       }
     }
-    
-    return createArrayNode(
-      rows,
-      start,
-      this.tokens.peek().position.start
-    );
+
+    return createArrayNode(rows, {
+      start: start,
+      end: this.tokens.peek().position.start,
+    });
   }
-  
+
   /**
    * Parse a cell reference string
    */
@@ -676,43 +895,901 @@ export class Parser {
     if (!parsed) {
       return null;
     }
-    
+
     // Convert to SimpleCellAddress
-    const colNum = letterToColNumber(parsed.col);
+    const colNum = columnToIndex(parsed.col);
     const rowNum = parseInt(parsed.row) - 1; // Convert to 0-based
-    
+
     if (colNum < 0 || rowNum < 0) {
       return null;
     }
-    
-    const address: SimpleCellAddress = {
-      sheet: parsed.sheet ? this.getSheetId(parsed.sheet) : this.contextSheetId,
-      col: colNum,
-      row: rowNum
-    };
-    
-    return createReferenceNode(
-      address,
-      {
+
+    return createReferenceNode({
+      address: {
+        colIndex: colNum,
+        rowIndex: rowNum,
+      },
+      isAbsolute: {
         col: parsed.colAbsolute,
-        row: parsed.rowAbsolute
+        row: parsed.rowAbsolute,
+      },
+      sheetName: parsed.sheet,
+    });
+  }
+
+  /**
+   * Parse table reference (e.g., Table1[Column1])
+   */
+  private parseTableReference(tableName: string, startPos: number): ASTNode {
+    this.tokens.consume(); // [
+
+    let selector: "#All" | "#Data" | "#Headers" | undefined;
+    let cols: { startCol: string; endCol: string } | undefined;
+    let isCurrentRow = false;
+
+    // Check for complex syntax like [[#Headers],[Column1]] or [[Column1]:[Column2]]
+    if (this.tokens.match("LBRACKET")) {
+      this.tokens.consume(); // second [
+
+      if (this.tokens.match("HASH")) {
+        this.tokens.consume(); // #
+        if (!this.tokens.match("IDENTIFIER")) {
+          throw new ParseError(
+            "Expected selector name after #",
+            this.tokens.peek().position
+          );
+        }
+        const selectorName = this.tokens.consume().value;
+        selector = `#${selectorName}` as any;
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] after selector",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // ]
+
+        // Check for column part
+        if (this.tokens.match("COMMA")) {
+          this.tokens.consume(); // ,
+
+          if (!this.tokens.match("LBRACKET")) {
+            throw new ParseError(
+              "Expected [ after comma",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // [
+
+          // Parse column specification that could be either Column1 or Column1:Column2
+          if (!this.tokens.match("IDENTIFIER")) {
+            throw new ParseError(
+              "Expected column name",
+              this.tokens.peek().position
+            );
+          }
+          const colStart = this.parseColumnName();
+
+          // Check if it's a column range Column1:Column2
+          if (this.tokens.match("COLON")) {
+            this.tokens.consume(); // :
+
+            if (!this.tokens.match("IDENTIFIER")) {
+              throw new ParseError(
+                "Expected end column name after :",
+                this.tokens.peek().position
+              );
+            }
+            const colEnd = this.parseColumnName();
+
+            cols = {
+              startCol: colStart,
+              endCol: colEnd,
+            };
+          } else {
+            // Single column
+            cols = {
+              startCol: colStart,
+              endCol: colStart,
+            };
+          }
+
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] after column specification",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // ]
+        }
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] to close table reference",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // outer ]
+      } else if (this.tokens.match("IDENTIFIER")) {
+        // Handle [[Column1]:[Column2]] syntax
+        const colStart = this.parseColumnName();
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] after column name",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // ]
+
+        if (!this.tokens.match("COLON")) {
+          throw new ParseError(
+            "Expected : after first column in [[Column1]:[Column2]]",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // :
+
+        if (!this.tokens.match("LBRACKET")) {
+          throw new ParseError(
+            "Expected [ before second column name",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // [
+
+        const colEnd = this.parseColumnName();
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] after second column name",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // ]
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] to close table reference",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // outer ]
+
+        cols = {
+          startCol: colStart,
+          endCol: colEnd,
+        };
       }
+    } else if (this.tokens.match("AT")) {
+      // Current row reference like Table1[@Column]
+      this.tokens.consume(); // @
+      isCurrentRow = true;
+
+      if (this.tokens.match("LBRACKET")) {
+        // Handle [@[Column]] or [@[Column1]:[Column2]] syntax
+        this.tokens.consume(); // [
+
+        const colStart = this.parseColumnName();
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] after column name",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // ]
+
+        // Check if this is a column range [@[Column1]:[Column2]]
+        if (this.tokens.match("COLON")) {
+          this.tokens.consume(); // :
+
+          if (!this.tokens.match("LBRACKET")) {
+            throw new ParseError(
+              "Expected [ before second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // [
+
+          const colEnd = this.parseColumnName();
+
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] after second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // ]
+
+          cols = {
+            startCol: colStart,
+            endCol: colEnd,
+          };
+        } else {
+          // Single column [@[Column]]
+          cols = {
+            startCol: colStart,
+            endCol: colStart,
+          };
+        }
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] to close table reference",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // ]
+      } else {
+        // Handle [@Column] or [@Column1:Column2] syntax (simple current row)
+        const colStart = this.parseColumnName();
+
+        // Check if it's a column range Column1:Column2
+        if (this.tokens.match("COLON")) {
+          this.tokens.consume(); // :
+
+          const colEnd = this.parseColumnName();
+
+          cols = {
+            startCol: colStart,
+            endCol: colEnd,
+          };
+        } else {
+          // Single column
+          cols = {
+            startCol: colStart,
+            endCol: colStart,
+          };
+        }
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] after column reference",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // ]
+      }
+    } else if (this.tokens.match("IDENTIFIER")) {
+      // Simple column reference like Table1[Column1] or range Table1[Column1:Column2]
+      const colStart = this.parseColumnName();
+
+      // Check if it's a column range Column1:Column2
+      if (this.tokens.match("COLON")) {
+        this.tokens.consume(); // :
+
+        const colEnd = this.parseColumnName();
+
+        cols = {
+          startCol: colStart,
+          endCol: colEnd,
+        };
+      } else {
+        // Single column
+        cols = {
+          startCol: colStart,
+          endCol: colStart,
+        };
+      }
+
+      if (!this.tokens.match("RBRACKET")) {
+        throw new ParseError(
+          "Expected ] after column name",
+          this.tokens.peek().position
+        );
+      }
+      this.tokens.consume(); // ]
+    } else if (this.tokens.match("HASH")) {
+      // Simple selector reference like Table1[#Data]
+      this.tokens.consume(); // #
+
+      if (!this.tokens.match("IDENTIFIER")) {
+        throw new ParseError(
+          "Expected selector name after #",
+          this.tokens.peek().position
+        );
+      }
+      const selectorName = this.tokens.consume().value;
+      selector = `#${selectorName}` as any;
+
+      if (!this.tokens.match("RBRACKET")) {
+        throw new ParseError(
+          "Expected ] after selector",
+          this.tokens.peek().position
+        );
+      }
+      this.tokens.consume(); // ]
+    } else {
+      throw new ParseError(
+        "Expected column name or selector in table reference",
+        this.tokens.peek().position
+      );
+    }
+
+    return createStructuredReferenceNode({
+      tableName,
+      cols,
+      selector,
+      isCurrentRow,
+      position: {
+        start: startPos,
+        end: this.tokens.peek().position?.end ?? 0,
+      },
+    });
+  }
+
+  /**
+   * Parse table reference with sheet name (e.g., Sheet1!Table1[Column1])
+   */
+  private parseTableReferenceWithSheet(
+    tableName: string,
+    sheetName: string,
+    startPos: number
+  ): ASTNode {
+    this.tokens.consume(); // [
+
+    let selector: "#All" | "#Data" | "#Headers" | undefined;
+    let cols: { startCol: string; endCol: string } | undefined;
+    let isCurrentRow = false;
+
+    // Check for complex syntax like [[#Headers],[Column1]] or [[Column1]:[Column2]]
+    if (this.tokens.match("LBRACKET")) {
+      this.tokens.consume(); // second [
+
+      if (this.tokens.match("HASH")) {
+        this.tokens.consume(); // #
+        if (!this.tokens.match("IDENTIFIER")) {
+          throw new ParseError(
+            "Expected selector name after #",
+            this.tokens.peek().position
+          );
+        }
+        const selectorName = this.tokens.consume().value;
+        selector = `#${selectorName}` as any;
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] after selector",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // ]
+
+        // Check for column part
+        if (this.tokens.match("COMMA")) {
+          this.tokens.consume(); // ,
+
+          if (!this.tokens.match("LBRACKET")) {
+            throw new ParseError(
+              "Expected [ after comma",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // [
+
+          // Parse column specification that could be either Column1 or Column1:Column2
+          if (!this.tokens.match("IDENTIFIER")) {
+            throw new ParseError(
+              "Expected column name",
+              this.tokens.peek().position
+            );
+          }
+          const colStart = this.parseColumnName();
+
+          // Check if it's a column range Column1:Column2
+          if (this.tokens.match("COLON")) {
+            this.tokens.consume(); // :
+
+            if (!this.tokens.match("IDENTIFIER")) {
+              throw new ParseError(
+                "Expected end column name after :",
+                this.tokens.peek().position
+              );
+            }
+            const colEnd = this.parseColumnName();
+
+            cols = {
+              startCol: colStart,
+              endCol: colEnd,
+            };
+          } else {
+            // Single column
+            cols = {
+              startCol: colStart,
+              endCol: colStart,
+            };
+          }
+
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] after column specification",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // ]
+        }
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] to close table reference",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // outer ]
+      } else if (this.tokens.match("IDENTIFIER")) {
+        // Handle [[Column1]:[Column2]] syntax
+        const colStart = this.parseColumnName();
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] after column name",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // ]
+
+        if (!this.tokens.match("COLON")) {
+          throw new ParseError(
+            "Expected : after first column in [[Column1]:[Column2]]",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // :
+
+        if (!this.tokens.match("LBRACKET")) {
+          throw new ParseError(
+            "Expected [ before second column name",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // [
+
+        const colEnd = this.parseColumnName();
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] after second column name",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // ]
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] to close table reference",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // outer ]
+
+        cols = {
+          startCol: colStart,
+          endCol: colEnd,
+        };
+      }
+    } else if (this.tokens.match("AT")) {
+      // Current row reference like Table1[@Column]
+      this.tokens.consume(); // @
+      isCurrentRow = true;
+
+      if (this.tokens.match("LBRACKET")) {
+        // Handle [@[Column]] or [@[Column1]:[Column2]] syntax
+        this.tokens.consume(); // [
+
+        const colStart = this.parseColumnName();
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] after column name",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // ]
+
+        // Check if this is a column range [@[Column1]:[Column2]]
+        if (this.tokens.match("COLON")) {
+          this.tokens.consume(); // :
+
+          if (!this.tokens.match("LBRACKET")) {
+            throw new ParseError(
+              "Expected [ before second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // [
+
+          const colEnd = this.parseColumnName();
+
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] after second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // ]
+
+          cols = {
+            startCol: colStart,
+            endCol: colEnd,
+          };
+        } else {
+          // Single column [@[Column]]
+          cols = {
+            startCol: colStart,
+            endCol: colStart,
+          };
+        }
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] to close table reference",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // ]
+      } else {
+        // Handle [@Column] or [@Column1:Column2] syntax (simple current row)
+        const colStart = this.parseColumnName();
+
+        // Check if it's a column range Column1:Column2
+        if (this.tokens.match("COLON")) {
+          this.tokens.consume(); // :
+
+          const colEnd = this.parseColumnName();
+
+          cols = {
+            startCol: colStart,
+            endCol: colEnd,
+          };
+        } else {
+          // Single column
+          cols = {
+            startCol: colStart,
+            endCol: colStart,
+          };
+        }
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] after column reference",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // ]
+      }
+    } else if (this.tokens.match("IDENTIFIER")) {
+      // Simple column reference like Table1[Column1] or range Table1[Column1:Column2]
+      const colStart = this.parseColumnName();
+
+      // Check if it's a column range Column1:Column2
+      if (this.tokens.match("COLON")) {
+        this.tokens.consume(); // :
+
+        const colEnd = this.parseColumnName();
+
+        cols = {
+          startCol: colStart,
+          endCol: colEnd,
+        };
+      } else {
+        // Single column
+        cols = {
+          startCol: colStart,
+          endCol: colStart,
+        };
+      }
+
+      if (!this.tokens.match("RBRACKET")) {
+        throw new ParseError(
+          "Expected ] after column name",
+          this.tokens.peek().position
+        );
+      }
+      this.tokens.consume(); // ]
+    } else if (this.tokens.match("HASH")) {
+      // Simple selector reference like Table1[#Data]
+      this.tokens.consume(); // #
+
+      if (!this.tokens.match("IDENTIFIER")) {
+        throw new ParseError(
+          "Expected selector name after #",
+          this.tokens.peek().position
+        );
+      }
+      const selectorName = this.tokens.consume().value;
+      selector = `#${selectorName}` as any;
+
+      if (!this.tokens.match("RBRACKET")) {
+        throw new ParseError(
+          "Expected ] after selector",
+          this.tokens.peek().position
+        );
+      }
+      this.tokens.consume(); // ]
+    } else {
+      throw new ParseError(
+        "Expected column name or selector in table reference",
+        this.tokens.peek().position
+      );
+    }
+
+    return createStructuredReferenceNode({
+      tableName,
+      cols,
+      selector,
+      isCurrentRow,
+      sheetName,
+      position: {
+        start: startPos,
+        end: this.tokens.peek().position?.end ?? 0,
+      },
+    });
+  }
+
+  /**
+   * Parse cell or range after sheet range in 3D reference
+   */
+  private parseCellOrRangeAfterSheets(): ASTNode {
+    const start = this.tokens.peek().position?.start ?? 0;
+
+    // Could be a simple cell reference like A1, or a range like A1:B2
+    if (this.tokens.match("IDENTIFIER")) {
+      const firstIdent = this.tokens.consume().value;
+
+      // Check if it's a complete cell reference (e.g., A1)
+      const cellRef = this.parseCellReferenceString(firstIdent);
+      if (cellRef) {
+        // Check if this is part of a range
+        if (this.tokens.match("COLON")) {
+          this.tokens.consume(); // :
+
+          // Parse end of range
+          const endRef = this.parseRangeEnd();
+          const endPos = this.tokens.peek().position?.end ?? 0;
+
+          // Parse as range without sheet (sheet is handled by 3D range)
+          const parsed = this.parseRange(firstIdent, endRef, start, endPos);
+
+          // Remove sheet from range node if present
+          if (parsed.type === "range") {
+            parsed.sheetName = undefined;
+          }
+
+          return parsed;
+        }
+
+        // Single cell reference
+        if (cellRef.type === "reference") {
+          cellRef.sheetName = undefined;
+        }
+        return cellRef;
+      }
+    }
+
+    // Handle absolute references starting with $
+    if (this.tokens.match("DOLLAR")) {
+      const dollarStart = this.tokens.getPosition();
+      this.tokens.consume(); // $
+
+      let ref = "$";
+
+      // Get column
+      if (this.tokens.match("IDENTIFIER")) {
+        const col = this.tokens.consume().value;
+        if (this.isColumnIdentifier(col)) {
+          ref += col;
+        }
+      }
+
+      // Check for row absolute
+      if (this.tokens.match("DOLLAR")) {
+        ref += this.tokens.consume().value;
+      }
+
+      // Get row number
+      if (this.tokens.match("NUMBER")) {
+        ref += this.tokens.consume().value;
+      }
+
+      // Check if this is a range
+      if (this.tokens.match("COLON")) {
+        this.tokens.consume(); // :
+
+        // Parse end of range
+        const endRef = this.parseRangeEnd();
+        const endPos = this.tokens.peek().position?.end ?? 0;
+
+        // Parse as range without sheet (sheet is handled by 3D range)
+        const parsed = this.parseRange(ref, endRef, start, endPos);
+
+        // Remove sheet from range node if present
+        if (parsed.type === "range") {
+          parsed.sheetName = undefined;
+        }
+
+        return parsed;
+      }
+
+      // Single cell reference
+      const cellRef = this.parseCellReferenceString(ref);
+      if (!cellRef) {
+        throw new ParseError(
+          `Invalid cell reference: ${ref}`,
+          this.tokens.peek().position
+        );
+      }
+
+      // Remove sheet from reference node if present
+      if (cellRef.type === "reference") {
+        cellRef.sheetName = undefined;
+      }
+
+      return cellRef;
+    }
+
+    throw new ParseError(
+      "Expected cell or range reference after sheet range",
+      this.tokens.peek().position
     );
   }
-  
+
+  /**
+   * Parse current row reference (e.g., [@Column], [@[Column Name]], or just @Column)
+   */
+  private parseCurrentRowReference(): ASTNode {
+    const start = this.tokens.getPosition();
+
+    // Handle [@Column] or [@[Column Name]] format
+    if (this.tokens.match("LBRACKET")) {
+      this.tokens.consume(); // [
+
+      if (!this.tokens.match("AT")) {
+        throw new ParseError("Expected @ after [", this.tokens.peek().position);
+      }
+      this.tokens.consume(); // @
+
+      let columnName: string;
+
+      // Check if we have double brackets [@[Column Name]]
+      if (this.tokens.match("LBRACKET")) {
+        this.tokens.consume(); // [
+        columnName = this.parseColumnName();
+
+        if (!this.tokens.match("RBRACKET")) {
+          throw new ParseError(
+            "Expected ] to close column name",
+            this.tokens.peek().position
+          );
+        }
+        this.tokens.consume(); // ]
+      } else {
+        // Single bracket format [@Column] or [@Column1:Column2]
+        const colStart = this.parseColumnName();
+
+        // Check if this is a column range [@Column1:Column2]
+        if (this.tokens.match("COLON")) {
+          this.tokens.consume(); // :
+          const colEnd = this.parseColumnName();
+
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] after column range",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // ]
+
+          return createStructuredReferenceNode({
+            tableName: undefined,
+            cols: {
+              startCol: colStart,
+              endCol: colEnd,
+            },
+            isCurrentRow: true,
+            position: {
+              start: this.tokens.getTokens()[start]?.position?.start ?? 0,
+              end: this.tokens.peek().position?.end ?? 0,
+            },
+          });
+        } else {
+          // Single column [@Column]
+          columnName = colStart;
+        }
+      }
+
+      if (!this.tokens.match("RBRACKET")) {
+        throw new ParseError(
+          "Expected ] after column reference",
+          this.tokens.peek().position
+        );
+      }
+      this.tokens.consume(); // ]
+
+      return createStructuredReferenceNode({
+        tableName: undefined,
+        cols: {
+          startCol: columnName,
+          endCol: columnName,
+        },
+        isCurrentRow: true,
+        position: {
+          start: this.tokens.getTokens()[start]?.position?.start ?? 0,
+          end: this.tokens.peek().position?.end ?? 0,
+        },
+      });
+    }
+
+    // Handle @Column format (without brackets)
+    this.tokens.consume(); // @
+    const columnName = this.parseColumnName();
+
+    return createStructuredReferenceNode({
+      tableName: undefined,
+      cols: {
+        startCol: columnName,
+        endCol: columnName,
+      },
+      isCurrentRow: true,
+      position: {
+        start: this.tokens.getTokens()[start]?.position?.start ?? 0,
+        end: this.tokens.peek().position?.end ?? 0,
+      },
+    });
+  }
+
+  /**
+   * Parse table selector (e.g., #Headers, #Data)
+   */
+  private parseTableSelector(): ASTNode {
+    const hashToken = this.tokens.consume(); // #
+
+    if (!this.tokens.match("IDENTIFIER")) {
+      throw new ParseError(
+        "Expected selector name after #",
+        this.tokens.peek().position
+      );
+    }
+
+    const selectorName = this.tokens.consume().value;
+    const selector = `#${selectorName}`;
+
+    // Check if it's a valid selector
+    if (!["#All", "#Data", "#Headers"].includes(selector.toUpperCase())) {
+      throw new ParseError(
+        `Invalid table selector: ${selector}`,
+        hashToken.position
+      );
+    }
+
+    // For now, return an error node as selectors need to be part of a table reference
+    throw new ParseError(
+      "Table selector must be part of a table reference",
+      hashToken.position
+    );
+  }
+
   /**
    * Parse a range reference (including infinite ranges)
    */
-  private parseRange(startRef: string, endRef: string, startPos: number, endPos: number): ASTNode {
+  private parseRange(
+    startRef: string,
+    endRef: string,
+    startPos: number,
+    endPos: number
+  ): ASTNode {
     // For cross-sheet ranges, handle the case where only startRef includes the sheet
     let fullRange = `${startRef}:${endRef}`;
     let sheetName: string | undefined;
-    
+
     // Check if start has a sheet prefix
-    const sheetMatch = startRef.match(/^(?:([A-Za-z_][A-Za-z0-9_]*)|'([^']+)')!/);
+    const sheetMatch = startRef.match(
+      /^(?:([A-Za-z_][A-Za-z0-9_]*)|'([^']+)')!/
+    );
     if (sheetMatch) {
       sheetName = sheetMatch[1] || sheetMatch[2];
-      
+
       // First, try to parse as an infinite range without modifying the range
       // This handles cases like Sheet1!A:A or Sheet1!5:5
       const infiniteTest = parseInfiniteRange(fullRange);
@@ -720,395 +1797,330 @@ export class Parser {
         // It's an infinite range, skip to processing it below
       } else {
         // Not an infinite range, so handle normal cross-sheet ranges
-        const endSheetMatch = endRef.match(/^(?:([A-Za-z_][A-Za-z0-9_]*)|'([^']+)')!/);
+        const endSheetMatch = endRef.match(
+          /^(?:([A-Za-z_][A-Za-z0-9_]*)|'([^']+)')!/
+        );
         if (!endSheetMatch && sheetName) {
           // Normal case: prepend sheet name to endRef for consistent parsing
-          const quotedSheetName = sheetName.includes(' ') ? `'${sheetName}'` : sheetName;
+          const quotedSheetName = sheetName.includes(" ")
+            ? `'${sheetName}'`
+            : sheetName;
           endRef = `${quotedSheetName}!${endRef}`;
           fullRange = `${startRef}:${endRef}`;
         }
       }
     }
-    
+
     // Try to parse as an infinite range
     const infiniteParsed = parseInfiniteRange(fullRange);
-    
+
     if (infiniteParsed) {
       // Handle infinite range
-      const sheetId = infiniteParsed.sheet ? this.getSheetId(infiniteParsed.sheet) : this.contextSheetId;
-      
-      if (infiniteParsed.type === 'column') {
+      sheetName = sheetName ?? infiniteParsed.sheet;
+
+      if (infiniteParsed.type === "column") {
         // Infinite column range (e.g., A:A, B:D)
-        const startCol = letterToColNumber(infiniteParsed.start);
-        const endCol = letterToColNumber(infiniteParsed.end);
-        
+        const startCol = columnToIndex(infiniteParsed.start);
+        const endCol = columnToIndex(infiniteParsed.end);
+
         if (startCol < 0 || endCol < 0) {
-          throw new ParseError(
-            `Invalid column range: ${startRef}:${endRef}`,
-            { start: startPos, end: endPos }
-          );
+          throw new ParseError(`Invalid column range: ${startRef}:${endRef}`, {
+            start: startPos,
+            end: endPos,
+          });
         }
-        
+
         // Use special row values to indicate infinite range
         // We'll use -1 to indicate infinite
-        const range: SimpleCellRange = {
+        const range: SpreadsheetRange = {
           start: {
-            sheet: sheetId,
             col: Math.min(startCol, endCol),
-            row: 0  // Start from row 0
+            row: 0, // Start from row 0
           },
           end: {
-            sheet: sheetId,
-            col: Math.max(startCol, endCol),
-            row: Number.MAX_SAFE_INTEGER  // Use max value to indicate infinite
-          }
+            col: {
+              type: "number",
+              value: Math.max(startCol, endCol),
+            },
+            row: {
+              type: "infinity",
+              sign: "positive",
+            },
+          },
         };
-        
-        return createRangeNode(
+
+        return createRangeNode({
+          sheetName,
           range,
-          {
+          isAbsolute: {
             start: {
               col: infiniteParsed.startAbsolute,
-              row: false
+              row: false,
             },
             end: {
               col: infiniteParsed.endAbsolute,
-              row: false
-            }
+              row: false,
+            },
           },
-          startPos,
-          endPos
-        );
+          position: {
+            start: startPos,
+            end: endPos,
+          },
+        });
       } else {
         // Infinite row range (e.g., 5:5, 1:10)
         const startRow = parseInt(infiniteParsed.start) - 1;
         const endRow = parseInt(infiniteParsed.end) - 1;
-        
+
         if (startRow < 0 || endRow < 0) {
-          throw new ParseError(
-            `Invalid row range: ${startRef}:${endRef}`,
-            { start: startPos, end: endPos }
-          );
+          throw new ParseError(`Invalid row range: ${startRef}:${endRef}`, {
+            start: startPos,
+            end: endPos,
+          });
         }
-        
-        const range: SimpleCellRange = {
+
+        const range: SpreadsheetRange = {
           start: {
-            sheet: sheetId,
-            col: 0,  // Start from column 0
-            row: Math.min(startRow, endRow)
+            col: 0, // Start from column 0
+            row: Math.min(startRow, endRow),
           },
           end: {
-            sheet: sheetId,
-            col: Number.MAX_SAFE_INTEGER,  // Use max value to indicate infinite
-            row: Math.max(startRow, endRow)
-          }
+            col: {
+              type: "infinity",
+              sign: "positive",
+            },
+            row: {
+              type: "number",
+              value: Math.max(startRow, endRow),
+            },
+          },
         };
-        
-        return createRangeNode(
+
+        return createRangeNode({
+          sheetName,
           range,
-          {
+          isAbsolute: {
             start: {
               col: false,
-              row: infiniteParsed.startAbsolute
+              row: infiniteParsed.startAbsolute,
             },
             end: {
               col: false,
-              row: infiniteParsed.endAbsolute
-            }
+              row: infiniteParsed.endAbsolute,
+            },
           },
-          startPos,
-          endPos
-        );
+          position: {
+            start: startPos,
+            end: endPos,
+          },
+        });
       }
     }
-    
+
     // Otherwise, parse as normal range
     const startParsed = parseCellReference(startRef);
     const endParsed = parseCellReference(endRef);
-    
+
     if (!startParsed || !endParsed) {
-      throw new ParseError(
-        `Invalid range reference: ${startRef}:${endRef}`,
-        { start: startPos, end: endPos }
-      );
+      throw new ParseError(`Invalid range reference: ${startRef}:${endRef}`, {
+        start: startPos,
+        end: endPos,
+      });
     }
-    
+
     // Ensure both references are on the same sheet
     const startSheet = startParsed.sheet;
     const endSheet = endParsed.sheet;
-    
+
     if (startSheet !== endSheet) {
-      throw new ParseError(
-        `Range references must be on the same sheet`,
-        { start: startPos, end: endPos }
-      );
+      throw new ParseError(`Range references must be on the same sheet`, {
+        start: startPos,
+        end: endPos,
+      });
     }
-    
+
+    sheetName = sheetName ?? startSheet;
+
     // Convert to SimpleCellRange
-    const startCol = letterToColNumber(startParsed.col);
+    const startCol = columnToIndex(startParsed.col);
     const startRow = parseInt(startParsed.row) - 1;
-    const endCol = letterToColNumber(endParsed.col);
+    const endCol = columnToIndex(endParsed.col);
     const endRow = parseInt(endParsed.row) - 1;
-    
+
     if (startCol < 0 || startRow < 0 || endCol < 0 || endRow < 0) {
-      throw new ParseError(
-        `Invalid range reference: ${startRef}:${endRef}`,
-        { start: startPos, end: endPos }
-      );
+      throw new ParseError(`Invalid range reference: ${startRef}:${endRef}`, {
+        start: startPos,
+        end: endPos,
+      });
     }
-    
-    const sheetId = startSheet ? this.getSheetId(startSheet) : this.contextSheetId;
-    
-    const range: SimpleCellRange = {
+
+    const range: SpreadsheetRange = {
       start: {
-        sheet: sheetId,
         col: Math.min(startCol, endCol),
-        row: Math.min(startRow, endRow)
+        row: Math.min(startRow, endRow),
       },
       end: {
-        sheet: sheetId,
-        col: Math.max(startCol, endCol),
-        row: Math.max(startRow, endRow)
-      }
+        col: {
+          type: "number",
+          value: Math.max(startCol, endCol),
+        },
+        row: {
+          type: "number",
+          value: Math.max(startRow, endRow),
+        },
+      },
     };
-    
-    return createRangeNode(
+
+    return createRangeNode({
+      sheetName,
       range,
-      {
+      isAbsolute: {
         start: {
           col: startParsed.colAbsolute,
-          row: startParsed.rowAbsolute
+          row: startParsed.rowAbsolute,
         },
         end: {
           col: endParsed.colAbsolute,
-          row: endParsed.rowAbsolute
-        }
+          row: endParsed.rowAbsolute,
+        },
       },
-      startPos,
-      endPos
-    );
+      position: {
+        start: startPos,
+        end: endPos,
+      },
+    });
   }
-  
+
   /**
    * Parse a cell or range reference with a known sheet name
    */
-  private parseCellOrRangeWithSheet(sheetName: string, startPos: number): ASTNode {
+  private parseCellOrRangeWithSheet(
+    sheetName: string,
+    startPos: number
+  ): ASTNode {
     // Build the full reference string for parsing
-    let ref = sheetName.includes(' ') ? `'${sheetName}'!` : sheetName + '!';
-    
+    let ref = sheetName.includes(" ") ? `'${sheetName}'!` : sheetName + "!";
+
     // Check for $ before column
-    if (this.tokens.match('DOLLAR')) {
+    if (this.tokens.match("DOLLAR")) {
       ref += this.tokens.consume().value;
     }
-    
+
     // Get the cell reference part
-    if (this.tokens.match('IDENTIFIER')) {
+    if (this.tokens.match("IDENTIFIER")) {
       const identifier = this.tokens.consume();
       ref += identifier.value;
-      
+
+      // Check if this is a table reference (Sheet1!Table1[...])
+      if (this.tokens.match("LBRACKET")) {
+        // This is a table reference with sheet name
+        return this.parseTableReferenceWithSheet(
+          identifier.value,
+          sheetName,
+          startPos
+        );
+      }
+
       // Check if this is an infinite column range (Sheet1!A:A)
-      if (this.tokens.match('COLON')) {
+      if (this.tokens.match("COLON")) {
         this.tokens.consume();
         const endRef = this.parseRangeEnd();
         // For cross-sheet ranges, do NOT prepend the sheet name to the end reference
         // parseRange will handle sheet name extraction from the start reference
-        return this.parseRange(ref, endRef, startPos, this.tokens.peek().position.start);
+        return this.parseRange(
+          ref,
+          endRef,
+          startPos,
+          this.tokens.peek().position.start
+        );
       }
-      
+
       // Check for $ before row or just row number
-      if (this.tokens.match('DOLLAR')) {
+      if (this.tokens.match("DOLLAR")) {
         ref += this.tokens.consume().value;
       }
-      
-      if (this.tokens.match('NUMBER')) {
+
+      if (this.tokens.match("NUMBER")) {
         ref += this.tokens.consume().value;
       }
-    } else if (this.tokens.match('NUMBER')) {
+    } else if (this.tokens.match("NUMBER")) {
       // Handle infinite row range (Sheet1!5:5)
       const number = this.tokens.consume();
       ref += number.value;
-      
+
       // Check for range
-      if (this.tokens.match('COLON')) {
+      if (this.tokens.match("COLON")) {
         this.tokens.consume();
         const endRef = this.parseRangeEnd();
         // For cross-sheet ranges, do NOT prepend the sheet name to the end reference
         // parseRange will handle sheet name extraction from the start reference
-        return this.parseRange(ref, endRef, startPos, this.tokens.peek().position.start);
+        return this.parseRange(
+          ref,
+          endRef,
+          startPos,
+          this.tokens.peek().position.start
+        );
       }
     } else {
-      throw new ParseError(`Expected cell reference after ${sheetName}!`, this.tokens.peek().position);
+      throw new ParseError(
+        `Expected cell reference after ${sheetName}!`,
+        this.tokens.peek().position
+      );
     }
-    
+
     // Check for range (normal cell range like Sheet1!A1:B2)
-    if (this.tokens.match('COLON')) {
+    if (this.tokens.match("COLON")) {
       this.tokens.consume();
       const endRef = this.parseRangeEnd();
       // For cross-sheet ranges, do NOT prepend the sheet name to the end reference
       // parseRange will handle sheet name extraction from the start reference
-      return this.parseRange(ref, endRef, startPos, this.tokens.peek().position.start);
+      return this.parseRange(
+        ref,
+        endRef,
+        startPos,
+        this.tokens.peek().position.start
+      );
     }
-    
+
     // Parse as single cell reference
     const cellRef = this.parseCellReferenceString(ref);
     if (cellRef) {
       return cellRef;
     }
-    
-    throw new ParseError(`Invalid cell reference: ${ref}`, { start: startPos, end: this.tokens.peek().position.start });
-  }
-  
-  /**
-   * Get sheet ID from sheet name
-   */
-  private getSheetId(sheetName: string): number {
-    if (this.sheetResolver) {
-      const sheetId = this.sheetResolver(sheetName);
-      if (sheetId === -1) {
-        throw new ParseError(`Sheet '${sheetName}' not found`);
+
+    // If it's not a cell reference, check if the remaining tokens represent a named expression
+    // At this point, we've consumed the sheet name and !, but have an identifier that's not a cell/range/table
+    if (this.tokens.isAtEnd() || !this.tokens.match("IDENTIFIER")) {
+      // If we're at the end or the next token isn't an identifier, treat the current identifier as a named expression
+      // Extract the identifier after the sheet name from ref (remove "SheetName!" prefix)
+      const sheetPrefix = sheetName.includes(" ")
+        ? `'${sheetName}'!`
+        : `${sheetName}!`;
+      const identifier = ref.substring(sheetPrefix.length);
+
+      // Validate it's a valid identifier for a named expression
+      if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
+        return createNamedExpressionNode(
+          identifier,
+          {
+            start: startPos,
+            end: this.tokens.peek().position.start,
+          },
+          sheetName
+        );
       }
-      return sheetId;
     }
-    // Fallback to context sheet ID if no resolver provided
-    return this.contextSheetId;
+
+    throw new ParseError(`Invalid cell reference: ${ref}`, {
+      start: startPos,
+      end: this.tokens.peek().position.start,
+    });
   }
 }
 
 /**
  * Parse a formula string into an AST
  */
-export function parseFormula(formula: string, contextSheetId: number = 0, sheetResolver?: SheetResolver): FormulaAST {
-  return Parser.parse(formula, contextSheetId, sheetResolver) as FormulaAST;
-}
-
-/**
- * Normalize a formula string (remove extra whitespace, standardize casing)
- */
-export function normalizeFormula(formula: string): string {
-  try {
-    // Parse and reconstruct
-    const ast = parseFormula(formula);
-    return astToFormula(ast);
-  } catch (error) {
-    // If parsing fails, return original formula
-    return formula;
-  }
-}
-
-/**
- * Convert AST back to formula string (for normalization)
- */
-export function astToFormula(node: ASTNode): string {
-  switch (node.type) {
-    case 'value': {
-      const valueNode = node as ValueNode;
-      if (valueNode.value === undefined) return '';
-      if (typeof valueNode.value === 'string') return `"${valueNode.value.replace(/"/g, '""')}"`;
-      if (typeof valueNode.value === 'boolean') return valueNode.value ? 'TRUE' : 'FALSE';
-      return String(valueNode.value);
-    }
-      
-        case 'reference': {
-      const refNode = node as ReferenceNode;
-      // TODO: Convert back to A1 notation
-      return `R${refNode.address.row + 1}C${refNode.address.col + 1}`;
-    }
-      
-    case 'range': {
-      const rangeNode = node as RangeNode;
-      // TODO: Convert back to A1 notation
-      return `R${rangeNode.range.start.row + 1}C${rangeNode.range.start.col + 1}:R${rangeNode.range.end.row + 1}C${rangeNode.range.end.col + 1}`;
-    }
-      
-    case 'function': {
-      const funcNode = node as FunctionNode;
-      const args = funcNode.args.map(astToFormula).join(',');
-      return `${funcNode.name}(${args})`;
-    }
-      
-    case 'unary-op': {
-      const unaryNode = node as UnaryOpNode;
-      const operand = astToFormula(unaryNode.operand);
-      if (unaryNode.operator === '%') {
-        return `${operand}%`;
-      }
-      return `${unaryNode.operator}${operand}`;
-    }
-      
-    case 'binary-op': {
-      const binaryNode = node as BinaryOpNode;
-      const left = astToFormula(binaryNode.left);
-      const right = astToFormula(binaryNode.right);
-      return `${left}${binaryNode.operator}${right}`;
-    }
-      
-    case 'array': {
-      const arrayNode = node as ArrayNode;
-      const rows = arrayNode.elements.map(row => 
-        row.map(astToFormula).join(',')
-      ).join(';');
-      return `{${rows}}`;
-    }
-      
-    case 'named-expression':
-      return (node as NamedExpressionNode).name;
-      
-    case 'error':
-      return (node as ErrorNode).error;
-  }
-}
-
-/**
- * Validate a formula string
- */
-export function validateFormula(formula: string, contextSheetId: number = 0): boolean {
-  try {
-    parseFormula(formula, contextSheetId);
-    return true;
-  } catch (error) {
-    return false;
-  }
-}
-
-/**
- * Extract all named expressions from a formula
- */
-export function extractNamedExpressions(formula: string, contextSheetId: number = 0): string[] {
-  try {
-    const ast = parseFormula(formula, contextSheetId);
-    return getNamedExpressionsFromAST(ast);
-  } catch (error) {
-    return [];
-  }
-}
-
-/**
- * Get all named expressions from an AST
- */
-function getNamedExpressionsFromAST(node: ASTNode): string[] {
-  const names: string[] = [];
-  
-  function traverse(n: ASTNode) {
-    switch (n.type) {
-      case 'named-expression':
-        names.push((n as NamedExpressionNode).name);
-        break;
-      case 'function':
-        (n as FunctionNode).args.forEach(traverse);
-        break;
-      case 'unary-op':
-        traverse((n as UnaryOpNode).operand);
-        break;
-      case 'binary-op':
-        traverse((n as BinaryOpNode).left);
-        traverse((n as BinaryOpNode).right);
-        break;
-      case 'array':
-        (n as ArrayNode).elements.forEach(row => row.forEach(traverse));
-        break;
-    }
-  }
-  
-  traverse(node);
-  return [...new Set(names)]; // Remove duplicates
+export function parseFormula(formula: string): ASTNode {
+  return Parser.parse(formula);
 }

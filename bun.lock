@@ -4,11 +4,11 @@
     "": {
       "name": "formula-engine",
       "devDependencies": {
-        "@anocca-pub/components": "^0.0.26",
+        "@anocca-pub/components": "^0.0.28",
         "@radix-ui/react-label": "^2.1.7",
         "@radix-ui/react-select": "^2.2.5",
         "@radix-ui/react-slot": "^1.2.3",
-        "@ricsam/selection-manager": "^0.0.6",
+        "@ricsam/selection-manager": "^0.0.10",
         "@tanstack/react-router": "^1.130.12",
         "@tanstack/react-router-devtools": "^1.130.13",
         "@tanstack/router-cli": "^1.130.15",
@@ -39,7 +39,7 @@
   "packages": {
     "@ampproject/remapping": ["@ampproject/remapping@2.3.0", "", { "dependencies": { "@jridgewell/gen-mapping": "^0.3.5", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-30iZtAPgz+LTIYoeivqYo853f02jBYSd5uGnGpkFV0M3xOt9aN73erkgYAmZU43x4VfqcnLxW9Kpg3R5LC4YYw=="],
 
-    "@anocca-pub/components": ["@anocca-pub/components@0.0.26", "", { "dependencies": { "react": "^19", "react-dom": "^19" } }, "sha512-f1iAdpNbKv2j9ORmTv22ys0mPKcXJ34a+8TOR6st3LRo28LCpvJBxKidiF5z7xdP7z21YtJXaHEDg+iwj3qN6Q=="],
+    "@anocca-pub/components": ["@anocca-pub/components@0.0.28", "", { "dependencies": { "react": "^19", "react-dom": "^19" } }, "sha512-9l/NiV+bXehqRMYsf3m83y4UadeQ5/lSGgMC3g7Rp4OH4qHrpjzB1Qp64HdTC0YoYUMRvwS5mFeyweoYPCwFQw=="],
 
     "@babel/code-frame": ["@babel/code-frame@7.27.1", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.27.1", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-cjQ7ZlQ0Mv3b47hABuTevyTuYN4i+loJKGeV9flcCgIK37cCXRh+L1bd3iBHlynerhQ7BhCkn2BPbQUL+rGqFg=="],
 
@@ -271,7 +271,7 @@
 
     "@radix-ui/rect": ["@radix-ui/rect@1.1.1", "", {}, "sha512-HPwpGIzkl28mWyZqG52jiqDJ12waP11Pa1lGoiyUkIEuMLBP0oeK/C89esbXrxsky5we7dfd8U58nm0SgAWpVw=="],
 
-    "@ricsam/selection-manager": ["@ricsam/selection-manager@0.0.6", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-p76BRXHUS1ylM8sH0qyoOgLMacp1B37GU4PtKvzopcv0nMNpjgNLccjLaiFN1nWypklQkwIU3R2OKeuM5utXgw=="],
+    "@ricsam/selection-manager": ["@ricsam/selection-manager@0.0.10", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-iY97Ly7HIaBW/a62Jf/efr3JvO8EvoXnQ0nf1C2I6GJ9cSKEYBD6T59UofgeXOua6DYMMk+b7jL6guw4ydzOmg=="],
 
     "@tanstack/history": ["@tanstack/history@1.130.12", "", {}, "sha512-2VO1nNFDWojgZ7Uqv/OJfH6LphZQ1kE6l8sI3YBgSPtj3qN6I/rsoTHW9rGjwiDO8sQoDRXod2hpH6HMs5NDsw=="],
 
