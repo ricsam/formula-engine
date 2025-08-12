@@ -94,6 +94,13 @@ export const SPECIAL_FUNCTIONS = new Set([
 ]);
 
 /**
+ * Special constants
+ */
+export const SPECIAL_CONSTANTS = new Set([
+  'INFINITY', // Infinity literal
+]);
+
+/**
  * Functions that accept variable number of arguments
  */
 export const VARIADIC_FUNCTIONS = new Set([
@@ -229,11 +236,19 @@ export const CELL_REFERENCE_PATTERNS = {
   // Sheet qualified reference (e.g., Sheet1!A1, 'My Sheet'!$A$1)
   SHEET_QUALIFIED: /^(?:([A-Za-z_][A-Za-z0-9_]*)|'([^']+)')!(.+)$/,
   
+  // 3D range sheet reference (e.g., Sheet1:Sheet5!A1)
+  SHEET_RANGE_QUALIFIED: /^(?:(?:([A-Za-z_][A-Za-z0-9_]*)|'([^']+)'):(?:([A-Za-z_][A-Za-z0-9_]*)|'([^']+)'))!(.+)$/,
+  
   // Infinite column range (e.g., A:A, $B:$B)
   INFINITE_COLUMN: /^(\$)?([A-Z]+):(\$)?([A-Z]+)$/i,
   
   // Infinite row range (e.g., 5:5, $10:$10)
   INFINITE_ROW: /^(\$)?([1-9][0-9]*):(\$)?([1-9][0-9]*)$/i,
+  
+  // Structured reference patterns
+  TABLE_REFERENCE: /^([A-Za-z_][A-Za-z0-9_]*)\[(.+)\]$/,
+  CURRENT_ROW_REFERENCE: /^@([A-Za-z_][A-Za-z0-9_]*)$/,
+  TABLE_SELECTOR: /^#(All|Data|Headers|ThisRow)$/i,
 };
 
 /**
@@ -338,6 +353,92 @@ export function parseInfiniteRange(ref: string): ParsedInfiniteRange | null {
   }
   
   return null;
+}
+
+/**
+ * Parse a 3D range reference (e.g., Sheet1:Sheet3!A1)
+ */
+interface Parsed3DReference {
+  startSheet: string;
+  endSheet: string;
+  reference: string;
+}
+
+export function parse3DReference(ref: string): Parsed3DReference | null {
+  const match = ref.match(CELL_REFERENCE_PATTERNS.SHEET_RANGE_QUALIFIED);
+  if (!match || !match[5]) {
+    return null;
+  }
+  
+  const startSheet = match[1] || match[2]; // Unquoted or quoted start sheet
+  const endSheet = match[3] || match[4];   // Unquoted or quoted end sheet
+  
+  if (!startSheet || !endSheet) {
+    return null;
+  }
+  
+  return {
+    startSheet,
+    endSheet,
+    reference: match[5],
+  };
+}
+
+/**
+ * Parse a structured reference (e.g., Table1[Column1])
+ */
+interface ParsedStructuredReference {
+  tableName: string;
+  columnSpec: string;
+  isCurrentRow?: boolean;
+  selector?: string;
+}
+
+export function parseStructuredReference(ref: string): ParsedStructuredReference | null {
+  // Check for current row reference (e.g., [@Column])
+  if (ref.startsWith('@')) {
+    const colName = ref.substring(1);
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(colName)) {
+      return {
+        tableName: '',
+        columnSpec: colName,
+        isCurrentRow: true,
+      };
+    }
+  }
+  
+  // Check for table reference (e.g., Table1[Column1])
+  const match = ref.match(CELL_REFERENCE_PATTERNS.TABLE_REFERENCE);
+  if (!match || !match[1] || !match[2]) {
+    return null;
+  }
+  
+  const tableName = match[1];
+  const columnSpec = match[2];
+  
+  // Parse column spec for selectors and column name
+  let selector: string | undefined;
+  let columnName = columnSpec;
+  
+  // Check if column spec contains selector (e.g., [#Headers],[Column1])
+  const selectorMatch = columnSpec.match(/^\[#(All|Data|Headers|ThisRow)\],\[(.+)\]$/i);
+  if (selectorMatch && selectorMatch[1] && selectorMatch[2]) {
+    selector = '#' + selectorMatch[1];
+    columnName = selectorMatch[2];
+  } else if (columnSpec.startsWith('@')) {
+    // Table with current row reference (e.g., Table1[@Column1])
+    return {
+      tableName,
+      columnSpec: columnSpec.substring(1),
+      isCurrentRow: true,
+    };
+  }
+  
+  return {
+    tableName,
+    columnSpec: columnName,
+    selector,
+  };
 }
 
 

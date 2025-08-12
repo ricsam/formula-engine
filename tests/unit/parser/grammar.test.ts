@@ -7,6 +7,7 @@ import {
   getOperatorAssociativity,
   compareOperatorPrecedence,
   SPECIAL_FUNCTIONS,
+  SPECIAL_CONSTANTS,
   VARIADIC_FUNCTIONS,
   REQUIRED_ARG_FUNCTIONS,
   RESERVED_KEYWORDS,
@@ -15,6 +16,8 @@ import {
   isValidColumn,
   isValidRow,
   parseCellReference,
+  parse3DReference,
+  parseStructuredReference,
   FUNCTION_CONSTRAINTS,
   getFunctionConstraints,
   validateFunctionArgCount
@@ -333,5 +336,145 @@ describe('Function Argument Validation', () => {
     expect(validateFunctionArgCount('sum', 1)).toBe(true);
     expect(validateFunctionArgCount('SUM', 1)).toBe(true);
     expect(validateFunctionArgCount('Sum', 1)).toBe(true);
+  });
+});
+
+describe('Special Constants', () => {
+  test('should recognize INFINITY as a special constant', () => {
+    expect(SPECIAL_CONSTANTS.has('INFINITY')).toBe(true);
+    expect(SPECIAL_CONSTANTS.size).toBe(1);
+  });
+});
+
+describe('3D Range Parsing', () => {
+  test('should parse basic 3D range references', () => {
+    const result = parse3DReference('Sheet1:Sheet3!A1');
+    expect(result).toEqual({
+      startSheet: 'Sheet1',
+      endSheet: 'Sheet3',
+      reference: 'A1'
+    });
+  });
+
+  test('should parse 3D range with quoted sheet names', () => {
+    const result = parse3DReference("'Sheet 1':'Sheet 3'!B2");
+    expect(result).toEqual({
+      startSheet: 'Sheet 1',
+      endSheet: 'Sheet 3',
+      reference: 'B2'
+    });
+  });
+
+  test('should parse 3D range with range reference', () => {
+    const result = parse3DReference('Sheet1:Sheet5!A1:B10');
+    expect(result).toEqual({
+      startSheet: 'Sheet1',
+      endSheet: 'Sheet5',
+      reference: 'A1:B10'
+    });
+  });
+
+  test('should return null for invalid 3D ranges', () => {
+    expect(parse3DReference('Sheet1!A1')).toBeNull(); // Not a 3D range
+    expect(parse3DReference('Sheet1:Sheet2')).toBeNull(); // Missing reference
+    expect(parse3DReference('Sheet1:')).toBeNull(); // Incomplete
+  });
+});
+
+describe('Structured Reference Parsing', () => {
+  test('should parse simple table column reference', () => {
+    const result = parseStructuredReference('Table1[Sales]');
+    expect(result).toEqual({
+      tableName: 'Table1',
+      columnSpec: 'Sales',
+      selector: undefined,
+      isCurrentRow: undefined
+    });
+  });
+
+  test('should parse current row reference without table', () => {
+    const result = parseStructuredReference('@Sales');
+    expect(result).toEqual({
+      tableName: '',
+      columnSpec: 'Sales',
+      isCurrentRow: true,
+      selector: undefined
+    });
+  });
+
+  test('should parse table with current row reference', () => {
+    const result = parseStructuredReference('Table1[@Sales]');
+    expect(result).toEqual({
+      tableName: 'Table1',
+      columnSpec: 'Sales',
+      isCurrentRow: true,
+      selector: undefined
+    });
+  });
+
+  test('should parse table with selector and column', () => {
+    const result = parseStructuredReference('Table1[[#Headers],[Sales]]');
+    expect(result).toEqual({
+      tableName: 'Table1',
+      columnSpec: 'Sales',
+      selector: '#Headers',
+      isCurrentRow: undefined
+    });
+  });
+
+  test('should return null for invalid structured references', () => {
+    expect(parseStructuredReference('NotATable')).toBeNull();
+    expect(parseStructuredReference('Table1')).toBeNull(); // Missing brackets
+    expect(parseStructuredReference('@')).toBeNull(); // @ without column name
+  });
+});
+
+describe('Cell Reference Pattern Updates', () => {
+  test('should have pattern for 3D ranges', () => {
+    const pattern = CELL_REFERENCE_PATTERNS.SHEET_RANGE_QUALIFIED;
+    
+    // Test unquoted sheets
+    expect('Sheet1:Sheet3!A1'.match(pattern)).toBeTruthy();
+    expect('Start:End!B2:C3'.match(pattern)).toBeTruthy();
+    
+    // Test quoted sheets
+    expect("'Sheet 1':'Sheet 3'!A1".match(pattern)).toBeTruthy();
+    expect("'Start':'End'!B2".match(pattern)).toBeTruthy();
+    
+    // Test mixed
+    expect("Sheet1:'End Sheet'!A1".match(pattern)).toBeTruthy();
+  });
+
+  test('should have pattern for table references', () => {
+    const pattern = CELL_REFERENCE_PATTERNS.TABLE_REFERENCE;
+    
+    expect('Table1[Column1]'.match(pattern)).toBeTruthy();
+    expect('MyTable[Sales]'.match(pattern)).toBeTruthy();
+    expect('Table_123[My Column]'.match(pattern)).toBeTruthy();
+  });
+
+  test('should have pattern for current row references', () => {
+    const pattern = CELL_REFERENCE_PATTERNS.CURRENT_ROW_REFERENCE;
+    
+    expect('@Column1'.match(pattern)).toBeTruthy();
+    expect('@Sales'.match(pattern)).toBeTruthy();
+    expect('@My_Column'.match(pattern)).toBeTruthy();
+  });
+
+  test('should have pattern for table selectors', () => {
+    const pattern = CELL_REFERENCE_PATTERNS.TABLE_SELECTOR;
+    
+    expect('#All'.match(pattern)).toBeTruthy();
+    expect('#Data'.match(pattern)).toBeTruthy();
+    expect('#Headers'.match(pattern)).toBeTruthy();
+    expect('#ThisRow'.match(pattern)).toBeTruthy();
+    
+    // Case insensitive
+    expect('#all'.match(pattern)).toBeTruthy();
+    expect('#DATA'.match(pattern)).toBeTruthy();
+    
+    // Invalid selectors
+    expect('#Invalid'.match(pattern)).toBeFalsy();
+    expect('#'.match(pattern)).toBeFalsy();
   });
 });
