@@ -250,7 +250,7 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       
       {/* Sidebar */}
       <div className={`
-        w-72 bg-white border-r border-gray-200 h-full overflow-y-auto
+        w-72 bg-background border-r border-gray-200 h-full overflow-y-auto
         lg:relative lg:translate-x-0
         fixed z-50 transition-transform duration-300 ease-in-out
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}

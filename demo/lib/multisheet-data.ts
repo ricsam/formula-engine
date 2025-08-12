@@ -8,10 +8,6 @@ export const createEngineWithMultiSheetData = () => {
   const productsSheet = engine.addSheet("Products");
   const dashboardSheet = engine.addSheet("Dashboard");
 
-  const salesSheetId = engine.getSheetId(salesSheet);
-  const productsSheetId = engine.getSheetId(productsSheet);
-  const dashboardSheetId = engine.getSheetId(dashboardSheet);
-
   // Products Sheet - Master product data (input only)
   const productsData = new Map<string, any>([
     // Headers
@@ -329,16 +325,16 @@ export const createEngineWithMultiSheetData = () => {
   ]);
 
   // Populate all sheets
-  engine.setSheetContent(productsSheetId, productsData);
-  engine.setSheetContent(salesSheetId, salesData);
-  engine.setSheetContent(dashboardSheetId, dashboardData);
+  engine.setSheetContent(productsSheet.name, productsData);
+  engine.setSheetContent(salesSheet.name, salesData);
+  engine.setSheetContent(dashboardSheet.name, dashboardData);
 
   return {
     engine,
     sheets: {
-      sales: { name: salesSheet, id: salesSheetId },
-      products: { name: productsSheet, id: productsSheetId },
-      dashboard: { name: dashboardSheet, id: dashboardSheetId },
+      sales: { name: salesSheet.name },
+      products: { name: productsSheet.name },
+      dashboard: { name: dashboardSheet.name },
     },
   };
 };

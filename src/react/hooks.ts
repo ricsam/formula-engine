@@ -4,23 +4,23 @@
 
 import React, { useState } from "react";
 import type { FormulaEngine } from "../core/engine";
-import type { CellValue } from "../core/types";
+import type { SerializedCellValue } from "../core/types";
 
 export function useSerializedSheet(
   engine: FormulaEngine,
-  sheetId: number
-): Map<string, CellValue> {
-  const [serialized, setSerialized] = useState<Map<string, CellValue>>(
-    new Map()
-  );
+  sheetName: string
+): Map<string, SerializedCellValue> {
+  const [serialized, setSerialized] = useState<
+    Map<string, SerializedCellValue>
+  >(() => {
+    return new Map(engine.getSheetSerialized(sheetName));
+  });
 
   React.useEffect(() => {
-    return engine.onCellsUpdate(sheetId, (events) => {
-      if (events.length > 0) {
-        setSerialized(engine.getSheetSerialized(sheetId));
-      }
+    return engine.onCellsUpdate(sheetName, () => {
+      setSerialized(new Map(engine.getSheetSerialized(sheetName)));
     });
-  }, [engine, sheetId]);
+  }, [engine, sheetName]);
 
   return serialized;
 }

@@ -1,3 +1,4 @@
+import type { SerializedCellValue } from "src/core/types";
 import { FormulaEngine } from "../../src/core/engine";
 
 // Helper functions for column conversion
@@ -23,7 +24,7 @@ function indexToColumn(index: number): string {
 export interface SheetDependency {
   fromSheet: string;
   toSheet: string;
-  formulas: Array<{ formula: string; cellAddress: string; }>;
+  formulas: Array<{ formula: SerializedCellValue; cellAddress: string; }>;
   cellReferences: string[];
 }
 
@@ -33,7 +34,7 @@ export interface DependencyGraph {
     id: string; 
     source: string; 
     target: string; 
-    formulas: Array<{ formula: string; cellAddress: string; }>;
+    formulas: Array<{ formula: SerializedCellValue; cellAddress: string; }>;
     cellCount: number;
   }>;
 }
@@ -42,10 +43,14 @@ export interface DependencyGraph {
  * Extracts cross-sheet references from a formula string
  * Examples: "Products!A1", "Sales!B2:C10", "Dashboard!A1:B5"
  */
-function extractCrossSheetReferences(formula: string): Array<{ sheet: string; range: string }> {
+function extractCrossSheetReferences(formula: SerializedCellValue): Array<{ sheet: string; range: string }> {
   // Match patterns like SheetName!CellRange
   const crossSheetPattern = /([A-Za-z_][A-Za-z0-9_]*)\!([A-Z]+\d+(?:\:[A-Z]+\d+)?)/g;
   const references: Array<{ sheet: string; range: string }> = [];
+
+  if (typeof formula !== 'string') {
+    return [];
+  }
   
   let match;
   while ((match = crossSheetPattern.exec(formula)) !== null) {
@@ -65,7 +70,7 @@ function extractCrossSheetReferences(formula: string): Array<{ sheet: string; ra
  */
 export function analyzeDependencies(
   engine: FormulaEngine,
-  sheets: { [key: string]: { name: string; id: number } }
+  sheets: { [key: string]: { name: string; } }
 ): DependencyGraph {
   const dependencies = new Map<string, SheetDependency>();
   
@@ -73,12 +78,12 @@ export function analyzeDependencies(
   
   // Iterate through all sheets and their cells
   Object.entries(sheets).forEach(([sheetKey, sheet]) => {
-    const sheetFormulas = (engine as any).getSheetFormulas(sheet.id);
+      const sheetFormulas = engine.getSheetSerialized(sheet.name);
     console.log(`Analyzing sheet: ${sheet.name} (${sheetKey}) with ${sheetFormulas.size} formulas`);
     
     let crossSheetCount = 0;
     
-    sheetFormulas.forEach((formula: string, cellAddress: string) => {
+    sheetFormulas.forEach((formula: SerializedCellValue, cellAddress: string) => {
       console.log(`Found formula in ${sheet.name}!${cellAddress}: ${formula}`);
       
       const crossSheetRefs = extractCrossSheetReferences(formula);

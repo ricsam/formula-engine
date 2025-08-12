@@ -1,244 +1,769 @@
-import { test, expect, describe } from "bun:test";
-import { FormulaEngine } from '../../../src/core/engine';
+import { test, expect, describe, beforeEach } from "bun:test";
+import { FormulaEngine } from "../../../src/core/engine";
+import { getCellReference, parseCellReference } from "src/core/utils";
+import { FormulaError, type SerializedCellValue } from "src/core/types";
+import { dependencyNodeToKey } from "src/core/utils/dependency-node-key";
 
-describe('FormulaEngine', () => {
-  test('should create an empty engine', () => {
-    const engine = FormulaEngine.buildEmpty();
-    expect(engine).toBeDefined();
-    expect(engine.countSheets()).toBe(0);
+describe("FormulaEngine", () => {
+  const sheetName = "TestSheet";
+  let engine: FormulaEngine;
+
+  const cell = (ref: string, debug?: boolean) =>
+    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+
+  const setCellContent = (ref: string, content: string) => {
+    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+  };
+
+  const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
+
+  beforeEach(() => {
+    engine = FormulaEngine.buildEmpty();
+    engine.addSheet(sheetName);
   });
 
-  test('should add a sheet', () => {
-    const engine = FormulaEngine.buildEmpty();
-    const sheetName = engine.addSheet('TestSheet');
-    
-    expect(sheetName).toBe('TestSheet');
-    expect(engine.countSheets()).toBe(1);
-    expect(engine.doesSheetExist('TestSheet')).toBe(true);
-    expect(engine.getSheetId('TestSheet')).toBe(0);
+  test("basic scalar arguments", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([["A1", "=SUM(1, 2, 3)"]])
+    );
+
+    expect(cell("A1")).toBe(6);
   });
 
-  test('should set and get cell values', () => {
-    const engine = FormulaEngine.buildEmpty();
-    const sheetName = engine.addSheet('Sheet1');
-    const sheetId = engine.getSheetId(sheetName);
-    
-    // Set a single value
-    engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 42);
-    
-    const value = engine.getCellValue({ sheet: sheetId, col: 0, row: 0 });
-    expect(value).toBe(42);
+  test("should set and get cell values", () => {
+    engine.setSheetContent(sheetName, new Map([["A1", 42]]));
+    expect(cell("A1")).toBe(42);
   });
 
-  test('should handle empty cells', () => {
-    const engine = FormulaEngine.buildEmpty();
-    const sheetName = engine.addSheet('Sheet1');
-    const sheetId = engine.getSheetId(sheetName);
-    
-    const value = engine.getCellValue({ sheet: sheetId, col: 5, row: 5 });
-    expect(value).toBeUndefined();
-    expect(engine.isCellEmpty({ sheet: sheetId, col: 5, row: 5 })).toBe(true);
+  test("should handle empty cells", () => {
+    engine.setSheetContent(sheetName, new Map([["A1", ""]]));
+    expect(cell("A1")).toBe("");
   });
 
-  test('should set multiple values with 2D array', () => {
-    const engine = FormulaEngine.buildEmpty();
-    const sheetName = engine.addSheet('Sheet1');
-    const sheetId = engine.getSheetId(sheetName);
-    
-    const data = [
-      [1, 2, 3],
-      [4, 5, 6],
-      [7, 8, 9]
-    ];
-    
-    engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, data);
-    
+  test("should set multiple values with 2D array", () => {
+    const rawData = new Map([
+      ["A1", 1],
+      ["B1", 2],
+      ["C1", 3],
+      ["A2", 4],
+      ["B2", 5],
+      ["C2", 6],
+    ]);
+    engine.setSheetContent(sheetName, rawData);
+
     // Verify all values
-    for (let row = 0; row < 3; row++) {
+    for (let row = 0; row < 2; row++) {
       for (let col = 0; col < 3; col++) {
-        const value = engine.getCellValue({ sheet: sheetId, col, row });
-        const expectedValue = data[row]![col]!; // We know these exist from our test data
-        expect(value).toBe(expectedValue);
+        const value = engine.getCellValue({
+          sheetName,
+          colIndex: col,
+          rowIndex: row,
+        });
+        const cellReference = getCellReference({
+          colIndex: col,
+          rowIndex: row,
+        });
+        expect(value).toBe(rawData.get(cellReference)!);
       }
     }
   });
 
-  test('should get range values', () => {
-    const engine = FormulaEngine.buildEmpty();
-    const sheetName = engine.addSheet('Sheet1');
-    const sheetId = engine.getSheetId(sheetName);
-    
-    // Set some values
-    engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, [
-      [1, 2, 3],
-      [4, 5, 6]
+  test("should handle formulas", () => {
+    const data = new Map<string, SerializedCellValue>([
+      ["A1", "=A2+B2"],
+      ["A2", 1],
+      ["B2", 2],
     ]);
-    
-    const range = {
-      start: { sheet: sheetId, col: 0, row: 0 },
-      end: { sheet: sheetId, col: 2, row: 1 }
-    };
-    
-    const values = engine.getRangeValues(range);
-    expect(values).toEqual([
-      [1, 2, 3],
-      [4, 5, 6]
-    ]);
+
+    engine.setSheetContent(sheetName, data);
+
+    expect(cell("A1")).toBe(3);
   });
 
-  test('should handle formulas (stored as strings for now)', () => {
+  test("should handle formulas with cross sheet references", () => {
     const engine = FormulaEngine.buildEmpty();
-    const sheetName = engine.addSheet('Sheet1');
-    const sheetId = engine.getSheetId(sheetName);
-    
-    engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, '=A2+B2');
-    
-    const formula = engine.getCellFormula({ sheet: sheetId, col: 0, row: 0 });
-    expect(formula).toBe('=A2+B2');
-    
-    const serialized = engine.getCellSerialized({ sheet: sheetId, col: 0, row: 0 });
-    expect(serialized).toBe('=A2+B2');
+    engine.addSheet("Sheet1");
+    engine.addSheet("Sheet2");
+
+    engine.setSheetContent(
+      "Sheet1",
+      new Map<string, SerializedCellValue>([
+        ["A1", "=Sheet2!C1 + B2"],
+        ["B2", "=A4 + 5"],
+        ["A4", 5],
+      ])
+    );
+
+    engine.setSheetContent(
+      "Sheet2",
+      new Map<string, SerializedCellValue>([
+        ["C1", "=A3 + 100"], // A3 must refer to Sheet2
+        ["A3", 23],
+      ])
+    );
+
+    const value = engine.getCellValue(
+      {
+        sheetName: "Sheet1",
+        colIndex: 0,
+        rowIndex: 0,
+      },
+      true
+    );
+    expect(value).toBe(133);
   });
 
-  test('should parse cell addresses', () => {
+  test("should handle named expressions", () => {
     const engine = FormulaEngine.buildEmpty();
-    const sheetName = engine.addSheet('Sheet1');
-    const sheetId = engine.getSheetId(sheetName);
-    
-    const addr1 = engine.simpleCellAddressFromString('A1', sheetId);
-    expect(addr1).toEqual({ sheet: sheetId, col: 0, row: 0 });
-    
-    const addr2 = engine.simpleCellAddressFromString('B3', sheetId);
-    expect(addr2).toEqual({ sheet: sheetId, col: 1, row: 2 });
-    
-    const addr3 = engine.simpleCellAddressFromString('AA10', sheetId);
-    expect(addr3).toEqual({ sheet: sheetId, col: 26, row: 9 });
-  });
+    const sheetName = "Sheet1";
+    engine.addSheet(sheetName);
 
-  test('should parse cell ranges', () => {
-    const engine = FormulaEngine.buildEmpty();
-    const sheetName = engine.addSheet('Sheet1');
-    const sheetId = engine.getSheetId(sheetName);
-    
-    const range = engine.simpleCellRangeFromString('A1:C3', sheetId);
-    expect(range).toEqual({
-      start: { sheet: sheetId, col: 0, row: 0 },
-      end: { sheet: sheetId, col: 2, row: 2 }
-    });
-  });
+    engine.setSheetContent(sheetName, new Map([["A1", "=SOME_EXPRESSION"]]));
 
-  test('should manage sheets', () => {
-    const engine = FormulaEngine.buildEmpty();
-    
-    // Add multiple sheets
-    engine.addSheet('Sheet1');
-    engine.addSheet('Sheet2');
-    engine.addSheet('Sheet3');
-    
-    expect(engine.countSheets()).toBe(3);
-    expect(engine.getSheetNames()).toEqual(['Sheet1', 'Sheet2', 'Sheet3']);
-    
-    // Rename a sheet
-    const sheet2Id = engine.getSheetId('Sheet2');
-    engine.renameSheet(sheet2Id, 'DataSheet');
-    expect(engine.getSheetName(sheet2Id)).toBe('DataSheet');
-    
-    // Remove a sheet
-    engine.removeSheet(sheet2Id);
-    expect(engine.countSheets()).toBe(2);
-    expect(engine.doesSheetExist('DataSheet')).toBe(false);
-  });
-
-  test('should get bounding rectangle', () => {
-    const engine = FormulaEngine.buildEmpty();
-    const sheetName = engine.addSheet('Sheet1');
-    const sheetId = engine.getSheetId(sheetName);
-    
-    // Empty sheet has no bounding rect
-    let bounds = engine.getSheetBoundingRect(sheetId);
-    expect(bounds).toBeUndefined();
-    
-    // Add some data
-    engine.setCellContent({ sheet: sheetId, col: 1, row: 2 }, 'A');
-    engine.setCellContent({ sheet: sheetId, col: 5, row: 8 }, 'B');
-    
-    bounds = engine.getSheetBoundingRect(sheetId);
-    expect(bounds).toEqual({
-      minCol: 1,
-      maxCol: 5,
-      minRow: 2,
-      maxRow: 8,
-      width: 5,
-      height: 7
-    });
-  });
-
-  test('should handle named expressions', () => {
-    const engine = FormulaEngine.buildEmpty();
-    
     // Add global named expression
-    engine.addNamedExpression('PI', 3.14159);
-    expect(engine.getNamedExpressionFormula('PI')).toBe('3.14159');
-    
-    // List named expressions
-    const names = engine.listNamedExpressions();
-    expect(names).toContain('PI');
-    
-    // Change named expression
-    engine.changeNamedExpression('PI', 3.14159265);
-    expect(engine.getNamedExpressionFormula('PI')).toBe('3.14159265');
-    
-    // Remove named expression
-    engine.removeNamedExpression('PI');
-    expect(engine.listNamedExpressions()).not.toContain('PI');
+    engine.addNamedExpression({
+      expression: "123 + 123",
+      expressionName: "SOME_EXPRESSION",
+    });
+
+    const value = engine.getCellValue({ sheetName, colIndex: 0, rowIndex: 0 });
+    expect(value).toBe(246);
   });
 
-  test('should handle copy and paste', () => {
+  test("should handle named expressions with cross sheet references", () => {
     const engine = FormulaEngine.buildEmpty();
-    const sheetName = engine.addSheet('Sheet1');
-    const sheetId = engine.getSheetId(sheetName);
-    
-    // Set source data
-    engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, [
-      [1, 2],
-      [3, 4]
-    ]);
-    
-    // Copy
-    const range = {
-      start: { sheet: sheetId, col: 0, row: 0 },
-      end: { sheet: sheetId, col: 1, row: 1 }
-    };
-    const copied = engine.copy(range);
-    expect(copied).toEqual([[1, 2], [3, 4]]);
-    expect(engine.isClipboardEmpty()).toBe(false);
-    
-    // Paste
-    engine.paste({ sheet: sheetId, col: 3, row: 3 });
-    
-    // Verify pasted data
-    expect(engine.getCellValue({ sheet: sheetId, col: 3, row: 3 })).toBe(1);
-    expect(engine.getCellValue({ sheet: sheetId, col: 4, row: 3 })).toBe(2);
-    expect(engine.getCellValue({ sheet: sheetId, col: 3, row: 4 })).toBe(3);
-    expect(engine.getCellValue({ sheet: sheetId, col: 4, row: 4 })).toBe(4);
+    engine.addSheet("Sheet1");
+    engine.addSheet("Sheet2");
+
+    // global named expression
+    engine.addNamedExpression({
+      expression: "123 + 123",
+      expressionName: "SOME_EXPRESSION",
+    });
+
+    // scoped named expression
+    engine.addNamedExpression({
+      expression: "10",
+      expressionName: "SOME_EXPRESSION",
+      sheetName: "Sheet1",
+    });
+
+    engine.setSheetContent(
+      "Sheet1",
+      new Map<string, SerializedCellValue>([["A1", "=SOME_EXPRESSION"]])
+    );
+    engine.setSheetContent(
+      "Sheet2",
+      new Map<string, SerializedCellValue>([
+        ["B1", "=SOME_EXPRESSION"],
+        ["C1", "=Sheet1!SOME_EXPRESSION"],
+      ])
+    );
+
+    expect(
+      engine.getCellValue({
+        sheetName: "Sheet1",
+        colIndex: 0,
+        rowIndex: 0,
+      })
+    ).toBe(10);
+    expect(
+      engine.getCellValue({
+        sheetName: "Sheet2",
+        colIndex: 1,
+        rowIndex: 0,
+      })
+    ).toBe(246);
+    expect(
+      engine.getCellValue({
+        sheetName: "Sheet2",
+        colIndex: 2,
+        rowIndex: 0,
+      })
+    ).toBe(10);
   });
 
-  test('should suspend and resume evaluation', () => {
+  test("should resolve transitive deps", () => {
     const engine = FormulaEngine.buildEmpty();
-    const sheetName = engine.addSheet('Sheet1');
-    const sheetId = engine.getSheetId(sheetName);
-    
-    // Suspend evaluation
-    engine.suspendEvaluation();
-    expect(engine.isEvaluationSuspended()).toBe(true);
-    
-    // Changes should not return anything while suspended
-    const changes1 = engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 42);
-    expect(changes1).toEqual([]);
-    
-    // Resume evaluation
-    const changes2 = engine.resumeEvaluation();
-    expect(engine.isEvaluationSuspended()).toBe(false);
-    // In future, this would return the pending changes
+    const sheet = engine.addSheet("Sheet1");
+    engine.setSheetContent(sheet.name, new Map([["A1", "=B1+C1"]]));
+    engine.setSheetContent(sheet.name, new Map([["B1", "=C1+D1"]]));
+    engine.setSheetContent(sheet.name, new Map([["C1", "=D1+E1"]]));
+    engine.evaluatedNodes.set(
+      dependencyNodeToKey({
+        type: "cell",
+        address: { colIndex: 0, rowIndex: 0 },
+        sheetName: sheet.name,
+      }),
+      {
+        deps: new Set([
+          dependencyNodeToKey({
+            type: "cell",
+            address: { colIndex: 1, rowIndex: 0 },
+            sheetName: sheet.name,
+          }),
+          dependencyNodeToKey({
+            type: "cell",
+            address: { colIndex: 2, rowIndex: 0 },
+            sheetName: sheet.name,
+          }),
+        ]),
+      }
+    );
+    engine.evaluatedNodes.set(
+      dependencyNodeToKey({
+        type: "cell",
+        address: { colIndex: 1, rowIndex: 0 },
+        sheetName: sheet.name,
+      }),
+      {
+        deps: new Set([
+          dependencyNodeToKey({
+            type: "cell",
+            address: { colIndex: 2, rowIndex: 0 },
+            sheetName: sheet.name,
+          }),
+          dependencyNodeToKey({
+            type: "cell",
+            address: { colIndex: 3, rowIndex: 0 },
+            sheetName: sheet.name,
+          }),
+        ]),
+      }
+    );
+    engine.evaluatedNodes.set(
+      dependencyNodeToKey({
+        type: "cell",
+        address: { colIndex: 2, rowIndex: 0 },
+        sheetName: sheet.name,
+      }),
+      {
+        deps: new Set([
+          dependencyNodeToKey({
+            type: "cell",
+            address: { colIndex: 3, rowIndex: 0 },
+            sheetName: sheet.name,
+          }),
+          dependencyNodeToKey({
+            type: "cell",
+            address: { colIndex: 4, rowIndex: 0 },
+            sheetName: sheet.name,
+          }),
+        ]),
+      }
+    );
+
+    const deps = engine.getTransitiveDeps(
+      dependencyNodeToKey({
+        type: "cell",
+        address: { colIndex: 0, rowIndex: 0 },
+        sheetName: sheet.name,
+      })
+    );
+    expect(deps).toEqual(
+      new Set([
+        dependencyNodeToKey({
+          type: "cell",
+          address: { colIndex: 1, rowIndex: 0 },
+          sheetName: sheet.name,
+        }),
+        dependencyNodeToKey({
+          type: "cell",
+          address: { colIndex: 2, rowIndex: 0 },
+          sheetName: sheet.name,
+        }),
+        dependencyNodeToKey({
+          type: "cell",
+          address: { colIndex: 3, rowIndex: 0 },
+          sheetName: sheet.name,
+        }),
+        dependencyNodeToKey({
+          type: "cell",
+          address: { colIndex: 4, rowIndex: 0 },
+          sheetName: sheet.name,
+        }),
+      ])
+    );
+  });
+
+  test("should handle structured references", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ["A1", "num"],
+        ["B1", "result"],
+        ["C1", "sum"],
+        ["A2", 2],
+        ["A3", 3],
+        ["A4", 4],
+        ["B2", "=Table1[@num] * 10"],
+        ["B3", "=Table1[@num] * 10"],
+        ["B4", "=Table1[@num] * 10"],
+        ["B5", "=Table1[@num] * 10"], // should be errored
+        ["C2", "=SUM(Table1[result])"],
+        ["C3", "=SUM(Table1[[num]:[result]])"],
+        ["C4", "=SUM(Table1[@[num]:[result]])"],
+      ])
+    );
+
+    engine.addTable({
+      tableName: "Table1",
+      sheetName,
+      start: "A1",
+      numRows: { type: "number", value: 3 },
+      numCols: 3,
+    });
+
+    expect(cell("B2")).toBe(20);
+    expect(cell("B3")).toBe(30);
+    expect(cell("B4")).toBe(40);
+    expect(cell("B5")).toBe(FormulaError.VALUE);
+    expect(cell("C2", true)).toBe(90);
+    expect(cell("C3")).toBe(99);
+    expect(cell("C4")).toBe(44);
+  });
+
+  const fourByFour: [string, SerializedCellValue][] = [
+    ["A1", 1],
+    ["A2", 2],
+    ["A3", 3],
+    ["A4", 4],
+    ["B1", 5],
+    ["B2", 6],
+    ["B3", 7],
+    ["B4", 8],
+    ["C1", 9],
+    ["C2", 10],
+    ["C3", 11],
+    ["C4", 12],
+    ["D1", 13],
+    ["D2", 14],
+    ["D3", 15],
+    ["D4", 16],
+  ];
+
+  test("should handle spilling", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([...fourByFour, ["F1", "=A1:D4"]])
+    );
+
+    expect(cell("F1")).toBe(1);
+    expect(cell("H1")).toBe(9);
+  });
+
+  test("should handle reduced spilled values, when evaluating the spill origin first", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ...fourByFour,
+        ["F1", "=A1:D4 * 10"],
+      ])
+    );
+
+    expect(cell("F1")).toBe(10);
+    expect(cell("H1")).toBe(90);
+  });
+
+  test("should handle reduced spilled values, when evaluating the spill origin last", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ...fourByFour,
+        ["F1", "=A1:D4 * 10"],
+      ])
+    );
+
+    expect(cell("H1")).toBe(90);
+    expect(cell("F1")).toBe(10);
+
+    expect(cell("F2")).toBe(20);
+  });
+
+  test("should get spill errors", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ...fourByFour,
+        ["F1", "=A1:D4 * 10"],
+        ["F2", "some value here!"],
+      ])
+    );
+
+    expect(cell("H1")).toBe("");
+    expect(cell("F1")).toBe(FormulaError.SPILL);
+  });
+
+  test("should work with a spilled value as a dependency", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ...fourByFour,
+        ["F1", "=A1:D4 * 10"],
+        ["F10", "=F2 * 123"], // 20 * 123 = 2460
+      ])
+    );
+
+    expect(cell("F10")).toBe(2460);
+  });
+
+  test("should be able to update the spreadsheet content", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ...fourByFour,
+        ["F1", "=A1:D4 * 10"],
+        ["F10", "=F2 * 123"], // 20 * 123 = 2460
+      ])
+    );
+
+    expect(cell("F10")).toBe(2460);
+
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ...fourByFour,
+        ["F1", "=A1:D4"],
+        ["F10", "=F2 * 123"], // 2 * 123 = 246
+      ])
+    );
+
+    expect(cell("F10")).toBe(246);
+  });
+
+  test("should handle Excel table with bare column references", () => {
+    // Set up the exact table structure from the user's Excel example:
+    // num	result	                    sum	                        extras
+    // 1	=[@num] * 10	            =SUM([result])
+    // 3	=[@num] * 10	            =SUM(Table1[[num]:[result]])
+    // 4	=[@num] * 10	            =SUM(Table1[@[num]:[result]])
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        // Headers
+        ["A1", "num"],
+        ["B1", "result"],
+        ["C1", "sum"],
+        ["D1", "extras"],
+        // Data rows
+        ["A2", 1],
+        ["B2", "=[@num] * 10"], // Current row reference
+        ["C2", "=SUM([result])"], // Bare column reference
+        ["A3", 3],
+        ["B3", "=[@num] * 10"], // Current row reference
+        ["C3", "=SUM(Table1[[num]:[result]])"], // Bracketed column range
+        ["A4", 4],
+        ["B4", "=[@num] * 10"], // Current row reference
+        ["C4", "=SUM(Table1[@[num]:[result]])"], // Bracketed current row range
+      ])
+    );
+
+    // Define the table (A1:D4, so 4 rows including header)
+    engine.addTable({
+      tableName: "Table1",
+      sheetName,
+      start: "A1",
+      numRows: { type: "number", value: 3 },
+      numCols: 4,
+    });
+
+    // Test the calculated values
+
+    // B2: [@num] * 10 = 1 * 10 = 10
+    expect(cell("B2")).toBe(10);
+
+    // B3: [@num] * 10 = 3 * 10 = 30
+    expect(cell("B3")).toBe(30);
+
+    // B4: [@num] * 10 = 4 * 10 = 40
+    expect(cell("B4", true)).toBe(40);
+
+    // C2: SUM([result]) = SUM(B2:B4) = 10 + 30 + 40 = 80
+    expect(cell("C2", true)).toBe(80);
+
+    // C3: SUM(Table1[[num]:[result]]) = SUM(A2:B4) = (1+10) + (3+30) + (4+40) = 88
+    expect(cell("C3")).toBe(88);
+
+    // C4: SUM(Table1[@[num]:[result]]) = SUM(A4:B4) = 4 + 40 = 44
+    expect(cell("C4")).toBe(44);
+  });
+
+  test("should handle complex formula with LEFT and FIND in table", () => {
+    // Set up a table with comma-separated values in the Payload column
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        // Headers
+        ["A1", "ID"],
+        ["B1", "Payload"],
+        ["C1", "Extracted"],
+        // Data rows with comma-separated payloads
+        ["A2", 1],
+        ["B2", "apple,banana,cherry"],
+        ["C2", '=LEFT([@Payload],FIND(",",[@Payload])-1)'],
+        ["A3", 2],
+        ["B3", "dog,cat,bird"],
+        ["C3", '=LEFT([@Payload],FIND(",",[@Payload])-1)'],
+        ["A4", 3],
+        ["B4", "red,green,blue"],
+        ["C4", '=LEFT([@Payload],FIND(",",[@Payload])-1)'],
+      ])
+    );
+
+    // Define the table
+    engine.addTable({
+      tableName: "DataTable",
+      sheetName,
+      start: "A1",
+      numRows: { type: "number", value: 4 },
+      numCols: 3,
+    });
+
+    // Test the extracted values (should be the text before the first comma)
+
+    // C2: LEFT("apple,banana,cherry", FIND(",", "apple,banana,cherry") - 1) = LEFT("apple,banana,cherry", 6 - 1) = LEFT("apple,banana,cherry", 5) = "apple"
+    expect(cell("C2")).toBe("apple");
+
+    // C3: LEFT("dog,cat,bird", FIND(",", "dog,cat,bird") - 1) = LEFT("dog,cat,bird", 4 - 1) = LEFT("dog,cat,bird", 3) = "dog"
+    expect(cell("C3")).toBe("dog");
+
+    // C4: LEFT("red,green,blue", FIND(",", "red,green,blue") - 1) = LEFT("red,green,blue", 4 - 1) = LEFT("red,green,blue", 3) = "red"
+    expect(cell("C4")).toBe("red");
+  });
+
+  test("should handle INDEX+MATCH with structured references", () => {
+    // Set up a table with ORDER-ID and CUSTOMER-ID columns
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        // Headers
+        ["A1", "ORDER-ID"],
+        ["B1", "CUSTOMER-ID"],
+        ["C1", "AMOUNT"],
+        ["D1", "LOOKUP-RESULT"],
+        // Data rows
+        ["A2", "ORD001"],
+        ["B2", "CUST123"],
+        ["C2", 100],
+        [
+          "D2",
+          "=INDEX(Table1[ORDER-ID], MATCH([@[CUSTOMER-ID]], Table1[CUSTOMER-ID],0))",
+        ],
+        ["A3", "ORD002"],
+        ["B3", "CUST456"],
+        ["C3", 200],
+        [
+          "D3",
+          "=INDEX(Table1[ORDER-ID], MATCH([@[CUSTOMER-ID]], Table1[CUSTOMER-ID],0))",
+        ],
+        ["A4", "ORD003"],
+        ["B4", "CUST123"], // Same customer as row 2, should return ORD001
+        ["C4", 150],
+        [
+          "D4",
+          "=INDEX(Table1[ORDER-ID], MATCH([@[CUSTOMER-ID]], Table1[CUSTOMER-ID],0))",
+        ],
+      ])
+    );
+
+    // Define the table
+    engine.addTable({
+      tableName: "Table1",
+      sheetName,
+      start: "A1",
+      numRows: { type: "number", value: 3 },
+      numCols: 4,
+    });
+
+    // Test the lookup results
+    // D2: Should find first occurrence of CUST123 in CUSTOMER_ID column and return corresponding ORDER_ID
+    expect(cell("D2")).toBe("ORD001");
+
+    // D3: Should find CUST456 and return ORD002
+    expect(cell("D3")).toBe("ORD002");
+
+    // D4: Should find first occurrence of CUST123 (which is in row 2) and return ORD001
+    expect(cell("D4")).toBe("ORD001");
+  });
+
+  test("Special case", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        [
+          "A1",
+          "=INDEX(Table1[CAR ID], MATCH([@[CUSTOMER-ID]], Table1[CUSTOMER-ID],0))",
+        ],
+      ])
+    );
+    expect(() => cell("A1", true)).not.toThrow();
+  });
+
+  test("evaluation should handle range inputs as gracefully /1", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ["A1", "apple,banana,cherry"],
+        ["A2", "dog,cat,bird"],
+        ["A3", "red,green,blue"],
+        ["B1", 1],
+        ["B2", 2],
+        ["B3", 3],
+        ["C1", '=LEFT(A1:A3,FIND(",",A1:A3)-1)'],
+      ])
+    );
+
+    expect(cell("C1")).toBe("apple");
+    expect(cell("C2")).toBe("dog");
+    expect(cell("C3")).toBe("red");
+  });
+
+  test("evaluation should handle range inputs as gracefully /2", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ["A1", 1],
+        ["A2", 2],
+        ["A3", 3],
+        ["B1", "=SUM(A1:A3 * 10)"],
+      ])
+    );
+
+    expect(cell("B1")).toBe(60);
+  });
+
+  test("multiplication of ranges", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ["A1", 1],
+        ["A2", 2],
+        ["A3", 3],
+        ["B1", "=D11 * 0.5"],
+        ["B2", 8],
+        ["B3", 7],
+        ["C1", "=A1:A3 * B1:B3"],
+        ["D10", "=A1:A2 * (B2 + A1)"],
+      ])
+    );
+
+    expect(cell("C1", true)).toBe(9);
+    expect(cell("C2")).toBe(16);
+    expect(cell("C3")).toBe(21);
+    expect(cell("D10", true)).toBe(9);
+    expect(cell("D11", true)).toBe(18);
+  });
+
+  test("evaluation should handle range inputs as gracefully /3", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ["A1", 60],
+        ["A2", 50],
+        ["A3", 40],
+        ["B1", "=A1:A3 - 10"],
+        ["C1", "=A1:A3 - B1:B3"],
+      ])
+    );
+
+    expect(cell("B1")).toBe(50);
+    expect(cell("B2")).toBe(40);
+    expect(cell("B3")).toBe(30);
+
+    expect(cell("C1")).toBe(10);
+    expect(cell("C2")).toBe(10);
+    expect(cell("C3")).toBe(10);
+  });
+
+  test.skip("with 3D sheet references", () => {
+    const sheet1Name = engine.addSheet("Sheet1").name;
+    const sheet2Name = engine.addSheet("Sheet2").name;
+    const sheet3Name = engine.addSheet("Sheet3").name;
+
+    // Set up same data on all sheets
+    [sheet1Name, sheet2Name, sheet3Name].forEach((sheetName) => {
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          ["A2", 20],
+        ])
+      );
+    });
+
+    // Create 3D reference formulas
+    engine.setSheetContent(
+      sheet1Name,
+      new Map<string, SerializedCellValue>([
+        ["B1", "=SUM(Sheet1:Sheet3!A1)"], // Sum A1 across sheets 1-3
+        ["B2", "=SUM(Sheet1:Sheet3!A1:A2)"], // Sum A1:A2 across sheets 1-3
+      ])
+    );
+
+    const cell = (sheetName: string, ref: string, debug?: boolean) =>
+      engine.getCellValue(
+        {
+          sheetName,
+          ...parseCellReference(ref),
+        },
+        debug
+      );
+
+    // ENGINE ISSUE: 3D references like Sheet1:Sheet3!A1 not supported
+    expect(cell(sheet1Name, "B1", true)).toBe(30); // 10 + 10 + 10
+    expect(cell(sheet1Name, "B2", true)).toBe(90); // (10+20) + (10+20) + (10+20)
+  });
+
+  test("Division by zero should produce Infinity", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ["A1", "=1/0"], // Should produce Infinity
+        ["A2", "=-1/0"], // Should produce -Infinity
+        ["A3", "=0/0"], // Should produce NaN or #NUM! error
+      ])
+    );
+
+    expect(cell("A1")).toBe("INFINITY");
+    expect(cell("A2", true)).toBe("-INFINITY");
+    expect(cell("A3")).toBe(FormulaError.NUM);
+  });
+
+  test("Infinity * Infinity should produce Infinity", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ["A1", "=INFINITY * INFINITY"], // Should produce Infinity
+        ["A2", "=-INFINITY * INFINITY"], // Should produce -Infinity
+        ["A3", "=INFINITY * -INFINITY"], // Should produce -Infinity
+      ])
+    );
+
+    expect(cell("A1", true)).toBe("INFINITY");
+    expect(cell("A2", true)).toBe("-INFINITY");
+    expect(cell("A3")).toBe("-INFINITY");
+  });
+
+  test("Array row syntax", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([["A1", "={1;2;3}"]])
+    );
+
+    expect(cell("A1", true)).toBe(1);
+    expect(cell("A2", true)).toBe(2);
+    expect(cell("A3", true)).toBe(3);
+  });
+
+  test("Array col syntax", () => {
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([["A1", "={1,2,3}"]])
+    );
+
+    expect(cell("A1", true)).toBe(1);
+    expect(cell("B1", true)).toBe(2);
+    expect(cell("C1", true)).toBe(3);
   });
 });

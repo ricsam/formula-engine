@@ -6,7 +6,6 @@ import { Plus, X, Edit2, Check, X as Cancel } from "lucide-react";
 import { SpreadsheetWithFormulaBar } from "./components/SpreadsheetWithFormulaBar";
 
 interface SheetTab {
-  id: number;
   name: string;
 }
 
@@ -14,71 +13,66 @@ const createEngine = () => {
   const engine = FormulaEngine.buildEmpty();
 
   // Create first sheet with sample data
-  const sheetName = engine.addSheet("Sheet1");
-  const sheetId = engine.getSheetId(sheetName);
+  const sheetName = engine.addSheet("Sheet1").name;
 
-  return { engine, sheetId, sheetName };
+  return { engine, sheetName };
 };
 
 export function ExcelDemo() {
   const {
     engine,
-    sheetId: initialSheetId,
     sheetName: initialSheetName,
   } = useMemo(() => createEngine(), []);
 
   const [sheets, setSheets] = useState<SheetTab[]>([
     {
-      id: initialSheetId,
       name: initialSheetName,
     },
   ]);
 
-  const [activeSheetId, setActiveSheetId] = useState(initialSheetId);
-  const [editingSheetId, setEditingSheetId] = useState<number | null>(null);
+  const [activeSheet, setActiveSheet] = useState(initialSheetName);
+  const [editingSheet, setEditingSheet] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
 
   // Add new sheet
   const addSheet = useCallback(() => {
     const newSheetCount = sheets.length + 1;
     const newSheetName = `Sheet${newSheetCount}`;
-    const addedSheetName = engine.addSheet(newSheetName);
-    const newSheetId = engine.getSheetId(addedSheetName);
+    const addedSheetName = engine.addSheet(newSheetName).name;
 
     const newSheet: SheetTab = {
-      id: newSheetId,
       name: addedSheetName,
     };
 
     setSheets((prev) => [...prev, newSheet]);
-    setActiveSheetId(newSheetId);
+    setActiveSheet(addedSheetName);
   }, [sheets.length, engine]);
 
   // Delete sheet
   const deleteSheet = useCallback(
-    (sheetId: number) => {
+    (sheetName: string) => {
       if (sheets.length <= 1) return; // Don't delete the last sheet
 
-      engine.removeSheet(sheetId);
+      engine.removeSheet(sheetName);
 
       setSheets((prev) => {
-        const newSheets = prev.filter((sheet) => sheet.id !== sheetId);
+        const newSheets = prev.filter((sheet) => sheet.name !== sheetName);
 
         // If we deleted the active sheet, switch to the first remaining sheet
-        if (sheetId === activeSheetId && newSheets.length > 0) {
-          setActiveSheetId(newSheets[0]!.id);
+        if (sheetName === activeSheet && newSheets.length > 0) {
+          setActiveSheet(newSheets[0]!.name);
         }
 
         return newSheets;
       });
     },
-    [sheets.length, activeSheetId, engine]
+    [sheets.length, activeSheet, engine]
   );
 
   // Start editing sheet name
   const startEditingSheet = useCallback(
-    (sheetId: number, currentName: string) => {
-      setEditingSheetId(sheetId);
+    (sheetName: string, currentName: string) => {
+      setEditingSheet(sheetName);
       setEditingName(currentName);
     },
     []
@@ -86,25 +80,25 @@ export function ExcelDemo() {
 
   // Save sheet name
   const saveSheetName = useCallback(() => {
-    if (editingSheetId !== null && editingName.trim()) {
-      engine.renameSheet(editingSheetId, editingName.trim());
+    if (editingSheet !== null && editingName.trim()) {
+      engine.renameSheet(editingSheet, editingName.trim());
 
       setSheets((prev) =>
         prev.map((sheet) =>
-          sheet.id === editingSheetId
+          sheet.name === editingSheet
             ? { ...sheet, name: editingName.trim() }
             : sheet
         )
       );
     }
 
-    setEditingSheetId(null);
+    setEditingSheet(null);
     setEditingName("");
-  }, [editingSheetId, editingName, engine]);
+  }, [editingSheet, editingName, engine]);
 
   // Cancel editing
   const cancelEditing = useCallback(() => {
-    setEditingSheetId(null);
+    setEditingSheet(null);
     setEditingName("");
   }, []);
 
@@ -121,7 +115,7 @@ export function ExcelDemo() {
   );
 
   return (
-    <div className="h-full flex flex-col bg-white">
+    <div className="h-full flex flex-col">
       {/* Excel-style header */}
       <div className="border-b border-gray-200 bg-gray-50">
         <div className="p-3 border-b border-gray-200">
@@ -133,7 +127,7 @@ export function ExcelDemo() {
               <span>
                 Active Sheet:{" "}
                 <strong>
-                  {sheets.find((s) => s.id === activeSheetId)?.name}
+                  {sheets.find((s) => s.name === activeSheet)?.name}
                 </strong>
               </span>
               <span>Total Sheets: {sheets.length}</span>
@@ -145,8 +139,8 @@ export function ExcelDemo() {
       {/* Main spreadsheet area with formula bar */}
       <div className="flex-1 overflow-hidden">
         <SpreadsheetWithFormulaBar
-          key={activeSheetId} // Re-mount component when sheet changes
-          sheetId={activeSheetId}
+          key={activeSheet} // Re-mount component when sheet changes
+          sheetName={activeSheet}
           engine={engine}
         />
       </div>
@@ -157,18 +151,18 @@ export function ExcelDemo() {
         <div className="flex items-center gap-1 flex-1 overflow-x-auto">
           {sheets.map((sheet) => (
             <div
-              key={sheet.id}
+              key={sheet.name}
               className={`
                 group relative flex items-center gap-1 px-3 py-1 border border-gray-300 rounded-t-md cursor-pointer
                 ${
-                  sheet.id === activeSheetId
+                  sheet.name === activeSheet
                     ? "bg-white border-b-white -mb-px z-10"
                     : "bg-gray-100 hover:bg-gray-200"
                 }
               `}
-              onClick={() => setActiveSheetId(sheet.id)}
+              onClick={() => setActiveSheet(sheet.name)}
             >
-              {editingSheetId === sheet.id ? (
+              {editingSheet === sheet.name ? (
                 <div className="flex items-center gap-1">
                   <Input
                     value={editingName}
@@ -213,7 +207,7 @@ export function ExcelDemo() {
                     className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={(e) => {
                       e.stopPropagation();
-                      startEditingSheet(sheet.id, sheet.name);
+                      startEditingSheet(sheet.name, sheet.name);
                     }}
                   >
                     <Edit2 className="h-3 w-3" />
@@ -227,7 +221,7 @@ export function ExcelDemo() {
                       className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700"
                       onClick={(e) => {
                         e.stopPropagation();
-                        deleteSheet(sheet.id);
+                        deleteSheet(sheet.name);
                       }}
                     >
                       <X className="h-3 w-3" />

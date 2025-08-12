@@ -3,31 +3,16 @@
  */
 
 import type {
-  SimpleCellAddress,
-  SimpleCellRange,
+  CellAddress,
   CellValue,
   FormulaError,
+  SpreadsheetRange,
 } from "../core/types";
-
-/**
- * Base AST node type
- */
-type ASTNodeType =
-  | "value"
-  | "reference"
-  | "range"
-  | "function"
-  | "unary-op"
-  | "binary-op"
-  | "array"
-  | "named-expression"
-  | "error";
 
 /**
  * Base interface for all AST nodes
  */
 type ASTNodeBase = {
-  type: ASTNodeType;
   position?: {
     start: number;
     end: number;
@@ -40,7 +25,6 @@ type ASTNodeBase = {
 export type ValueNode = ASTNodeBase & {
   type: "value";
   value: CellValue;
-  valueType: "number" | "string" | "boolean" | "error";
 };
 
 /**
@@ -48,7 +32,11 @@ export type ValueNode = ASTNodeBase & {
  */
 export type ReferenceNode = ASTNodeBase & {
   type: "reference";
-  address: SimpleCellAddress;
+  address: {
+    colIndex: number;
+    rowIndex: number;
+  };
+  sheetName?: string;
   isAbsolute: {
     col: boolean;
     row: boolean;
@@ -60,7 +48,8 @@ export type ReferenceNode = ASTNodeBase & {
  */
 export type RangeNode = ASTNodeBase & {
   type: "range";
-  range: SimpleCellRange;
+  sheetName?: string;
+  range: SpreadsheetRange;
   isAbsolute: {
     start: {
       col: boolean;
@@ -121,6 +110,38 @@ export type ArrayNode = ASTNodeBase & {
   elements: ASTNode[][]; // 2D array of elements
 };
 
+/**
+ * 3D range node (e.g., Sheet1:Sheet3!A1)
+ */
+export type ThreeDRangeNode = ASTNodeBase & {
+  type: "3d-range";
+  startSheet: string;
+  endSheet: string;
+  reference: ReferenceNode | RangeNode;
+};
+
+/**
+ * Structured reference node (e.g., Table1[Column1])
+ */
+export type StructuredReferenceNode = ASTNodeBase & {
+  type: "structured-reference";
+  tableName?: string;
+  cols?: {
+    startCol: string;
+    endCol: string;
+  };
+  sheetName?: string;
+  selector?: "#All" | "#Data" | "#Headers";
+  isCurrentRow: boolean;
+};
+
+/**
+ * Infinity literal node
+ */
+export type InfinityNode = ASTNodeBase & {
+  type: "infinity";
+};
+
 export type ASTNode =
   | ValueNode
   | ReferenceNode
@@ -130,7 +151,11 @@ export type ASTNode =
   | BinaryOpNode
   | ArrayNode
   | NamedExpressionNode
-  | ErrorNode;
+  | ErrorNode
+  | EmptyNode
+  | ThreeDRangeNode
+  | StructuredReferenceNode
+  | InfinityNode;
 
 /**
  * Named expression reference node
@@ -138,7 +163,7 @@ export type ASTNode =
 export type NamedExpressionNode = ASTNodeBase & {
   type: "named-expression";
   name: string;
-  scope?: number; // Sheet scope if specified
+  sheetName?: string;
 };
 
 /**
@@ -150,87 +175,86 @@ export type ErrorNode = ASTNodeBase & {
   message: string;
 };
 
-/**
- * Union type for all AST nodes
- */
-export type FormulaAST =
-  | ValueNode
-  | ReferenceNode
-  | RangeNode
-  | FunctionNode
-  | UnaryOpNode
-  | BinaryOpNode
-  | ArrayNode
-  | NamedExpressionNode
-  | ErrorNode;
+export type EmptyNode = ASTNodeBase & {
+  type: "empty";
+};
 
 /**
  * Helper function to create a value node
  */
 export function createValueNode(
   value: CellValue,
-  start?: number,
-  end?: number
-): ValueNode {
-  let valueType: ValueNode["valueType"];
-
-  if (typeof value === "number") {
-    valueType = "number";
-  } else if (typeof value === "string") {
-    // Check if it's an error string
-    if (value.startsWith("#") && value.endsWith("!")) {
-      valueType = "error";
-    } else {
-      valueType = "string";
-    }
-  } else if (typeof value === "boolean") {
-    valueType = "boolean";
-  } else {
-    valueType = "error";
+  position?: {
+    start: number;
+    end: number;
   }
-
+): ValueNode {
   return {
     type: "value",
     value,
-    valueType,
-    ...(start !== undefined &&
-      end !== undefined && { position: { start, end } }),
+    position,
   };
+}
+
+export function createEmptyNode(position?: {
+  start: number;
+  end: number;
+}): EmptyNode {
+  return { type: "empty", position };
 }
 
 /**
  * Helper function to create a reference node
  */
-export function createReferenceNode(
-  address: SimpleCellAddress,
-  isAbsolute: { col: boolean; row: boolean },
-  start?: number,
-  end?: number
-): ReferenceNode {
+export function createReferenceNode({
+  address,
+  isAbsolute,
+  position,
+  sheetName,
+}: {
+  address: {
+    colIndex: number;
+    rowIndex: number;
+  };
+  isAbsolute: { col: boolean; row: boolean };
+  position?: {
+    start: number;
+    end: number;
+  };
+  sheetName?: string;
+}): ReferenceNode {
   return {
     type: "reference",
     address,
     isAbsolute,
-    ...(start !== undefined &&
-      end !== undefined && { position: { start, end } }),
+    sheetName,
+    position,
   };
 }
 
 /**
  * Helper function to create a range node
  */
-export function createRangeNode(
-  range: SimpleCellRange,
-  isAbsolute: RangeNode["isAbsolute"],
-  start?: number,
-  end?: number
-): RangeNode {
+export function createRangeNode({
+  sheetName,
+  range,
+  isAbsolute,
+  position,
+}: {
+  sheetName?: string;
+  range: SpreadsheetRange;
+  isAbsolute: RangeNode["isAbsolute"];
+  position?: {
+    start: number;
+    end: number;
+  };
+}): RangeNode {
   return {
     type: "range",
     range,
+    sheetName,
     isAbsolute,
-    ...(start !== undefined &&
-      end !== undefined && { position: { start, end } }),
+    position,
   };
 }
 
@@ -240,15 +264,16 @@ export function createRangeNode(
 export function createFunctionNode(
   name: string,
   args: ASTNode[],
-  start?: number,
-  end?: number
+  position?: {
+    start: number;
+    end: number;
+  }
 ): FunctionNode {
   return {
     type: "function",
     name: name.toUpperCase(), // Normalize function names to uppercase
     args,
-    ...(start !== undefined &&
-      end !== undefined && { position: { start, end } }),
+    position,
   };
 }
 
@@ -258,15 +283,16 @@ export function createFunctionNode(
 export function createUnaryOpNode(
   operator: UnaryOpNode["operator"],
   operand: ASTNode,
-  start?: number,
-  end?: number
+  position?: {
+    start: number;
+    end: number;
+  }
 ): UnaryOpNode {
   return {
     type: "unary-op",
     operator,
     operand,
-    ...(start !== undefined &&
-      end !== undefined && { position: { start, end } }),
+    position,
   };
 }
 
@@ -277,16 +303,17 @@ export function createBinaryOpNode(
   operator: BinaryOpNode["operator"],
   left: ASTNode,
   right: ASTNode,
-  start?: number,
-  end?: number
+  position?: {
+    start: number;
+    end: number;
+  }
 ): BinaryOpNode {
   return {
     type: "binary-op",
     operator,
     left,
     right,
-    ...(start !== undefined &&
-      end !== undefined && { position: { start, end } }),
+    position,
   };
 }
 
@@ -295,14 +322,15 @@ export function createBinaryOpNode(
  */
 export function createArrayNode(
   elements: ASTNode[][],
-  start?: number,
-  end?: number
+  position?: {
+    start: number;
+    end: number;
+  }
 ): ArrayNode {
   return {
     type: "array",
     elements,
-    ...(start !== undefined &&
-      end !== undefined && { position: { start, end } }),
+    position,
   };
 }
 
@@ -311,16 +339,17 @@ export function createArrayNode(
  */
 export function createNamedExpressionNode(
   name: string,
-  scope?: number,
-  start?: number,
-  end?: number
+  position?: {
+    start: number;
+    end: number;
+  },
+  sheetName?: string
 ): NamedExpressionNode {
   return {
     type: "named-expression",
     name,
-    scope,
-    ...(start !== undefined &&
-      end !== undefined && { position: { start, end } }),
+    sheetName,
+    position,
   };
 }
 
@@ -330,15 +359,85 @@ export function createNamedExpressionNode(
 export function createErrorNode(
   error: FormulaError,
   message: string,
-  start?: number,
-  end?: number
+  position?: {
+    start: number;
+    end: number;
+  }
 ): ErrorNode {
   return {
     type: "error",
     error,
     message,
-    ...(start !== undefined &&
-      end !== undefined && { position: { start, end } }),
+    position,
+  };
+}
+
+/**
+ * Helper function to create a 3D range node
+ */
+export function createThreeDRangeNode(
+  startSheet: string,
+  endSheet: string,
+  reference: ReferenceNode | RangeNode,
+  position?: {
+    start: number;
+    end: number;
+  }
+): ThreeDRangeNode {
+  return {
+    type: "3d-range",
+    startSheet,
+    endSheet,
+    reference,
+    position,
+  };
+}
+
+/**
+ * Helper function to create a structured reference node
+ */
+export function createStructuredReferenceNode({
+  tableName,
+  cols,
+  selector,
+  isCurrentRow = false,
+  sheetName,
+  position,
+}: {
+  tableName?: string;
+  cols?: {
+    startCol: string;
+    endCol: string;
+  };
+  selector?: "#All" | "#Data" | "#Headers";
+  isCurrentRow?: boolean;
+  sheetName?: string;
+  position?: {
+    start: number;
+    end: number;
+  };
+}): StructuredReferenceNode {
+  return {
+    type: "structured-reference",
+    tableName,
+    cols,
+    selector,
+    isCurrentRow,
+    sheetName,
+    position,
+  };
+}
+
+/**
+ * Helper function to create an infinity node
+ */
+export function createInfinityNode(position?: {
+  start: number;
+  end: number;
+}): InfinityNode {
+  return {
+    type: "infinity",
+    position,
   };
 }
 
@@ -355,179 +454,8 @@ export interface ASTVisitor<T = void> {
   visitArray?(node: ArrayNode): T;
   visitNamedExpression?(node: NamedExpressionNode): T;
   visitError?(node: ErrorNode): T;
-}
-
-/**
- * Visit an AST node with a visitor
- */
-export function visitNode<T>(
-  node: ASTNode,
-  visitor: ASTVisitor<T>
-): T | undefined {
-  switch (node.type) {
-    case "value":
-      return visitor.visitValue?.(node as ValueNode);
-    case "reference":
-      return visitor.visitReference?.(node as ReferenceNode);
-    case "range":
-      return visitor.visitRange?.(node as RangeNode);
-    case "function":
-      return visitor.visitFunction?.(node as FunctionNode);
-    case "unary-op":
-      return visitor.visitUnaryOp?.(node as UnaryOpNode);
-    case "binary-op":
-      return visitor.visitBinaryOp?.(node as BinaryOpNode);
-    case "array":
-      return visitor.visitArray?.(node as ArrayNode);
-    case "named-expression":
-      return visitor.visitNamedExpression?.(node as NamedExpressionNode);
-    case "error":
-      return visitor.visitError?.(node as ErrorNode);
-  }
-}
-
-/**
- * Traverse an AST tree depth-first
- */
-export function traverseAST(node: ASTNode, visitor: ASTVisitor<void>): void {
-  visitNode(node, visitor);
-
-  switch (node.type) {
-    case "function":
-      (node as FunctionNode).args.forEach((arg) => traverseAST(arg, visitor));
-      break;
-    case "unary-op":
-      traverseAST((node as UnaryOpNode).operand, visitor);
-      break;
-    case "binary-op":
-      traverseAST((node as BinaryOpNode).left, visitor);
-      traverseAST((node as BinaryOpNode).right, visitor);
-      break;
-    case "array":
-      (node as ArrayNode).elements.forEach((row) =>
-        row.forEach((element) => traverseAST(element, visitor))
-      );
-      break;
-  }
-}
-
-/**
- * Check if an AST node is a constant value (no references)
- */
-export function isConstantNode(node: ASTNode): boolean {
-  switch (node.type) {
-    case "value":
-      return true;
-    case "reference":
-    case "range":
-    case "named-expression":
-      return false;
-    case "function":
-      return (node as FunctionNode).args.every(isConstantNode);
-    case "unary-op":
-      return isConstantNode((node as UnaryOpNode).operand);
-    case "binary-op":
-      return (
-        isConstantNode((node as BinaryOpNode).left) &&
-        isConstantNode((node as BinaryOpNode).right)
-      );
-    case "array":
-      return (node as ArrayNode).elements.every((row) =>
-        row.every(isConstantNode)
-      );
-    case "error":
-      return true;
-  }
-}
-
-/**
- * Get all cell references from an AST
- */
-export function getCellReferences(
-  node: ASTNode
-): Array<SimpleCellAddress | SimpleCellRange> {
-  const references: Array<SimpleCellAddress | SimpleCellRange> = [];
-
-  traverseAST(node, {
-    visitReference(node) {
-      references.push(node.address);
-    },
-    visitRange(node) {
-      references.push(node.range);
-    },
-  });
-
-  return references;
-}
-
-/**
- * Get all named expression references from an AST
- */
-export function getNamedExpressionReferences(node: ASTNode): string[] {
-  const names: string[] = [];
-
-  traverseAST(node, {
-    visitNamedExpression(node) {
-      names.push(node.name);
-    },
-  });
-
-  return names;
-}
-
-/**
- * Clone an AST node (deep copy)
- */
-export function cloneAST(node: ASTNode): ASTNode {
-  switch (node.type) {
-    case "value":
-      return { ...(node as ValueNode) } as ValueNode;
-    case "reference": {
-      const refNode = node as ReferenceNode;
-      return { ...refNode, address: { ...refNode.address } } as ReferenceNode;
-    }
-    case "range": {
-      const rangeNode = node as RangeNode;
-      return {
-        ...rangeNode,
-        range: {
-          start: { ...rangeNode.range.start },
-          end: { ...rangeNode.range.end },
-        },
-      } as RangeNode;
-    }
-    case "function": {
-      const funcNode = node as FunctionNode;
-      return {
-        ...funcNode,
-        args: funcNode.args.map(cloneAST),
-      } as FunctionNode;
-    }
-    case "unary-op": {
-      const unaryNode = node as UnaryOpNode;
-      return {
-        ...unaryNode,
-        operand: cloneAST(unaryNode.operand),
-      } as UnaryOpNode;
-    }
-    case "binary-op": {
-      const binaryNode = node as BinaryOpNode;
-      return {
-        ...binaryNode,
-        left: cloneAST(binaryNode.left),
-        right: cloneAST(binaryNode.right),
-      } as BinaryOpNode;
-    }
-    case "array": {
-      const arrayNode = node as ArrayNode;
-      return {
-        ...arrayNode,
-        elements: arrayNode.elements.map((row) => row.map(cloneAST)),
-      } as ArrayNode;
-    }
-    case "named-expression":
-      return { ...(node as NamedExpressionNode) } as NamedExpressionNode;
-    case "error":
-      return { ...(node as ErrorNode) } as ErrorNode;
-  }
+  visitEmpty?(node: EmptyNode): T;
+  visitThreeDRange?(node: ThreeDRangeNode): T;
+  visitStructuredReference?(node: StructuredReferenceNode): T;
+  visitInfinity?(node: InfinityNode): T;
 }

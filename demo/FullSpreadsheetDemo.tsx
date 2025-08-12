@@ -2,12 +2,13 @@ import React, { useEffect, useMemo, useState } from "react";
 import { getCellReference, parseCellReference, Spreadsheet } from "@anocca-pub/components";
 import { Input } from "@/components/ui/input";
 import { FormulaEngine } from "../src/core/engine";
+import { useSerializedSheet } from "src/react/hooks";
+import type { CellAddress } from "src/core/types";
 
 // Create a shared engine instance with rich example data
 const createEngineWithExampleData = () => {
   const engine = FormulaEngine.buildEmpty();
-  const sheetName = engine.addSheet("Sheet1");
-  const sheetId = engine.getSheetId(sheetName);
+  const sheetName = engine.addSheet("Sheet1").name;
 
   // Rich example data with various formulas and data types
   const exampleData = new Map<string, any>([
@@ -143,51 +144,39 @@ const createEngineWithExampleData = () => {
     ['H14', '=INDEX(A2:A5,1)&" (Best)'],
   ]);
 
-  engine.setSheetContent(sheetId, exampleData);
-  return { engine, sheetId };
+  engine.setSheetContent(sheetName, exampleData);
+  return { engine, sheetName };
 };
 
 export function FullSpreadsheetDemo() {
-  const { engine, sheetId } = useMemo(createEngineWithExampleData, []);
+  const { engine, sheetName } = useMemo(createEngineWithExampleData, []);
   const [selectedCell, setSelectedCell] = useState<string | null>(null);
-  const [spreadsheet, setSpreadsheet] = useState<Map<string, any>>(
-    () => engine.getSheetSerialized(sheetId)
-  );
+  const spreadsheet = useSerializedSheet(engine, sheetName);
   const [formulaInput, setFormulaInput] = useState<string>("");
 
-  console.log(spreadsheet, engine.getSheetValues(sheetId));
 
-  useEffect(() => {
-    const unsubscribe = engine.onCellsUpdate(sheetId, () => {
-      const data = engine.getSheetSerialized(sheetId);
-      setSpreadsheet(data);
-    });
-
-    return unsubscribe;
-  }, [engine, sheetId]);
-
+  console.log("Selected cell", selectedCell, spreadsheet, spreadsheet.get(selectedCell || ""));
   const formula = useMemo(() => {
     if (!selectedCell) return "";
     
     try {
-      const { columnIndex, rowIndex } = parseCellReference(selectedCell);
-      const cellFormula = engine.getCellFormula({ sheet: sheetId, col: columnIndex, row: rowIndex });
+      const cellFormula = spreadsheet.get(selectedCell);
       return cellFormula || "";
     } catch (error) {
       return "";
     }
-  }, [engine, sheetId, selectedCell]);
+  }, [engine, sheetName, selectedCell]);
 
   // Update formula input when selected cell changes
   useEffect(() => {
-    setFormulaInput(formula);
+    setFormulaInput(String(formula));
   }, [formula]);
 
   const handleFormulaSubmit = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && selectedCell) {
       try {
         const { columnIndex, rowIndex } = parseCellReference(selectedCell);
-        const address = { sheet: sheetId, col: columnIndex, row: rowIndex };
+        const address: CellAddress = { sheetName, colIndex: columnIndex, rowIndex: rowIndex };
         
         // If the input starts with =, it's a formula; otherwise it's a value
         const content = formulaInput.startsWith('=') ? formulaInput : formulaInput;
@@ -235,16 +224,16 @@ export function FullSpreadsheetDemo() {
       <div className="relative flex-1">
         <Spreadsheet
           style={{ width: "100%", height: "100%" }}
-          cellData={spreadsheet}
+          cellData={spreadsheet as Map<string, string | number>}
           onCellDataChange={(updatedSpreadsheet) => {
-            engine.setSheetContent(sheetId, updatedSpreadsheet);
+            engine.setSheetContent(sheetName, updatedSpreadsheet);
           }}
           customCellRenderer={(cell) => {
            
             const value = engine.getCellValue({
-              sheet: sheetId,
-              col: cell.colIndex,
-              row: cell.rowIndex,
+              sheetName,
+              colIndex: cell.colIndex,
+              rowIndex: cell.rowIndex,
             });
             return <div>{value}</div>;
           }}

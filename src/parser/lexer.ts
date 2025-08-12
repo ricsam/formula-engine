@@ -18,11 +18,16 @@ export type TokenType =
   | 'RPAREN'
   | 'LBRACE'
   | 'RBRACE'
+  | 'LBRACKET'
+  | 'RBRACKET'
   | 'COMMA'
   | 'SEMICOLON'
   | 'COLON'
   | 'DOLLAR'
   | 'EXCLAMATION'
+  | 'AT'
+  | 'HASH'
+  | 'INFINITY'
   | 'ERROR'
   | 'EOF'
   | 'WHITESPACE';
@@ -107,6 +112,12 @@ export class Lexer {
       case '}':
         this.position++;
         return { type: 'RBRACE', value: char, position: { start, end: this.position } };
+      case '[':
+        this.position++;
+        return { type: 'LBRACKET', value: char, position: { start, end: this.position } };
+      case ']':
+        this.position++;
+        return { type: 'RBRACKET', value: char, position: { start, end: this.position } };
       case ',':
         this.position++;
         return { type: 'COMMA', value: char, position: { start, end: this.position } };
@@ -122,11 +133,26 @@ export class Lexer {
       case '!':
         this.position++;
         return { type: 'EXCLAMATION', value: char, position: { start, end: this.position } };
+      case '@':
+        this.position++;
+        return { type: 'AT', value: char, position: { start, end: this.position } };
       case '"':
         return this.readString();
       case "'":
         return this.readSheetName();
       case '#':
+        // Check if it's a table selector or an error
+        if (this.position + 1 < this.input.length) {
+          const nextChar = this.input[this.position + 1];
+          if (nextChar && this.isAlpha(nextChar)) {
+            // Might be a table selector (#Headers, #Data, etc.) or error
+            const lookahead = this.peekSelector();
+            if (lookahead) {
+              this.position++;
+              return { type: 'HASH', value: char, position: { start, end: this.position } };
+            }
+          }
+        }
         return this.readError();
       case '+':
       case '-':
@@ -400,6 +426,11 @@ export class Lexer {
       return { type: 'BOOLEAN', value: value.toUpperCase(), position: { start, end: this.position } };
     }
     
+    // Check if it's INFINITY
+    if (value.toUpperCase() === 'INFINITY') {
+      return { type: 'INFINITY', value: value.toUpperCase(), position: { start, end: this.position } };
+    }
+    
     return { type: 'IDENTIFIER', value, position: { start, end: this.position } };
   }
   
@@ -437,6 +468,26 @@ export class Lexer {
    */
   private isAlnum(char: string): boolean {
     return this.isAlpha(char) || this.isDigit(char);
+  }
+  
+  /**
+   * Peek ahead to check if we have a table selector
+   */
+  private peekSelector(): boolean {
+    const selectors = ['All', 'Data', 'Headers', 'ThisRow'];
+    const currentPos = this.position + 1; // Skip the #
+    
+    for (const selector of selectors) {
+      if (this.input.substring(currentPos, currentPos + selector.length).toUpperCase() === selector.toUpperCase()) {
+        // Check that the next character is not alphanumeric (to avoid matching #DataSomething)
+        const nextPos = currentPos + selector.length;
+        if (nextPos >= this.input.length || !this.isAlnum(this.input[nextPos]!)) {
+          return true;
+        }
+      }
+    }
+    
+    return false;
   }
 }
 

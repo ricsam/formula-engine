@@ -1,431 +1,899 @@
-import { test, expect, describe } from "bun:test";
-import {
-  Parser,
-  ParseError,
-  parseFormula,
-  normalizeFormula,
-  astToFormula,
-  validateFormula,
-  extractNamedExpressions
-} from '../../../src/parser/parser';
-import type {
-  FormulaAST,
-  ValueNode,
-  ReferenceNode,
-  RangeNode,
-  FunctionNode,
-  UnaryOpNode,
-  BinaryOpNode,
-  ArrayNode,
-  NamedExpressionNode,
-  ErrorNode
-} from '../../../src/parser/ast';
+// @ts-nocheck
+import { describe, expect, test } from "bun:test";
 import { FormulaError } from "../../../src/core/types";
+import type { ArrayNode } from "../../../src/parser/ast";
+import { ParseError, parseFormula } from "../../../src/parser/parser";
+import { parse } from "path";
 
-describe('Parser - Basic Values', () => {
-  test('should parse numbers', () => {
-    const ast = parseFormula('42') as ValueNode;
-    expect(ast.type).toBe('value');
-    expect(ast.value).toBe(42);
-    expect(ast.valueType).toBe('number');
+describe("Parser - Basic Values", () => {
+  test("should parse numbers", () => {
+    const ast = parseFormula("42");
+    expect(ast.type).toBe("value");
+    expect(ast.value).toEqual({ type: "number", value: 42 });
 
-    const decimal = parseFormula('3.14159') as ValueNode;
-    expect(decimal.value).toBe(3.14159);
+    const decimal = parseFormula("3.14159");
+    expect(decimal.value).toEqual({ type: "number", value: 3.14159 });
 
-    const scientific = parseFormula('1.23E-4') as ValueNode;
-    expect(scientific.value).toBe(0.000123);
+    const scientific = parseFormula("1.23E-4");
+    expect(scientific.value).toEqual({ type: "number", value: 0.000123 });
   });
 
-  test('should parse strings', () => {
-    const ast = parseFormula('"hello world"') as ValueNode;
-    expect(ast.type).toBe('value');
-    expect(ast.value).toBe('hello world');
-    expect(ast.valueType).toBe('string');
+  test("should parse strings", () => {
+    const ast = parseFormula('"hello world"');
+    expect(ast.type).toBe("value");
+    expect(ast.value).toEqual({ type: "string", value: "hello world" });
 
-    const escaped = parseFormula('"Say ""Hello"""') as ValueNode;
-    expect(escaped.value).toBe('Say "Hello"');
+    const escaped = parseFormula('"Say ""Hello"""');
+    expect(escaped.value).toEqual({ type: "string", value: 'Say "Hello"' });
   });
 
-  test('should parse booleans', () => {
-    const trueAst = parseFormula('TRUE') as ValueNode;
-    expect(trueAst.type).toBe('value');
-    expect(trueAst.value).toBe(true);
-    expect(trueAst.valueType).toBe('boolean');
+  test("should parse booleans", () => {
+    const trueAst = parseFormula("TRUE");
+    expect(trueAst.value).toEqual({ type: "boolean", value: true });
 
-    const falseAst = parseFormula('FALSE') as ValueNode;
-    expect(falseAst.value).toBe(false);
+    const falseAst = parseFormula("FALSE");
+    expect(falseAst.value).toEqual({ type: "boolean", value: false });
   });
 
-  test('should parse error values', () => {
-    const ast = parseFormula('#DIV/0!') as ErrorNode;
-    expect(ast.type).toBe('error');
+  test("should parse error values", () => {
+    const ast = parseFormula("#DIV/0!");
+    expect(ast.type).toBe("error");
     expect(ast.error).toBe(FormulaError.DIV0);
   });
 
-  test('should parse empty formula', () => {
-    const ast = parseFormula('') as ValueNode;
-    expect(ast.type).toBe('value');
-    expect(ast.value).toBeUndefined();
+  test("should parse empty formula", () => {
+    const ast = parseFormula("");
+    expect(ast.type).toBe("empty");
   });
 });
 
-describe('Parser - Cell References', () => {
-  test('should parse simple cell references', () => {
-    const ast = parseFormula('A1') as ReferenceNode;
-    expect(ast.type).toBe('reference');
-    expect(ast.address).toEqual({ sheet: 0, col: 0, row: 0 });
+describe("Parser - Cell References", () => {
+  test("should parse simple cell references", () => {
+    const ast = parseFormula("A1");
+    expect(ast.type).toBe("reference");
+    expect(ast.address).toEqual({ colIndex: 0, rowIndex: 0 });
     expect(ast.isAbsolute).toEqual({ col: false, row: false });
   });
 
-  test('should parse absolute cell references', () => {
-    const ast = parseFormula('$B$2') as ReferenceNode;
-    expect(ast.type).toBe('reference');
-    expect(ast.address).toEqual({ sheet: 0, col: 1, row: 1 });
+  test("should parse absolute cell references", () => {
+    const ast = parseFormula("$B$2");
+    expect(ast.type).toBe("reference");
+    expect(ast.address).toEqual({ colIndex: 1, rowIndex: 1 });
     expect(ast.isAbsolute).toEqual({ col: true, row: true });
   });
 
-  test('should parse mixed cell references', () => {
-    const mixed1 = parseFormula('$C3') as ReferenceNode;
-    expect(mixed1.address).toEqual({ sheet: 0, col: 2, row: 2 });
+  test("should parse mixed cell references", () => {
+    const mixed1 = parseFormula("$C3");
+    expect(mixed1.address).toEqual({ colIndex: 2, rowIndex: 2 });
     expect(mixed1.isAbsolute).toEqual({ col: true, row: false });
 
-    const mixed2 = parseFormula('D$4') as ReferenceNode;
-    expect(mixed2.address).toEqual({ sheet: 0, col: 3, row: 3 });
+    const mixed2 = parseFormula("D$4");
+
+    expect(mixed2.address).toEqual({ colIndex: 3, rowIndex: 3 });
     expect(mixed2.isAbsolute).toEqual({ col: false, row: true });
   });
 
-  test('should parse range references', () => {
-    const ast = parseFormula('A1:B2') as RangeNode;
-    expect(ast.type).toBe('range');
+  test("should parse range references", () => {
+    const ast = parseFormula("A1:B2");
+    expect(ast.type).toBe("range");
     expect(ast.range).toEqual({
-      start: { sheet: 0, col: 0, row: 0 },
-      end: { sheet: 0, col: 1, row: 1 }
+      start: { col: 0, row: 0 },
+      end: {
+        col: {
+          type: "number",
+          value: 1,
+        },
+        row: {
+          type: "number",
+          value: 1,
+        },
+      },
     });
   });
 
-  test('should parse absolute range references', () => {
-    const ast = parseFormula('$A$1:$B$2') as RangeNode;
-    expect(ast.type).toBe('range');
+  test("should parse absolute range references", () => {
+    const ast = parseFormula("$A$1:$B$2");
+    expect(ast.type).toBe("range");
     expect(ast.isAbsolute).toEqual({
       start: { col: true, row: true },
-      end: { col: true, row: true }
+      end: { col: true, row: true },
     });
   });
 
-  test('should normalize range references', () => {
-    const ast = parseFormula('B2:A1') as RangeNode;
+  test("should normalize range references", () => {
+    const ast = parseFormula("B2:A1");
     expect(ast.range).toEqual({
-      start: { sheet: 0, col: 0, row: 0 },
-      end: { sheet: 0, col: 1, row: 1 }
+      start: { col: 0, row: 0 },
+      end: {
+        col: {
+          type: "number",
+          value: 1,
+        },
+        row: { type: "number", value: 1 },
+      },
     });
   });
 });
 
-describe('Parser - Operators', () => {
-  test('should parse binary operators', () => {
-    const add = parseFormula('1+2') as BinaryOpNode;
-    expect(add.type).toBe('binary-op');
-    expect(add.operator).toBe('+');
-    expect((add.left as ValueNode).value).toBe(1);
-    expect((add.right as ValueNode).value).toBe(2);
+describe("Parser - Operators", () => {
+  test("should parse binary operators", () => {
+    const add = parseFormula("1+2");
+    expect(add.type).toBe("binary-op");
+    expect(add.operator).toBe("+");
+    expect(add.left.type).toBe("value");
+    expect(add.left.value).toEqual({ type: "number", value: 1 });
+    expect(add.right.type).toBe("value");
+    expect(add.right.value).toEqual({
+      type: "number",
+      value: 2,
+    });
 
-    const mul = parseFormula('3*4') as BinaryOpNode;
-    expect(mul.operator).toBe('*');
+    const mul = parseFormula("3*4");
+    expect(mul.operator).toBe("*");
 
-    const concat = parseFormula('"A"&"B"') as BinaryOpNode;
-    expect(concat.operator).toBe('&');
+    const concat = parseFormula('"A"&"B"');
+    expect(concat.operator).toBe("&");
   });
 
-  test('should parse comparison operators', () => {
-    const eq = parseFormula('A1=10') as BinaryOpNode;
-    expect(eq.operator).toBe('=');
+  test("should parse comparison operators", () => {
+    const eq = parseFormula("A1=10");
+    expect(eq.operator).toBe("=");
 
-    const ne = parseFormula('A1<>10') as BinaryOpNode;
-    expect(ne.operator).toBe('<>');
+    const ne = parseFormula("A1<>10");
+    expect(ne.operator).toBe("<>");
 
-    const gte = parseFormula('A1>=10') as BinaryOpNode;
-    expect(gte.operator).toBe('>=');
+    const gte = parseFormula("A1>=10");
+    expect(gte.operator).toBe(">=");
   });
 
-  test('should parse unary operators', () => {
-    const neg = parseFormula('-5') as UnaryOpNode;
-    expect(neg.type).toBe('unary-op');
-    expect(neg.operator).toBe('-');
-    expect((neg.operand as ValueNode).value).toBe(5);
+  test("should parse unary operators", () => {
+    const neg = parseFormula("-5");
 
-    const pos = parseFormula('+5') as UnaryOpNode;
-    expect(pos.operator).toBe('+');
+    expect(neg.type).toBe("unary-op");
+    expect(neg.operator).toBe("-");
+    expect(neg.operand.type).toBe("value");
+
+    expect(neg.operand.value).toEqual({
+      type: "number",
+      value: 5,
+    });
+
+    const pos = parseFormula("+5");
+
+    expect(pos.operator).toBe("+");
   });
 
-  test('should parse percentage operator', () => {
-    const pct = parseFormula('50%') as UnaryOpNode;
-    expect(pct.type).toBe('unary-op');
-    expect(pct.operator).toBe('%');
-    expect((pct.operand as ValueNode).value).toBe(50);
+  test("should parse percentage operator", () => {
+    const pct = parseFormula("50%");
+
+    expect(pct.type).toBe("unary-op");
+    expect(pct.operator).toBe("%");
+    expect(pct.operand.type).toBe("value");
+
+    expect(pct.operand.value).toEqual({
+      type: "number",
+      value: 50,
+    });
   });
 
-  test('should respect operator precedence', () => {
-    const ast = parseFormula('1+2*3') as BinaryOpNode;
-    expect(ast.operator).toBe('+');
-    expect((ast.left as ValueNode).value).toBe(1);
-    expect((ast.right as BinaryOpNode).operator).toBe('*');
+  test("should respect operator precedence", () => {
+    const ast = parseFormula("1+2*3");
 
-    const ast2 = parseFormula('2^3^4') as BinaryOpNode;
-    expect(ast2.operator).toBe('^');
-    expect((ast2.left as ValueNode).value).toBe(2);
+    expect(ast.operator).toBe("+");
+    expect(ast.left.type).toBe("value");
+
+    expect(ast.left.value).toEqual({ type: "number", value: 1 });
+    expect(ast.right.type).toBe("binary-op");
+
+    expect(ast.right.operator).toBe("*");
+
+    const ast2 = parseFormula("2^3^4");
+
+    expect(ast2.operator).toBe("^");
+    expect(ast2.left.type).toBe("value");
+
+    expect(ast2.left.value).toEqual({
+      type: "number",
+      value: 2,
+    });
     // Right associative - should parse as 2^(3^4)
-    expect((ast2.right as BinaryOpNode).operator).toBe('^');
+    expect(ast2.right.type).toBe("binary-op");
+
+    expect(ast2.right.operator).toBe("^");
   });
 
-  test('should handle parentheses', () => {
-    const ast = parseFormula('(1+2)*3') as BinaryOpNode;
-    expect(ast.operator).toBe('*');
-    expect((ast.left as BinaryOpNode).operator).toBe('+');
-    expect((ast.right as ValueNode).value).toBe(3);
+  test("should handle parentheses", () => {
+    const ast = parseFormula("(1+2)*3");
+
+    expect(ast.operator).toBe("*");
+    expect(ast.left.type).toBe("binary-op");
+
+    expect(ast.left.operator).toBe("+");
+    expect(ast.right.type).toBe("value");
+    expect(ast.right.value).toEqual({
+      type: "number",
+      value: 3,
+    });
   });
 });
 
-describe('Parser - Functions', () => {
-  test('should parse function calls with no arguments', () => {
-    const ast = parseFormula('PI()') as FunctionNode;
-    expect(ast.type).toBe('function');
-    expect(ast.name).toBe('PI');
+describe("Parser - Functions", () => {
+  test("should parse function calls with no arguments", () => {
+    const ast = parseFormula("PI()");
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("PI");
     expect(ast.args).toEqual([]);
   });
 
-  test('should parse function calls with arguments', () => {
-    const ast = parseFormula('SUM(1,2,3)') as FunctionNode;
-    expect(ast.type).toBe('function');
-    expect(ast.name).toBe('SUM');
+  test("should parse function calls with arguments", () => {
+    const ast = parseFormula("SUM(1,2,3)");
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("SUM");
     expect(ast.args).toHaveLength(3);
-    expect((ast.args[0] as ValueNode).value).toBe(1);
-    expect((ast.args[1] as ValueNode).value).toBe(2);
-    expect((ast.args[2] as ValueNode).value).toBe(3);
+    const [arg1, arg2, arg3] = ast.args;
+    expect(arg1.type).toBe("value");
+    expect(arg1.value).toEqual({
+      type: "number",
+      value: 1,
+    });
+    expect(arg2.type).toBe("value");
+    expect(arg2.value).toEqual({
+      type: "number",
+      value: 2,
+    });
+    expect(arg3.type).toBe("value");
+    expect(arg3.value).toEqual({
+      type: "number",
+      value: 3,
+    });
   });
 
-  test('should parse nested function calls', () => {
-    const ast = parseFormula('SUM(1,ABS(-2),3)') as FunctionNode;
-    expect(ast.name).toBe('SUM');
+  test("should parse nested function calls", () => {
+    const ast = parseFormula("SUM(1,ABS(-2),3)");
+    expect(ast.name).toBe("SUM");
     expect(ast.args).toHaveLength(3);
-    const absNode = ast.args[1] as FunctionNode;
-    expect(absNode.type).toBe('function');
-    expect(absNode.name).toBe('ABS');
+    const absNode = ast.args[1];
+    expect(absNode.type).toBe("function");
+    expect(absNode.name).toBe("ABS");
   });
 
-  test('should parse functions with range arguments', () => {
-    const ast = parseFormula('SUM(A1:A10)') as FunctionNode;
-    expect(ast.name).toBe('SUM');
+  test("should parse functions with range arguments", () => {
+    const ast = parseFormula("SUM(A1:A10)");
+    expect(ast.name).toBe("SUM");
     expect(ast.args).toHaveLength(1);
-    expect((ast.args[0] as RangeNode).type).toBe('range');
+    const rangeNode = ast.args[0];
+    expect(rangeNode.type).toBe("range");
   });
 
-  test('should validate function argument counts', () => {
-    expect(() => parseFormula('ABS()')).toThrow(ParseError);
-    expect(() => parseFormula('ABS(1,2)')).toThrow(ParseError);
-    expect(() => parseFormula('IF(1)')).toThrow(ParseError);
-    expect(() => parseFormula('IF(1,2,3,4)')).toThrow(ParseError);
-  });
-
-  test('should normalize function names to uppercase', () => {
-    const ast = parseFormula('sum(1,2)') as FunctionNode;
-    expect(ast.name).toBe('SUM');
+  test("should normalize function names to uppercase", () => {
+    const ast = parseFormula("sum(1,2)");
+    expect(ast.name).toBe("SUM");
   });
 });
 
-describe('Parser - Arrays', () => {
-  test('should parse array literals', () => {
-    const ast = parseFormula('{1,2,3}') as ArrayNode;
-    expect(ast.type).toBe('array');
+describe("Parser - Arrays", () => {
+  test("should parse array literals", () => {
+    const ast = parseFormula("{1,2,3}") as ArrayNode;
+    expect(ast.type).toBe("array");
     expect(ast.elements).toHaveLength(1);
     expect(ast.elements[0]).toHaveLength(3);
-    expect((ast.elements[0]?.[0] as ValueNode).value).toBe(1);
-    expect((ast.elements[0]?.[1] as ValueNode).value).toBe(2);
-    expect((ast.elements[0]?.[2] as ValueNode).value).toBe(3);
+    const firstElement = ast.elements[0];
+    const [arg1, arg2, arg3] = firstElement;
+    expect(arg1.type).toBe("value");
+    expect(arg1.value).toEqual({
+      type: "number",
+      value: 1,
+    });
+    expect(arg2.type).toBe("value");
+    expect(arg2.value).toEqual({
+      type: "number",
+      value: 2,
+    });
+    expect(arg3.type).toBe("value");
+    expect(arg3.value).toEqual({
+      type: "number",
+      value: 3,
+    });
   });
 
-  test('should parse 2D array literals', () => {
-    const ast = parseFormula('{1,2;3,4}') as ArrayNode;
-    expect(ast.type).toBe('array');
+  test("should parse 2D array literals", () => {
+    const ast = parseFormula("{1,2;3,4}");
+    expect(ast.type).toBe("array");
     expect(ast.elements).toHaveLength(2);
     expect(ast.elements[0]).toHaveLength(2);
     expect(ast.elements[1]).toHaveLength(2);
-    expect((ast.elements[0]?.[0] as ValueNode).value).toBe(1);
-    expect((ast.elements[1]?.[1] as ValueNode).value).toBe(4);
+    const firstElement = ast.elements[0];
+    const [arg1, arg2] = firstElement;
+    expect(arg1.type).toBe("value");
+    expect(arg1.value).toEqual({
+      type: "number",
+      value: 1,
+    });
+    const secondElement = ast.elements[1];
+    const last = secondElement[1];
+    expect(last.type).toBe("value");
+    expect(last.value).toEqual({
+      type: "number",
+      value: 4,
+    });
   });
 
-  test('should parse arrays with mixed types', () => {
+  test("should parse arrays with mixed types", () => {
     const ast = parseFormula('{1,"text",TRUE}') as ArrayNode;
     expect(ast.elements[0]).toHaveLength(3);
-    expect((ast.elements[0]?.[0] as ValueNode).value).toBe(1);
-    expect((ast.elements[0]?.[1] as ValueNode).value).toBe('text');
-    expect((ast.elements[0]?.[2] as ValueNode).value).toBe(true);
+    const firstElement = ast.elements[0];
+    const [arg1, arg2, arg3] = firstElement;
+    expect(arg1.type).toBe("value");
+    expect(arg1.value).toEqual({
+      type: "number",
+      value: 1,
+    });
+    expect(arg2.type).toBe("value");
+    expect(arg2.value).toEqual({
+      type: "string",
+      value: "text",
+    });
+    expect(arg3.type).toBe("value");
+    expect(arg3.value).toEqual({
+      type: "boolean",
+      value: true,
+    });
   });
 
-  test('should enforce consistent row lengths', () => {
-    expect(() => parseFormula('{1,2;3}')).toThrow(ParseError);
-    expect(() => parseFormula('{1;2,3}')).toThrow(ParseError);
+  test("should enforce consistent row lengths", () => {
+    expect(() => parseFormula("{1,2;3}")).toThrow(ParseError);
+    expect(() => parseFormula("{1;2,3}")).toThrow(ParseError);
   });
 
-  test('should handle empty arrays', () => {
-    const ast = parseFormula('{}') as ArrayNode;
-    expect(ast.type).toBe('array');
+  test("should handle empty arrays", () => {
+    const ast = parseFormula("{}");
+    expect(ast.type).toBe("array");
     expect(ast.elements).toHaveLength(1);
     expect(ast.elements[0]).toHaveLength(1);
-    expect((ast.elements[0]?.[0] as ValueNode).value).toBeUndefined();
+    const emptyNode = ast.elements[0]?.[0];
+    expect(emptyNode.type).toBe("empty");
   });
 });
 
-describe('Parser - Named Expressions', () => {
-  test('should parse named expressions', () => {
-    const ast = parseFormula('TaxRate') as NamedExpressionNode;
-    expect(ast.type).toBe('named-expression');
-    expect(ast.name).toBe('TaxRate');
-    expect(ast.scope).toBeUndefined();
+describe("Parser - Named Expressions", () => {
+  test("should parse named expressions", () => {
+    const ast = parseFormula("TaxRate");
+    expect(ast.type).toBe("named-expression");
+    expect(ast.name).toBe("TaxRate");
+    expect(ast.sheetName).toBeUndefined();
   });
 
-  test('should distinguish between functions and named expressions', () => {
-    const func = parseFormula('SUM(1,2)') as FunctionNode;
-    expect(func.type).toBe('function');
+  test("should distinguish between functions and named expressions", () => {
+    const func = parseFormula("SUM(1,2)");
+    expect(func.type).toBe("function");
 
-    const name = parseFormula('SUM') as NamedExpressionNode;
-    expect(name.type).toBe('named-expression');
+    const name = parseFormula("SUM");
+    expect(name.type).toBe("named-expression");
+  });
+
+  test("should parse sheet-qualified named expressions", () => {
+    const ast = parseFormula("Sheet1!TaxRate");
+    expect(ast.type).toBe("named-expression");
+    expect(ast.name).toBe("TaxRate");
+    expect(ast.sheetName).toBe("Sheet1");
+  });
+
+  test("should parse sheet-qualified named expressions with quoted sheet names", () => {
+    const ast = parseFormula("'My Sheet'!TaxRate");
+    expect(ast.type).toBe("named-expression");
+    expect(ast.name).toBe("TaxRate");
+    expect(ast.sheetName).toBe("My Sheet");
   });
 });
 
-describe('Parser - Complex Expressions', () => {
-  test('should parse complex arithmetic expressions', () => {
-    const formula = '(A1+B1)*2-C1/3+D1^2';
+describe("Parser - Complex Expressions", () => {
+  test("should parse complex arithmetic expressions", () => {
+    const formula = "(A1+B1)*2-C1/3+D1^2";
     const ast = parseFormula(formula);
-    expect(ast.type).toBe('binary-op');
-    
-    // Verify it parses without errors
-    const normalized = astToFormula(ast);
-    expect(normalized).toContain('+');
-    expect(normalized).toContain('*');
-    expect(normalized).toContain('/');
-    expect(normalized).toContain('^');
+    expect(ast.type).toBe("binary-op");
   });
 
-  test('should parse nested expressions with functions', () => {
-    const formula = 'IF(SUM(A1:A10)>100,MAX(B1:B10),MIN(C1:C10))';
-    const ast = parseFormula(formula) as FunctionNode;
-    expect(ast.type).toBe('function');
-    expect(ast.name).toBe('IF');
+  test("should parse nested expressions with functions", () => {
+    const formula = "IF(SUM(A1:A10)>100,MAX(B1:B10),MIN(C1:C10))";
+    const ast = parseFormula(formula);
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("IF");
     expect(ast.args).toHaveLength(3);
-    
-    const condition = ast.args[0] as BinaryOpNode;
-    expect(condition.type).toBe('binary-op');
-    expect(condition.operator).toBe('>');
+
+    const condition = ast.args[0];
+    expect(condition.type).toBe("binary-op");
+    expect(condition.operator).toBe(">");
   });
 
-  test('should parse array operations', () => {
-    const formula = 'SUM(A1:A10*B1:B10)';
-    const ast = parseFormula(formula) as FunctionNode;
-    expect(ast.name).toBe('SUM');
+  test("should parse array operations", () => {
+    const formula = "SUM(A1:A10*B1:B10)";
+    const ast = parseFormula(formula);
+    expect(ast.name).toBe("SUM");
     expect(ast.args).toHaveLength(1);
-    
-    const mul = ast.args[0] as BinaryOpNode;
-    expect(mul.type).toBe('binary-op');
-    expect(mul.operator).toBe('*');
+
+    const mul = ast.args[0];
+    expect(mul.type).toBe("binary-op");
+    expect(mul.operator).toBe("*");
   });
 });
 
-describe('Parser - Error Handling', () => {
-  test('should throw on invalid syntax', () => {
-    // Empty formula with just = returns undefined value
-    const emptyFormula = parseFormula('=') as ValueNode;
-    expect(emptyFormula.type).toBe('value');
-    expect(emptyFormula.value).toBeUndefined();
-    expect(() => parseFormula('1+')).toThrow(ParseError);
-    expect(() => parseFormula('(1+2')).toThrow(ParseError);
-    expect(() => parseFormula('SUM(')).toThrow(ParseError);
+describe("Parser - INFINITY Literal", () => {
+  test("should parse INFINITY as a literal", () => {
+    const ast = parseFormula("INFINITY");
+    expect(ast.type).toBe("infinity");
   });
 
-  test('should throw on invalid tokens', () => {
-    expect(() => parseFormula('1@2')).toThrow(ParseError);
-    expect(() => parseFormula('A1]')).toThrow(ParseError);
+  test("should parse INFINITY in expressions", () => {
+    const ast = parseFormula("SEQUENCE(INFINITY)");
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("SEQUENCE");
+    expect(ast.args[0]?.type).toBe("infinity");
   });
 
-  test('should provide helpful error messages', () => {
+  test("should parse arithmetic with INFINITY", () => {
+    const ast = parseFormula("1/INFINITY");
+    expect(ast.type).toBe("binary-op");
+    expect(ast.operator).toBe("/");
+    expect(ast.right.type).toBe("infinity");
+  });
+
+  test("should parse arithmetic with -INFINITY", () => {
+    const ast = parseFormula("-INFINITY");
+    expect(ast.type).toBe("unary-op");
+    expect(ast.operator).toBe("-");
+    expect(ast.operand.type).toBe("infinity");
+  });
+});
+
+describe("Parser - 3D Ranges", () => {
+  test("should parse basic 3D range", () => {
+    const ast = parseFormula("Sheet1:Sheet3!A1");
+    expect(ast.type).toBe("3d-range");
+    expect(ast.startSheet).toBe("Sheet1");
+    expect(ast.endSheet).toBe("Sheet3");
+    expect(ast.reference.type).toBe("reference");
+  });
+
+  test("should parse 3D range with quoted sheet names", () => {
+    const ast = parseFormula("'Sheet 1':'Sheet 3'!A1");
+    expect(ast.type).toBe("3d-range");
+    expect(ast.startSheet).toBe("Sheet 1");
+    expect(ast.endSheet).toBe("Sheet 3");
+    expect(ast.reference.type).toBe("reference");
+  });
+
+  test("should parse 3D range with cell range", () => {
+    const ast = parseFormula("Sheet1:Sheet5!A1:B10");
+    expect(ast.type).toBe("3d-range");
+    expect(ast.startSheet).toBe("Sheet1");
+    expect(ast.endSheet).toBe("Sheet5");
+    expect(ast.reference.type).toBe("range");
+  });
+
+  test("should parse 3D range in function", () => {
+    const ast = parseFormula("AVERAGE(Sheet1:Sheet3!A1)");
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("AVERAGE");
+    expect(ast.args[0]?.type).toBe("3d-range");
+  });
+});
+
+describe("Parser - Structured References", () => {
+  test("should parse simple table reference", () => {
+    const ast = parseFormula("Table1[Sales]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({ startCol: "Sales", endCol: "Sales" });
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse current row reference", () => {
+    const ast = parseFormula("[@Sales]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBeUndefined();
+    expect(ast.cols).toEqual({ startCol: "Sales", endCol: "Sales" });
+    expect(ast.isCurrentRow).toBe(true);
+  });
+
+  test("should parse table with current row reference", () => {
+    const ast = parseFormula("Table1[@Sales]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({ startCol: "Sales", endCol: "Sales" });
+    expect(ast.isCurrentRow).toBe(true);
+  });
+
+  test("should parse table with selector", () => {
+    const ast = parseFormula("Table1[[#Headers],[Sales]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({ startCol: "Sales", endCol: "Sales" });
+    expect(ast.selector).toBe("#Headers");
+  });
+
+  test("should parse table reference in formula", () => {
+    const ast = parseFormula("SUM(Table1[Sales])");
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("SUM");
+    expect(ast.args[0]?.type).toBe("structured-reference");
+  });
+
+  test("should parse current row reference in arithmetic", () => {
+    const ast = parseFormula("[@Price]*[@Quantity]");
+    expect(ast.type).toBe("binary-op");
+
+    expect(ast.operator).toBe("*");
+    expect(ast.left.type).toBe("structured-reference");
+    expect(ast.right.type).toBe("structured-reference");
+
+    expect(ast.left.isCurrentRow).toBe(true);
+    expect(ast.left.cols).toEqual({ startCol: "Price", endCol: "Price" });
+
+    expect(ast.right.isCurrentRow).toBe(true);
+    expect(ast.right.cols).toEqual({
+      startCol: "Quantity",
+      endCol: "Quantity",
+    });
+  });
+
+  test("should parse table selector only", () => {
+    const ast = parseFormula("Table1[#Data]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.selector).toBe("#Data");
+    expect(ast.cols).toBeUndefined();
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse table reference with sheet name", () => {
+    const ast = parseFormula("Sheet1!Table1[Sales]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({ startCol: "Sales", endCol: "Sales" });
+    expect(ast.sheetName).toBe("Sheet1");
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse column range references", () => {
+    const ast = parseFormula("Table1[Sales:Quantity]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({ startCol: "Sales", endCol: "Quantity" });
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse selector with column range", () => {
+    const ast = parseFormula("Table1[[#Data],[Sales:Quantity]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({ startCol: "Sales", endCol: "Quantity" });
+    expect(ast.selector).toBe("#Data");
+  });
+
+  test("should parse bracketed column range syntax", () => {
+    const ast = parseFormula("Table1[[num]:[result]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({
+      startCol: "num",
+      endCol: "result",
+    });
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse bracketed current row column range syntax", () => {
+    const ast = parseFormula("Table1[@[num]:[result]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({
+      startCol: "num",
+      endCol: "result",
+    });
+    expect(ast.isCurrentRow).toBe(true);
+  });
+
+  test("should parse simple current row column range syntax", () => {
+    const ast = parseFormula("Table1[@num:result]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({
+      startCol: "num",
+      endCol: "result",
+    });
+    expect(ast.isCurrentRow).toBe(true);
+  });
+
+  test("should parse column names with dashes", () => {
+    const ast = parseFormula("Table1[ORDER-ID]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({
+      startCol: "ORDER-ID",
+      endCol: "ORDER-ID",
+    });
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse current row reference with column names containing dashes", () => {
+    const ast = parseFormula("[@CUSTOMER-ID]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBeUndefined();
+    expect(ast.cols).toEqual({
+      startCol: "CUSTOMER-ID",
+      endCol: "CUSTOMER-ID",
+    });
+    expect(ast.isCurrentRow).toBe(true);
+  });
+
+  test("should parse bracketed current row reference with dashed column names", () => {
+    const ast = parseFormula("Table1[@[ORDER-ID]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({
+      startCol: "ORDER-ID",
+      endCol: "ORDER-ID",
+    });
+    expect(ast.isCurrentRow).toBe(true);
+  });
+
+  test("should parse column range with dashed column names", () => {
+    const ast = parseFormula("Table1[ORDER-ID:CUSTOMER-ID]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({
+      startCol: "ORDER-ID",
+      endCol: "CUSTOMER-ID",
+    });
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  // Tests for bare column references (Excel table formulas)
+  test("should parse bare column reference", () => {
+    const ast = parseFormula("[result]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBeUndefined();
+    expect(ast.cols).toEqual({
+      startCol: "result",
+      endCol: "result",
+    });
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse bare column range reference", () => {
+    const ast = parseFormula("[num:result]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBeUndefined();
+    expect(ast.cols).toEqual({
+      startCol: "num",
+      endCol: "result",
+    });
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse bare selector reference", () => {
+    const ast = parseFormula("[#Data]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBeUndefined();
+    expect(ast.selector).toBe("#Data");
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  // Tests for the user's Excel table formulas
+  test("should parse Excel table formula: [@num] * 10", () => {
+    const ast = parseFormula("[@num] * 10");
+    expect(ast.type).toBe("binary-op");
+    expect(ast.operator).toBe("*");
+    expect(ast.left.type).toBe("structured-reference");
+    expect(ast.left.tableName).toBeUndefined();
+    expect(ast.left.isCurrentRow).toBe(true);
+    expect(ast.left.cols?.startCol).toBe("num");
+  });
+
+  test("should parse Excel table formula: SUM([result])", () => {
+    const ast = parseFormula("SUM([result])");
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("SUM");
+    expect(ast.args).toHaveLength(1);
+    expect(ast.args[0].type).toBe("structured-reference");
+    expect(ast.args[0].tableName).toBeUndefined();
+    expect(ast.args[0].cols?.startCol).toBe("result");
+  });
+
+  test("should parse INDEX+MATCH formula with dashed column names", () => {
+    const ast = parseFormula(
+      "INDEX(Table1[ORDER-ID], MATCH([@[CUSTOMER-ID]], Table1[CUSTOMER-ID],0))"
+    );
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("INDEX");
+    expect(ast.args).toHaveLength(2);
+
+    // First argument: Table1[ORDER-ID]
+    expect(ast.args[0].type).toBe("structured-reference");
+    expect(ast.args[0].tableName).toBe("Table1");
+    expect(ast.args[0].cols?.startCol).toBe("ORDER-ID");
+
+    // Second argument: MATCH function
+    expect(ast.args[1].type).toBe("function");
+    expect(ast.args[1].name).toBe("MATCH");
+    expect(ast.args[1].args).toHaveLength(3);
+
+    // MATCH first argument: [@[CUSTOMER-ID]]
+    expect(ast.args[1].args[0].type).toBe("structured-reference");
+    expect(ast.args[1].args[0].tableName).toBeUndefined();
+    expect(ast.args[1].args[0].isCurrentRow).toBe(true);
+    expect(ast.args[1].args[0].cols?.startCol).toBe("CUSTOMER-ID");
+
+    // MATCH second argument: Table1[CUSTOMER-ID]
+    expect(ast.args[1].args[1].type).toBe("structured-reference");
+    expect(ast.args[1].args[1].tableName).toBe("Table1");
+    expect(ast.args[1].args[1].cols?.startCol).toBe("CUSTOMER-ID");
+
+    // MATCH third argument: 0
+    expect(ast.args[1].args[2].type).toBe("value");
+    expect(ast.args[1].args[2].value.value).toBe(0);
+  });
+
+  test("should parse column names with spaces", () => {
+    const ast = parseFormula("Table1[CAR ID]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({
+      startCol: "CAR ID",
+      endCol: "CAR ID",
+    });
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse current row reference with spaces in column names", () => {
+    const ast = parseFormula("[@CUSTOMER ID]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBeUndefined();
+    expect(ast.cols).toEqual({
+      startCol: "CUSTOMER ID",
+      endCol: "CUSTOMER ID",
+    });
+    expect(ast.isCurrentRow).toBe(true);
+  });
+
+  test("should parse bracketed current row reference with spaces in column names", () => {
+    const ast = parseFormula("Table1[@[CAR ID]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({
+      startCol: "CAR ID",
+      endCol: "CAR ID",
+    });
+    expect(ast.isCurrentRow).toBe(true);
+  });
+
+  test("should parse column range with mixed spaces and dashes", () => {
+    const ast = parseFormula("Table1[CAR ID:ORDER-ID]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({
+      startCol: "CAR ID",
+      endCol: "ORDER-ID",
+    });
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse INDEX+MATCH formula with spaces and mixed column name types", () => {
+    const ast = parseFormula(
+      "INDEX(Table1[CAR ID], MATCH([@[CUSTOMER_ID]], Table1[ORDER-ID],0))"
+    );
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("INDEX");
+    expect(ast.args).toHaveLength(2);
+
+    // First argument: Table1[CAR ID]
+    expect(ast.args[0].type).toBe("structured-reference");
+    expect(ast.args[0].tableName).toBe("Table1");
+    expect(ast.args[0].cols?.startCol).toBe("CAR ID");
+
+    // Second argument: MATCH function
+    expect(ast.args[1].type).toBe("function");
+    expect(ast.args[1].name).toBe("MATCH");
+    expect(ast.args[1].args).toHaveLength(3);
+
+    // MATCH first argument: [@[CUSTOMER_ID]]
+    expect(ast.args[1].args[0].type).toBe("structured-reference");
+    expect(ast.args[1].args[0].tableName).toBeUndefined();
+    expect(ast.args[1].args[0].isCurrentRow).toBe(true);
+    expect(ast.args[1].args[0].cols?.startCol).toBe("CUSTOMER_ID");
+
+    // MATCH second argument: Table1[ORDER-ID]
+    expect(ast.args[1].args[1].type).toBe("structured-reference");
+    expect(ast.args[1].args[1].tableName).toBe("Table1");
+    expect(ast.args[1].args[1].cols?.startCol).toBe("ORDER-ID");
+
+    // MATCH third argument: 0
+    expect(ast.args[1].args[2].type).toBe("value");
+    expect(ast.args[1].args[2].value.value).toBe(0);
+  });
+});
+
+describe("Parser - Complex Formulas with New Syntax", () => {
+  test("should parse formula with all new features", () => {
+    const ast = parseFormula(
+      "SUM(Sheet1:Sheet3!A1, Table1[Sales], SEQUENCE(INFINITY))"
+    );
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("SUM");
+    expect(ast.args).toHaveLength(3);
+    expect(ast.args[0]?.type).toBe("3d-range");
+    expect(ast.args[1]?.type).toBe("structured-reference");
+    expect(ast.args[2]?.type).toBe("function");
+    expect(ast.args[2].args[0]?.type).toBe("infinity");
+  });
+
+  test("should parse nested structured references", () => {
+    const ast = parseFormula("VLOOKUP([@ID], ProductTable[#All], 2, FALSE)");
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("VLOOKUP");
+    expect(ast.args[0]?.type).toBe("structured-reference");
+    expect(ast.args[1]?.type).toBe("structured-reference");
+    expect(ast.args[0].isCurrentRow).toBe(true);
+    expect(ast.args[0].cols).toEqual({ startCol: "ID", endCol: "ID" });
+    expect(ast.args[1].selector).toBe("#All");
+    expect(ast.args[1].cols).toBeUndefined();
+  });
+
+  test("should parse current row references with spaces in column names", () => {
+    // Test [@[column name]] syntax for columns with spaces
+    const ast1 = parseFormula("[@[bla bla]]");
+    expect(ast1.type).toBe("structured-reference");
+    expect(ast1.tableName).toBeUndefined();
+    expect(ast1.isCurrentRow).toBe(true);
+    expect(ast1.cols).toEqual({ startCol: "bla bla", endCol: "bla bla" });
+
+    // Test Table1[@[column name]] syntax
+    const ast2 = parseFormula("Table1[@[Net Sales]]");
+    expect(ast2.type).toBe("structured-reference");
+    expect(ast2.tableName).toBe("Table1");
+    expect(ast2.isCurrentRow).toBe(true);
+    expect(ast2.cols).toEqual({ startCol: "Net Sales", endCol: "Net Sales" });
+
+    // Test column range with spaces [@[col1]:[col2]]
+    const ast3 = parseFormula("Table1[@[Net Sales]:[Gross Profit]]");
+    expect(ast3.type).toBe("structured-reference");
+    expect(ast3.tableName).toBe("Table1");
+    expect(ast3.isCurrentRow).toBe(true);
+    expect(ast3.cols).toEqual({
+      startCol: "Net Sales",
+      endCol: "Gross Profit",
+    });
+
+    // Test simple current row range with spaces
+    const ast4 = parseFormula("[@Net Sales:Gross Profit]");
+    expect(ast4.type).toBe("structured-reference");
+    expect(ast4.tableName).toBeUndefined();
+    expect(ast4.isCurrentRow).toBe(true);
+    expect(ast4.cols).toEqual({
+      startCol: "Net Sales",
+      endCol: "Gross Profit",
+    });
+  });
+});
+
+describe("Parser - Error Handling", () => {
+  test("should throw on invalid syntax", () => {
+    expect(() => parseFormula("=")).toThrow(ParseError);
+    expect(() => parseFormula("1+")).toThrow(ParseError);
+    expect(() => parseFormula("(1+2")).toThrow(ParseError);
+    expect(() => parseFormula("SUM(")).toThrow(ParseError);
+  });
+
+  test("should throw on invalid tokens", () => {
+    expect(() => parseFormula("A1]")).toThrow(ParseError);
+    expect(() => parseFormula("[A1")).toThrow(ParseError);
+  });
+
+  test("should provide helpful error messages", () => {
     try {
-      parseFormula('SUM(1,2,)');
+      parseFormula("SUM(1,2,)");
     } catch (e) {
       expect(e).toBeInstanceOf(ParseError);
-      expect((e as ParseError).message).toContain('Unexpected token');
+      expect((e as ParseError).message).toContain("Unexpected token");
     }
-  });
-});
-
-describe('Parser - Utility Functions', () => {
-  test('should normalize formulas', () => {
-    expect(normalizeFormula('  1  +  2  ')).toBe('1+2');
-    expect(normalizeFormula('sum(a1:a10)')).toBe('SUM(R1C1:R10C1)');
-    expect(normalizeFormula('true')).toBe('TRUE');
-  });
-
-  test('should validate formulas', () => {
-    expect(validateFormula('1+2')).toBe(true);
-    expect(validateFormula('SUM(A1:A10)')).toBe(true);
-    expect(validateFormula('IF(A1>0,1,0)')).toBe(true);
-    
-    expect(validateFormula('=')).toBe(true); // Empty formula is valid
-    expect(validateFormula('1+')).toBe(false);
-    expect(validateFormula('SUM(')).toBe(false);
-  });
-
-  test('should extract named expressions', () => {
-    const names = extractNamedExpressions('TaxRate*SubTotal+Discount');
-    expect(names).toEqual(['TaxRate', 'SubTotal', 'Discount']);
-    
-    const complex = extractNamedExpressions('IF(TaxRate>0,SubTotal*TaxRate,0)');
-    expect(complex).toEqual(['TaxRate', 'SubTotal']);
-    
-    const none = extractNamedExpressions('SUM(A1:A10)');
-    expect(none).toEqual([]);
-  });
-
-  test('should handle formula with leading equals sign', () => {
-    const ast = parseFormula('=1+2') as BinaryOpNode;
-    expect(ast.type).toBe('binary-op');
-    expect(ast.operator).toBe('+');
-  });
-});
-
-describe('Parser - AST to Formula Conversion', () => {
-  test('should convert values back to formula', () => {
-    expect(astToFormula(parseFormula('42'))).toBe('42');
-    expect(astToFormula(parseFormula('"hello"'))).toBe('"hello"');
-    expect(astToFormula(parseFormula('TRUE'))).toBe('TRUE');
-    expect(astToFormula(parseFormula('FALSE'))).toBe('FALSE');
-  });
-
-  test('should escape quotes in strings', () => {
-    expect(astToFormula(parseFormula('"Say ""Hi"""'))).toBe('"Say ""Hi"""');
-  });
-
-  test('should convert operators back to formula', () => {
-    expect(astToFormula(parseFormula('1+2'))).toBe('1+2');
-    expect(astToFormula(parseFormula('3*4'))).toBe('3*4');
-    expect(astToFormula(parseFormula('-5'))).toBe('-5');
-    expect(astToFormula(parseFormula('50%'))).toBe('50%');
-  });
-
-  test('should convert functions back to formula', () => {
-    expect(astToFormula(parseFormula('SUM(1,2,3)'))).toBe('SUM(1,2,3)');
-    expect(astToFormula(parseFormula('PI()'))).toBe('PI()');
-  });
-
-  test('should convert arrays back to formula', () => {
-    expect(astToFormula(parseFormula('{1,2,3}'))).toBe('{1,2,3}');
-    expect(astToFormula(parseFormula('{1,2;3,4}'))).toBe('{1,2;3,4}');
-  });
-
-  test('should convert references back to formula', () => {
-    // Note: Currently uses R1C1 notation - will be updated when A1 conversion is implemented
-    const ref = astToFormula(parseFormula('A1'));
-    expect(ref).toContain('R1C1');
-    
-    const range = astToFormula(parseFormula('A1:B2'));
-    expect(range).toContain(':');
   });
 });
