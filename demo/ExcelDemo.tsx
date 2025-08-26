@@ -504,26 +504,28 @@ export function ExcelDemo() {
       {showNamedExpressions && (
         <div className="border-b border-gray-200 bg-gray-50 p-4">
           <div className="space-y-4">
-            {/* Add New Named Expression */}
+            {/* Add New Named Expression - Unified Form */}
             <div className="bg-white p-3 rounded border border-gray-200">
               <h3 className="text-sm font-semibold text-gray-800 mb-3">Add Named Expression</h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
                   <Input
-                    placeholder="e.g., TAX_RATE"
+                    placeholder={newExpressionScope === "sheet" ? "e.g., COMMISSION" : "e.g., TAX_RATE"}
                     value={newExpressionName}
                     onChange={(e) => setNewExpressionName(e.target.value)}
                     className="text-sm"
+                    data-testid="expression-name-input"
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-600 mb-1">Formula</label>
                   <Input
-                    placeholder="e.g., 0.08"
+                    placeholder={newExpressionScope === "sheet" ? "e.g., 0.05" : "e.g., 0.08"}
                     value={newExpressionFormula}
                     onChange={(e) => setNewExpressionFormula(e.target.value)}
                     className="text-sm"
+                    data-testid="expression-formula-input"
                   />
                 </div>
                 <div>
@@ -532,6 +534,7 @@ export function ExcelDemo() {
                     value={newExpressionScope}
                     onChange={(e) => setNewExpressionScope(e.target.value as "global" | "sheet")}
                     className="w-full p-2 text-sm border border-gray-300 rounded-md"
+                    data-testid="expression-scope-select"
                   >
                     <option value="global">Global</option>
                     <option value="sheet">Current Sheet</option>
@@ -543,6 +546,7 @@ export function ExcelDemo() {
                     onClick={addNamedExpression}
                     disabled={!newExpressionName.trim() || !newExpressionFormula.trim()}
                     className="w-full"
+                    data-testid="add-expression-button"
                   >
                     <Plus className="h-4 w-4 mr-1" />
                     Add
@@ -550,6 +554,8 @@ export function ExcelDemo() {
                 </div>
               </div>
             </div>
+
+
 
             {/* Existing Named Expressions and Tables */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -583,11 +589,11 @@ export function ExcelDemo() {
                             <div className="flex flex-col gap-1">
                               <Button
                                 size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 text-green-600 hover:text-green-700"
+                                variant="default"
+                                className="h-6 px-2 text-xs text-white bg-green-600 hover:bg-green-700"
                                 onClick={saveExpressionChanges}
                               >
-                                <Check className="h-3 w-3" />
+                                Update
                               </Button>
                               <Button
                                 size="sm"
@@ -612,6 +618,7 @@ export function ExcelDemo() {
                                 className="h-6 w-6 p-0 text-blue-500 hover:text-blue-700"
                                 onClick={() => startEditingExpression(name, expr.expression, true)}
                                 data-testid={`edit-global-named-expression-${name}`}
+                                title="Edit"
                               >
                                 <Edit2 className="h-3 w-3" />
                               </Button>
@@ -663,11 +670,11 @@ export function ExcelDemo() {
                             <div className="flex flex-col gap-1">
                               <Button
                                 size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 text-green-600 hover:text-green-700"
+                                variant="default"
+                                className="h-6 px-2 text-xs text-white bg-green-600 hover:bg-green-700"
                                 onClick={saveExpressionChanges}
                               >
-                                <Check className="h-3 w-3" />
+                                Update
                               </Button>
                               <Button
                                 size="sm"
@@ -787,6 +794,8 @@ export function ExcelDemo() {
                 </div>
               </div>
             </div>
+
+
           </div>
         </div>
       )}

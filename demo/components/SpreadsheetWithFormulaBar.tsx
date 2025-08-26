@@ -4,7 +4,7 @@ import {
   parseCellReference,
 } from "@anocca-pub/components";
 import type { SelectionManager, SMArea } from "@ricsam/selection-manager";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { useSerializedSheet } from "src/react/hooks";
 import { FormulaEngine } from "../../src/core/engine";
 import { Input } from "../components/ui/input";
@@ -27,7 +27,8 @@ export function SpreadsheetWithFormulaBar({
 }: SpreadsheetWithFormulaBarProps) {
   const [selectedCell, setSelectedCell] = useState<string | null>(null);
   const [selectedArea, setSelectedArea] = useState<SMArea | null>(null);
-  const [newTableName, setNewTableName] = useState<string>("Table1");
+  const [newTableName, setNewTableName] = useState<string>("");
+  const [tableCreationCounter, setTableCreationCounter] = useState(0);
   const formulaInputRef = useRef<HTMLInputElement>(null);
 
   const { sheet, namedExpressions } = useSerializedSheet(engine, sheetName);
@@ -44,25 +45,52 @@ export function SpreadsheetWithFormulaBar({
     });
   }, [selectedCell, sheetName, engine, sheet]);
 
+  // Get existing table names to avoid duplicates
+  const existingTableNames = useMemo(() => {
+    return Array.from(tables.keys());
+  }, [tables]);
+
+  // Get table count directly from engine for more immediate updates
+  const engineTableCount = useMemo(() => {
+    return engine.getTablesSerialized().size;
+  }, [engine, tables, tableCreationCounter]); // Include counter to force updates
+
+  // Calculate the default table name based on current state
+  const defaultTableName = useMemo(() => {
+    if (currentSelectedTable) {
+      return currentSelectedTable.name;
+    } else {
+      // Use the engine table count for more immediate updates
+      const nextNumber = engineTableCount + 1;
+      return `Table${nextNumber}`;
+    }
+  }, [currentSelectedTable, engineTableCount]);
+
+  // Use a key to reset the input when the context changes
+  const tableInputKey = useMemo(() => {
+    return currentSelectedTable ? `table-${currentSelectedTable.name}` : `new-table-${defaultTableName}`;
+  }, [currentSelectedTable, defaultTableName]);
+
   const tableColumnNames = useMemo(() => {
     if (!currentSelectedTable) return [];
     return Array.from(currentSelectedTable.headers.keys());
   }, [currentSelectedTable]);
 
-  // Get existing table names to avoid duplicates
-  const existingTableNames = useMemo(() => {
-    return Array.from(tables.keys());
-  }, [tables]); // Include currentSheetData to refresh when tables change
+  // Get tables for the current sheet
+  const currentSheetTables = useMemo(() => {
+    return Array.from(tables.entries()).filter(([_, table]) => table.sheetName === sheetName);
+  }, [tables, sheetName]);
 
   const addTableFromSelection = useCallback(() => {
-    if (!selectedArea || !newTableName.trim()) {
+    const effectiveTableName = (newTableName || defaultTableName).trim();
+    if (!selectedArea || !effectiveTableName) {
       return;
     }
     if (selectedArea.end.col.type === "infinity") {
       return;
     }
 
-    const trimmedName = newTableName.trim();
+    const trimmedName = effectiveTableName;
 
     // Check for duplicate names
     if (existingTableNames.includes(trimmedName)) {
@@ -87,19 +115,14 @@ export function SpreadsheetWithFormulaBar({
               },
         numCols: selectedArea.end.col.value - selectedArea.start.col + 1,
       });
-      // Auto-increment table name for next table
-      const match = trimmedName.match(/^(.+?)(\d+)$/);
-      if (match && match[1] && match[2]) {
-        const prefix = match[1];
-        const num = match[2];
-        setNewTableName(`${prefix}${parseInt(num) + 1}`);
-      } else {
-        setNewTableName(`${trimmedName}2`);
-      }
+      // Clear the input so it falls back to the calculated defaultTableName
+      setNewTableName("");
+      // Force recalculation of table count
+      setTableCreationCounter(prev => prev + 1);
     } catch (error) {
       console.error("Error creating table:", error);
     }
-  }, [selectedArea, sheetName, engine, newTableName, existingTableNames]);
+  }, [selectedArea, sheetName, engine, newTableName, defaultTableName, existingTableNames]);
 
   const cellSerialized = useMemo(() => {
     if (!selectedCell) {
@@ -298,9 +321,64 @@ export function SpreadsheetWithFormulaBar({
             )}
           </div>
 
-          {/* Create Table from Selection */}
+          {/* Table Management / Create Table from Selection */}
           <div className="flex items-center gap-2">
-            {selectedArea && (
+            {currentSelectedTable ? (
+              /* Table Management for Selected Table */
+              <>
+                <Input
+                  key={tableInputKey}
+                  value={newTableName || defaultTableName}
+                  onChange={(e) => setNewTableName(e.target.value)}
+                  placeholder="Table name"
+                  className="w-32 h-8 text-sm"
+                  data-testid="table-name-input"
+                />
+                <Button
+                  onClick={() => {
+                    if (currentSelectedTable && newTableName.trim() && newTableName.trim() !== currentSelectedTable.name) {
+                      try {
+                        engine.renameTable({
+                          oldName: currentSelectedTable.name,
+                          newName: newTableName.trim(),
+                        });
+                      } catch (error) {
+                        console.error("Error renaming table:", error);
+                      }
+                    }
+                  }}
+                  disabled={
+                    !newTableName.trim() ||
+                    newTableName.trim() === currentSelectedTable.name ||
+                    existingTableNames.includes(newTableName.trim())
+                  }
+                  size="sm"
+                  className="h-8"
+                  variant="default"
+                  data-testid="rename-table-button"
+                >
+                  Rename
+                </Button>
+                <Button
+                  onClick={() => {
+                    if (currentSelectedTable) {
+                      try {
+                        engine.removeTable({ tableName: currentSelectedTable.name });
+                      } catch (error) {
+                        console.error("Error removing table:", error);
+                      }
+                    }
+                  }}
+                  size="sm"
+                  className="h-8"
+                  variant="destructive"
+                  data-testid="remove-table-button"
+                >
+                  Remove
+                </Button>
+              </>
+            ) : selectedArea ? (
+              /* Create Table from Selection */
               <>
                 <span className="text-sm text-gray-600">
                   Selection:{" "}
@@ -337,7 +415,8 @@ export function SpreadsheetWithFormulaBar({
                   )
                 </span>
                 <Input
-                  value={newTableName}
+                  key={tableInputKey}
+                  value={newTableName || defaultTableName}
                   onChange={(e) => setNewTableName(e.target.value)}
                   placeholder="Table name"
                   className="w-32 h-8 text-sm"
@@ -347,27 +426,27 @@ export function SpreadsheetWithFormulaBar({
                   onClick={addTableFromSelection}
                   disabled={
                     !selectedArea ||
-                    !newTableName.trim() ||
-                    existingTableNames.includes(newTableName.trim()) ||
+                    !(newTableName || defaultTableName).trim() ||
+                    existingTableNames.includes((newTableName || defaultTableName).trim()) ||
                     selectedArea.end.col.type === "infinity"
                   }
                   size="sm"
                   className="h-8"
                   variant={
-                    newTableName.trim() &&
-                    existingTableNames.includes(newTableName.trim())
+                    (newTableName || defaultTableName).trim() &&
+                    existingTableNames.includes((newTableName || defaultTableName).trim())
                       ? "destructive"
                       : "default"
                   }
                   data-testid="create-table-button"
                 >
-                  {newTableName.trim() &&
-                  existingTableNames.includes(newTableName.trim())
+                  {(newTableName || defaultTableName).trim() &&
+                  existingTableNames.includes((newTableName || defaultTableName).trim())
                     ? "Name Exists"
                     : "Create Table"}
                 </Button>
               </>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
@@ -449,12 +528,10 @@ export function SpreadsheetWithFormulaBar({
               rowIndex: cell.rowIndex,
             });
 
-            const cellId = `${String.fromCharCode(65 + cell.colIndex)}${cell.rowIndex + 1}`;
-
             if (typeof value === "number") {
               // Format numbers nicely
               return (
-                <div data-testid="spreadsheet-cell" data-cell-id={cellId}>
+                <div>
                   {value.toLocaleString(undefined, {
                     minimumFractionDigits: 0,
                     maximumFractionDigits: 2,
@@ -464,7 +541,7 @@ export function SpreadsheetWithFormulaBar({
             }
 
             return (
-              <div data-testid="spreadsheet-cell" data-cell-id={cellId}>
+              <div>
                 {value?.toString() || ""}
               </div>
             );

@@ -64,9 +64,22 @@ test.describe('Excel Demo', () => {
   });
 
   test('should delete sheets', async ({ page }) => {
-    // Add a second sheet first
+    // Set up data on Sheet1
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('100');
+    await page.keyboard.press('Enter');
+    
+    // Add a second sheet
     await page.locator('[data-testid="add-sheet-button"]').click();
     await expect(page.locator('[data-testid="total-sheets-count"]')).toContainText('Total Sheets: 2');
+    
+    // On Sheet2, create a formula that references Sheet1
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('=Sheet1!A1*2');
+    await page.keyboard.press('Enter');
+    
+    // Verify cross-sheet formula works
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('200');
     
     // Hover over Sheet1 to reveal delete button
     await page.locator('[data-testid="sheet-tab-Sheet1"]').hover();
@@ -80,6 +93,9 @@ test.describe('Excel Demo', () => {
     // Check that only Sheet2 remains and is active
     await expect(page.locator('[data-testid="sheet-tab-Sheet2"]')).toBeVisible();
     await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: Sheet2');
+    
+    // Verify that formulas referencing deleted sheet show error
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('#REF!');
     
     // Check that save button shows unsaved changes
     await expect(page.locator('button:has-text("Save Changes")')).toBeVisible();
@@ -103,15 +119,15 @@ test.describe('Excel Demo', () => {
 
   test('should add global named expressions', async ({ page }) => {
     // Open Named Expressions panel
-    await page.locator('button:has-text("Named Expressions")').click();
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
     
-    // Fill in the form
-    await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('TAX_RATE');
-    await page.locator('input[placeholder="e.g., 0.08"]').fill('0.08');
-    await page.locator('select').selectOption('global');
+    // Fill in the form (scope defaults to global)
+    await page.locator('[data-testid="expression-name-input"]').fill('TAX_RATE');
+    await page.locator('[data-testid="expression-formula-input"]').fill('0.08');
+    await page.locator('[data-testid="expression-scope-select"]').selectOption('global');
     
     // Click Add button
-    await page.locator('button:has-text("Add")').click();
+    await page.locator('[data-testid="add-expression-button"]').click();
     
     // Check that the named expression appears in the global list
     await expect(page.locator('text=TAX_RATE')).toBeVisible();
@@ -124,7 +140,7 @@ test.describe('Excel Demo', () => {
 
   test('should add sheet-scoped named expressions', async ({ page }) => {
     // Open Named Expressions panel
-    await page.locator('button:has-text("Named Expressions")').click();
+    await page.locator('button:has-text("Expressions & Tables")').click();
     
     // Fill in the form for sheet-scoped expression
     await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('LOCAL_RATE');
@@ -145,7 +161,7 @@ test.describe('Excel Demo', () => {
 
   test('should delete named expressions', async ({ page }) => {
     // First add a global named expression
-    await page.locator('button:has-text("Named Expressions")').click();
+    await page.locator('button:has-text("Expressions & Tables")').click();
     await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('TEST_RATE');
     await page.locator('input[placeholder="e.g., 0.08"]').fill('0.1');
     await page.locator('select').selectOption('global');
@@ -223,9 +239,22 @@ test.describe('Excel Demo', () => {
   });
 
   test('should switch between sheets', async ({ page }) => {
+    // Set up different content on Sheet1
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('Sheet1 Data');
+    await page.keyboard.press('Enter');
+    
     // Add a second sheet
     await page.locator('[data-testid="add-sheet-button"]').click();
     await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: Sheet2');
+    
+    // Set up different content on Sheet2
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('Sheet2 Data');
+    await page.keyboard.press('Enter');
+    
+    // Verify Sheet2 content
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('Sheet2 Data');
     
     // Click on Sheet1 tab text specifically to avoid nested buttons
     await page.locator('[data-testid="sheet-tab-Sheet1"] span').click();
@@ -237,14 +266,16 @@ test.describe('Excel Demo', () => {
     const activeSheetText = await page.locator('[data-testid="active-sheet-display"]').textContent();
     console.log('🔍 [DEBUG] Active sheet after clicking Sheet1:', activeSheetText);
     
-    // Should switch to Sheet1
+    // Should switch to Sheet1 and show Sheet1 content
     await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: Sheet1');
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('Sheet1 Data');
     
     // Click on Sheet2 tab text specifically to avoid nested buttons
     await page.locator('[data-testid="sheet-tab-Sheet2"] span').click();
     
-    // Should switch back to Sheet2
+    // Should switch back to Sheet2 and show Sheet2 content
     await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: Sheet2');
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('Sheet2 Data');
   });
 
   test('should enter and evaluate basic formulas', async ({ page }) => {
@@ -358,8 +389,7 @@ test.describe('Excel Demo', () => {
     await page.locator('[data-testid="named-expressions-toggle"]').click();
     
     // Find and edit the TAX_RATE expression (change to 0.10)
-    const taxRateRow = page.locator('text=TAX_RATE').locator('..');
-    await taxRateRow.locator('button').first().click(); // Edit button
+    await page.locator('[data-testid="edit-global-named-expression-TAX_RATE"]').click();
     
     // Update the value
     await page.locator('input[value="0.08"]').fill('0.10');
@@ -389,10 +419,13 @@ test.describe('Excel Demo', () => {
     // Open named expressions panel
     await page.locator('[data-testid="named-expressions-toggle"]').click();
     
-    // Switch to Sheet Named Expressions section and add one
-    await page.locator('input[placeholder="e.g., COMMISSION"]').fill('COMMISSION');
-    await page.locator('input[placeholder="e.g., 0.05"]').fill('0.05');
-    await page.locator('button:has-text("Add")').nth(1).click(); // Second Add button for sheet expressions
+    // Change scope to "Current Sheet" to add sheet-scoped expression
+    await page.locator('[data-testid="expression-scope-select"]').selectOption('sheet');
+    
+    // Add sheet-scoped named expression (placeholders will now show sheet examples)
+    await page.locator('[data-testid="expression-name-input"]').fill('COMMISSION');
+    await page.locator('[data-testid="expression-formula-input"]').fill('0.05');
+    await page.locator('[data-testid="add-expression-button"]').click();
     
     // Verify it appears in the sheet section
     await expect(page.locator('text=COMMISSION')).toBeVisible();
@@ -432,14 +465,18 @@ test.describe('Excel Demo', () => {
   test('should handle named expressions across sheet operations', async ({ page }) => {
     // Add a global named expression
     await page.locator('[data-testid="named-expressions-toggle"]').click();
-    await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('GLOBAL_RATE');
-    await page.locator('input[placeholder="e.g., 0.08"]').fill('0.15');
-    await page.locator('button:has-text("Add")').click();
+    
+    // Ensure scope is set to "Global" (default)
+    await page.locator('[data-testid="expression-scope-select"]').selectOption('global');
+    await page.locator('[data-testid="expression-name-input"]').fill('GLOBAL_RATE');
+    await page.locator('[data-testid="expression-formula-input"]').fill('0.15');
+    await page.locator('[data-testid="add-expression-button"]').click();
     
     // Add a sheet-scoped named expression
-    await page.locator('input[placeholder="e.g., COMMISSION"]').fill('LOCAL_RATE');
-    await page.locator('input[placeholder="e.g., 0.05"]').fill('0.05');
-    await page.locator('button:has-text("Add")').nth(1).click();
+    await page.locator('[data-testid="expression-scope-select"]').selectOption('sheet');
+    await page.locator('[data-testid="expression-name-input"]').fill('LOCAL_RATE');
+    await page.locator('[data-testid="expression-formula-input"]').fill('0.05');
+    await page.locator('[data-testid="add-expression-button"]').click();
     
     await page.locator('[data-testid="named-expressions-toggle"]').click();
     
@@ -534,7 +571,14 @@ test.describe('Excel Demo', () => {
     // Create table using the button we added data-testid to
     await page.locator('[data-testid="create-table-button"]').click();
     
-    // Verify table was created - the table name input should update to Table2 for next table
+    // Verify table was created by checking if we can click on a table cell and see table management
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').click();
+    await expect(page.locator('[data-testid="table-name-input"]')).toBeVisible();
+    await expect(page.locator('[data-testid="rename-table-button"]')).toBeVisible();
+    
+    // Now select a different range to create another table and verify it shows Table2
+    await page.locator('[data-testid="spreadsheet-cell-D1"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-E2"]').click({ modifiers: ['Shift'] });
     await expect(page.locator('[data-testid="table-name-input"]')).toHaveValue('Table2');
   });
 
@@ -588,7 +632,8 @@ test.describe('Excel Demo', () => {
     // Should calculate average (25/2 = 12.5)
     await expect(page.locator('[data-testid="spreadsheet-cell-D2"]')).toContainText('12.5');
     
-    // Now rename the table
+    // Now rename the table - first click on a table cell to show table management UI
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').click(); // Click on table cell
     await page.locator('[data-testid="table-name-input"]').fill('Inventory');
     await page.locator('[data-testid="rename-table-button"]').click();
     
@@ -633,11 +678,11 @@ test.describe('Excel Demo', () => {
     
     // On Sheet2, reference the table from Sheet1
     await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
-    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('=SUM(Sheet1.SalesData[Sales])');
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('=SUM(Sheet1!SalesData[Sales])');
     await page.keyboard.press('Enter');
     
     // Should work with cross-sheet table reference
-    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('1000');
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('1,000');
     
     // Go back to Sheet1 and rename it
     await page.locator('[data-testid="sheet-tab-Sheet1"]').hover();
@@ -649,7 +694,7 @@ test.describe('Excel Demo', () => {
     await page.locator('[data-testid="sheet-tab-Sheet2"] span').click();
     
     // Formula should still work after sheet rename (engine should update references)
-    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('1000');
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('1,000');
   });
 
   test('should handle cross-sheet formulas with sheet operations', async ({ page }) => {
@@ -667,11 +712,11 @@ test.describe('Excel Demo', () => {
     
     // On Sheet2, create formulas that reference Sheet1
     await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
-    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('=Sheet1.A1+Sheet1.B1');
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('=Sheet1!A1+Sheet1!B1');
     await page.keyboard.press('Enter');
     
     await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
-    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('=Sheet1.A1*2');
+    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('=Sheet1!A1*2');
     await page.keyboard.press('Enter');
     
     // Verify cross-sheet formulas work
