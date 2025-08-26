@@ -281,7 +281,7 @@ function needsColumnBrackets(columnName: string): boolean {
 }
 
 function formatStructuredReference(ast: StructuredReferenceNode): string {
-  const { tableName, cols, selector, isCurrentRow, sheetName } = ast;
+  const { tableName, cols, selector, isCurrentRow } = ast;
 
   if (!tableName && isCurrentRow) {
     // Current row reference like [@Column] or @Column
@@ -320,12 +320,6 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
   }
 
   let result = "";
-
-  // Add sheet name if present
-  if (sheetName) {
-    const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
-    result += `${quotedSheet}!`;
-  }
 
   result += tableName;
 

@@ -545,15 +545,6 @@ describe("Parser - Structured References", () => {
     expect(ast.isCurrentRow).toBe(false);
   });
 
-  test("should parse table reference with sheet name", () => {
-    const ast = parseFormula("Sheet1!Table1[Sales]");
-    expect(ast.type).toBe("structured-reference");
-    expect(ast.tableName).toBe("Table1");
-    expect(ast.cols).toEqual({ startCol: "Sales", endCol: "Sales" });
-    expect(ast.sheetName).toBe("Sheet1");
-    expect(ast.isCurrentRow).toBe(false);
-  });
-
   test("should parse column range references", () => {
     const ast = parseFormula("Table1[Sales:Quantity]");
     expect(ast.type).toBe("structured-reference");

@@ -130,7 +130,6 @@ export type StructuredReferenceNode = ASTNodeBase & {
     startCol: string;
     endCol: string;
   };
-  sheetName?: string;
   selector?: "#All" | "#Data" | "#Headers";
   isCurrentRow: boolean;
 };
@@ -401,7 +400,6 @@ export function createStructuredReferenceNode({
   cols,
   selector,
   isCurrentRow = false,
-  sheetName,
   position,
 }: {
   tableName?: string;
@@ -411,7 +409,6 @@ export function createStructuredReferenceNode({
   };
   selector?: "#All" | "#Data" | "#Headers";
   isCurrentRow?: boolean;
-  sheetName?: string;
   position?: {
     start: number;
     end: number;
@@ -423,7 +420,6 @@ export function createStructuredReferenceNode({
     cols,
     selector,
     isCurrentRow,
-    sheetName,
     position,
   };
 }

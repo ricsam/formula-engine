@@ -49,7 +49,7 @@ export class SheetHandler {
   sheets: Map<string, Sheet> = new Map();
   scopedNamedExpressions: Map<string, Map<string, NamedExpression>> = new Map();
   globalNamedExpressions: Map<string, NamedExpression> = new Map();
-  tables: Map<string, Map<string, TableDefinition>> = new Map();
+  tables: Map<string, TableDefinition> = new Map();
 
   private eventEmitter: EventEmitter<FormulaEngineEvents>;
 
@@ -63,35 +63,6 @@ export class SheetHandler {
 
   constructor() {
     this.eventEmitter = new EventEmitter<FormulaEngineEvents>();
-  }
-
-  addSheet(name: string) {
-    const sheet = {
-      name,
-      index: this.sheets.size,
-      content: new Map(),
-    };
-
-    if (this.sheets.has(sheet.name)) {
-      throw new Error("Sheet already exists");
-    }
-
-    this.sheets.set(name, sheet);
-
-    // Emit sheet-added event
-    this.emit("sheet-added", {
-      sheetName: name,
-    });
-    return sheet;
-  }
-
-  removeSheet(sheetName: string) {
-    throw new Error("Not implemented");
-
-    // Emit sheet-removed event
-    this.emit("sheet-removed", {
-      sheetName: sheetName,
-    });
   }
 
   // ===== Event System =====
@@ -132,7 +103,7 @@ export class SheetHandler {
   /**
    * Emit an event (internal use)
    */
-  private emit<K extends keyof FormulaEngineEvents>(
+  emit<K extends keyof FormulaEngineEvents>(
     event: K,
     data: FormulaEngineEvents[K]
   ): void {
@@ -162,10 +133,6 @@ export class SheetHandler {
     if (!sheet) return new Map();
 
     return sheet.content;
-  }
-
-  renameSheet(sheetName: string, newName: string) {
-    throw new Error("Not implemented");
   }
 
   /**

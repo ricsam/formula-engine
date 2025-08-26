@@ -1,0 +1,713 @@
+import { test, expect } from '@playwright/test';
+
+test.describe('Excel Demo', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/excel');
+    // Wait for the page to fully load
+    await expect(page.locator('h1')).toContainText('FormulaEngine Excel Demo');
+  });
+
+  test('should display initial state correctly', async ({ page }) => {
+    // Check main title
+    await expect(page.locator('h1')).toContainText('FormulaEngine Excel Demo');
+    
+    // Check that we have one initial sheet
+    await expect(page.locator('text=Total Sheets: 1')).toBeVisible();
+    
+    // Check save button is in "Saved" state initially
+    await expect(page.locator('button:has-text("Saved")')).toBeVisible();
+    
+    // Check sheet tab is present
+    await expect(page.locator('.group:has-text("Sheet1")')).toBeVisible();
+  });
+
+  test('should add new sheets', async ({ page }) => {
+    // Click the add sheet button using data-testid
+    await page.locator('[data-testid="add-sheet-button"]').click();
+    
+    // Wait a moment for the UI to update
+    await page.waitForTimeout(100);
+    
+    // Check that we now have 2 sheets
+    await expect(page.locator('[data-testid="total-sheets-count"]')).toContainText('Total Sheets: 2');
+    
+    // Check that Sheet2 tab is present and active
+    await expect(page.locator('[data-testid="sheet-tab-Sheet2"]')).toBeVisible();
+    await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: Sheet2');
+    
+    // Check that save button shows unsaved changes
+    await expect(page.locator('[data-testid="save-button"]')).toContainText('Save Changes');
+  });
+
+  test('should rename sheets', async ({ page }) => {
+    // Hover over the sheet tab to reveal edit button
+    await page.locator('[data-testid="sheet-tab-Sheet1"]').hover();
+    
+    // Click the edit button
+    await page.locator('[data-testid="edit-sheet-Sheet1"]').click();
+    
+    // Wait for edit mode to activate
+    await page.waitForTimeout(100);
+    
+    // Type new name in the input field that appears
+    await page.locator('[data-testid="sheet-tab-Sheet1"] input').fill('My Sheet');
+    
+    // Press Enter to confirm
+    await page.locator('[data-testid="sheet-tab-Sheet1"] input').press('Enter');
+    
+    // Check that sheet was renamed
+    await expect(page.locator('[data-testid="sheet-tab-My Sheet"]')).toBeVisible();
+    await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: My Sheet');
+    
+    // Check that save button shows unsaved changes
+    await expect(page.locator('[data-testid="save-button"]')).toContainText('Save Changes');
+  });
+
+  test('should delete sheets', async ({ page }) => {
+    // Add a second sheet first
+    await page.locator('[data-testid="add-sheet-button"]').click();
+    await expect(page.locator('[data-testid="total-sheets-count"]')).toContainText('Total Sheets: 2');
+    
+    // Hover over Sheet1 to reveal delete button
+    await page.locator('[data-testid="sheet-tab-Sheet1"]').hover();
+    
+    // Click delete button
+    await page.locator('[data-testid="delete-sheet-Sheet1"]').click();
+    
+    // Check that we're back to 1 sheet
+    await expect(page.locator('[data-testid="total-sheets-count"]')).toContainText('Total Sheets: 1');
+    
+    // Check that only Sheet2 remains and is active
+    await expect(page.locator('[data-testid="sheet-tab-Sheet2"]')).toBeVisible();
+    await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: Sheet2');
+    
+    // Check that save button shows unsaved changes
+    await expect(page.locator('button:has-text("Save Changes")')).toBeVisible();
+  });
+
+  test('should open and close Named Expressions panel', async ({ page }) => {
+    // Click Named Expressions button
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    
+    // Check that the panel is visible
+    await expect(page.locator('text=Add Named Expression')).toBeVisible();
+    await expect(page.locator('text=Global Named Expressions').first()).toBeVisible();
+    await expect(page.locator('text=Sheet Named Expressions').first()).toBeVisible();
+    
+    // Click again to close
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    
+    // Check that panel is hidden
+    await expect(page.locator('text=Add Named Expression')).not.toBeVisible();
+  });
+
+  test('should add global named expressions', async ({ page }) => {
+    // Open Named Expressions panel
+    await page.locator('button:has-text("Named Expressions")').click();
+    
+    // Fill in the form
+    await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('TAX_RATE');
+    await page.locator('input[placeholder="e.g., 0.08"]').fill('0.08');
+    await page.locator('select').selectOption('global');
+    
+    // Click Add button
+    await page.locator('button:has-text("Add")').click();
+    
+    // Check that the named expression appears in the global list
+    await expect(page.locator('text=TAX_RATE')).toBeVisible();
+    await expect(page.locator('text=0.08')).toBeVisible();
+    await expect(page.locator('text=Global Named Expressions (1)')).toBeVisible();
+    
+    // Check that save button shows unsaved changes
+    await expect(page.locator('button:has-text("Save Changes")')).toBeVisible();
+  });
+
+  test('should add sheet-scoped named expressions', async ({ page }) => {
+    // Open Named Expressions panel
+    await page.locator('button:has-text("Named Expressions")').click();
+    
+    // Fill in the form for sheet-scoped expression
+    await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('LOCAL_RATE');
+    await page.locator('input[placeholder="e.g., 0.08"]').fill('0.05');
+    await page.locator('select').selectOption('sheet');
+    
+    // Click Add button
+    await page.locator('button:has-text("Add")').click();
+    
+    // Check that the named expression appears in the sheet list
+    await expect(page.locator('text=LOCAL_RATE')).toBeVisible();
+    await expect(page.locator('text=0.05')).toBeVisible();
+    await expect(page.locator('text=Sheet Named Expressions (1)')).toBeVisible();
+    
+    // Check that save button shows unsaved changes
+    await expect(page.locator('button:has-text("Save Changes")')).toBeVisible();
+  });
+
+  test('should delete named expressions', async ({ page }) => {
+    // First add a global named expression
+    await page.locator('button:has-text("Named Expressions")').click();
+    await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('TEST_RATE');
+    await page.locator('input[placeholder="e.g., 0.08"]').fill('0.1');
+    await page.locator('select').selectOption('global');
+    await page.locator('button:has-text("Add")').click();
+    
+    // Verify it was added
+    await expect(page.locator('text=TEST_RATE')).toBeVisible();
+    
+    // Click the delete button for the TEST_RATE named expression
+    await page.locator('[data-testid="delete-global-named-expression-TEST_RATE"]').click();
+    
+    // Verify it was deleted
+    await expect(page.locator('text=TEST_RATE')).not.toBeVisible();
+    await expect(page.locator('text=Global Named Expressions (0)')).toBeVisible();
+  });
+
+  test('should save and maintain state', async ({ page }) => {
+    // Add a sheet
+    await page.locator('[data-testid="add-sheet-button"]').click();
+    
+    // Add a named expression
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('SAVE_TEST');
+    await page.locator('input[placeholder="e.g., 0.08"]').fill('42');
+    await page.locator('button:has-text("Add")').click();
+    
+    // Save changes
+    await page.locator('[data-testid="save-button"]').click();
+    
+    // Check that save button shows "Saved"
+    await expect(page.locator('[data-testid="save-button"]')).toContainText('Saved');
+    
+    // Reload the page
+    await page.reload();
+    await expect(page.locator('h1')).toContainText('FormulaEngine Excel Demo');
+    
+    // Check that state was preserved
+    await expect(page.locator('[data-testid="total-sheets-count"]')).toContainText('Total Sheets: 2');
+    
+    // Check named expression was preserved
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    await expect(page.locator('text=SAVE_TEST')).toBeVisible();
+    await expect(page.locator('text=42')).toBeVisible();
+  });
+
+  test('should show unsaved changes indicator', async ({ page }) => {
+    // Initially should show "Saved"
+    await expect(page.locator('[data-testid="save-button"]')).toContainText('Saved');
+    await expect(page.locator('[data-testid="unsaved-changes-indicator"]')).not.toBeVisible();
+    
+    // Make a change (add sheet)
+    await page.locator('[data-testid="add-sheet-button"]').click();
+    
+    // Should now show unsaved changes
+    await expect(page.locator('[data-testid="save-button"]')).toContainText('Save Changes');
+    await expect(page.locator('[data-testid="unsaved-changes-indicator"]')).toBeVisible();
+    
+    // Save changes
+    await page.locator('[data-testid="save-button"]').click();
+    
+    // Should be back to saved state
+    await expect(page.locator('[data-testid="save-button"]')).toContainText('Saved');
+    await expect(page.locator('[data-testid="unsaved-changes-indicator"]')).not.toBeVisible();
+  });
+
+  test('should prevent deleting the last sheet', async ({ page }) => {
+    // Verify we start with 1 sheet and no delete button is visible (since it's the last sheet)
+    await expect(page.locator('text=Total Sheets: 1')).toBeVisible();
+    
+    // Hover over the sheet tab
+    await page.locator('.group:has-text("Sheet1")').hover();
+    
+    // The delete button should not be present for the last sheet
+    await expect(page.locator('.group:has-text("Sheet1") button').nth(1)).not.toBeVisible();
+  });
+
+  test('should switch between sheets', async ({ page }) => {
+    // Add a second sheet
+    await page.locator('[data-testid="add-sheet-button"]').click();
+    await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: Sheet2');
+    
+    // Click on Sheet1 tab text specifically to avoid nested buttons
+    await page.locator('[data-testid="sheet-tab-Sheet1"] span').click();
+    
+    // Wait a moment for the UI to update
+    await page.waitForTimeout(100);
+    
+    // Debug: Check what the active sheet shows after clicking
+    const activeSheetText = await page.locator('[data-testid="active-sheet-display"]').textContent();
+    console.log('🔍 [DEBUG] Active sheet after clicking Sheet1:', activeSheetText);
+    
+    // Should switch to Sheet1
+    await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: Sheet1');
+    
+    // Click on Sheet2 tab text specifically to avoid nested buttons
+    await page.locator('[data-testid="sheet-tab-Sheet2"] span').click();
+    
+    // Should switch back to Sheet2
+    await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: Sheet2');
+  });
+
+  test('should enter and evaluate basic formulas', async ({ page }) => {
+    // Wait for spreadsheet to be ready
+    await expect(page.locator('[data-testid="spreadsheet-container"]')).toBeVisible();
+    
+    // Click on cell A1 to select it
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').click();
+    
+    // Double-click to enter edit mode and fill with value
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('42');
+    await page.keyboard.press('Enter');
+    
+    // Click on cell B1 to select it
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').click();
+    
+    // Double-click to enter edit mode and fill with formula
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('=A1*2');
+    await page.keyboard.press('Enter');
+    
+    // Verify A1 has the expected value
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('42');
+    
+    // Verify the result - should show calculated value, not formula
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('84');
+  });
+
+  test('should evaluate formulas correctly', async ({ page }) => {
+    // Wait for spreadsheet to be ready
+    await expect(page.locator('[data-testid="spreadsheet-container"]')).toBeVisible();
+    
+    // Click on cell A1 to select it
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').click();
+    
+    // Double-click to enter edit mode and fill with formula
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('=1+2+3');
+    await page.keyboard.press('Enter');
+    
+    // Verify that the cell shows the calculated result
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('6');
+    
+    // Test another formula
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('=A1*2');
+    await page.keyboard.press('Enter');
+    
+    // Verify the second formula result
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('12');
+  });
+
+  test('should use named expressions in formulas', async ({ page }) => {
+    // Add a named expression
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('DISCOUNT');
+    await page.locator('input[placeholder="e.g., 0.08"]').fill('0.1');
+    await page.locator('button:has-text("Add")').click();
+    
+    // Close the named expressions panel
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    
+    // Wait for spreadsheet to be ready
+    await expect(page.locator('[data-testid="spreadsheet-container"]')).toBeVisible();
+    
+    // Enter a price in A1
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('100');
+    await page.keyboard.press('Enter');
+    
+    // Use the named expression in B1
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('=A1*DISCOUNT');
+    await page.keyboard.press('Enter');
+    
+    // Should calculate discount (100 * 0.1 = 10)
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('10');
+  });
+
+  test('should add, edit, and remove global named expressions with formula updates', async ({ page }) => {
+    // Open named expressions panel
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    
+    // Add a global named expression
+    await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('TAX_RATE');
+    await page.locator('input[placeholder="e.g., 0.08"]').fill('0.08');
+    await page.locator('button:has-text("Add")').click();
+    
+    // Verify it appears in the global section
+    await expect(page.locator('text=TAX_RATE')).toBeVisible();
+    await expect(page.locator('text=0.08')).toBeVisible();
+    
+    // Close panel and use the named expression in a formula
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('1000');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('=A1*TAX_RATE');
+    await page.keyboard.press('Enter');
+    
+    // Should calculate tax (1000 * 0.08 = 80)
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('80');
+    
+    // Now edit the named expression
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    
+    // Find and edit the TAX_RATE expression (change to 0.10)
+    const taxRateRow = page.locator('text=TAX_RATE').locator('..');
+    await taxRateRow.locator('button').first().click(); // Edit button
+    
+    // Update the value
+    await page.locator('input[value="0.08"]').fill('0.10');
+    await page.locator('button:has-text("Update")').click();
+    
+    // Close panel and verify formula updated
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    
+    // Formula should now calculate with new value (1000 * 0.10 = 100)
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('100');
+    
+    // Now delete the named expression
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    await page.locator('[data-testid="delete-global-named-expression-TAX_RATE"]').click();
+    
+    // Verify it's removed
+    await expect(page.locator('text=TAX_RATE')).not.toBeVisible();
+    
+    // Close panel and verify formula shows error
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    
+    // Formula should now show error since TAX_RATE is undefined
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('#NAME?');
+  });
+
+  test('should add, edit, and remove sheet-scoped named expressions', async ({ page }) => {
+    // Open named expressions panel
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    
+    // Switch to Sheet Named Expressions section and add one
+    await page.locator('input[placeholder="e.g., COMMISSION"]').fill('COMMISSION');
+    await page.locator('input[placeholder="e.g., 0.05"]').fill('0.05');
+    await page.locator('button:has-text("Add")').nth(1).click(); // Second Add button for sheet expressions
+    
+    // Verify it appears in the sheet section
+    await expect(page.locator('text=COMMISSION')).toBeVisible();
+    await expect(page.locator('text=0.05')).toBeVisible();
+    
+    // Close panel and use in formula
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('2000');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('=A1*COMMISSION');
+    await page.keyboard.press('Enter');
+    
+    // Should calculate commission (2000 * 0.05 = 100)
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('100');
+    
+    // Add a second sheet to test sheet-scoped behavior
+    await page.locator('[data-testid="add-sheet-button"]').click();
+    
+    // On Sheet2, the sheet-scoped COMMISSION from Sheet1 should not be available
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('=1000*COMMISSION');
+    await page.keyboard.press('Enter');
+    
+    // Should show error since COMMISSION is scoped to Sheet1
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('#NAME?');
+    
+    // Switch back to Sheet1
+    await page.locator('[data-testid="sheet-tab-Sheet1"] span').click();
+    
+    // Formula should still work on Sheet1
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('100');
+  });
+
+  test('should handle named expressions across sheet operations', async ({ page }) => {
+    // Add a global named expression
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('GLOBAL_RATE');
+    await page.locator('input[placeholder="e.g., 0.08"]').fill('0.15');
+    await page.locator('button:has-text("Add")').click();
+    
+    // Add a sheet-scoped named expression
+    await page.locator('input[placeholder="e.g., COMMISSION"]').fill('LOCAL_RATE');
+    await page.locator('input[placeholder="e.g., 0.05"]').fill('0.05');
+    await page.locator('button:has-text("Add")').nth(1).click();
+    
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    
+    // Use both in formulas
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('1000');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('=A1*GLOBAL_RATE');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-C1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-C1"]').fill('=A1*LOCAL_RATE');
+    await page.keyboard.press('Enter');
+    
+    // Verify calculations
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('150'); // 1000 * 0.15
+    await expect(page.locator('[data-testid="spreadsheet-cell-C1"]')).toContainText('50');  // 1000 * 0.05
+    
+    // Add a second sheet
+    await page.locator('[data-testid="add-sheet-button"]').click();
+    
+    // On Sheet2, global should work but local should not
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('=500*GLOBAL_RATE');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('=500*LOCAL_RATE');
+    await page.keyboard.press('Enter');
+    
+    // Global should work, local should error
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('75'); // 500 * 0.15
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('#NAME?');
+    
+    // Rename Sheet1 and verify formulas still work
+    await page.locator('[data-testid="sheet-tab-Sheet1"]').hover();
+    await page.locator('[data-testid="edit-sheet-Sheet1"]').click();
+    await page.locator('[data-testid="sheet-tab-Sheet1"] input').fill('Data Sheet');
+    await page.keyboard.press('Enter');
+    
+    // Switch to renamed sheet
+    await page.locator('[data-testid="sheet-tab-Data Sheet"] span').click();
+    
+    // Formulas should still work after rename
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('150');
+    await expect(page.locator('[data-testid="spreadsheet-cell-C1"]')).toContainText('50');
+  });
+
+  test('should create tables from cell selection', async ({ page }) => {
+    // Wait for spreadsheet to be ready
+    await expect(page.locator('[data-testid="spreadsheet-container"]')).toBeVisible();
+    
+    // Enter table headers
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('Name');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('Age');
+    await page.keyboard.press('Enter');
+    
+    // Enter first row of data
+    await page.locator('[data-testid="spreadsheet-cell-A2"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-A2"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A2"]').fill('John');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-B2"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-B2"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B2"]').fill('25');
+    await page.keyboard.press('Enter');
+    
+    // Enter second row of data
+    await page.locator('[data-testid="spreadsheet-cell-A3"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-A3"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A3"]').fill('Jane');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-B3"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-B3"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B3"]').fill('30');
+    await page.keyboard.press('Enter');
+    
+    // Select the range A1:B3 for table creation
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-B3"]').click({ modifiers: ['Shift'] });
+    
+    // Create table using the button we added data-testid to
+    await page.locator('[data-testid="create-table-button"]').click();
+    
+    // Verify table was created - the table name input should update to Table2 for next table
+    await expect(page.locator('[data-testid="table-name-input"]')).toHaveValue('Table2');
+  });
+
+  test('should create, rename, and remove tables with formula updates', async ({ page }) => {
+    // Create a table with data
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('Product');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('Price');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-A2"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A2"]').fill('Widget');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-B2"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B2"]').fill('10');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-A3"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A3"]').fill('Gadget');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-B3"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B3"]').fill('15');
+    await page.keyboard.press('Enter');
+    
+    // Select range and create table
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-B3"]').click({ modifiers: ['Shift'] });
+    
+    // Set table name to "Products"
+    await page.locator('[data-testid="table-name-input"]').fill('Products');
+    await page.locator('[data-testid="create-table-button"]').click();
+    
+    // Use table in a formula
+    await page.locator('[data-testid="spreadsheet-cell-D1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-D1"]').fill('=SUM(Products[Price])');
+    await page.keyboard.press('Enter');
+    
+    // Should calculate sum of prices (10 + 15 = 25)
+    await expect(page.locator('[data-testid="spreadsheet-cell-D1"]')).toContainText('25');
+    
+    // Test table column reference
+    await page.locator('[data-testid="spreadsheet-cell-D2"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-D2"]').fill('=AVERAGE(Products[Price])');
+    await page.keyboard.press('Enter');
+    
+    // Should calculate average (25/2 = 12.5)
+    await expect(page.locator('[data-testid="spreadsheet-cell-D2"]')).toContainText('12.5');
+    
+    // Now rename the table
+    await page.locator('[data-testid="table-name-input"]').fill('Inventory');
+    await page.locator('[data-testid="rename-table-button"]').click();
+    
+    // Formulas should update to use new table name
+    await expect(page.locator('[data-testid="spreadsheet-cell-D1"]')).toContainText('25'); // Still works
+    await expect(page.locator('[data-testid="spreadsheet-cell-D2"]')).toContainText('12.5'); // Still works
+    
+    // Remove the table
+    await page.locator('[data-testid="remove-table-button"]').click();
+    
+    // Formulas should now show errors since table no longer exists
+    await expect(page.locator('[data-testid="spreadsheet-cell-D1"]')).toContainText('#REF!');
+    await expect(page.locator('[data-testid="spreadsheet-cell-D2"]')).toContainText('#REF!');
+  });
+
+  test('should handle table operations across sheets', async ({ page }) => {
+    // Create a table on Sheet1
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('Category');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('Sales');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-A2"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A2"]').fill('Electronics');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-B2"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B2"]').fill('1000');
+    await page.keyboard.press('Enter');
+    
+    // Create table
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-B2"]').click({ modifiers: ['Shift'] });
+    await page.locator('[data-testid="table-name-input"]').fill('SalesData');
+    await page.locator('[data-testid="create-table-button"]').click();
+    
+    // Add second sheet
+    await page.locator('[data-testid="add-sheet-button"]').click();
+    
+    // On Sheet2, reference the table from Sheet1
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('=SUM(Sheet1.SalesData[Sales])');
+    await page.keyboard.press('Enter');
+    
+    // Should work with cross-sheet table reference
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('1000');
+    
+    // Go back to Sheet1 and rename it
+    await page.locator('[data-testid="sheet-tab-Sheet1"]').hover();
+    await page.locator('[data-testid="edit-sheet-Sheet1"]').click();
+    await page.locator('[data-testid="sheet-tab-Sheet1"] input').fill('Sales');
+    await page.keyboard.press('Enter');
+    
+    // Switch back to Sheet2
+    await page.locator('[data-testid="sheet-tab-Sheet2"] span').click();
+    
+    // Formula should still work after sheet rename (engine should update references)
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('1000');
+  });
+
+  test('should handle cross-sheet formulas with sheet operations', async ({ page }) => {
+    // Set up data on Sheet1
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('100');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('200');
+    await page.keyboard.press('Enter');
+    
+    // Add second sheet
+    await page.locator('[data-testid="add-sheet-button"]').click();
+    
+    // On Sheet2, create formulas that reference Sheet1
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('=Sheet1.A1+Sheet1.B1');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('=Sheet1.A1*2');
+    await page.keyboard.press('Enter');
+    
+    // Verify cross-sheet formulas work
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('300'); // 100 + 200
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('200'); // 100 * 2
+    
+    // Rename Sheet1
+    await page.locator('[data-testid="sheet-tab-Sheet1"]').hover();
+    await page.locator('[data-testid="edit-sheet-Sheet1"]').click();
+    await page.locator('[data-testid="sheet-tab-Sheet1"] input').fill('Data');
+    await page.keyboard.press('Enter');
+    
+    // Switch back to Sheet2
+    await page.locator('[data-testid="sheet-tab-Sheet2"] span').click();
+    
+    // Formulas should still work after sheet rename
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('300');
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('200');
+    
+    // Change data on renamed sheet
+    await page.locator('[data-testid="sheet-tab-Data"] span').click();
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('150');
+    await page.keyboard.press('Enter');
+    
+    // Switch back to Sheet2 and verify formulas updated
+    await page.locator('[data-testid="sheet-tab-Sheet2"] span').click();
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('350'); // 150 + 200
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('300'); // 150 * 2
+    
+    // Delete the Data sheet (this should cause formulas to error)
+    await page.locator('[data-testid="sheet-tab-Data"]').hover();
+    await page.locator('[data-testid="delete-sheet-Data"]').click();
+    
+    // Formulas should now show errors since referenced sheet is gone
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('#REF!');
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('#REF!');
+  });
+});

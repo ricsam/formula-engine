@@ -10,26 +10,27 @@ import { FormulaEngine } from "../../src/core/engine";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
-import type { CellAddress, SerializedCellValue } from "src/core/types";
+import type { CellAddress, NamedExpression, SerializedCellValue, TableDefinition } from "src/core/types";
 
 interface SpreadsheetWithFormulaBarProps {
   sheetName: string;
   engine: FormulaEngine;
+  tables: Map<string, TableDefinition>;
+  globalNamedExpressions: Map<string, NamedExpression>;
 }
 
 export function SpreadsheetWithFormulaBar({
   sheetName,
   engine,
+  tables,
+  globalNamedExpressions,
 }: SpreadsheetWithFormulaBarProps) {
   const [selectedCell, setSelectedCell] = useState<string | null>(null);
   const [selectedArea, setSelectedArea] = useState<SMArea | null>(null);
   const [newTableName, setNewTableName] = useState<string>("Table1");
   const formulaInputRef = useRef<HTMLInputElement>(null);
 
-  const currentSheetData = useSerializedSheet(engine, sheetName) as Map<
-    string,
-    string | number
-  >;
+  const { sheet, namedExpressions } = useSerializedSheet(engine, sheetName);
 
   const currentSelectedTable = useMemo(() => {
     if (!selectedCell) {
@@ -41,9 +42,7 @@ export function SpreadsheetWithFormulaBar({
       colIndex: parsed.columnIndex,
       rowIndex: parsed.rowIndex,
     });
-  }, [selectedCell, sheetName, engine, currentSheetData]);
-
-  console.log("@currentSelectedTable", currentSelectedTable, engine.tables);
+  }, [selectedCell, sheetName, engine, sheet]);
 
   const tableColumnNames = useMemo(() => {
     if (!currentSelectedTable) return [];
@@ -52,9 +51,8 @@ export function SpreadsheetWithFormulaBar({
 
   // Get existing table names to avoid duplicates
   const existingTableNames = useMemo(() => {
-    const tables = engine.tables.get(sheetName);
-    return tables ? Array.from(tables.keys()) : [];
-  }, [engine, sheetName, currentSheetData]); // Include currentSheetData to refresh when tables change
+    return Array.from(tables.keys());
+  }, [tables]); // Include currentSheetData to refresh when tables change
 
   const addTableFromSelection = useCallback(() => {
     if (!selectedArea || !newTableName.trim()) {
@@ -107,9 +105,9 @@ export function SpreadsheetWithFormulaBar({
     if (!selectedCell) {
       return;
     }
-    const cellFormula = currentSheetData.get(selectedCell);
+    const cellFormula = sheet.get(selectedCell);
     return cellFormula;
-  }, [sheetName, selectedCell, currentSheetData]);
+  }, [sheetName, selectedCell, sheet]);
 
   // Handle cell data changes from the spreadsheet
   const onCellDataChange = useCallback(
@@ -220,6 +218,7 @@ export function SpreadsheetWithFormulaBar({
                 : "Select a cell to edit"
             }
             disabled={!selectedCell}
+            data-testid="formula-bar-input"
           />
         </div>
       </div>
@@ -342,6 +341,7 @@ export function SpreadsheetWithFormulaBar({
                   onChange={(e) => setNewTableName(e.target.value)}
                   placeholder="Table name"
                   className="w-32 h-8 text-sm"
+                  data-testid="table-name-input"
                 />
                 <Button
                   onClick={addTableFromSelection}
@@ -359,6 +359,7 @@ export function SpreadsheetWithFormulaBar({
                       ? "destructive"
                       : "default"
                   }
+                  data-testid="create-table-button"
                 >
                   {newTableName.trim() &&
                   existingTableNames.includes(newTableName.trim())
@@ -375,7 +376,7 @@ export function SpreadsheetWithFormulaBar({
       <div className="flex-1 overflow-hidden">
         <Spreadsheet
           style={{ height: "100%", width: "100%" }}
-          cellData={currentSheetData}
+          cellData={sheet as Map<string, string | number>}
           onCellDataChange={onCellDataChange}
           selection={{
             effects: selectionManagerEffects,
@@ -448,10 +449,12 @@ export function SpreadsheetWithFormulaBar({
               rowIndex: cell.rowIndex,
             });
 
+            const cellId = `${String.fromCharCode(65 + cell.colIndex)}${cell.rowIndex + 1}`;
+
             if (typeof value === "number") {
               // Format numbers nicely
               return (
-                <div>
+                <div data-testid="spreadsheet-cell" data-cell-id={cellId}>
                   {value.toLocaleString(undefined, {
                     minimumFractionDigits: 0,
                     maximumFractionDigits: 2,
@@ -460,7 +463,11 @@ export function SpreadsheetWithFormulaBar({
               );
             }
 
-            return <div>{value?.toString() || ""}</div>;
+            return (
+              <div data-testid="spreadsheet-cell" data-cell-id={cellId}>
+                {value?.toString() || ""}
+              </div>
+            );
           }}
         />
       </div>

@@ -115,6 +115,8 @@ export interface FormulaEngineEvents {
     oldName: string;
     newName: string;
   };
+  "global-named-expressions-updated": Map<string, NamedExpression>;
+  "tables-updated": Map<string, TableDefinition>;
 }
 
 /**
