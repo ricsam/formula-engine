@@ -113,7 +113,7 @@ export function MultiSheetDemo() {
     if (!selectedCell) {
       return;
     }
-    const cellFormula = spreadsheets[activeSheet].get(selectedCell);
+    const cellFormula = spreadsheets[activeSheet].sheet.get(selectedCell);
     return cellFormula;
   }, [activeSheet, selectedCell, spreadsheets]);
 
@@ -206,7 +206,7 @@ export function MultiSheetDemo() {
         <div className="grid grid-cols-3 gap-4 h-full">
           <SheetComponent
             sheetName="Products"
-            spreadsheetData={spreadsheets.Products ?? new Map()}
+            spreadsheetData={spreadsheets.Products?.sheet ?? new Map()}
             engine={engine}
             activeSheet={activeSheet}
             selectedCell={selectedCell}
@@ -215,7 +215,7 @@ export function MultiSheetDemo() {
           />
           <SheetComponent
             sheetName="Sales"
-            spreadsheetData={spreadsheets.Sales ?? new Map()}
+            spreadsheetData={spreadsheets.Sales?.sheet ?? new Map()}
             engine={engine}
             activeSheet={activeSheet}
             selectedCell={selectedCell}
@@ -224,7 +224,7 @@ export function MultiSheetDemo() {
           />
           <SheetComponent
             sheetName="Dashboard"
-            spreadsheetData={spreadsheets.Dashboard ?? new Map()}
+            spreadsheetData={spreadsheets.Dashboard?.sheet ?? new Map()}
             engine={engine}
             activeSheet={activeSheet}
             selectedCell={selectedCell}
@@ -249,16 +249,16 @@ export function MultiSheetDemo() {
         <strong>Live Summary:</strong>
         <div className="grid grid-cols-3 gap-4 mt-1">
           <div>
-            Products: {spreadsheets.Dashboard?.get("B5")} items, Avg Price: $
-            {spreadsheets.Dashboard?.get("B6")}
+            Products: {spreadsheets.Dashboard?.sheet.get("B5")} items, Avg Price: $
+            {spreadsheets.Dashboard?.sheet.get("B6")}
           </div>
           <div>
-            Sales: ${spreadsheets.Dashboard?.get("B13")} revenue from{" "}
-            {spreadsheets.Dashboard?.get("B14")} units
+            Sales: ${spreadsheets.Dashboard?.sheet.get("B13")} revenue from{" "}
+            {spreadsheets.Dashboard?.sheet.get("B14")} units
           </div>
           <div>
-            Best Category: {spreadsheets.Dashboard?.get("E31")} leading with{" "}
-            {spreadsheets.Dashboard?.get("B32")} market share
+            Best Category: {spreadsheets.Dashboard?.sheet.get("E31")} leading with{" "}
+            {spreadsheets.Dashboard?.sheet.get("B32")} market share
           </div>
         </div>
       </div>
