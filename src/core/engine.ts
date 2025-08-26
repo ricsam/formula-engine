@@ -164,6 +164,13 @@ export class FormulaEngine extends Evaluator {
       }
     }
 
+    const endRow: SpreadsheetRangeEnd =
+      numRows.type === "number"
+        ? { type: "number", value: rowIndex + numRows.value }
+        : numRows;
+
+    console.log("EndRow", { endRow, rowIndex, numRows });
+
     const table: TableDefinition = {
       name: tableName,
       sheetName,
@@ -172,10 +179,7 @@ export class FormulaEngine extends Evaluator {
         colIndex,
       },
       headers,
-      endRow:
-        numRows.type === "number"
-          ? { type: "number", value: rowIndex + numRows.value } // rowIndex + headers + numRows - 1
-          : numRows,
+      endRow,
     };
 
     let tables = this.tables.get(sheetName);

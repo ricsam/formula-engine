@@ -360,9 +360,6 @@ export class Evaluator extends FormulaEvaluator {
       ) {
         requiresReRun = true;
       }
-
-      console.log("transitiveDeps1", transitiveDeps1);
-      console.log("transitiveDeps2", transitiveDeps2);
     }
     this.isEvaluating = false;
   }

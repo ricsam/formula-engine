@@ -20,6 +20,19 @@ describe("FormulaEngine - isCellInTable", () => {
     engine = FormulaEngine.buildEmpty();
     engine.addSheet(sheetName);
   });
+
+  test("can add a table with 1 row", () => {
+    engine.addTable({
+      tableName: "Table1",
+      sheetName,
+      start: "A3",
+      numRows: { type: "number", value: 1 },
+      numCols: 1,
+    });
+    expect(engine.isCellInTable(address("A3"))).toBeDefined(); // header row
+    expect(engine.isCellInTable(address("A4"))).toBeDefined(); // data row
+    expect(engine.isCellInTable(address("A5"))).toBeUndefined(); // after data row
+  });
   
   test("should return undefined when no tables exist", () => {
     const result = engine.isCellInTable({
@@ -130,7 +143,7 @@ describe("FormulaEngine - isCellInTable", () => {
       tableName: "Table1",
       sheetName,
       start: "B2", // Start at B2, not A1
-      numRows: { type: "number", value: 2 },
+      numRows: { type: "number", value: 2 }, // 2 rows including header, one data row
       numCols: 2,
     });
 
@@ -157,7 +170,7 @@ describe("FormulaEngine - isCellInTable", () => {
 
     expect(
       engine.isCellInTable(address("B5")) // B5 // after last row
-    ).toBe(table);
+    ).toBeUndefined();
 
     expect(
       engine.isCellInTable(address("C3")) // C3 (end)

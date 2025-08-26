@@ -85,7 +85,7 @@ export function SpreadsheetWithFormulaBar({
             ? { type: "infinity", sign: "positive" }
             : {
                 type: "number",
-                value: selectedArea.end.row.value - selectedArea.start.row + 1,
+                value: selectedArea.end.row.value - selectedArea.start.row,
               },
         numCols: selectedArea.end.col.value - selectedArea.start.col + 1,
       });
