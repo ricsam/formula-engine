@@ -10,17 +10,23 @@ import type { FunctionDefinition } from "src/core/types";
 import { SEQUENCE } from "./array/sequence/sequence";
 import { INDEX } from "./lookup/index-lookup/index-lookup"; // Fixed import path
 import { MATCH } from "./lookup/match/match";
+import { AVERAGE } from "./math/average/average";
+import { MAX } from "./math/max/max";
+import { MIN } from "./math/min/min";
 import { SUM } from "./math/sum/sum";
 import { FIND } from "./text/find/find";
 import { LEFT } from "./text/left/left";
 import { RIGHT } from "./text/right/right";
 
 export const functions: Record<string, FunctionDefinition> = {
-  SUM,
-  LEFT,
-  RIGHT,
+  AVERAGE,
   FIND,
-  SEQUENCE,
-  MATCH,
   INDEX,
+  LEFT,
+  MATCH,
+  MAX,
+  MIN,
+  RIGHT,
+  SEQUENCE,
+  SUM,
 };

@@ -155,12 +155,12 @@ export function FullSpreadsheetDemo() {
   const [formulaInput, setFormulaInput] = useState<string>("");
 
 
-  console.log("Selected cell", selectedCell, spreadsheet, spreadsheet.get(selectedCell || ""));
+  console.log("Selected cell", selectedCell, spreadsheet, spreadsheet.sheet.get(selectedCell || ""));
   const formula = useMemo(() => {
     if (!selectedCell) return "";
     
     try {
-      const cellFormula = spreadsheet.get(selectedCell);
+      const cellFormula = spreadsheet.sheet.get(selectedCell);
       return cellFormula || "";
     } catch (error) {
       return "";
@@ -224,7 +224,7 @@ export function FullSpreadsheetDemo() {
       <div className="relative flex-1">
         <Spreadsheet
           style={{ width: "100%", height: "100%" }}
-          cellData={spreadsheet as Map<string, string | number>}
+          cellData={spreadsheet.sheet as Map<string, string | number>}
           onCellDataChange={(updatedSpreadsheet) => {
             engine.setSheetContent(sheetName, updatedSpreadsheet);
           }}
@@ -261,10 +261,10 @@ export function FullSpreadsheetDemo() {
       <div className="bg-gray-50 p-3 rounded text-xs">
         <strong>Live Calculations:</strong>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-          <div>Total Items: <span className="font-mono">{spreadsheet.get('B8') || 0}</span></div>
-          <div>Subtotal: <span className="font-mono">${spreadsheet.get('B9') || 0}</span></div>
-          <div>Grand Total: <span className="font-mono">${spreadsheet.get('B11') || 0}</span></div>
-          <div>Avg Price: <span className="font-mono">${spreadsheet.get('E8') || 0}</span></div>
+          <div>Total Items: <span className="font-mono">{spreadsheet.sheet.get('B8') || 0}</span></div>
+          <div>Subtotal: <span className="font-mono">${spreadsheet.sheet.get('B9') || 0}</span></div>
+          <div>Grand Total: <span className="font-mono">${spreadsheet.sheet.get('B11') || 0}</span></div>
+          <div>Avg Price: <span className="font-mono">${spreadsheet.sheet.get('E8') || 0}</span></div>
         </div>
       </div>
     </div>

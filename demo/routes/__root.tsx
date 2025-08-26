@@ -48,7 +48,7 @@ export const Route = createRootRoute({
           </main>
         </div>
 
-        <TanStackRouterDevtools />
+        {typeof window !== 'undefined' && !window.navigator.userAgent.includes('Playwright') && <TanStackRouterDevtools />}
       </div>
     );
   },

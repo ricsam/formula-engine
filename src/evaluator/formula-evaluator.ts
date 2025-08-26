@@ -152,24 +152,23 @@ export class FormulaEvaluator extends SheetHandler {
   }
 
   isCellInTable(cellAddress: CellAddress): TableDefinition | undefined {
-    const { rowIndex, colIndex, sheetName } = cellAddress;
+    const { rowIndex, colIndex } = cellAddress;
 
     // Get all tables for this sheet
-    const sheetTables = this.tables.get(sheetName);
-    if (!sheetTables) {
-      return undefined;
-    }
 
-    // Check each table to see if the cell is within its bounds
-    for (const table of sheetTables.values()) {
+    for (const table of this.tables.values()) {
+      // Check each table to see if the cell is within its bounds
+      if (table.sheetName !== cellAddress.sheetName) {
+        continue;
+      }
+
       const { start, endRow, headers } = table;
 
       // Check row bounds
       const isInRowRange =
         endRow.type === "infinity"
           ? rowIndex >= start.rowIndex
-          : rowIndex >= start.rowIndex &&
-            rowIndex <= start.rowIndex + endRow.value;
+          : rowIndex >= start.rowIndex && rowIndex <= endRow.value;
 
       // Check column bounds
       const endColIndex = start.colIndex + headers.size - 1;
@@ -324,7 +323,6 @@ export class FormulaEvaluator extends SheetHandler {
         return this.evaluateArray(node, context);
 
       default:
-        console.log("node", node);
         return {
           type: "error",
           err: FormulaError.ERROR,
@@ -337,15 +335,17 @@ export class FormulaEvaluator extends SheetHandler {
     node: StructuredReferenceNode,
     context: EvaluationContext
   ): FunctionEvaluationResult {
-    const sheetName = node.sheetName ?? context.currentSheet;
-    const table = node.tableName
-      ? this.tables.get(sheetName)?.get(node.tableName)
-      : this.isCellInTable(context.currentCell);
+    let table: TableDefinition | undefined;
+    if (node.tableName) {
+      table = this.tables.get(node.tableName);
+    } else {
+      table = this.isCellInTable(context.currentCell);
+    }
     if (!table) {
       return {
         type: "error",
         err: FormulaError.REF,
-        message: `Table ${node.tableName} not found in sheet ${sheetName}`,
+        message: `Table ${node.tableName} not found`,
       };
     }
 
@@ -380,7 +380,7 @@ export class FormulaEvaluator extends SheetHandler {
         {
           colIndex: range.start.col,
           rowIndex: range.start.row,
-          sheetName: context.currentSheet,
+          sheetName: table.sheetName,
         },
         context
       );
@@ -410,7 +410,7 @@ export class FormulaEvaluator extends SheetHandler {
               row: true,
             },
           },
-          sheetName: context.currentSheet,
+          sheetName: table.sheetName,
         },
         context
       );

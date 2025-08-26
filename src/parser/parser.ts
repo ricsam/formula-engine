@@ -1520,7 +1520,6 @@ export class Parser {
       cols,
       selector,
       isCurrentRow,
-      sheetName,
       position: {
         start: startPos,
         end: this.tokens.peek().position?.end ?? 0,
