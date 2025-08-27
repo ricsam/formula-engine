@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { beforeEach, describe, expect, test } from "bun:test";
-import { FormulaError, type SerializedCellValue } from "src/core/types";
+import { FormulaError, NamedExpression, type SerializedCellValue } from "src/core/types";
 import { parseCellReference } from "src/core/utils";
 import { FormulaEngine } from "../../../src/core/engine";
 
@@ -409,7 +409,7 @@ describe("Named Expressions", () => {
 
   test("should handle named expression events", () => {
     let globalExpressionsUpdatedCount = 0;
-    let lastUpdatedGlobalExpressions: Map<string, any> | null = null;
+    let lastUpdatedGlobalExpressions: Map<string, NamedExpression> | null = null;
 
     // Listen for global named expression update events
     const unsubscribe = engine.on("global-named-expressions-updated", (expressions) => {

@@ -1,7 +1,7 @@
 import { test, expect, describe, beforeEach } from "bun:test";
 import { FormulaEngine } from "../../../src/core/engine";
 import { getCellReference, parseCellReference } from "src/core/utils";
-import { FormulaError, type SerializedCellValue } from "src/core/types";
+import { FormulaError, type SerializedCellValue, type TableDefinition } from "src/core/types";
 import { dependencyNodeToKey } from "src/core/utils/dependency-node-key";
 
 describe("FormulaEngine", () => {
@@ -968,7 +968,7 @@ describe("FormulaEngine", () => {
   describe("Event System", () => {
     test("should trigger tables-updated event when sheet is deleted", () => {
       let tablesUpdatedCount = 0;
-      let lastUpdatedTables: Map<string, any> | null = null;
+      let lastUpdatedTables: Map<string, TableDefinition> | null = null;
 
       // Listen for table update events
       const unsubscribe = engine.on("tables-updated", (tables) => {
