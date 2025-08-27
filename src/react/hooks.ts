@@ -65,8 +65,8 @@ export function useTables(engine: FormulaEngine): Map<string, TableDefinition> {
   );
 
   React.useEffect(() => {
-    return engine.on("tables-updated", (tables) => {
-      setTables(new Map(tables));
+    return engine.on("tables-updated", (updatedTables) => {
+      setTables(new Map(updatedTables));
     });
   }, [engine]);
 

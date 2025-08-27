@@ -9,6 +9,7 @@ import {
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
 import { convertToString, extractNumericValue } from "../text-helpers";
+import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 
 // Helper function for FIND operation - returns the result or null if error
 function findOperation(
@@ -47,7 +48,7 @@ function findOperation(
  * Helper for creating spilled-values result for FIND function
  */
 function createFindSpilledResult(
-  this: FormulaEngine,
+  this: FormulaEvaluator,
   {
     findTextResult,
     withinTextResult,

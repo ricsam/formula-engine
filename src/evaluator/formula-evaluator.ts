@@ -1,11 +1,15 @@
 import { parseFormula } from "src/parser/parser";
-import { SheetHandler } from "../core/sheet-handler";
+import type {
+  FormulaEngineEvents,
+  NamedExpression,
+  Sheet,
+} from "../core/types";
 import {
   FormulaError,
   type CellAddress,
-  type CellNumber,
   type CellValue,
   type FunctionEvaluationResult,
+  type SerializedCellValue,
   type SpilledValue,
   type SpreadsheetRange,
   type SpreadsheetRangeEnd,
@@ -19,6 +23,7 @@ import {
   evaluateScalarOperator,
   type EvaluateScalarOperatorOptions,
 } from "src/evaluator/evaluate-scalar-operator";
+import { functions } from "src/functions";
 import type {
   ArrayNode,
   ASTNode,
@@ -34,10 +39,10 @@ import type {
 } from "src/parser/ast";
 import { getCellReference } from "../core/utils";
 import { add } from "./arithmetic/add/add";
-import { subtract } from "./arithmetic/subtract/subtract";
-import { multiply } from "./arithmetic/multiply/multiply";
 import { divide } from "./arithmetic/divide/divide";
+import { multiply } from "./arithmetic/multiply/multiply";
 import { power } from "./arithmetic/power/power";
+import { subtract } from "./arithmetic/subtract/subtract";
 
 function isFormulaError(value: string): value is FormulaError {
   if (typeof value !== "string") return false;
@@ -96,7 +101,7 @@ function mapJSErrorToFormulaError(error: Error): FormulaError {
   return FormulaError.ERROR;
 }
 
-export class FormulaEvaluator extends SheetHandler {
+export class FormulaEvaluator {
   evaluatedNodes: Map<
     /**
      * key is the dependency node key, from dependencyNodeToKey
@@ -122,6 +127,27 @@ export class FormulaEvaluator extends SheetHandler {
     SpilledValue
   > = new Map();
 
+  sheets: Map<string, Sheet> = new Map();
+  scopedNamedExpressions: Map<string, Map<string, NamedExpression>> = new Map();
+  globalNamedExpressions: Map<string, NamedExpression> = new Map();
+  tables: Map<string, TableDefinition> = new Map();
+
+  /**
+   * Returns true if the range is a single cell, false otherwise
+   */
+  isRangeOneCell(range: SpreadsheetRange) {
+    if (
+      range.end.col.type === "infinity" ||
+      range.end.row.type === "infinity"
+    ) {
+      return false;
+    }
+    return (
+      range.start.col === range.end.col.value &&
+      range.start.row === range.end.row.value
+    );
+  }
+
   isCellInRange(cellAddress: CellAddress, range: SpreadsheetRange) {
     const endCol = range.end.col;
     const endRow = range.end.row;
@@ -135,11 +161,13 @@ export class FormulaEvaluator extends SheetHandler {
     } else if (endCol.type === "infinity" && endRow.type === "number") {
       return (
         cellAddress.colIndex >= range.start.col &&
+        cellAddress.rowIndex >= range.start.row &&
         cellAddress.rowIndex <= endRow.value
       );
     } else if (endCol.type === "number" && endRow.type === "infinity") {
       return (
         cellAddress.rowIndex >= range.start.row &&
+        cellAddress.colIndex >= range.start.col &&
         cellAddress.colIndex <= endCol.value
       );
     } else if (endCol.type === "infinity" && endRow.type === "infinity") {
@@ -185,8 +213,10 @@ export class FormulaEvaluator extends SheetHandler {
 
   isSpilled(cellAddress: CellAddress): SpilledValue | undefined {
     for (const spilledValue of this.spilledValues.values()) {
+      if (spilledValue.origin.sheetName !== cellAddress.sheetName) {
+        continue;
+      }
       if (
-        spilledValue.origin.sheetName === cellAddress.sheetName &&
         spilledValue.origin.colIndex === cellAddress.colIndex &&
         spilledValue.origin.rowIndex === cellAddress.rowIndex
       ) {
@@ -783,12 +813,6 @@ export class FormulaEvaluator extends SheetHandler {
     return this.evaluateBinaryScalar(node.operator, left, right, context);
   }
 
-  getCellEvaluationResult(
-    cellAddress: CellAddress
-  ): FunctionEvaluationResult | undefined {
-    throw new Error("WIP: unimplemented");
-  }
-
   runtimeSafeEvaluatedNode(
     cellAddress: CellAddress,
     context: EvaluationContext
@@ -901,11 +925,14 @@ export class FormulaEvaluator extends SheetHandler {
     node: FunctionNode,
     context: EvaluationContext
   ): FunctionEvaluationResult {
-    throw new Error("Must be implemented by the consuming engine");
+    const func = functions[node.name];
+    if (!func) {
+      throw new Error(FormulaError.NAME);
+    }
+    return func.evaluate.call(this, node, context);
   }
 
   // Arithmetic operations
-
   add(
     left: FunctionEvaluationResult,
     right: FunctionEvaluationResult,

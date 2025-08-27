@@ -101,6 +101,51 @@ test.describe('Excel Demo', () => {
     await expect(page.locator('button:has-text("Save Changes")')).toBeVisible();
   });
 
+  test('should remove tables when their sheet is deleted', async ({ page }) => {
+    // Create a table on Sheet1
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-A1"]').fill('Product');
+    await page.keyboard.press('Enter');
+    
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
+    await page.locator('[data-testid="spreadsheet-cell-input-B1"]').fill('Price');
+    await page.keyboard.press('Enter');
+    
+    // Select range A1:B1 to create table
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').click();
+    await page.keyboard.down('Shift');
+    await page.locator('[data-testid="spreadsheet-cell-B1"]').click();
+    await page.keyboard.up('Shift');
+    
+    // Create table
+    await page.locator('[data-testid="create-table-button"]').click();
+    
+    // Open Expressions & Tables panel to verify table exists
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    
+    // Verify table appears in the Expressions & Tables panel list (be specific)
+    await expect(page.locator('[data-testid="expressions-tables-panel"]').locator('text=Table1').first()).toBeVisible();
+    
+    // Add a second sheet
+    await page.locator('[data-testid="add-sheet-button"]').click();
+    await expect(page.locator('[data-testid="total-sheets-count"]')).toContainText('Total Sheets: 2');
+    
+    // Delete Sheet1 (which contains the table)
+    await page.locator('[data-testid="sheet-tab-Sheet1"]').hover();
+    await page.locator('[data-testid="delete-sheet-Sheet1"]').click();
+    
+    // Wait a moment for the deletion to process and UI to update
+    await page.waitForTimeout(500);
+    
+
+    
+    // Verify table is removed from the UI list in the Expressions & Tables panel
+    await expect(page.locator('[data-testid="expressions-tables-panel"]').locator('text=Table1')).not.toBeVisible();
+    
+    // Verify no tables are shown in the panel
+    await expect(page.locator('[data-testid="expressions-tables-panel"]').locator('text=No tables')).toBeVisible();
+  });
+
   test('should open and close Named Expressions panel', async ({ page }) => {
     // Click Named Expressions button
     await page.locator('[data-testid="named-expressions-toggle"]').click();

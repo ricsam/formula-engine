@@ -497,4 +497,77 @@ describe("Named Expressions", () => {
     expect(expressions.get("DOUBLE").expression).toBe("FOUNDATION*2");
     expect(expressions.get("TRIPLE").expression).toBe("FOUNDATION*3");
   });
+
+  test("should handle bulk replacement with setGlobalNamedExpressions and setNamedExpressions", () => {
+    // Set up initial named expressions
+    engine.addNamedExpression({ expressionName: "OLD_GLOBAL", expression: "0.10" });
+    engine.addNamedExpression({ expressionName: "OLD_LOCAL", expression: "0.20", sheetName });
+
+    // Use them in formulas
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ["A1", 1000],
+        ["B1", "=A1*OLD_GLOBAL"],
+        ["C1", "=A1*OLD_LOCAL"]
+      ])
+    );
+
+    expect(cell("B1")).toBe(100); // 1000 * 0.10
+    expect(cell("C1")).toBe(200); // 1000 * 0.20
+
+    // Replace all global named expressions
+    const newGlobalExpressions = new Map([
+      ["NEW_GLOBAL_1", { name: "NEW_GLOBAL_1", expression: "0.15" }],
+      ["NEW_GLOBAL_2", { name: "NEW_GLOBAL_2", expression: "0.25" }],
+    ]);
+    engine.setGlobalNamedExpressions(newGlobalExpressions);
+
+    // Replace all sheet-scoped named expressions
+    const newSheetExpressions = new Map([
+      ["NEW_LOCAL_1", { name: "NEW_LOCAL_1", expression: "0.30" }],
+      ["NEW_LOCAL_2", { name: "NEW_LOCAL_2", expression: "0.40" }],
+    ]);
+    engine.setNamedExpressions(sheetName, newSheetExpressions);
+
+    // Old expressions should be gone, add new formulas with new expressions
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ["A1", 1000],
+        ["B1", "=A1*OLD_GLOBAL"], // Should error now
+        ["C1", "=A1*OLD_LOCAL"],  // Should error now
+        ["D1", "=A1*NEW_GLOBAL_1"],
+        ["D2", "=A1*NEW_GLOBAL_2"],
+        ["E1", "=A1*NEW_LOCAL_1"],
+        ["E2", "=A1*NEW_LOCAL_2"]
+      ])
+    );
+
+    // Old expressions should error
+    const oldGlobalResult = cell("B1");
+    const oldLocalResult = cell("C1");
+    expect(typeof oldGlobalResult === "string" && oldGlobalResult.startsWith("#")).toBe(true);
+    expect(typeof oldLocalResult === "string" && oldLocalResult.startsWith("#")).toBe(true);
+
+    // New expressions should work
+    expect(cell("D1")).toBe(150); // 1000 * 0.15
+    expect(cell("D2")).toBe(250); // 1000 * 0.25
+    expect(cell("E1")).toBe(300); // 1000 * 0.30
+    expect(cell("E2")).toBe(400); // 1000 * 0.40
+
+    // Verify old expressions are gone and new ones exist
+    const globalExpressions = engine.getGlobalNamedExpressionsSerialized();
+    const sheetExpressions = engine.getNamedExpressionsSerialized(sheetName);
+
+    expect(globalExpressions.has("OLD_GLOBAL")).toBe(false);
+    expect(globalExpressions.has("NEW_GLOBAL_1")).toBe(true);
+    expect(globalExpressions.has("NEW_GLOBAL_2")).toBe(true);
+    expect(globalExpressions.size).toBe(2);
+
+    expect(sheetExpressions.has("OLD_LOCAL")).toBe(false);
+    expect(sheetExpressions.has("NEW_LOCAL_1")).toBe(true);
+    expect(sheetExpressions.has("NEW_LOCAL_2")).toBe(true);
+    expect(sheetExpressions.size).toBe(2);
+  });
 });

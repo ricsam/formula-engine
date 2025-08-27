@@ -7,6 +7,7 @@ import {
   type CellAddress,
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
+import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 
 /**
  * Strictly extracts string value without type coercion
@@ -71,7 +72,7 @@ export function substringOperation(
  * Helper for creating spilled-values result for text functions
  */
 export function createTextSpilledResult(
-  this: FormulaEngine,
+  this: FormulaEvaluator,
   {
     operation,
     textResult,

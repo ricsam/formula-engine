@@ -8,8 +8,10 @@ import {
   type EvaluationContext,
   type CellAddress,
   type SpreadsheetRange,
+  type SpilledValuesEvaluationResult,
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
+import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 
 /**
  * MATCH function - Returns the position of a value in an array
@@ -24,8 +26,8 @@ import type { FormulaEngine } from "src/core/engine";
 
 // Helper function to extract values from a spilled array result
 function extractArrayValues(
-  this: FormulaEngine,
-  spilledResult: { type: "spilled-values"; spillArea: SpreadsheetRange; evaluate: any },
+  this: FormulaEvaluator,
+  spilledResult: SpilledValuesEvaluationResult,
   context: EvaluationContext
 ): CellValue[] {
   const values: CellValue[] = [];

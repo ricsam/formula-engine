@@ -1,24 +1,55 @@
+import { functions } from "src/functions";
+import type { FunctionNode } from "src/parser/ast";
 import { normalizeSerializedCellValue } from "src/parser/formatter";
-import { FormulaEvaluator } from "./formula-evaluator";
+import { FormulaEvaluator } from "../../evaluator/formula-evaluator";
 import {
   FormulaError,
   type CellAddress,
   type CellValue,
   type EvaluationContext,
   type FunctionEvaluationResult,
+  type NamedExpression,
   type SerializedCellValue,
   type SpilledValue,
   type SpreadsheetRange,
-} from "../core/types";
-import { getCellReference, parseCellReference } from "../core/utils";
+  type TableDefinition,
+} from "../types";
+import { getCellReference, parseCellReference } from "../utils";
 import {
   dependencyNodeToKey,
   keyToDependencyNode,
-} from "../core/utils/dependency-node-key";
+} from "../utils/dependency-node-key";
 
-export class Evaluator extends FormulaEvaluator {
-  constructor() {
+export class EvaluationManager extends FormulaEvaluator {
+  private isEvaluating = false;
+
+  constructor(
+    sheets: Map<string, any>,
+    scopedNamedExpressions: Map<string, Map<string, NamedExpression>>,
+    globalNamedExpressions: Map<string, NamedExpression>,
+    tables: Map<string, TableDefinition>
+  ) {
     super();
+    this.sheets = sheets;
+    this.scopedNamedExpressions = scopedNamedExpressions;
+    this.globalNamedExpressions = globalNamedExpressions;
+    this.tables = tables;
+  }
+
+  getEvaluatedNodes(): Map<
+    string,
+    { deps: Set<string>; evaluationResult?: FunctionEvaluationResult }
+  > {
+    return this.evaluatedNodes;
+  }
+
+  getSpilledValues(): Map<string, SpilledValue> {
+    return this.spilledValues;
+  }
+
+  clearEvaluationCache(): void {
+    this.evaluatedNodes.clear();
+    this.spilledValues.clear();
   }
 
   evaluationResultToSerializedValue(
@@ -282,8 +313,6 @@ export class Evaluator extends FormulaEvaluator {
     return requiresReRun;
   }
 
-  isEvaluating = false;
-
   evaluateCell(cellAddress: CellAddress): void {
     if (this.isEvaluating) {
       throw new Error("Evaluation in progress");
@@ -379,7 +408,7 @@ export class Evaluator extends FormulaEvaluator {
     return { type: "string", value: val };
   }
 
-  canSpill(originCellAddress: CellAddress, range: SpreadsheetRange) {
+  canSpill(originCellAddress: CellAddress, range: SpreadsheetRange): boolean {
     const sheet = this.sheets.get(originCellAddress.sheetName);
     if (!sheet) {
       throw new Error("Sheet not found");
@@ -431,5 +460,47 @@ export class Evaluator extends FormulaEvaluator {
     }
 
     return true;
+  }
+
+  getCellEvaluationResult(
+    cellAddress: CellAddress
+  ): FunctionEvaluationResult | undefined {
+    if (this.isEvaluating) {
+      throw new Error("Evaluation in progress");
+    }
+
+    const sheet = this.sheets.get(cellAddress.sheetName);
+    if (!sheet) {
+      throw new Error("Sheet not found");
+    }
+
+    // maybe it is a spilled cell, we need to check the spilled values
+    const context: EvaluationContext = {
+      currentSheet: cellAddress.sheetName,
+      currentCell: cellAddress,
+      evaluationStack: new Set(),
+      dependencies: new Set(),
+    };
+    const spilled = this.evaluateSpilled(cellAddress, context);
+    if (spilled.isSpilled) {
+      return spilled.result;
+    }
+
+    this.evaluateCell(cellAddress);
+
+    const value = this.evaluatedNodes.get(
+      dependencyNodeToKey({
+        type: "cell",
+        address: cellAddress,
+        sheetName: sheet.name,
+      })
+    );
+
+    if (!value || !value.evaluationResult) {
+      // nothing in the cell
+      return undefined;
+    }
+
+    return value.evaluationResult;
   }
 }

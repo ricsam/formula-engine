@@ -964,4 +964,381 @@ describe("FormulaEngine", () => {
       expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 0 })).toBe(10);
     });
   });
+
+  describe("Event System", () => {
+    test("should trigger tables-updated event when sheet is deleted", () => {
+      let tablesUpdatedCount = 0;
+      let lastUpdatedTables: Map<string, any> | null = null;
+
+      // Listen for table update events
+      const unsubscribe = engine.on("tables-updated", (tables) => {
+        tablesUpdatedCount++;
+        lastUpdatedTables = tables;
+      });
+
+      // Set up data and create table
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Product"],
+          ["B1", "Price"],
+          ["A2", "Widget"],
+          ["B2", 100],
+        ])
+      );
+
+      engine.addTable({
+        tableName: "TestTable",
+        sheetName,
+        start: "A1",
+        numRows: { type: "number", value: 1 },
+        numCols: 2,
+      });
+
+      expect(tablesUpdatedCount).toBe(1); // From addTable
+      expect(lastUpdatedTables!.has("TestTable")).toBe(true);
+
+      // Remove sheet - should trigger tables-updated event because table is removed
+      engine.removeSheet(sheetName);
+
+      expect(tablesUpdatedCount).toBe(2); // From removeSheet -> removeTablesForSheet
+      expect(lastUpdatedTables!.size).toBe(0); // Table should be gone
+
+      unsubscribe();
+    });
+
+    test("should trigger onCellsUpdate callbacks when global named expression is deleted", () => {
+      let cellsUpdateCount = 0;
+
+      // Add listener for cells update
+      const unsubscribe = engine.onCellsUpdate(sheetName, () => {
+        cellsUpdateCount++;
+      });
+
+      // Add global named expression - should trigger cells update
+      engine.addNamedExpression({
+        expressionName: "RATE",
+        expression: "0.1",
+      });
+
+      expect(cellsUpdateCount).toBe(1); // From addNamedExpression
+
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", 1000],
+          ["B1", "=A1*RATE"]
+        ])
+      );
+
+      expect(cell("B1")).toBe(100); // 1000 * 0.1
+      expect(cellsUpdateCount).toBe(2); // From setSheetContent
+
+      // Remove the named expression - should trigger cells update
+      engine.removeNamedExpression({ expressionName: "RATE" });
+
+      expect(cellsUpdateCount).toBe(3); // From removeNamedExpression
+      
+      // Formula should now error
+      const result = cell("B1");
+      expect(typeof result === "string" && result.startsWith("#")).toBe(true);
+
+      unsubscribe();
+    });
+
+    test("should trigger onCellsUpdate callbacks when sheet-scoped named expression is deleted", () => {
+      let cellsUpdateCount = 0;
+
+      // Add listener for cells update
+      const unsubscribe = engine.onCellsUpdate(sheetName, () => {
+        cellsUpdateCount++;
+      });
+
+      // Add sheet-scoped named expression - should trigger cells update
+      engine.addNamedExpression({
+        expressionName: "DISCOUNT",
+        expression: "0.15",
+        sheetName,
+      });
+
+      expect(cellsUpdateCount).toBe(1); // From addNamedExpression
+
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", 1000],
+          ["B1", "=A1*DISCOUNT"]
+        ])
+      );
+
+      expect(cell("B1")).toBe(150); // 1000 * 0.15
+      expect(cellsUpdateCount).toBe(2); // From setSheetContent
+
+      // Remove the sheet-scoped named expression - should trigger cells update
+      engine.removeNamedExpression({ 
+        expressionName: "DISCOUNT",
+        sheetName 
+      });
+
+      expect(cellsUpdateCount).toBe(3); // From removeNamedExpression
+      
+      // Formula should now error
+      const result = cell("B1");
+      expect(typeof result === "string" && result.startsWith("#")).toBe(true);
+
+      unsubscribe();
+    });
+
+    test("should trigger onCellsUpdate callbacks when table is deleted", () => {
+      let cellsUpdateCount = 0;
+
+      // Add listener for cells update
+      const unsubscribe = engine.onCellsUpdate(sheetName, () => {
+        cellsUpdateCount++;
+      });
+
+      // Set up data - should trigger cells update
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Product"],
+          ["B1", "Price"],
+          ["A2", "Widget"],
+          ["B2", 100],
+          ["C1", "=SUM(Products[Price])"]
+        ])
+      );
+
+      expect(cellsUpdateCount).toBe(1); // From setSheetContent
+
+      // Create table - should trigger cells update
+      engine.addTable({
+        tableName: "Products",
+        sheetName,
+        start: "A1",
+        numRows: { type: "number", value: 1 },
+        numCols: 2,
+      });
+
+      expect(cell("C1")).toBe(100);
+      expect(cellsUpdateCount).toBe(2); // From addTable
+
+      // Remove the table - should trigger cells update
+      engine.removeTable({ tableName: "Products" });
+
+      expect(cellsUpdateCount).toBe(3); // From removeTable
+      
+      // Formula should now error
+      const result = cell("C1");
+      expect(typeof result === "string" && result.startsWith("#")).toBe(true);
+
+      unsubscribe();
+    });
+
+    test("should trigger onCellsUpdate callbacks when global named expression is updated", () => {
+      let cellsUpdateCount = 0;
+
+      // Add listener for cells update
+      const unsubscribe = engine.onCellsUpdate(sheetName, () => {
+        cellsUpdateCount++;
+      });
+
+      // Add global named expression - should trigger cells update
+      engine.addNamedExpression({
+        expressionName: "MULTIPLIER",
+        expression: "2",
+      });
+
+      expect(cellsUpdateCount).toBe(1); // From addNamedExpression
+
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", 100],
+          ["B1", "=A1*MULTIPLIER"]
+        ])
+      );
+
+      expect(cell("B1")).toBe(200); // 100 * 2
+      expect(cellsUpdateCount).toBe(2); // From setSheetContent
+
+      // Update the named expression - should trigger cells update
+      engine.updateNamedExpression({
+        expressionName: "MULTIPLIER",
+        expression: "3",
+      });
+
+      expect(cellsUpdateCount).toBe(3); // From updateNamedExpression
+      expect(cell("B1")).toBe(300); // 100 * 3 (updated)
+
+      unsubscribe();
+    });
+
+    test("should trigger onCellsUpdate callbacks when table is renamed", () => {
+      let cellsUpdateCount = 0;
+
+      // Add listener for cells update
+      const unsubscribe = engine.onCellsUpdate(sheetName, () => {
+        cellsUpdateCount++;
+      });
+
+      // Set up data and create table
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Product"],
+          ["B1", "Price"],
+          ["A2", "Widget"],
+          ["B2", 150],
+          ["C1", "=SUM(OldTable[Price])"]
+        ])
+      );
+
+      expect(cellsUpdateCount).toBe(1); // From setSheetContent
+
+      engine.addTable({
+        tableName: "OldTable",
+        sheetName,
+        start: "A1",
+        numRows: { type: "number", value: 1 },
+        numCols: 2,
+      });
+
+      expect(cell("C1")).toBe(150);
+      expect(cellsUpdateCount).toBe(2); // From addTable
+
+      // Rename the table - should trigger cells update
+      engine.renameTable({
+        oldName: "OldTable",
+        newName: "NewTable"
+      });
+
+      expect(cellsUpdateCount).toBe(3); // From renameTable
+      expect(cell("C1")).toBe(150); // Should still work with new name
+
+      unsubscribe();
+    });
+
+    test("should trigger onCellsUpdate callbacks when sheet is renamed", () => {
+      const sheet2 = "Sheet2";
+      engine.addSheet(sheet2); // Add sheet2 first
+      
+      let sheet1UpdateCount = 0;
+      let sheet2UpdateCount = 0;
+
+      // Add listeners for both sheets
+      const unsubscribe1 = engine.onCellsUpdate(sheetName, () => {
+        sheet1UpdateCount++;
+      });
+
+      const unsubscribe2 = engine.onCellsUpdate(sheet2, () => {
+        sheet2UpdateCount++;
+      });
+
+      // Set up cross-sheet reference
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([["A1", 100]])
+      );
+
+      engine.setSheetContent(
+        sheet2,
+        new Map<string, SerializedCellValue>([
+          ["A1", `=${sheetName}!A1*2`]
+        ])
+      );
+
+      expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 0 })).toBe(200);
+      expect(sheet1UpdateCount).toBe(2); // From setSheetContent on both sheets (cross-sheet dependency)
+      expect(sheet2UpdateCount).toBe(2); // From setSheetContent on both sheets (cross-sheet dependency)
+
+      // Rename sheet - should trigger cells update on sheets with references
+      const newSheetName = "RenamedSheet";
+      engine.renameSheet(sheetName, newSheetName);
+
+      expect(sheet1UpdateCount).toBe(3); // From setSheetContent (2x) + renameSheet
+      expect(sheet2UpdateCount).toBe(3); // From setSheetContent (2x) + renameSheet
+
+      // Formula should still work
+      expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 0 })).toBe(200);
+
+      unsubscribe1();
+      unsubscribe2();
+    });
+
+    test("should trigger multiple events when using bulk operations", () => {
+      let tablesUpdatedCount = 0;
+      let globalExpressionsUpdatedCount = 0;
+      let cellsUpdateCount = 0;
+
+      // Listen for all events
+      const unsubscribeTables = engine.on("tables-updated", () => {
+        tablesUpdatedCount++;
+      });
+
+      const unsubscribeGlobal = engine.on("global-named-expressions-updated", () => {
+        globalExpressionsUpdatedCount++;
+      });
+
+      const unsubscribeCells = engine.onCellsUpdate(sheetName, () => {
+        cellsUpdateCount++;
+      });
+
+      // Set up initial data with formulas using tables and named expressions
+      engine.addNamedExpression({ expressionName: "TAX", expression: "0.1" });
+      
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Item"],
+          ["B1", "Price"],
+          ["A2", "Widget"],
+          ["B2", 100],
+          ["C1", "=SUM(Products[Price])*(1+TAX)"]
+        ])
+      );
+
+      engine.addTable({
+        tableName: "Products",
+        sheetName,
+        start: "A1",
+        numRows: { type: "number", value: 1 },
+        numCols: 2,
+      });
+
+      expect(cell("C1")).toBeCloseTo(110); // 100 * 1.1
+      expect(tablesUpdatedCount).toBe(1); // From addTable
+      expect(globalExpressionsUpdatedCount).toBe(1); // From addNamedExpression
+      expect(cellsUpdateCount).toBe(3); // From addNamedExpression + setSheetContent + addTable
+
+      // Use bulk operations - should trigger multiple events
+      const newTables = new Map([
+        ["Inventory", {
+          name: "Inventory",
+          sheetName,
+          start: { rowIndex: 0, colIndex: 0 },
+          headers: new Map([
+            ["Item", { name: "Item", index: 0 }],
+            ["Price", { name: "Price", index: 1 }],
+          ]),
+          endRow: { type: "number", value: 1 } as const,
+        }],
+      ]);
+
+      const newGlobalExpressions = new Map([
+        ["DISCOUNT", { name: "DISCOUNT", expression: "0.05" }],
+      ]);
+
+      engine.setTables(newTables);
+      engine.setGlobalNamedExpressions(newGlobalExpressions);
+
+      expect(tablesUpdatedCount).toBe(2); // From setTables
+      expect(globalExpressionsUpdatedCount).toBe(2); // From setGlobalNamedExpressions  
+      expect(cellsUpdateCount).toBe(5); // 3 from setup + setTables + setGlobalNamedExpressions
+
+      unsubscribeTables();
+      unsubscribeGlobal();
+      unsubscribeCells();
+    });
+  });
 });
