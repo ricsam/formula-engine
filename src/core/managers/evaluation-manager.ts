@@ -10,6 +10,7 @@ import {
   type FunctionEvaluationResult,
   type NamedExpression,
   type SerializedCellValue,
+  type Sheet,
   type SpilledValue,
   type SpreadsheetRange,
   type TableDefinition,
@@ -24,7 +25,7 @@ export class EvaluationManager extends FormulaEvaluator {
   private isEvaluating = false;
 
   constructor(
-    sheets: Map<string, any>,
+    sheets: Map<string, Sheet>,
     scopedNamedExpressions: Map<string, Map<string, NamedExpression>>,
     globalNamedExpressions: Map<string, NamedExpression>,
     tables: Map<string, TableDefinition>

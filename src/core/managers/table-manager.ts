@@ -1,5 +1,6 @@
 import type {
   FormulaEngineEvents,
+  SerializedCellValue,
   SpreadsheetRangeEnd,
   TableDefinition,
 } from "../types";
@@ -137,7 +138,7 @@ export class TableManager {
     start?: string;
     numRows?: SpreadsheetRangeEnd;
     numCols?: number;
-    getSheetContent: (sheetName: string) => Map<string, any> | undefined;
+    getSheetContent: (sheetName: string) => Map<string, SerializedCellValue> | undefined;
   }): void {
     const table = this.tables.get(tableName);
     if (!table) {

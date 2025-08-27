@@ -1,6 +1,6 @@
 import { columnToIndex, indexToColumn } from "../core/utils";
 import { FormulaError, type SpreadsheetRange } from "../core/types";
-import type { ASTNode } from "./ast";
+import type { ASTNode, RangeNode, ReferenceNode } from "./ast";
 import {
   createArrayNode,
   createBinaryOpNode,
@@ -70,7 +70,7 @@ export class Parser {
         );
       }
       const selectorName = this.tokens.consume().value;
-      selector = `#${selectorName}` as any;
+      selector = `#${selectorName}` as "#All" | "#Data" | "#Headers";
     } else if (this.tokens.match("IDENTIFIER")) {
       // Column reference like [Column] or [Column1:Column2]
       const colStart = this.parseColumnName();
@@ -222,7 +222,7 @@ export class Parser {
         break;
       }
 
-      const operator = token.value as any;
+      const operator = token.value;
       const associativity = getOperatorAssociativity(operator);
       const start = token.position.start;
 
@@ -678,7 +678,7 @@ export class Parser {
         return createThreeDRangeNode(
           startSheet,
           endSheetName,
-          ref as any, // Will be ReferenceNode or RangeNode
+          ref as ReferenceNode | RangeNode,
           {
             start,
             end: this.tokens.peek().position?.end ?? 0,
@@ -890,7 +890,7 @@ export class Parser {
   /**
    * Parse a cell reference string
    */
-  private parseCellReferenceString(value: string): ASTNode | null {
+  private parseCellReferenceString(value: string): ReferenceNode | null {
     const parsed = parseCellReference(value);
     if (!parsed) {
       return null;
@@ -940,7 +940,7 @@ export class Parser {
           );
         }
         const selectorName = this.tokens.consume().value;
-        selector = `#${selectorName}` as any;
+        selector = `#${selectorName}` as "#All" | "#Data" | "#Headers"
 
         if (!this.tokens.match("RBRACKET")) {
           throw new ParseError(
@@ -1192,7 +1192,7 @@ export class Parser {
         );
       }
       const selectorName = this.tokens.consume().value;
-      selector = `#${selectorName}` as any;
+      selector = `#${selectorName}` as "#All" | "#Data" | "#Headers";
 
       if (!this.tokens.match("RBRACKET")) {
         throw new ParseError(
@@ -1247,7 +1247,7 @@ export class Parser {
           );
         }
         const selectorName = this.tokens.consume().value;
-        selector = `#${selectorName}` as any;
+        selector = `#${selectorName}` as "#All" | "#Data" | "#Headers";
 
         if (!this.tokens.match("RBRACKET")) {
           throw new ParseError(
@@ -1499,7 +1499,7 @@ export class Parser {
         );
       }
       const selectorName = this.tokens.consume().value;
-      selector = `#${selectorName}` as any;
+      selector = `#${selectorName}` as "#All" | "#Data" | "#Headers";
 
       if (!this.tokens.match("RBRACKET")) {
         throw new ParseError(
@@ -1530,7 +1530,7 @@ export class Parser {
   /**
    * Parse cell or range after sheet range in 3D reference
    */
-  private parseCellOrRangeAfterSheets(): ASTNode {
+  private parseCellOrRangeAfterSheets(): RangeNode | ReferenceNode {
     const start = this.tokens.peek().position?.start ?? 0;
 
     // Could be a simple cell reference like A1, or a range like A1:B2
@@ -1777,7 +1777,7 @@ export class Parser {
     endRef: string,
     startPos: number,
     endPos: number
-  ): ASTNode {
+  ): RangeNode {
     // For cross-sheet ranges, handle the case where only startRef includes the sheet
     let fullRange = `${startRef}:${endRef}`;
     let sheetName: string | undefined;
