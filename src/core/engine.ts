@@ -4,9 +4,7 @@
  */
 
 import {
-  FormulaError,
   type CellAddress,
-  type CellNumber,
   type EvaluationContext,
   type NamedExpression,
   type SerializedCellValue,
@@ -15,24 +13,38 @@ import {
   type TableDefinition,
 } from "./types";
 
-import { getCellReference, parseCellReference } from "src/core/utils";
-import { Evaluator } from "../evaluator/evaluator";
-import { type FunctionEvaluationResult } from "./types";
-import { dependencyNodeToKey } from "./utils/dependency-node-key";
-import type { FunctionNode } from "src/parser/ast";
-import { functions } from "src/functions";
-import { parseFormula } from "src/parser/parser";
-import { astToString, formatFormula } from "src/parser/formatter";
-import { renameTableInFormula } from "./table-renamer";
-import { renameSheetInFormula } from "./sheet-renamer";
+import {
+  EvaluationManager,
+  EventManager,
+  NamedExpressionManager,
+  SheetManager,
+  TableManager,
+} from "./managers";
 import { renameNamedExpressionInFormula } from "./named-expression-renamer";
+import { renameTableInFormula } from "./table-renamer";
+import { type FunctionEvaluationResult } from "./types";
 
 /**
  * Main FormulaEngine class
  */
-export class FormulaEngine extends Evaluator {
+export class FormulaEngine {
+  public sheetManager: SheetManager;
+  public namedExpressionManager: NamedExpressionManager;
+  public tableManager: TableManager;
+  public eventManager: EventManager;
+  public evaluationManager: EvaluationManager;
+
   constructor() {
-    super();
+    this.eventManager = new EventManager();
+    this.sheetManager = new SheetManager(this.eventManager);
+    this.namedExpressionManager = new NamedExpressionManager(this.eventManager);
+    this.tableManager = new TableManager(this.eventManager);
+    this.evaluationManager = new EvaluationManager(
+      this.sheetManager.getSheets(),
+      this.namedExpressionManager.getScopedNamedExpressions(),
+      this.namedExpressionManager.getGlobalNamedExpressions(),
+      this.tableManager.getTables()
+    );
   }
 
   /**
@@ -42,46 +54,10 @@ export class FormulaEngine extends Evaluator {
     return new FormulaEngine();
   }
 
-  override getCellEvaluationResult(
+  getCellEvaluationResult(
     cellAddress: CellAddress
   ): FunctionEvaluationResult | undefined {
-    if (this.isEvaluating) {
-      throw new Error("Evaluation in progress");
-    }
-
-    const sheet = this.sheets.get(cellAddress.sheetName);
-    if (!sheet) {
-      throw new Error("Sheet not found");
-    }
-
-    // maybe it is a spilled cell, we need to check the spilled values
-    const context: EvaluationContext = {
-      currentSheet: cellAddress.sheetName,
-      currentCell: cellAddress,
-      evaluationStack: new Set(),
-      dependencies: new Set(),
-    };
-    const spilled = this.evaluateSpilled(cellAddress, context);
-    if (spilled.isSpilled) {
-      return spilled.result;
-    }
-
-    this.evaluateCell(cellAddress);
-
-    const value = this.evaluatedNodes.get(
-      dependencyNodeToKey({
-        type: "cell",
-        address: cellAddress,
-        sheetName: sheet.name,
-      })
-    );
-
-    if (!value || !value.evaluationResult) {
-      // nothing in the cell
-      return undefined;
-    }
-
-    return value.evaluationResult;
+    return this.evaluationManager.getCellEvaluationResult(cellAddress);
   }
 
   getCellValue(cellAddress: CellAddress, debug?: boolean): SerializedCellValue {
@@ -90,7 +66,10 @@ export class FormulaEngine extends Evaluator {
       return undefined;
     }
 
-    return this.evaluationResultToSerializedValue(result, debug);
+    return this.evaluationManager.evaluationResultToSerializedValue(
+      result,
+      debug
+    );
   }
 
   getCellDependents(
@@ -114,27 +93,11 @@ export class FormulaEngine extends Evaluator {
     expressionName: string;
     sheetName?: string;
   }) {
-    if (!sheetName) {
-      this.globalNamedExpressions.set(expressionName, {
-        name: expressionName,
-        expression,
-      });
-      this.emit(
-        "global-named-expressions-updated",
-        this.globalNamedExpressions
-      );
-    } else {
-      let scopedNamedExpressions = this.scopedNamedExpressions.get(sheetName);
-      if (!scopedNamedExpressions) {
-        scopedNamedExpressions = new Map();
-        this.scopedNamedExpressions.set(sheetName, scopedNamedExpressions);
-      }
-
-      scopedNamedExpressions.set(expressionName, {
-        name: expressionName,
-        expression,
-      });
-    }
+    this.namedExpressionManager.addNamedExpression({
+      expression,
+      expressionName,
+      sheetName,
+    });
 
     // Re-evaluate all sheets since named expressions can be referenced from anywhere
     this.reevaluate();
@@ -148,24 +111,10 @@ export class FormulaEngine extends Evaluator {
     expressionName: string;
     sheetName?: string;
   }) {
-    let found = false;
-
-    if (!sheetName) {
-      // Remove from global named expressions
-      found = this.globalNamedExpressions.delete(expressionName);
-      if (found) {
-        this.emit(
-          "global-named-expressions-updated",
-          this.globalNamedExpressions
-        );
-      }
-    } else {
-      // Remove from sheet-scoped named expressions
-      const scopedNamedExpressions = this.scopedNamedExpressions.get(sheetName);
-      if (scopedNamedExpressions) {
-        found = scopedNamedExpressions.delete(expressionName);
-      }
-    }
+    const found = this.namedExpressionManager.removeNamedExpression({
+      expressionName,
+      sheetName,
+    });
 
     if (found) {
       // Re-evaluate all sheets since named expressions can be referenced from anywhere
@@ -185,17 +134,15 @@ export class FormulaEngine extends Evaluator {
     expressionName: string;
     sheetName?: string;
   }) {
-    // Check if the named expression exists
-    const exists = sheetName
-      ? this.scopedNamedExpressions.get(sheetName)?.has(expressionName)
-      : this.globalNamedExpressions.has(expressionName);
+    this.namedExpressionManager.updateNamedExpression({
+      expression,
+      expressionName,
+      sheetName,
+    });
 
-    if (!exists) {
-      throw new Error(`Named expression '${expressionName}' does not exist`);
-    }
-
-    // Update is the same as add for existing expressions
-    this.addNamedExpression({ expression, expressionName, sheetName });
+    // Re-evaluate all sheets since named expressions can be referenced from anywhere
+    this.reevaluate();
+    this.triggerCellsUpdateEvent();
   }
 
   renameNamedExpression({
@@ -207,93 +154,31 @@ export class FormulaEngine extends Evaluator {
     sheetName?: string;
     newName: string;
   }) {
-    // Check if the named expression exists
-    const targetMap = sheetName
-      ? this.scopedNamedExpressions.get(sheetName)
-      : this.globalNamedExpressions;
-
-    if (!targetMap || !targetMap.has(expressionName)) {
-      throw new Error(`Named expression '${expressionName}' does not exist`);
-    }
-
-    // Check if the new name already exists
-    if (targetMap.has(newName)) {
-      throw new Error(`Named expression '${newName}' already exists`);
-    }
-
-    // Get the expression to rename
-    const namedExpression = targetMap.get(expressionName)!;
-
-    // Update the name and re-add with new name
-    const updatedExpression = { ...namedExpression, name: newName };
-    targetMap.set(newName, updatedExpression);
-    targetMap.delete(expressionName);
+    const result = this.namedExpressionManager.renameNamedExpression({
+      expressionName,
+      sheetName,
+      newName,
+    });
 
     // Update all formulas that reference this named expression in sheet cells
-    this.sheets.forEach((sheet) => {
-      sheet.content.forEach((cell, key) => {
-        if (typeof cell === "string" && cell.startsWith("=")) {
-          const formula = cell.slice(1);
-          const updatedFormula = renameNamedExpressionInFormula(
-            formula,
-            expressionName,
-            newName
-          );
+    this.sheetManager.updateFormulasForSheetRename(
+      expressionName, // This is a bit of a hack - we're reusing the sheet rename method
+      newName,
+      (formula) =>
+        renameNamedExpressionInFormula(formula, expressionName, newName)
+    );
 
-          // Only update if the formula actually changed
-          if (updatedFormula !== formula) {
-            sheet.content.set(key, `=${updatedFormula}`);
-          }
-        }
-      });
-    });
-
-    // Update global named expressions that reference this named expression
-    this.globalNamedExpressions.forEach((namedExpr, name) => {
-      if (name !== expressionName) {
-        // Don't update the expression we're renaming
-        const updatedExpression = renameNamedExpressionInFormula(
-          namedExpr.expression,
-          expressionName,
-          newName
-        );
-
-        if (updatedExpression !== namedExpr.expression) {
-          this.globalNamedExpressions.set(name, {
-            ...namedExpr,
-            expression: updatedExpression,
-          });
-        }
-      }
-    });
-
-    // Update scoped named expressions that reference this named expression
-    this.scopedNamedExpressions.forEach((namedExpressionsMap, sheetName) => {
-      namedExpressionsMap.forEach((namedExpr, name) => {
-        if (name !== expressionName) {
-          // Don't update the expression we're renaming
-          const updatedExpression = renameNamedExpressionInFormula(
-            namedExpr.expression,
-            expressionName,
-            newName
-          );
-
-          if (updatedExpression !== namedExpr.expression) {
-            namedExpressionsMap.set(name, {
-              ...namedExpr,
-              expression: updatedExpression,
-            });
-          }
-        }
-      });
-    });
+    // Update named expressions that reference this named expression
+    this.namedExpressionManager.updateFormulasForNamedExpressionRename(
+      expressionName,
+      newName
+    );
 
     // Re-evaluate all sheets since named expressions can be referenced from anywhere
     this.reevaluate();
     this.triggerCellsUpdateEvent();
-    this.emit("global-named-expressions-updated", this.globalNamedExpressions);
 
-    return true;
+    return result;
   }
 
   makeTable({
@@ -309,42 +194,15 @@ export class FormulaEngine extends Evaluator {
     numRows: SpreadsheetRangeEnd;
     numCols: number;
   }) {
-    const { rowIndex, colIndex } = parseCellReference(start);
-    const sheet = this.sheets.get(sheetName);
-    if (!sheet) {
-      throw new Error("Sheet not found");
-    }
-
-    const headers = new Map<string, { name: string; index: number }>();
-    for (let i = 0; i < numCols; i++) {
-      const header = sheet.content.get(
-        getCellReference({ rowIndex, colIndex: colIndex + i })
-      );
-
-      if (header) {
-        headers.set(String(header), { name: String(header), index: i });
-      } else {
-        headers.set(`Column ${i + 1}`, { name: `Column ${i + 1}`, index: i });
-      }
-    }
-
-    const endRow: SpreadsheetRangeEnd =
-      numRows.type === "number"
-        ? { type: "number", value: rowIndex + numRows.value }
-        : numRows;
-
-    const table: TableDefinition = {
-      name: tableName,
+    return this.tableManager.makeTable({
+      tableName,
       sheetName,
-      start: {
-        rowIndex,
-        colIndex,
-      },
-      headers,
-      endRow,
-    };
-
-    return table;
+      start,
+      numRows,
+      numCols,
+      getSheetContent: (sheetName) =>
+        this.sheetManager.getSheet(sheetName)?.content,
+    });
   }
 
   addTable(props: {
@@ -354,87 +212,39 @@ export class FormulaEngine extends Evaluator {
     numRows: SpreadsheetRangeEnd;
     numCols: number;
   }) {
-    const tableName = props.tableName;
-    const table = this.makeTable(props);
-
-    this.tables.set(tableName, table);
+    const table = this.tableManager.addTable({
+      ...props,
+      getSheetContent: (sheetName) =>
+        this.sheetManager.getSheet(sheetName)?.content,
+    });
 
     // Re-evaluate all sheets since structured references might depend on this table
     this.reevaluate();
     this.triggerCellsUpdateEvent();
-    this.emit("tables-updated", this.tables);
 
     return table;
   }
 
   renameTable(names: { oldName: string; newName: string }) {
-    const table = this.tables.get(names.oldName);
-    if (!table) {
-      throw new Error("Table not found");
-    }
-    table.name = names.newName;
-    this.tables.set(names.newName, table);
-    this.tables.delete(names.oldName);
+    this.tableManager.renameTable(names);
 
     // Update all formulas that reference this table in sheet cells
-    this.sheets.forEach((sheet) => {
-      sheet.content.forEach((cell, key) => {
-        if (typeof cell === "string" && cell.startsWith("=")) {
-          const formula = cell.slice(1);
-          const updatedFormula = renameTableInFormula(
-            formula,
-            names.oldName,
-            names.newName
-          );
+    this.sheetManager.updateFormulasForSheetRename(
+      names.oldName, // Reusing sheet rename method
+      names.newName,
+      (formula) => renameTableInFormula(formula, names.oldName, names.newName)
+    );
 
-          // Only update if the formula actually changed
-          if (updatedFormula !== formula) {
-            sheet.content.set(key, `=${updatedFormula}`);
-          }
-        }
-      });
-    });
-
-    // Update global named expressions that reference this table
-    this.globalNamedExpressions.forEach((namedExpr, name) => {
-      const updatedExpression = renameTableInFormula(
-        namedExpr.expression,
-        names.oldName,
-        names.newName
-      );
-
-      // Only update if the expression actually changed
-      if (updatedExpression !== namedExpr.expression) {
-        this.globalNamedExpressions.set(name, {
-          ...namedExpr,
-          expression: updatedExpression,
-        });
-      }
-    });
-
-    // Update sheet-scoped named expressions that reference this table
-    this.scopedNamedExpressions.forEach((namedExpressionsMap, sheetName) => {
-      namedExpressionsMap.forEach((namedExpr, name) => {
-        const updatedExpression = renameTableInFormula(
-          namedExpr.expression,
-          names.oldName,
-          names.newName
-        );
-
-        // Only update if the expression actually changed
-        if (updatedExpression !== namedExpr.expression) {
-          namedExpressionsMap.set(name, {
-            ...namedExpr,
-            expression: updatedExpression,
-          });
-        }
-      });
-    });
+    // Update named expressions that reference this table
+    this.namedExpressionManager.updateFormulasForNamedExpressionRename(
+      names.oldName, // Reusing named expression rename method
+      names.newName,
+      (formula) => renameTableInFormula(formula, names.oldName, names.newName)
+    );
 
     // Re-evaluate all sheets since structured references might depend on this table
     this.reevaluate();
     this.triggerCellsUpdateEvent();
-    this.emit("tables-updated", this.tables);
   }
 
   updateTable({
@@ -450,219 +260,123 @@ export class FormulaEngine extends Evaluator {
     numRows?: SpreadsheetRangeEnd;
     numCols?: number;
   }) {
-    const table = this.tables.get(tableName);
-    if (!table) {
-      throw new Error("Table not found");
-    }
-
-    const newStart = start ? parseCellReference(start) : table.start;
-
-    let newNumRows: SpreadsheetRangeEnd;
-    if (numRows) {
-      newNumRows = numRows;
-    } else {
-      if (table.endRow.type === "infinity") {
-        newNumRows = table.endRow;
-      } else {
-        newNumRows = {
-          type: "number",
-          value: table.endRow.value - newStart.rowIndex,
-        };
-      }
-    }
-
-    const newTable = this.makeTable({
+    this.tableManager.updateTable({
       tableName,
-      sheetName: sheetName ?? table.sheetName,
-      start: getCellReference(newStart),
-      numRows: newNumRows,
-      numCols: numCols ?? table.headers.size,
+      sheetName,
+      start,
+      numRows,
+      numCols,
+      getSheetContent: (sheetName) =>
+        this.sheetManager.getSheet(sheetName)?.content,
     });
-
-    this.tables.set(tableName, newTable);
 
     // Re-evaluate all sheets since structured references might depend on this table
     this.reevaluate();
     this.triggerCellsUpdateEvent();
-    this.emit("tables-updated", this.tables);
   }
 
   removeTable({ tableName }: { tableName: string }) {
-    const found = this.tables.delete(tableName);
+    const found = this.tableManager.removeTable({ tableName });
 
     if (found) {
       // Re-evaluate all sheets since structured references might depend on this table
       this.reevaluate();
       this.triggerCellsUpdateEvent();
-      this.emit("tables-updated", this.tables);
     }
 
     return found;
   }
 
   addSheet(name: string) {
-    const sheet = {
-      name,
-      index: this.sheets.size,
-      content: new Map(),
-    };
-
-    if (this.sheets.has(sheet.name)) {
-      throw new Error("Sheet already exists");
-    }
-
-    this.sheets.set(name, sheet);
-
-    // Emit sheet-added event
-    this.emit("sheet-added", {
-      sheetName: name,
-    });
-    return sheet;
+    return this.sheetManager.addSheet(name);
   }
 
   removeSheet(sheetName: string) {
-    const sheet = this.sheets.get(sheetName);
-    if (!sheet) {
-      throw new Error("Sheet not found");
-    }
-
-    // Remove the sheet
-    this.sheets.delete(sheetName);
+    const sheet = this.sheetManager.removeSheet(sheetName);
 
     // Clean up related data
-    this.scopedNamedExpressions.delete(sheetName);
-    this.tables.delete(sheetName);
-    this.cellsUpdateListeners.delete(sheetName);
+    this.namedExpressionManager.removeSheetNamedExpressions(sheetName);
+    this.tableManager.removeTablesForSheet(sheetName);
+    this.eventManager.removeCellsUpdateListenersForSheet(sheetName);
 
     // Add engine-specific logic: re-evaluate since references might be affected
     this.reevaluate();
     this.triggerCellsUpdateEvent();
-
-    // Emit sheet-removed event
-    this.emit("sheet-removed", {
-      sheetName: sheetName,
-    });
 
     return sheet;
   }
 
   renameSheet(sheetName: string, newName: string) {
-    const sheet = this.sheets.get(sheetName);
-    if (!sheet) {
-      throw new Error("Sheet not found");
-    }
-
-    if (this.sheets.has(newName)) {
-      throw new Error("Sheet with new name already exists");
-    }
-
-    // Update sheet name
-    sheet.name = newName;
-
-    // Update sheets map
-    this.sheets.set(newName, sheet);
-    this.sheets.delete(sheetName);
+    const sheet = this.sheetManager.renameSheet(sheetName, newName);
 
     // Update scoped named expressions
-    const namedExpressions = this.scopedNamedExpressions.get(sheetName);
-    if (namedExpressions) {
-      this.scopedNamedExpressions.set(newName, namedExpressions);
-      this.scopedNamedExpressions.delete(sheetName);
-    }
+    this.namedExpressionManager.renameSheetNamedExpressions(sheetName, newName);
 
     // Update tables that belong to the renamed sheet
-    this.tables.forEach((table, tableName) => {
-      if (table.sheetName === sheetName) {
-        table.sheetName = newName;
-      }
-    });
+    this.tableManager.updateTablesForSheetRename(sheetName, newName);
 
     // Update cell update listeners
-    const listeners = this.cellsUpdateListeners.get(sheetName);
-    if (listeners) {
-      this.cellsUpdateListeners.set(newName, listeners);
-      this.cellsUpdateListeners.delete(sheetName);
-    }
+    this.eventManager.renameCellsUpdateListenersForSheet(sheetName, newName);
 
     // Update all formulas that reference this sheet
-    this.sheets.forEach((sheet) => {
-      sheet.content.forEach((cell, key) => {
-        if (typeof cell === "string" && cell.startsWith("=")) {
-          const formula = cell.slice(1);
-          const updatedFormula = renameSheetInFormula(
-            formula,
-            sheetName,
-            newName
-          );
-
-          // Only update if the formula actually changed
-          if (updatedFormula !== formula) {
-            sheet.content.set(key, `=${updatedFormula}`);
-          }
-        }
-      });
-    });
+    this.sheetManager.updateFormulasForSheetRename(sheetName, newName);
 
     // Add engine-specific logic: re-evaluate since references might be affected
     this.reevaluate();
     this.triggerCellsUpdateEvent();
 
-    // Emit sheet-renamed event
-    this.emit("sheet-renamed", {
-      oldName: sheetName,
-      newName: newName,
-    });
-
     return sheet;
   }
 
   getTablesSerialized(): Map<string, TableDefinition> {
-    return this.tables;
+    return this.tableManager.getTablesSerialized();
   }
 
   getNamedExpressionsSerialized(
     sheetName: string
   ): Map<string, NamedExpression> {
-    return this.scopedNamedExpressions.get(sheetName) ?? new Map();
+    return this.namedExpressionManager.getNamedExpressionsSerialized(sheetName);
   }
 
   getGlobalNamedExpressionsSerialized(): Map<string, NamedExpression> {
-    return this.globalNamedExpressions;
+    return this.namedExpressionManager.getGlobalNamedExpressionsSerialized();
   }
 
   setNamedExpressions(
     sheetName: string,
     namedExpressions: Map<string, NamedExpression>
   ) {
-    this.scopedNamedExpressions.set(sheetName, namedExpressions);
+    this.namedExpressionManager.setNamedExpressions(
+      sheetName,
+      namedExpressions
+    );
     this.reevaluate();
     this.triggerCellsUpdateEvent();
   }
 
   setGlobalNamedExpressions(namedExpressions: Map<string, NamedExpression>) {
-    this.globalNamedExpressions = namedExpressions;
+    this.namedExpressionManager.setGlobalNamedExpressions(namedExpressions);
     this.reevaluate();
     this.triggerCellsUpdateEvent();
-    this.emit("global-named-expressions-updated", namedExpressions);
   }
 
   setTables(tables: Map<string, TableDefinition>) {
-    this.tables = tables;
+    this.tableManager.setTables(tables);
     this.reevaluate();
     this.triggerCellsUpdateEvent();
-    this.emit("tables-updated", this.tables);
   }
 
+  /**
+   * Overrides the content of a sheet.
+   * @param sheetName - The name of the sheet to set the content of
+   * @param content - A map of cell addresses to their serialized values
+   * @remarks This method is used to set the content of a sheet. It will re-evaluate all sheets to ensure all dependencies are resolved correctly.
+   */
   public setSheetContent(
     sheetName: string,
     content: Map<string, SerializedCellValue>
   ) {
-    const sheet = this.sheets.get(sheetName);
-    if (!sheet) {
-      throw new Error("Sheet not found");
-    }
-
-    sheet.content = content;
+    this.sheetManager.setSheetContent(sheetName, content);
 
     // Re-evaluate all sheets to ensure all dependencies are resolved correctly
     this.reevaluate();
@@ -670,54 +384,115 @@ export class FormulaEngine extends Evaluator {
   }
 
   setCellContent(address: CellAddress, content: SerializedCellValue) {
-    const sheet = this.sheets.get(address.sheetName);
-    if (!sheet) {
-      throw new Error("Sheet not found");
-    }
-
-    sheet.content.set(getCellReference(address), content);
+    this.sheetManager.setCellContent(address, content);
     // Re-evaluate all sheets to ensure all dependencies are resolved correctly
     this.reevaluate();
     this.triggerCellsUpdateEvent();
   }
 
   triggerCellsUpdateEvent() {
-    this.cellsUpdateListeners.forEach((sheetListeners) =>
-      sheetListeners.forEach((listener) => listener())
-    );
+    this.eventManager.triggerCellsUpdateEvent();
   }
 
   reevaluateSheet(sheetName: string) {
-    const sheet = this.sheets.get(sheetName);
-    if (!sheet) {
-      throw new Error("Sheet not found");
-    }
-
-    for (const key of sheet.content.keys()) {
-      const address = parseCellReference(key);
-      this.evaluateCell({ ...address, sheetName });
-    }
+    this.sheetManager.reevaluateSheet(sheetName, (address) => {
+      this.evaluationManager.evaluateCell(address);
+    });
   }
 
   /**
    * Re-evaluates all sheets to ensure all dependencies are resolved correctly
    */
   reevaluate() {
-    this.evaluatedNodes.clear();
-    this.spilledValues.clear();
-    for (const sheet of this.sheets.values()) {
+    this.evaluationManager.clearEvaluationCache();
+    for (const sheet of this.sheetManager.getSheets().values()) {
       this.reevaluateSheet(sheet.name);
     }
   }
 
-  override evaluateFunction(
-    node: FunctionNode,
-    context: EvaluationContext
-  ): FunctionEvaluationResult {
-    const func = functions[node.name];
-    if (!func) {
-      throw new Error(FormulaError.NAME);
-    }
-    return func.evaluate.call(this, node, context);
+  // ===== Event System Delegation =====
+
+  /**
+   * Subscribe to FormulaEngine events
+   */
+  on<K extends keyof import("./types").FormulaEngineEvents>(
+    event: K,
+    listener: (data: import("./types").FormulaEngineEvents[K]) => void
+  ): () => void {
+    return this.eventManager.on(event, listener);
+  }
+
+  /**
+   * Subscribe to FormulaEngine events (alias for on)
+   */
+  subscribe<K extends keyof import("./types").FormulaEngineEvents>(
+    event: K,
+    listener: (data: import("./types").FormulaEngineEvents[K]) => void
+  ): () => void {
+    return this.eventManager.subscribe(event, listener);
+  }
+
+  /**
+   * Remove all event listeners
+   */
+  removeAllListeners(): void {
+    this.eventManager.removeAllListeners();
+  }
+
+  /**
+   * Register listener for batched sheet updates. Returns an unsubscribe function.
+   */
+  onCellsUpdate(sheetName: string, listener: () => void): () => void {
+    return this.eventManager.onCellsUpdate(sheetName, listener);
+  }
+
+  getSheetSerialized(sheetName: string): Map<string, SerializedCellValue> {
+    return this.sheetManager.getSheetSerialized(sheetName);
+  }
+
+  // ===== Evaluation System Delegation =====
+
+  /**
+   * Access to evaluation manager for functions that need it
+   */
+  get evaluator() {
+    return this.evaluationManager;
+  }
+
+  isCellInRange(cellAddress: CellAddress, range: SpreadsheetRange): boolean {
+    return this.evaluationManager.isCellInRange(cellAddress, range);
+  }
+
+  isCellInTable(cellAddress: CellAddress): TableDefinition | undefined {
+    return this.evaluationManager.isCellInTable(cellAddress);
+  }
+
+  // Additional methods that might be needed
+  get sheets() {
+    return this.sheetManager.getSheets();
+  }
+
+  get tables() {
+    return this.tableManager.getTables();
+  }
+
+  get globalNamedExpressions() {
+    return this.namedExpressionManager.getGlobalNamedExpressions();
+  }
+
+  get scopedNamedExpressions() {
+    return this.namedExpressionManager.getScopedNamedExpressions();
+  }
+
+  get evaluatedNodes() {
+    return this.evaluationManager.getEvaluatedNodes();
+  }
+
+  get spilledValues() {
+    return this.evaluationManager.getSpilledValues();
+  }
+
+  getTransitiveDeps(nodeKey: string): Set<string> {
+    return this.evaluationManager.getTransitiveDeps(nodeKey);
   }
 }

@@ -10,6 +10,7 @@ import {
   type SpreadsheetRange,
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
+import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 
 /**
  * INDEX function - Returns a value from a table or array
@@ -55,7 +56,7 @@ function getArrayDimensions(spillArea: SpreadsheetRange): {
 
 // Helper function to get value from array at specific position
 function getValueFromArray(
-  this: FormulaEngine,
+  this: FormulaEvaluator,
   arrayResult: SpilledValuesEvaluationResult,
   row: number,
   col: number,

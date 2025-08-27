@@ -3,8 +3,9 @@ import { FormulaEngine } from "../src/core/engine";
 import { useGlobalNamedExpressions, useSerializedSheet, useTables } from "../src/react/hooks";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
-import { Plus, X, Edit2, Check, X as Cancel, Save, Upload, Calculator, ChevronDown, ChevronUp } from "lucide-react";
+import { Plus, X, Edit2, Check, X as Cancel, Save, Upload, Calculator, ChevronDown, ChevronUp, Bug } from "lucide-react";
 import { SpreadsheetWithFormulaBar } from "./components/SpreadsheetWithFormulaBar";
+import { Spreadsheet } from "@anocca-pub/components";
 import type { SpreadsheetRangeEnd, TableDefinition } from "src/core/types";
 
 interface SheetTab {
@@ -17,7 +18,7 @@ type SerializedTableDefinition = {
     rowIndex: number;
     colIndex: number;
   };
-  headers: Record<string, { name: string; index: number }>;
+  headers: [string, { name: string; index: number }][];
   endRow: SpreadsheetRangeEnd;
   sheetName: string;
 }
@@ -25,15 +26,15 @@ type SerializedTableDefinition = {
 interface SavedSpreadsheetData {
   sheets: Array<{
     name: string;
-    cells: Record<string, any>;
-    namedExpressions: Record<string, { name: string; expression: string }>;
+    cells: [string, any][];
+    namedExpressions: [string, { name: string; expression: string }][];
   }>;
-  globalNamedExpressions: Record<string, { name: string; expression: string }>;
-  tables: Record<string, SerializedTableDefinition>;
+  globalNamedExpressions: [string, { name: string; expression: string }][];
+  tables: [string, SerializedTableDefinition][];
   activeSheet: string;
 }
 
-const STORAGE_KEY = "formula-engine-excel-demo";
+const STORAGE_KEY = "formula-engine-excel-demo_aa";
 
 const loadFromLocalStorage = (): SavedSpreadsheetData | null => {
   try {
@@ -58,7 +59,7 @@ const createEngine = () => {
 
       // Build the cell content map for faster loading
       const cellContentMap = new Map<string, any>();
-      for (const [cellId, value] of Object.entries(savedSheet.cells)) {
+      for (const [cellId, value] of savedSheet.cells) {
         if (value !== undefined) {
           cellContentMap.set(cellId, value);
         }
@@ -69,7 +70,7 @@ const createEngine = () => {
 
       // Load named expressions for this sheet
       const namedExpressionsMap = new Map();
-      for (const [name, expr] of Object.entries(savedSheet.namedExpressions || {})) {
+      for (const [name, expr] of savedSheet.namedExpressions || []) {
         namedExpressionsMap.set(name, expr);
       }
       if (namedExpressionsMap.size > 0) {
@@ -82,7 +83,7 @@ const createEngine = () => {
     // Load global named expressions
     if (savedData.globalNamedExpressions) {
       const globalNamedExpressionsMap = new Map();
-      for (const [name, expr] of Object.entries(savedData.globalNamedExpressions)) {
+      for (const [name, expr] of savedData.globalNamedExpressions) {
         globalNamedExpressionsMap.set(name, expr);
       }
       if (globalNamedExpressionsMap.size > 0) {
@@ -93,10 +94,10 @@ const createEngine = () => {
     // Load global tables
     if (savedData.tables) {
       const tablesMap = new Map<string, TableDefinition>();
-      for (const [name, serializedTable] of Object.entries(savedData.tables)) {
-        // Convert serialized headers record back to Map
+      for (const [name, serializedTable] of savedData.tables) {
+        // Convert serialized headers array back to Map
         const headersMap = new Map<string, { name: string; index: number }>();
-        for (const [headerName, headerData] of Object.entries(serializedTable.headers)) {
+        for (const [headerName, headerData] of serializedTable.headers) {
           headersMap.set(headerName, headerData);
         }
         
@@ -139,6 +140,7 @@ export function ExcelDemo() {
   const [editingSheet, setEditingSheet] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [debugMode, setDebugMode] = useState(false);
   
   // Named expressions UI state
   const [showNamedExpressions, setShowNamedExpressions] = useState(false);
@@ -167,23 +169,23 @@ export function ExcelDemo() {
       const sheetsData = Array.from(engine.sheets.entries()).map(
         ([name, sheet]) => ({
           name,
-          cells: Object.fromEntries(sheet.content),
-          namedExpressions: Object.fromEntries(engine.getNamedExpressionsSerialized(name)),
+          cells: Array.from(sheet.content.entries()),
+          namedExpressions: Array.from(engine.getNamedExpressionsSerialized(name).entries()),
         })
       );
 
-      // Serialize tables with headers converted from Map to Record
-      const serializedTables: Record<string, SerializedTableDefinition> = {};
+      // Serialize tables with headers converted from Map to array
+      const serializedTables: [string, SerializedTableDefinition][] = [];
       for (const [tableName, table] of engine.getTablesSerialized()) {
-        serializedTables[tableName] = {
+        serializedTables.push([tableName, {
           ...table,
-          headers: Object.fromEntries(table.headers),
-        };
+          headers: Array.from(table.headers.entries()),
+        }]);
       }
 
       const dataToSave: SavedSpreadsheetData = {
         sheets: sheetsData,
-        globalNamedExpressions: Object.fromEntries(engine.getGlobalNamedExpressionsSerialized()),
+        globalNamedExpressions: Array.from(engine.getGlobalNamedExpressionsSerialized().entries()),
         tables: serializedTables,
         activeSheet,
       };
@@ -440,6 +442,54 @@ export function ExcelDemo() {
     [saveSheetName, cancelEditing]
   );
 
+  // Generate serialized debug data
+  const getSerializedDebugData = useCallback(() => {
+    const debugData = {
+      activeSheet,
+      sheets: [] as [string, any][],
+      globalNamedExpressions: Array.from(engine.getGlobalNamedExpressionsSerialized().entries()),
+      tables: [] as [string, any][],
+    };
+
+    // Serialize all sheets
+    for (const [sheetName, sheet] of engine.sheets.entries()) {
+      debugData.sheets.push([sheetName, {
+        cells: Array.from(sheet.content.entries()),
+        namedExpressions: Array.from(engine.getNamedExpressionsSerialized(sheetName).entries()),
+      }]);
+    }
+
+    // Serialize tables
+    for (const [tableName, table] of engine.getTablesSerialized()) {
+      debugData.tables.push([tableName, {
+        ...table,
+        headers: Array.from(table.headers.entries()),
+      }]);
+    }
+
+    return JSON.stringify(debugData, null, 2);
+  }, [engine, activeSheet]);
+
+  // Helper function to check if a string is a number
+  const isNumber = (value: string): { isNumber: true; value: number } | { isNumber: false } => {
+    if (value === "") {
+      return { isNumber: false };
+    }
+
+    const normalizedValue = value.replace(/,/g, "");
+    const parsed = parseFloat(normalizedValue);
+
+    if (
+      !isNaN(parsed) &&
+      isFinite(parsed) &&
+      normalizedValue === String(parsed)
+    ) {
+      return { isNumber: true, value: parsed };
+    }
+
+    return { isNumber: false };
+  };
+
   return (
     <div className="h-full flex flex-col">
       {/* Excel-style header */}
@@ -475,6 +525,22 @@ export function ExcelDemo() {
                 </Button>
                 <Button
                   size="sm"
+                  variant={debugMode ? "default" : "outline"}
+                  className={`
+                    ${
+                      debugMode
+                        ? "bg-orange-600 hover:bg-orange-700 text-white"
+                        : "border-gray-300 text-gray-700"
+                    }
+                  `}
+                  onClick={() => setDebugMode(!debugMode)}
+                  data-testid="debug-mode-toggle"
+                >
+                  <Bug className="h-4 w-4 mr-1" />
+                  Debug View
+                </Button>
+                <Button
+                  size="sm"
                   variant={hasUnsavedChanges ? "default" : "outline"}
                   className={`
                     ${
@@ -502,7 +568,7 @@ export function ExcelDemo() {
 
       {/* Named Expressions & Tables Panel */}
       {showNamedExpressions && (
-        <div className="border-b border-gray-200 bg-gray-50 p-4">
+        <div className="border-b border-gray-200 bg-gray-50 p-4" data-testid="expressions-tables-panel">
           <div className="space-y-4">
             {/* Add New Named Expression - Unified Form */}
             <div className="bg-white p-3 rounded border border-gray-200">
@@ -800,15 +866,46 @@ export function ExcelDemo() {
         </div>
       )}
 
-      {/* Main spreadsheet area with formula bar */}
+      {/* Main spreadsheet area with formula bar or debug view */}
       <div className="flex-1 overflow-hidden">
-        <SpreadsheetWithFormulaBar
-          key={activeSheet} // Re-mount component when sheet changes
-          sheetName={activeSheet}
-          engine={engine}
-          tables={tables}
-          globalNamedExpressions={globalNamedExpressions}
-        />
+        {debugMode ? (
+          <div className="h-full flex flex-col p-4 overflow-auto">
+            {/* Serialized data display */}
+            <div className="mb-4">
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">
+                Engine Serialized Data
+              </h2>
+              <pre className="bg-gray-100 p-4 rounded-lg text-xs overflow-auto max-h-64 border">
+                {getSerializedDebugData()}
+              </pre>
+            </div>
+            
+            {/* Plain readonly spreadsheet without custom cell renderer */}
+            <div className="flex-1 border border-gray-300 rounded-lg overflow-hidden">
+              <Spreadsheet
+                key={activeSheet}
+                style={{ height: "100%", width: "100%" }}
+                cellData={serializedSheet.sheet as Map<string, string | number>}
+                onCellDataChange={() => {
+                  // Readonly - no changes allowed
+                }}
+                selection={{
+                  effects: () => {
+                    // No selection effects in debug mode
+                  },
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <SpreadsheetWithFormulaBar
+            key={activeSheet} // Re-mount component when sheet changes
+            sheetName={activeSheet}
+            engine={engine}
+            tables={tables}
+            globalNamedExpressions={globalNamedExpressions}
+          />
+        )}
       </div>
 
       {/* Excel-style sheet tabs at bottom */}

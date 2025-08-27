@@ -104,9 +104,8 @@ describe("Sheets", () => {
     // Verify cleanup
     expect(engine.sheets.has(sheetName)).toBe(false);
     expect(engine.getNamedExpressionsSerialized(sheetName).size).toBe(0);
-    // Note: Tables are not automatically removed when sheet is removed
-    // They need to be manually removed if desired
-    expect(engine.getTablesSerialized().has("TestTable")).toBe(true);
+    // Tables should be automatically removed when sheet is removed
+    expect(engine.getTablesSerialized().has("TestTable")).toBe(false);
   });
 
   test("should rename sheets", () => {

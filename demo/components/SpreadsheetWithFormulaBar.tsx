@@ -4,13 +4,25 @@ import {
   parseCellReference,
 } from "@anocca-pub/components";
 import type { SelectionManager, SMArea } from "@ricsam/selection-manager";
-import React, { useCallback, useMemo, useRef, useState, useEffect } from "react";
+import React, {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  useEffect,
+} from "react";
 import { useSerializedSheet } from "src/react/hooks";
 import { FormulaEngine } from "../../src/core/engine";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
-import type { CellAddress, NamedExpression, SerializedCellValue, TableDefinition } from "src/core/types";
+import type {
+  CellAddress,
+  NamedExpression,
+  SerializedCellValue,
+  TableDefinition,
+} from "src/core/types";
+import { indexToColumn } from "src/core/utils";
 
 interface SpreadsheetWithFormulaBarProps {
   sheetName: string;
@@ -68,7 +80,9 @@ export function SpreadsheetWithFormulaBar({
 
   // Use a key to reset the input when the context changes
   const tableInputKey = useMemo(() => {
-    return currentSelectedTable ? `table-${currentSelectedTable.name}` : `new-table-${defaultTableName}`;
+    return currentSelectedTable
+      ? `table-${currentSelectedTable.name}`
+      : `new-table-${defaultTableName}`;
   }, [currentSelectedTable, defaultTableName]);
 
   const tableColumnNames = useMemo(() => {
@@ -78,7 +92,9 @@ export function SpreadsheetWithFormulaBar({
 
   // Get tables for the current sheet
   const currentSheetTables = useMemo(() => {
-    return Array.from(tables.entries()).filter(([_, table]) => table.sheetName === sheetName);
+    return Array.from(tables.entries()).filter(
+      ([_, table]) => table.sheetName === sheetName
+    );
   }, [tables, sheetName]);
 
   const addTableFromSelection = useCallback(() => {
@@ -118,11 +134,18 @@ export function SpreadsheetWithFormulaBar({
       // Clear the input so it falls back to the calculated defaultTableName
       setNewTableName("");
       // Force recalculation of table count
-      setTableCreationCounter(prev => prev + 1);
+      setTableCreationCounter((prev) => prev + 1);
     } catch (error) {
       console.error("Error creating table:", error);
     }
-  }, [selectedArea, sheetName, engine, newTableName, defaultTableName, existingTableNames]);
+  }, [
+    selectedArea,
+    sheetName,
+    engine,
+    newTableName,
+    defaultTableName,
+    existingTableNames,
+  ]);
 
   const cellSerialized = useMemo(() => {
     if (!selectedCell) {
@@ -265,7 +288,7 @@ export function SpreadsheetWithFormulaBar({
                         rowIndex: currentSelectedTable.start.rowIndex,
                         colIndex: currentSelectedTable.start.colIndex,
                       })}
-                      {currentSelectedTable.endRow.type === "number" && (
+                      {currentSelectedTable.endRow.type === "number" ? (
                         <>
                           :
                           {getCellReference({
@@ -278,6 +301,15 @@ export function SpreadsheetWithFormulaBar({
                               currentSelectedTable.headers.size -
                               1,
                           })}
+                        </>
+                      ) : (
+                        <>
+                          :
+                          {indexToColumn(
+                            currentSelectedTable.start.colIndex +
+                              currentSelectedTable.headers.size - 1
+                          )}
+                          ∞
                         </>
                       )}
                     </span>
@@ -336,7 +368,11 @@ export function SpreadsheetWithFormulaBar({
                 />
                 <Button
                   onClick={() => {
-                    if (currentSelectedTable && newTableName.trim() && newTableName.trim() !== currentSelectedTable.name) {
+                    if (
+                      currentSelectedTable &&
+                      newTableName.trim() &&
+                      newTableName.trim() !== currentSelectedTable.name
+                    ) {
                       try {
                         engine.renameTable({
                           oldName: currentSelectedTable.name,
@@ -363,7 +399,9 @@ export function SpreadsheetWithFormulaBar({
                   onClick={() => {
                     if (currentSelectedTable) {
                       try {
-                        engine.removeTable({ tableName: currentSelectedTable.name });
+                        engine.removeTable({
+                          tableName: currentSelectedTable.name,
+                        });
                       } catch (error) {
                         console.error("Error removing table:", error);
                       }
@@ -427,21 +465,27 @@ export function SpreadsheetWithFormulaBar({
                   disabled={
                     !selectedArea ||
                     !(newTableName || defaultTableName).trim() ||
-                    existingTableNames.includes((newTableName || defaultTableName).trim()) ||
+                    existingTableNames.includes(
+                      (newTableName || defaultTableName).trim()
+                    ) ||
                     selectedArea.end.col.type === "infinity"
                   }
                   size="sm"
                   className="h-8"
                   variant={
                     (newTableName || defaultTableName).trim() &&
-                    existingTableNames.includes((newTableName || defaultTableName).trim())
+                    existingTableNames.includes(
+                      (newTableName || defaultTableName).trim()
+                    )
                       ? "destructive"
                       : "default"
                   }
                   data-testid="create-table-button"
                 >
                   {(newTableName || defaultTableName).trim() &&
-                  existingTableNames.includes((newTableName || defaultTableName).trim())
+                  existingTableNames.includes(
+                    (newTableName || defaultTableName).trim()
+                  )
                     ? "Name Exists"
                     : "Create Table"}
                 </Button>
@@ -540,11 +584,7 @@ export function SpreadsheetWithFormulaBar({
               );
             }
 
-            return (
-              <div>
-                {value?.toString() || ""}
-              </div>
-            );
+            return <div>{value?.toString() || ""}</div>;
           }}
         />
       </div>

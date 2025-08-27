@@ -1,13 +1,4 @@
-import type {
-  CellAddress,
-  CellValue,
-  FormulaEngineEvents,
-  NamedExpression,
-  SerializedCellValue,
-  Sheet,
-  SpreadsheetRange,
-  TableDefinition,
-} from "./types";
+import type { FormulaEngineEvents } from "../types";
 
 // Simple event emitter for internal use
 type EventListener<T = any> = (data: T) => void;
@@ -45,15 +36,9 @@ class EventEmitter<T extends Record<string, any>> {
   }
 }
 
-export class SheetHandler {
-  sheets: Map<string, Sheet> = new Map();
-  scopedNamedExpressions: Map<string, Map<string, NamedExpression>> = new Map();
-  globalNamedExpressions: Map<string, NamedExpression> = new Map();
-  tables: Map<string, TableDefinition> = new Map();
-
+export class EventManager {
   private eventEmitter: EventEmitter<FormulaEngineEvents>;
-
-  cellsUpdateListeners: Map<
+  private cellsUpdateListeners: Map<
     /**
      * sheetName -> listeners
      */
@@ -128,26 +113,25 @@ export class SheetHandler {
     };
   }
 
-  getSheetSerialized(sheetName: string): Map<string, SerializedCellValue> {
-    const sheet = this.sheets.get(sheetName);
-    if (!sheet) return new Map();
-
-    return sheet.content;
+  getCellsUpdateListeners(): Map<string, Set<() => void>> {
+    return this.cellsUpdateListeners;
   }
 
-  /**
-   * Returns true if the range is a single cell, false otherwise
-   */
-  isRangeOneCell(range: SpreadsheetRange) {
-    if (
-      range.end.col.type === "infinity" ||
-      range.end.row.type === "infinity"
-    ) {
-      return false;
-    }
-    return (
-      range.start.col === range.end.col.value &&
-      range.start.row === range.end.row.value
+  triggerCellsUpdateEvent(): void {
+    this.cellsUpdateListeners.forEach((sheetListeners) =>
+      sheetListeners.forEach((listener) => listener())
     );
+  }
+
+  removeCellsUpdateListenersForSheet(sheetName: string): void {
+    this.cellsUpdateListeners.delete(sheetName);
+  }
+
+  renameCellsUpdateListenersForSheet(oldName: string, newName: string): void {
+    const listeners = this.cellsUpdateListeners.get(oldName);
+    if (listeners) {
+      this.cellsUpdateListeners.set(newName, listeners);
+      this.cellsUpdateListeners.delete(oldName);
+    }
   }
 }

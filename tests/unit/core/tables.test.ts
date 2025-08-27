@@ -4,6 +4,7 @@ import { FormulaEngine } from "../../../src/core/engine";
 import { getCellReference, parseCellReference } from "src/core/utils";
 import { FormulaError, type SerializedCellValue } from "src/core/types";
 import { dependencyNodeToKey } from "src/core/utils/dependency-node-key";
+import { visualizeSpreadsheet } from "../../../src/core/utils/spreadsheet-visualizer";
 
 describe("Tables", () => {
   const sheetName = "TestSheet";
@@ -175,15 +176,16 @@ describe("Tables", () => {
     // Reference table from Sheet2 - add formula after table is created
     engine.setSheetContent(
       sheet2,
-      new Map<string, SerializedCellValue>([
-        ["A1", `=Revenue[Revenue]`],
-      ])
+      new Map<string, SerializedCellValue>([["A1", `=Revenue[Revenue]`]])
     );
 
     expect(cell("D1")).toBe(1000);
 
     expect(
-      engine.getCellValue({ sheetName: sheet2, ...parseCellReference("A1") }, true)
+      engine.getCellValue(
+        { sheetName: sheet2, ...parseCellReference("A1") },
+        true
+      )
     ).toBe(1000);
   });
 
@@ -248,9 +250,13 @@ describe("Tables", () => {
     expect(cell("C2")).toBe(135); // Should still work
 
     // Verify that named expressions were updated
-    const globalExpr = engine.getGlobalNamedExpressionsSerialized().get("TOTAL_PRICE");
-    const sheetExpr = engine.getNamedExpressionsSerialized(sheetName).get("DISCOUNTED_PRICE");
-    
+    const globalExpr = engine
+      .getGlobalNamedExpressionsSerialized()
+      .get("TOTAL_PRICE");
+    const sheetExpr = engine
+      .getNamedExpressionsSerialized(sheetName)
+      .get("DISCOUNTED_PRICE");
+
     expect(globalExpr.expression).toBe("SUM(Inventory[Price])*1.1");
     expect(sheetExpr.expression).toBe("SUM(Inventory[Price])*0.9");
   });
@@ -298,7 +304,7 @@ describe("Tables", () => {
     // Add new formula after table update to reference new location
     setCellContent("F2", "=SUM(Products[Cost])");
     expect(cell("F2")).toBe(700); // 300 + 400 (from new location)
-    
+
     // Verify table structure was updated
     const tables = engine.getTablesSerialized();
     const table = tables.get("Products");
@@ -439,7 +445,7 @@ describe("Tables", () => {
     // Should have access to the new Extra column
     setCellContent("G2", "=SUM(Data[Extra])");
     expect(cell("G2")).toBe(600); // 100 + 200 + 300
-    
+
     // Verify table structure was updated
     const tables = engine.getTablesSerialized();
     const table = tables.get("Data");
@@ -496,7 +502,7 @@ describe("Tables", () => {
     const tables = engine.getTablesSerialized();
     const table = tables.get("Products");
     expect(table.sheetName).toBe(sheet2);
-    
+
     // Add new formula after table move to reference new sheet data
     setCellContent("C2", "=SUM(Products[Cost])");
     expect(cell("C2")).toBe(200);
@@ -547,7 +553,7 @@ describe("Tables", () => {
 
     // Should now sum only first 2 rows
     expect(cell("D1")).toBe(30); // 10 + 20
-    
+
     // Verify table structure was updated
     const tables = engine.getTablesSerialized();
     const table = tables.get("Products");
@@ -584,7 +590,7 @@ describe("Tables", () => {
     setCellContent("D1", "=SUM(Products[Price])");
     setCellContent("D2", "=SUM(Products[Quantity])");
     expect(cell("D1")).toBe(30); // 10 + 20
-    expect(cell("D2")).toBe(8);  // 5 + 3
+    expect(cell("D2")).toBe(8); // 5 + 3
 
     // Update only the number of rows, preserve other properties
     engine.updateTable({
@@ -594,7 +600,7 @@ describe("Tables", () => {
 
     // Should still have all columns but fewer rows
     expect(cell("D1")).toBe(10); // Only first row now
-    expect(cell("D2")).toBe(5);  // Only first row now
+    expect(cell("D2")).toBe(5); // Only first row now
   });
 
   test("should handle edge case: update table to same values", () => {
@@ -659,7 +665,7 @@ describe("Tables", () => {
     const serializedTables = engine.getTablesSerialized();
     expect(serializedTables.size).toBe(1);
     expect(serializedTables.has("Products")).toBe(true);
-    
+
     const table = serializedTables.get("Products");
     expect(table).toBeDefined();
     expect(table.name).toBe("Products");
@@ -723,5 +729,244 @@ describe("Tables", () => {
     expect(lastUpdatedTables.size).toBe(0);
 
     unsubscribe();
+  });
+
+  test("should handle bulk table replacement with setTables", () => {
+    // Set up initial data
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ["A1", "Product"],
+        ["B1", "Price"],
+        ["A2", "Widget"],
+        ["B2", 100],
+        ["C1", "Category"],
+        ["D1", "Amount"],
+        ["C2", "Sales"],
+        ["D2", 500],
+      ])
+    );
+
+    // Create initial table
+    engine.addTable({
+      tableName: "Products",
+      sheetName,
+      start: "A1",
+      numRows: { type: "number", value: 1 },
+      numCols: 2,
+    });
+
+    setCellContent("E1", "=SUM(Products[Price])");
+    expect(cell("E1")).toBe(100);
+
+    // Create new tables to replace existing ones
+    const newTables = new Map([
+      [
+        "Sales",
+        {
+          name: "Sales",
+          sheetName,
+          start: { rowIndex: 0, colIndex: 2 }, // C1
+          headers: new Map([
+            ["Category", { name: "Category", index: 0 }],
+            ["Amount", { name: "Amount", index: 1 }],
+          ]),
+          endRow: { type: "number", value: 1 } as const, // 1 data row
+        },
+      ],
+      [
+        "Inventory",
+        {
+          name: "Inventory",
+          sheetName,
+          start: { rowIndex: 0, colIndex: 0 }, // A1
+          headers: new Map([
+            ["Product", { name: "Product", index: 0 }],
+            ["Price", { name: "Price", index: 1 }],
+          ]),
+          endRow: { type: "number", value: 1 } as const, // 1 data row
+        },
+      ],
+    ]);
+
+    // Replace all tables with new ones
+    engine.setTables(newTables);
+
+    // Old table should be gone, new tables should work
+    setCellContent("E2", "=SUM(Sales[Amount])");
+    setCellContent("E3", "=SUM(Inventory[Price])");
+
+    expect(cell("E2")).toBe(500); // Sales table
+    expect(cell("E3")).toBe(100); // Inventory table (same data as old Products)
+
+    // Verify tables were replaced
+    const tables = engine.getTablesSerialized();
+    expect(tables.size).toBe(2);
+    expect(tables.has("Products")).toBe(false); // Old table gone
+    expect(tables.has("Sales")).toBe(true);
+    expect(tables.has("Inventory")).toBe(true);
+  });
+
+  test("should not crop source data when referencing infinite table columns", () => {
+    // Set up data for infinite table with 5 columns and 5 data rows
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        // Headers in row 1
+        ["A1", "Column1"],
+        ["B1", "Column2"],
+        ["C1", "Column3"],
+        ["D1", "Column4"],
+        ["E1", "Column5"],
+        // Data rows 2-6
+        ["A2", "A2_data"],
+        ["B2", "B2_data"],
+        ["C2", "C2_data"],
+        ["D2", "D2_data"],
+        ["E2", "E2_data"],
+        ["A3", "A3_data"],
+        ["B3", "B3_data"],
+        ["C3", "C3_data"],
+        ["D3", "D3_data"],
+        ["E3", "E3_data"],
+        ["A4", "A4_data"],
+        ["B4", "B4_data"],
+        ["C4", "C4_data"],
+        ["D4", "D4_data"],
+        ["E4", "E4_data"],
+        ["A5", "A5_data"],
+        ["B5", "B5_data"],
+        ["C5", "C5_data"],
+        ["D5", "D5_data"],
+        ["E5", "E5_data"],
+        ["A6", "A6_data"],
+        ["B6", "B6_data"],
+        ["C6", "C6_data"],
+        ["D6", "D6_data"],
+        ["E6", "E6_data"],
+        ["K4", "=Table1[Column3]"],
+      ])
+    );
+
+    engine.addSheet("expected-result");
+
+    engine.setSheetContent(
+      "expected-result",
+      new Map<string, SerializedCellValue>([
+        // Headers in row 1
+        ["A1", "Column1"],
+        ["B1", "Column2"],
+        ["C1", "Column3"],
+        ["D1", "Column4"],
+        ["E1", "Column5"],
+        // Data rows 2-6
+        ["A2", "A2_data"],
+        ["B2", "B2_data"],
+        ["C2", "C2_data"],
+        ["D2", "D2_data"],
+        ["E2", "E2_data"],
+        ["A3", "A3_data"],
+        ["B3", "B3_data"],
+        ["C3", "C3_data"],
+        ["D3", "D3_data"],
+        ["E3", "E3_data"],
+        ["A4", "A4_data"],
+        ["B4", "B4_data"],
+        ["C4", "C4_data"],
+        ["D4", "D4_data"],
+        ["E4", "E4_data"],
+        ["A5", "A5_data"],
+        ["B5", "B5_data"],
+        ["C5", "C5_data"],
+        ["D5", "D5_data"],
+        ["E5", "E5_data"],
+        ["A6", "A6_data"],
+        ["B6", "B6_data"],
+        ["C6", "C6_data"],
+        ["D6", "D6_data"],
+        ["E6", "E6_data"],
+        ["K4", "C2_data"],
+        ["K5", "C3_data"],
+        ["K6", "C4_data"],
+        ["K7", "C5_data"],
+        ["K8", "C6_data"],
+      ])
+    );
+
+    // Create infinite table starting at A1 with 5 columns
+    engine.addTable({
+      tableName: "Table1",
+      sheetName,
+      start: "A1",
+      numRows: { type: "infinity", sign: "positive" }, // Infinite rows
+      numCols: 5,
+    });
+
+
+    
+    // // Create a visual representation of the entire spreadsheet (A-K, rows 1-8)
+    const actualGrid = visualizeSpreadsheet(engine, {
+      numRows: 8,
+      numCols: 11, // A-K
+      sheetName,
+      emptyCellChar: "",
+    });
+
+    // const expectedGrid = visualizeSpreadsheet(engine, {
+    //   numRows: 8,
+    //   numCols: 11, // A-K
+    //   sheetName: "expected-result",
+    //   emptyCellChar: "",
+    // });
+
+    console.log("@actualGrid\n" + actualGrid);
+
+    // Verify source data is NOT cropped - all original cells should still have their values
+    expect(cell("A2")).toBe("A2_data");
+    expect(cell("B2")).toBe("B2_data");
+    expect(cell("C2")).toBe("C2_data");
+    expect(cell("D2")).toBe("D2_data");
+    expect(cell("E2")).toBe("E2_data");
+
+    expect(cell("A3")).toBe("A3_data");
+    expect(cell("B3")).toBe("B3_data");
+    expect(cell("C3")).toBe("C3_data");
+    expect(cell("D3")).toBe("D3_data");
+    expect(cell("E3")).toBe("E3_data");
+
+    expect(cell("A4")).toBe("A4_data");
+    expect(cell("B4")).toBe("B4_data");
+    expect(cell("C4")).toBe("C4_data");
+    expect(cell("D4")).toBe("D4_data");
+    expect(cell("E4")).toBe("E4_data");
+
+    expect(cell("A5")).toBe("A5_data");
+    expect(cell("B5")).toBe("B5_data");
+    expect(cell("C5")).toBe("C5_data");
+    expect(cell("D5")).toBe("D5_data");
+    expect(cell("E5")).toBe("E5_data");
+
+    expect(cell("A6")).toBe("A6_data");
+    expect(cell("B6")).toBe("B6_data");
+    expect(cell("C6")).toBe("C6_data");
+    expect(cell("D6")).toBe("D6_data");
+    expect(cell("E6")).toBe("E6_data");
+
+    // Verify that K4 has the correct Column3 data (should be C2_data, the first data row of Column3)
+    expect(cell("K4")).toBe("C2_data");
+
+    // Verify that spill should only happen in the K column (Column3 data), not to the left
+    // These cells should be empty, not contain table data
+    expect(cell("I4")).toBe(""); // Should NOT contain A4_data
+    expect(cell("J4")).toBe(""); // Should NOT contain B4_data
+    expect(cell("I5")).toBe(""); // Should NOT contain A5_data
+    expect(cell("J5")).toBe(""); // Should NOT contain B5_data
+
+    // Verify correct spill pattern - K column should contain Column3 data starting from K4
+    expect(cell("K4")).toBe("C2_data"); // First data row of Column3
+    expect(cell("K5")).toBe("C3_data"); // Second data row of Column3
+    expect(cell("K6")).toBe("C4_data"); // Third data row of Column3
+    expect(cell("K7")).toBe("C5_data"); // Fourth data row of Column3
+    expect(cell("K8")).toBe("C6_data"); // Fifth data row of Column3
   });
 });

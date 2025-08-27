@@ -5,6 +5,7 @@
 
 import type { ASTNode, FunctionNode } from "src/parser/ast";
 import type { FormulaEngine } from "./engine";
+import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 
 // Cell addressing types
 export interface CellAddress {
@@ -219,7 +220,7 @@ export type SpilledValue = {
 export interface FunctionDefinition {
   name: string;
   evaluate: (
-    this: FormulaEngine,
+    this: FormulaEvaluator,
     node: FunctionNode,
     context: EvaluationContext
   ) => FunctionEvaluationResult;
