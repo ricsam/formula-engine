@@ -3,7 +3,7 @@ import { FormulaEngine } from "../src/core/engine";
 import { useGlobalNamedExpressions, useSerializedSheet, useTables } from "../src/react/hooks";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
-import { Plus, X, Edit2, Check, X as Cancel, Save, Upload, Calculator, ChevronDown, ChevronUp, Bug } from "lucide-react";
+import { Plus, X, Edit2, Check, X as Cancel, Save, Upload, Calculator, ChevronDown, ChevronUp, Bug, AlertTriangle } from "lucide-react";
 import { SpreadsheetWithFormulaBar } from "./components/SpreadsheetWithFormulaBar";
 import { Spreadsheet } from "@anocca-pub/components";
 import type { SpreadsheetRangeEnd, TableDefinition } from "src/core/types";
@@ -34,7 +34,7 @@ interface SavedSpreadsheetData {
   activeSheet: string;
 }
 
-const STORAGE_KEY = "formula-engine-excel-demo_aa";
+const STORAGE_KEY = "formula-engine-excel-demo";
 
 const loadFromLocalStorage = (): SavedSpreadsheetData | null => {
   try {
@@ -141,6 +141,7 @@ export function ExcelDemo() {
   const [editingName, setEditingName] = useState("");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
+  const [verboseErrors, setVerboseErrors] = useState(false);
   
   // Named expressions UI state
   const [showNamedExpressions, setShowNamedExpressions] = useState(false);
@@ -541,6 +542,22 @@ export function ExcelDemo() {
                 </Button>
                 <Button
                   size="sm"
+                  variant={verboseErrors ? "default" : "outline"}
+                  className={`
+                    ${
+                      verboseErrors
+                        ? "bg-red-600 hover:bg-red-700 text-white"
+                        : "border-gray-300 text-gray-700"
+                    }
+                  `}
+                  onClick={() => setVerboseErrors(!verboseErrors)}
+                  data-testid="verbose-errors-toggle"
+                >
+                  <AlertTriangle className="h-4 w-4 mr-1" />
+                  Verbose Errors
+                </Button>
+                <Button
+                  size="sm"
                   variant={hasUnsavedChanges ? "default" : "outline"}
                   className={`
                     ${
@@ -904,6 +921,7 @@ export function ExcelDemo() {
             engine={engine}
             tables={tables}
             globalNamedExpressions={globalNamedExpressions}
+            verboseErrors={verboseErrors}
           />
         )}
       </div>

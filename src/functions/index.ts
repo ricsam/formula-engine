@@ -16,6 +16,8 @@ import { MIN } from "./math/min/min";
 import { SUM } from "./math/sum/sum";
 import { FIND } from "./text/find/find";
 import { LEFT } from "./text/left/left";
+import { MID } from "./text/mid/mid";
+import { LEN } from "./text/len/len";
 import { RIGHT } from "./text/right/right";
 
 export const functions: Record<string, FunctionDefinition> = {
@@ -23,6 +25,8 @@ export const functions: Record<string, FunctionDefinition> = {
   FIND,
   INDEX,
   LEFT,
+  MID,
+  LEN,
   MATCH,
   MAX,
   MIN,

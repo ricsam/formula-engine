@@ -1341,4 +1341,26 @@ describe("FormulaEngine", () => {
       unsubscribeCells();
     });
   });
+
+  describe("Open ended ranges", () => {
+    test("SPILL on open ended ranges", () => {
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", 3],
+          ["A20", 4],
+          ["A30", 5],
+          ["B1", 6],
+          ["B20", 7],
+          ["B30", 8],
+          ["C10", "=A20:B"],
+        ])
+      );
+
+      expect(cell("C10")).toBe(4);
+      expect(cell("C20", true)).toBe(5);
+      expect(cell("D10")).toBe(7);
+      expect(cell("D20", true)).toBe(8);
+    });
+  })
 });

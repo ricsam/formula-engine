@@ -78,15 +78,15 @@ describe("Formula Formatter", () => {
     });
 
     test("should format infinite column ranges", () => {
-      expect(formatFormula("A:A")).toBe("A:A");
-      expect(formatFormula("A:Z")).toBe("A:Z");
-      expect(formatFormula("$A:$Z")).toBe("$A:$Z");
+      expect(formatFormula("A:A")).toBe("A1:A");
+      expect(formatFormula("A:Z")).toBe("A1:Z");
+      expect(formatFormula("$A:$Z")).toBe("$A1:$Z");
     });
 
     test("should format infinite row ranges", () => {
-      expect(formatFormula("1:1")).toBe("1:1");
-      expect(formatFormula("1:100")).toBe("1:100");
-      expect(formatFormula("$1:$100")).toBe("$1:$100");
+      expect(formatFormula("1:1")).toBe("A1:1");
+      expect(formatFormula("1:100")).toBe("A1:100");
+      expect(formatFormula("$1:$100")).toBe("A$1:$100");
     });
   });
 
@@ -108,7 +108,7 @@ describe("Formula Formatter", () => {
         'IF(A1>10,"High","Low")'
       );
       expect(formatFormula("VLOOKUP(A1,B:D,2,FALSE)")).toBe(
-        "VLOOKUP(A1,B:D,2,FALSE)"
+        "VLOOKUP(A1,B1:D,2,FALSE)"
       );
     });
   });
@@ -173,7 +173,7 @@ describe("Formula Formatter", () => {
 
     test("should format arrays with expressions", () => {
       expect(formatFormula("{A1,B1;C1,D1}")).toBe("{A1,B1;C1,D1}");
-      expect(formatFormula("{SUM(A:A),MAX(B:B)}")).toBe("{SUM(A:A),MAX(B:B)}");
+      expect(formatFormula("{SUM(A:A),MAX(B:B)}")).toBe("{SUM(A1:A),MAX(B1:B)}");
     });
   });
 
@@ -376,6 +376,14 @@ describe("Formula Formatter", () => {
       "Table1[@[Net Sales]:[Gross Profit]]",
       "INDEX(Table1[CAR ID],MATCH([@CUSTOMER-ID],Table1[CUSTOMER-ID],0))",
       "VLOOKUP([@Customer Name],CustomerTable[[Customer Name]:[Phone Number]],3,FALSE)",
+      // Canonical forms only (these should round-trip exactly)
+      "A5:10", // Open→ range
+      "$A5:15", // Open→ range with column absolute
+      "A7:INFINITY", // Open both
+      "B1:B15", // Closed range
+      "A$5:D", // Open↓ range with row absolute
+      "A1:A", // Whole column canonical form
+      "A5:5", // Whole row canonical form
     ];
 
     test.each(testCases)("should round-trip formula: %s", (formula) => {
@@ -386,6 +394,168 @@ describe("Formula Formatter", () => {
 
       // The formatted string should be stable (formatting twice should give same result)
       expect(reformatted).toBe(formatted);
+    });
+  });
+
+  describe("Canonical Range Formatting", () => {
+    describe("Closed Ranges (16 cases)", () => {
+      test("should format closed ranges with no absolute flags", () => {
+        expect(formatFormula("A5:D10")).toBe("A5:D10");
+      });
+
+      test("should format closed ranges with end column absolute", () => {
+        expect(formatFormula("A5:$D10")).toBe("A5:$D10");
+      });
+
+      test("should format closed ranges with end row absolute", () => {
+        expect(formatFormula("A5:D$10")).toBe("A5:D$10");
+      });
+
+      test("should format closed ranges with both end absolutes", () => {
+        expect(formatFormula("A5:$D$10")).toBe("A5:$D$10");
+      });
+
+      test("should format closed ranges with start column absolute", () => {
+        expect(formatFormula("$A5:D10")).toBe("$A5:D10");
+        expect(formatFormula("$A5:$D10")).toBe("$A5:$D10");
+        expect(formatFormula("$A5:D$10")).toBe("$A5:D$10");
+        expect(formatFormula("$A5:$D$10")).toBe("$A5:$D$10");
+      });
+
+      test("should format closed ranges with start row absolute", () => {
+        expect(formatFormula("A$5:D10")).toBe("A$5:D10");
+        expect(formatFormula("A$5:$D10")).toBe("A$5:$D10");
+        expect(formatFormula("A$5:D$10")).toBe("A$5:D$10");
+        expect(formatFormula("A$5:$D$10")).toBe("A$5:$D$10");
+      });
+
+      test("should format closed ranges with both start absolutes", () => {
+        expect(formatFormula("$A$5:D10")).toBe("$A$5:D10");
+        expect(formatFormula("$A$5:$D10")).toBe("$A$5:$D10");
+        expect(formatFormula("$A$5:D$10")).toBe("$A$5:D$10");
+        expect(formatFormula("$A$5:$D$10")).toBe("$A$5:$D$10");
+      });
+    });
+
+    describe("Open→ Ranges (8 cases)", () => {
+      test("should format row-bounded ranges with no absolute flags", () => {
+        expect(formatFormula("A5:10")).toBe("A5:10");
+      });
+
+      test("should format row-bounded ranges with end row absolute", () => {
+        expect(formatFormula("A5:$10")).toBe("A5:$10");
+      });
+
+      test("should format row-bounded ranges with start column absolute", () => {
+        expect(formatFormula("$A5:10")).toBe("$A5:10");
+        expect(formatFormula("$A5:$10")).toBe("$A5:$10");
+      });
+
+      test("should format row-bounded ranges with start row absolute", () => {
+        expect(formatFormula("A$5:10")).toBe("A$5:10");
+        expect(formatFormula("A$5:$10")).toBe("A$5:$10");
+      });
+
+      test("should format row-bounded ranges with both start absolutes", () => {
+        expect(formatFormula("$A$5:10")).toBe("$A$5:10");
+        expect(formatFormula("$A$5:$10")).toBe("$A$5:$10");
+      });
+    });
+
+    describe("Open↓ Ranges (8 cases)", () => {
+      test("should format column-bounded ranges with no absolute flags", () => {
+        expect(formatFormula("A5:D")).toBe("A5:D");
+      });
+
+      test("should format column-bounded ranges with end column absolute", () => {
+        expect(formatFormula("A5:$D")).toBe("A5:$D");
+      });
+
+      test("should format column-bounded ranges with start column absolute", () => {
+        expect(formatFormula("$A5:D")).toBe("$A5:D");
+        expect(formatFormula("$A5:$D")).toBe("$A5:$D");
+      });
+
+      test("should format column-bounded ranges with start row absolute", () => {
+        expect(formatFormula("A$5:D")).toBe("A$5:D");
+        expect(formatFormula("A$5:$D")).toBe("A$5:$D");
+      });
+
+      test("should format column-bounded ranges with both start absolutes", () => {
+        expect(formatFormula("$A$5:D")).toBe("$A$5:D");
+        expect(formatFormula("$A$5:$D")).toBe("$A$5:$D");
+      });
+    });
+
+    describe("Open Both Ranges (4 cases)", () => {
+      test("should format fully open ranges with no absolute flags", () => {
+        expect(formatFormula("A5:INFINITY")).toBe("A5:INFINITY");
+      });
+
+      test("should format fully open ranges with start column absolute", () => {
+        expect(formatFormula("$A5:INFINITY")).toBe("$A5:INFINITY");
+      });
+
+      test("should format fully open ranges with start row absolute", () => {
+        expect(formatFormula("A$5:INFINITY")).toBe("A$5:INFINITY");
+      });
+
+      test("should format fully open ranges with both start absolutes", () => {
+        expect(formatFormula("$A$5:INFINITY")).toBe("$A$5:INFINITY");
+      });
+    });
+
+    describe("Excel Compatibility - Whole Rows", () => {
+      test("should normalize whole row ranges to canonical form", () => {
+        expect(formatFormula("5:5")).toBe("A5:5");
+        expect(formatFormula("$5:5")).toBe("A$5:5");
+        expect(formatFormula("5:$5")).toBe("A5:$5");
+        expect(formatFormula("$5:$5")).toBe("A$5:$5");
+        expect(formatFormula("5:10")).toBe("A5:10");
+        expect(formatFormula("$5:10")).toBe("A$5:10");
+        expect(formatFormula("5:$10")).toBe("A5:$10");
+        expect(formatFormula("$5:$10")).toBe("A$5:$10");
+      });
+    });
+
+    describe("Excel Compatibility - Whole Columns", () => {
+      test("should normalize whole column ranges to canonical form", () => {
+        expect(formatFormula("A:A")).toBe("A1:A");
+        expect(formatFormula("$A:A")).toBe("$A1:A");
+        expect(formatFormula("A:$A")).toBe("A1:$A");
+        expect(formatFormula("$A:$A")).toBe("$A1:$A");
+        expect(formatFormula("A:D")).toBe("A1:D");
+        expect(formatFormula("$A:D")).toBe("$A1:D");
+        expect(formatFormula("A:$D")).toBe("A1:$D");
+        expect(formatFormula("$A:$D")).toBe("$A1:$D");
+      });
+    });
+
+    describe("Parsing Compatibility", () => {
+      test("should parse all canonical forms without error", () => {
+        const testCases = [
+          // Closed ranges
+          "A5:D10", "$A5:D10", "A$5:D10", "$A$5:D10",
+          "A5:$D10", "$A5:$D10", "A$5:$D10", "$A$5:$D10",
+          "A5:D$10", "$A5:D$10", "A$5:D$10", "$A$5:D$10",
+          "A5:$D$10", "$A5:$D$10", "A$5:$D$10", "$A$5:$D$10",
+          // Open→ ranges
+          "A5:10", "$A5:10", "A$5:10", "$A$5:10",
+          "A5:$10", "$A5:$10", "A$5:$10", "$A$5:$10",
+          // Open↓ ranges
+          "A5:D", "$A5:D", "A$5:D", "$A$5:D",
+          "A5:$D", "$A5:$D", "A$5:$D", "$A$5:$D",
+          // Open both ranges
+          "A5:INFINITY", "$A5:INFINITY", "A$5:INFINITY", "$A$5:INFINITY",
+          // Excel compatibility
+          "5:5", "$5:5", "5:$5", "$5:$5", "5:10", "$5:10", "5:$10", "$5:$10",
+          "A:A", "$A:A", "A:$A", "$A:$A", "A:D", "$A:D", "A:$D", "$A:$D"
+        ];
+
+        testCases.forEach(formula => {
+          expect(() => parseFormula(formula)).not.toThrow();
+        });
+      });
     });
   });
 

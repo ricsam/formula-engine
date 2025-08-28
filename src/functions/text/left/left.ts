@@ -3,7 +3,7 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
 } from "src/core/types";
-import { substringOperation, createTextSpilledResult, extractNumericValue } from "../text-helpers";
+import { midOperation, createMidSpilledResult } from "../text-helpers";
 
 /**
  * LEFT function - Returns the leftmost characters from a text string
@@ -20,6 +20,7 @@ import { substringOperation, createTextSpilledResult, extractNumericValue } from
  * - If num_chars is greater than the length of text, the function returns the entire text.
  * - Supports dynamic arrays (spilled values) for both arguments
  * - Strict type checking: text must be string, num_chars must be number
+ * - Implemented as MID(text, 1, num_chars)
  */
 export const LEFT: FunctionDefinition = {
   name: "LEFT",
@@ -52,14 +53,19 @@ export const LEFT: FunctionDefinition = {
       };
     }
 
-    // Handle spilled-values inputs
+    // Create start_num argument (always 1 for LEFT)
+    const startNumResult: FunctionEvaluationResult = {
+      type: "value",
+      result: { type: "number", value: 1 },
+    };
+
+    // Handle spilled-values inputs using MID's spilled result handler
     if (textResult.type === "spilled-values" || numCharsResult.type === "spilled-values") {
-      return createTextSpilledResult.call(this, {
-        operation: (text, numChars) => substringOperation(text, numChars, "left"),
+      return createMidSpilledResult.call(this, {
         textResult,
+        startNumResult,
         numCharsResult,
         context,
-        functionName: "LEFT",
       });
     }
 
@@ -97,10 +103,11 @@ export const LEFT: FunctionDefinition = {
       };
     }
 
+    // Use MID operation: LEFT(text, num_chars) = MID(text, 1, num_chars)
     try {
       return {
         type: "value",
-        result: substringOperation(textResult, numCharsResult, "left"),
+        result: midOperation(textResult, startNumResult, numCharsResult),
       };
     } catch (error) {
       return {

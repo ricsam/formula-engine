@@ -866,6 +866,193 @@ describe("Parser - Complex Formulas with New Syntax", () => {
   });
 });
 
+describe("Parser - Open-Ended Ranges", () => {
+  test("should parse A5:INFINITY (both row and column unbounded)", () => {
+    const ast = parseFormula("A5:INFINITY");
+    expect(ast.type).toBe("range");
+    expect(ast.range).toEqual({
+      start: { col: 0, row: 4 }, // A5 -> (0, 4) in 0-based indexing
+      end: {
+        col: { type: "infinity", sign: "positive" },
+        row: { type: "infinity", sign: "positive" },
+      },
+    });
+    expect(ast.isAbsolute).toEqual({
+      start: { col: false, row: false },
+      end: { col: false, row: false },
+    });
+  });
+
+  test("should parse A5:D (open down only - bounded columns)", () => {
+    const ast = parseFormula("A5:D");
+    expect(ast.type).toBe("range");
+    expect(ast.range).toEqual({
+      start: { col: 0, row: 4 }, // A5 -> (0, 4) in 0-based indexing
+      end: {
+        col: { type: "number", value: 3 }, // D -> column 3
+        row: { type: "infinity", sign: "positive" },
+      },
+    });
+    expect(ast.isAbsolute).toEqual({
+      start: { col: false, row: false },
+      end: { col: false, row: false },
+    });
+  });
+
+  test("should parse A5:15 (open right only - bounded rows)", () => {
+    const ast = parseFormula("A5:15");
+    expect(ast.type).toBe("range");
+    expect(ast.range).toEqual({
+      start: { col: 0, row: 4 }, // A5 -> (0, 4) in 0-based indexing
+      end: {
+        col: { type: "infinity", sign: "positive" },
+        row: { type: "number", value: 14 }, // Row 15 -> 14 in 0-based indexing
+      },
+    });
+    expect(ast.isAbsolute).toEqual({
+      start: { col: false, row: false },
+      end: { col: false, row: false },
+    });
+  });
+
+  test("should parse absolute open-ended ranges", () => {
+    // $A$5:INFINITY
+    const ast1 = parseFormula("$A$5:INFINITY");
+    expect(ast1.type).toBe("range");
+    expect(ast1.isAbsolute).toEqual({
+      start: { col: true, row: true },
+      end: { col: false, row: false }, // INFINITY is never absolute
+    });
+
+    // $A$5:$D
+    const ast2 = parseFormula("$A$5:$D");
+    expect(ast2.type).toBe("range");
+    expect(ast2.isAbsolute).toEqual({
+      start: { col: true, row: true },
+      end: { col: true, row: false }, // Row is infinite, so not absolute
+    });
+
+    // $A$5:$15
+    const ast3 = parseFormula("$A$5:$15");
+    expect(ast3.type).toBe("range");
+    expect(ast3.isAbsolute).toEqual({
+      start: { col: true, row: true },
+      end: { col: false, row: true }, // Column is infinite, so not absolute
+    });
+  });
+
+  test("should parse mixed absolute open-ended ranges", () => {
+    // A$5:D
+    const ast1 = parseFormula("A$5:D");
+    expect(ast1.type).toBe("range");
+    expect(ast1.isAbsolute).toEqual({
+      start: { col: false, row: true },
+      end: { col: false, row: false },
+    });
+
+    // $A5:15
+    const ast2 = parseFormula("$A5:15");
+    expect(ast2.type).toBe("range");
+    expect(ast2.isAbsolute).toEqual({
+      start: { col: true, row: false },
+      end: { col: false, row: false },
+    });
+  });
+
+  test("should parse open-ended ranges with sheet names", () => {
+    // Sheet1!A5:INFINITY
+    const ast1 = parseFormula("Sheet1!A5:INFINITY");
+    expect(ast1.type).toBe("range");
+    expect(ast1.sheetName).toBe("Sheet1");
+    expect(ast1.range.end.col.type).toBe("infinity");
+    expect(ast1.range.end.row.type).toBe("infinity");
+
+    // 'My Sheet'!A5:D
+    const ast2 = parseFormula("'My Sheet'!A5:D");
+    expect(ast2.type).toBe("range");
+    expect(ast2.sheetName).toBe("My Sheet");
+    expect(ast2.range.end.col.type).toBe("number");
+    expect(ast2.range.end.row.type).toBe("infinity");
+
+    // Sheet1!A5:15
+    const ast3 = parseFormula("Sheet1!A5:15");
+    expect(ast3.type).toBe("range");
+    expect(ast3.sheetName).toBe("Sheet1");
+    expect(ast3.range.end.col.type).toBe("infinity");
+    expect(ast3.range.end.row.type).toBe("number");
+  });
+
+  test("should parse open-ended ranges in function calls", () => {
+    const ast = parseFormula("SUM(A5:INFINITY, B1:D, C1:10)");
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("SUM");
+    expect(ast.args).toHaveLength(3);
+
+    // First argument: A5:INFINITY
+    expect(ast.args[0].type).toBe("range");
+    expect(ast.args[0].range.end.col.type).toBe("infinity");
+    expect(ast.args[0].range.end.row.type).toBe("infinity");
+
+    // Second argument: B1:D
+    expect(ast.args[1].type).toBe("range");
+    expect(ast.args[1].range.end.col.type).toBe("number");
+    expect(ast.args[1].range.end.row.type).toBe("infinity");
+
+    // Third argument: C1:10
+    expect(ast.args[2].type).toBe("range");
+    expect(ast.args[2].range.end.col.type).toBe("infinity");
+    expect(ast.args[2].range.end.row.type).toBe("number");
+  });
+
+  test("should parse complex open-ended range expressions", () => {
+    const ast = parseFormula("(A5:D) + (B1:INFINITY)");
+    expect(ast.type).toBe("binary-op");
+    expect(ast.operator).toBe("+");
+    expect(ast.left.type).toBe("range");
+    expect(ast.right.type).toBe("range");
+  });
+
+  test("should handle edge cases and larger ranges", () => {
+    // Large column range
+    const ast1 = parseFormula("Z100:AA");
+    expect(ast1.type).toBe("range");
+    expect(ast1.range.start.col).toBe(25); // Z -> 25
+    expect(ast1.range.start.row).toBe(99); // Row 100 -> 99 in 0-based
+    expect(ast1.range.end.col.value).toBe(26); // AA -> 26
+    expect(ast1.range.end.row.type).toBe("infinity");
+
+    // Large row range
+    const ast2 = parseFormula("AA100:1000");
+    expect(ast2.type).toBe("range");
+    expect(ast2.range.start.col).toBe(26); // AA -> 26
+    expect(ast2.range.start.row).toBe(99); // Row 100 -> 99 in 0-based
+    expect(ast2.range.end.col.type).toBe("infinity");
+    expect(ast2.range.end.row.value).toBe(999); // Row 1000 -> 999 in 0-based
+
+    // Very large range
+    const ast3 = parseFormula("ZZ999:INFINITY");
+    expect(ast3.type).toBe("range");
+    expect(ast3.range.end.col.type).toBe("infinity");
+    expect(ast3.range.end.row.type).toBe("infinity");
+  });
+
+  test("should distinguish open-ended ranges from normal ranges", () => {
+    // Normal range A5:D5 should NOT be parsed as open-ended
+    const ast1 = parseFormula("A5:D5");
+    expect(ast1.type).toBe("range");
+    expect(ast1.range.end.col.type).toBe("number");
+    expect(ast1.range.end.row.type).toBe("number");
+    expect(ast1.range.end.col.value).toBe(3); // D -> 3
+    expect(ast1.range.end.row.value).toBe(4); // Row 5 -> 4 in 0-based
+
+    // Normal range A5:A15 should NOT be parsed as open-ended
+    const ast2 = parseFormula("A5:A15");
+    expect(ast2.type).toBe("range");
+    expect(ast2.range.end.col.type).toBe("number");
+    expect(ast2.range.end.row.type).toBe("number");
+  });
+});
+
 describe("Parser - Error Handling", () => {
   test("should throw on invalid syntax", () => {
     expect(() => parseFormula("=")).toThrow(ParseError);

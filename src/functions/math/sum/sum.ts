@@ -82,6 +82,21 @@ export const SUM: FunctionDefinition = {
         }
       }
 
+      if (
+        range.end.col.type === "infinity" &&
+        range.end.row.type === "infinity"
+      ) {
+        throw new Error("SUM over an infinite end-range is not implemented. TODO");
+      }
+
+      if (range.end.col.type === "infinity") {
+        throw new Error("SUM over an infinite col-range is not implemented. TODO");
+      }
+
+      if (range.end.row.type === "infinity") {
+        throw new Error("SUM over an infinite row-range is not implemented. TODO");
+      }
+
       return {
         type: "number",
         value: subTotal,

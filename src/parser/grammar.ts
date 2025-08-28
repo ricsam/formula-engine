@@ -246,6 +246,16 @@ export const CELL_REFERENCE_PATTERNS = {
   // Infinite row range (e.g., 5:5, $10:$10)
   INFINITE_ROW: /^(\$)?([1-9][0-9]*):(\$)?([1-9][0-9]*)$/i,
 
+  // Open-ended range patterns
+  // A5:INFINITY (both row and column unbounded)
+  OPEN_ENDED_INFINITY: /^(\$)?([A-Z]+)(\$)?([1-9][0-9]*):INFINITY$/i,
+  
+  // A5:D (open down only - bounded columns, unbounded rows)
+  OPEN_ENDED_COLUMN: /^(\$)?([A-Z]+)(\$)?([1-9][0-9]*):(\$)?([A-Z]+)$/i,
+  
+  // A5:15 (open right only - bounded rows, unbounded columns)
+  OPEN_ENDED_ROW: /^(\$)?([A-Z]+)(\$)?([1-9][0-9]*):(\$)?([1-9][0-9]*)$/i,
+
   // Structured reference patterns
   TABLE_REFERENCE: /^([A-Za-z_][A-Za-z0-9_]*)\[(.+)\]$/,
   CURRENT_ROW_REFERENCE: /^@([A-Za-z_][A-Za-z0-9_]*)$/,
@@ -351,6 +361,93 @@ export function parseInfiniteRange(ref: string): ParsedInfiniteRange | null {
       endAbsolute: rowMatch[3] === "$",
       end: rowMatch[4],
     };
+  }
+
+  return null;
+}
+
+/**
+ * Parse open-ended range patterns (A5:INFINITY, A5:D, A5:15)
+ */
+interface ParsedOpenEndedRange {
+  sheet?: string;
+  type: "infinity" | "column-bounded" | "row-bounded";
+  startCol: string;
+  startRow: string;
+  startColAbsolute: boolean;
+  startRowAbsolute: boolean;
+  endCol?: string;
+  endRow?: string;
+  endColAbsolute?: boolean;
+  endRowAbsolute?: boolean;
+}
+
+export function parseOpenEndedRange(ref: string): ParsedOpenEndedRange | null {
+  // Check for sheet qualifier
+  const sheetMatch = ref.match(CELL_REFERENCE_PATTERNS.SHEET_QUALIFIED);
+  let sheet: string | undefined;
+  let rangePart: string;
+
+  if (sheetMatch && sheetMatch[3]) {
+    sheet = sheetMatch[1] || sheetMatch[2]; // Either unquoted or quoted sheet name
+    rangePart = sheetMatch[3];
+  } else {
+    rangePart = ref;
+  }
+
+  // Check for A5:INFINITY pattern
+  const infinityMatch = rangePart.match(CELL_REFERENCE_PATTERNS.OPEN_ENDED_INFINITY);
+  if (infinityMatch && infinityMatch[2] && infinityMatch[4]) {
+    return {
+      sheet,
+      type: "infinity",
+      startCol: infinityMatch[2].toUpperCase(),
+      startRow: infinityMatch[4],
+      startColAbsolute: infinityMatch[1] === "$",
+      startRowAbsolute: infinityMatch[3] === "$",
+    };
+  }
+
+  // Check for A5:D pattern (open down only)
+  // We need to be more careful here to distinguish from normal cell ranges
+  const colonIndex = rangePart.indexOf(':');
+  if (colonIndex !== -1) {
+    const startPart = rangePart.substring(0, colonIndex);
+    const endPart = rangePart.substring(colonIndex + 1);
+    
+    // Parse start part as a cell reference
+    const startMatch = startPart.match(/^(\$)?([A-Z]+)(\$)?([1-9][0-9]*)$/i);
+    if (startMatch && startMatch[2] && startMatch[4]) {
+      // Check if end part is just a column (A5:D pattern)
+      const endColMatch = endPart.match(/^(\$)?([A-Z]+)$/i);
+      if (endColMatch && endColMatch[2]) {
+        return {
+          sheet,
+          type: "column-bounded",
+          startCol: startMatch[2].toUpperCase(),
+          startRow: startMatch[4],
+          startColAbsolute: startMatch[1] === "$",
+          startRowAbsolute: startMatch[3] === "$",
+          endCol: endColMatch[2].toUpperCase(),
+          endColAbsolute: endColMatch[1] === "$",
+        };
+      }
+      
+      // Check if end part is just a row number (A5:15 pattern)
+      const endRowMatch = endPart.match(/^(\$)?([1-9][0-9]*)$/);
+      if (endRowMatch && endRowMatch[2]) {
+        return {
+          sheet,
+          type: "row-bounded",
+          startCol: startMatch[2].toUpperCase(),
+          startRow: startMatch[4],
+          startColAbsolute: startMatch[1] === "$",
+          startRowAbsolute: startMatch[3] === "$",
+          endRow: endRowMatch[2],
+          endRowAbsolute: endRowMatch[1] === "$",
+        };
+      }
+    }
   }
 
   return null;
