@@ -5,6 +5,7 @@ import {
   type ValueEvaluationResult,
   type EvaluationContext,
   type CellAddress,
+  type SpreadsheetRange,
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
@@ -41,236 +42,157 @@ export function extractNumericValue(result: FunctionEvaluationResult): number {
   }
 }
 
+
+
 /**
- * Generic substring operation for LEFT and RIGHT functions
+ * MID substring operation for MID function
  */
-export function substringOperation(
+export function midOperation(
   textResult: FunctionEvaluationResult,
-  numCharsResult: FunctionEvaluationResult,
-  direction: "left" | "right"
+  startNumResult: FunctionEvaluationResult,
+  numCharsResult: FunctionEvaluationResult
 ): CellString {
   const textStr = convertToString(textResult);
+  const startNum = extractNumericValue(startNumResult);
   const numChars = extractNumericValue(numCharsResult);
 
-  // Validate numChars
+  // Validate startNum and numChars
+  if (startNum < 1) {
+    throw new Error(FormulaError.VALUE);
+  }
   if (numChars < 0) {
     throw new Error(FormulaError.VALUE);
   }
 
-  let result: string;
-  if (direction === "left") {
-    result = textStr.substring(0, Math.floor(numChars));
-  } else {
-    const start = Math.max(0, textStr.length - Math.floor(numChars));
-    result = textStr.substring(start);
-  }
+  // Convert to 0-based index (Excel uses 1-based)
+  const startIndex = Math.floor(startNum) - 1;
+  const length = Math.floor(numChars);
+  
+  // Extract substring
+  const result = textStr.substring(startIndex, startIndex + length);
 
   return { type: "string", value: result };
 }
 
+
+
 /**
- * Helper for creating spilled-values result for text functions
+ * Helper for creating spilled-values result for MID function (3 parameters)
  */
-export function createTextSpilledResult(
+export function createMidSpilledResult(
   this: FormulaEvaluator,
   {
-    operation,
     textResult,
+    startNumResult,
     numCharsResult,
     context,
-    functionName,
   }: {
-    operation: (
-      textResult: FunctionEvaluationResult,
-      numCharsResult: FunctionEvaluationResult
-    ) => CellString;
     textResult: FunctionEvaluationResult;
+    startNumResult: FunctionEvaluationResult;
     numCharsResult: FunctionEvaluationResult;
     context: EvaluationContext;
-    functionName: string;
   }
 ): FunctionEvaluationResult {
-  // Handle spilled-values input - return spilled-values for spilling
-  if (textResult.type === "spilled-values") {
-    // If both arguments are spilled-values, we need to zip them together
-    if (numCharsResult.type === "spilled-values") {
-      if (numCharsResult.originResult.type !== "number") {
-        return {
-          type: "error",
-          err: FormulaError.VALUE,
-          message: "Invalid numChars argument",
-        };
+  const hasSpilledText = textResult.type === "spilled-values";
+  const hasSpilledStart = startNumResult.type === "spilled-values";
+  const hasSpilledNum = numCharsResult.type === "spilled-values";
+
+  if (!hasSpilledText && !hasSpilledStart && !hasSpilledNum) {
+    throw new Error("createMidSpilledResult called without spilled values");
+  }
+
+  // Calculate origin result using origin values
+  const textValue: FunctionEvaluationResult = hasSpilledText 
+    ? { type: "value", result: textResult.originResult }
+    : textResult;
+  const startNumValue: FunctionEvaluationResult = hasSpilledStart 
+    ? { type: "value", result: startNumResult.originResult }
+    : startNumResult;
+  const numCharsValue: FunctionEvaluationResult = hasSpilledNum 
+    ? { type: "value", result: numCharsResult.originResult }
+    : numCharsResult;
+
+  let originCellValue: CellString;
+  try {
+    originCellValue = midOperation(textValue, startNumValue, numCharsValue);
+  } catch (error) {
+    return {
+      type: "error",
+      err: FormulaError.VALUE,
+      message: "MID operation failed",
+    };
+  }
+
+  // Calculate spill area (union of all spilled ranges)
+  let spillArea: SpreadsheetRange;
+  
+  if (hasSpilledText && textResult.type === "spilled-values") {
+    spillArea = textResult.spillArea;
+  } else if (hasSpilledStart && startNumResult.type === "spilled-values") {
+    spillArea = startNumResult.spillArea;
+  } else if (hasSpilledNum && numCharsResult.type === "spilled-values") {
+    spillArea = numCharsResult.spillArea;
+  } else {
+    // This shouldn't happen since we check for spilled values at the beginning
+    throw new Error("No spilled values found");
+  }
+  
+  // Union with other spilled ranges if they exist
+  if (hasSpilledText && hasSpilledStart && 
+      textResult.type === "spilled-values" && startNumResult.type === "spilled-values") {
+    spillArea = this.unionRanges(
+      this.projectRange(textResult.spillArea, context.currentCell),
+      this.projectRange(startNumResult.spillArea, context.currentCell)
+    );
+  }
+  
+  if ((hasSpilledText || hasSpilledStart) && hasSpilledNum && 
+      numCharsResult.type === "spilled-values") {
+    const projectedSpillArea = this.projectRange(spillArea, context.currentCell);
+    const numSpillArea = this.projectRange(numCharsResult.spillArea, context.currentCell);
+    spillArea = this.unionRanges(projectedSpillArea, numSpillArea);
+  }
+
+  return {
+    type: "spilled-values",
+    spillArea,
+    spillOrigin: context.currentCell,
+    source: "MID with spilled values",
+    originResult: originCellValue,
+    evaluate: (spilledCell: { address: CellAddress; spillOffset: { x: number; y: number } }, evalContext: EvaluationContext) => {
+      // Evaluate all arguments at this spilled position
+      const spillTextResult = hasSpilledText 
+        ? textResult.evaluate(spilledCell, evalContext) 
+        : textResult;
+      const spillStartResult = hasSpilledStart 
+        ? startNumResult.evaluate(spilledCell, evalContext) 
+        : startNumResult;
+      const spillNumResult = hasSpilledNum 
+        ? numCharsResult.evaluate(spilledCell, evalContext) 
+        : numCharsResult;
+
+      if (!spillTextResult || spillTextResult.type === "error") {
+        return spillTextResult;
+      }
+      if (!spillStartResult || spillStartResult.type === "error") {
+        return spillStartResult;
+      }
+      if (!spillNumResult || spillNumResult.type === "error") {
+        return spillNumResult;
       }
 
-      // Calculate origin result using origin values from both spilled arrays
-      const textValue: FunctionEvaluationResult = {
-        type: "value",
-        result: textResult.originResult,
-      };
-      const numCharsValue: FunctionEvaluationResult = {
-        type: "value",
-        result: numCharsResult.originResult,
-      };
-      
-      let originCellValue: CellString;
       try {
-        originCellValue = operation(textValue, numCharsValue);
+        return {
+          type: "value",
+          result: midOperation(spillTextResult, spillStartResult, spillNumResult),
+        };
       } catch (error) {
         return {
           type: "error",
           err: FormulaError.VALUE,
-          message: `${functionName} operation failed`,
+          message: "MID operation failed",
         };
       }
-
-      // Create unified spill area (union of both ranges)
-      const spillArea = this.unionRanges(
-        this.projectRange(textResult.spillArea, context.currentCell),
-        this.projectRange(numCharsResult.spillArea, context.currentCell)
-      );
-
-      return {
-        type: "spilled-values",
-        spillArea,
-        spillOrigin: context.currentCell,
-        source: `${functionName} with zipped spilled text and numChars values`,
-        originResult: originCellValue,
-        evaluate: (spilledCell: { address: CellAddress; spillOffset: { x: number; y: number } }, evalContext: EvaluationContext) => {
-          // Evaluate both spilled arrays at this position
-          const spillTextResult = textResult.evaluate(spilledCell, evalContext);
-          const spillNumCharsResult = numCharsResult.evaluate(spilledCell, evalContext);
-
-          if (!spillTextResult || spillTextResult.type === "error") {
-            return spillTextResult;
-          }
-          if (!spillNumCharsResult || spillNumCharsResult.type === "error") {
-            return spillNumCharsResult;
-          }
-
-          try {
-            return {
-              type: "value",
-              result: operation(spillTextResult, spillNumCharsResult),
-            };
-          } catch (error) {
-            return {
-              type: "error",
-              err: FormulaError.VALUE,
-              message: `${functionName} operation failed`,
-            };
-          }
-        },
-      };
-    }
-
-    // Single numChars value with spilled text values
-    if (
-      numCharsResult.type !== "value" ||
-      numCharsResult.result.type !== "number"
-    ) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Invalid numChars argument",
-      };
-    }
-
-          const textValue: ValueEvaluationResult = {
-        type: "value",
-        result: textResult.originResult,
-      };
-    
-    let originCellValue: CellString;
-    try {
-      originCellValue = operation(textValue, numCharsResult);
-    } catch (error) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: `${functionName} operation failed`,
-      };
-    }
-
-    return {
-      type: "spilled-values",
-      spillArea: textResult.spillArea,
-      spillOrigin: context.currentCell,
-      source: `${functionName} with spilled text values`,
-      originResult: originCellValue,
-      evaluate: (spilledCell: { address: CellAddress; spillOffset: { x: number; y: number } }, evalContext: EvaluationContext) => {
-        const spillResult = textResult.evaluate(spilledCell, evalContext);
-        if (!spillResult || spillResult.type === "error") {
-          return spillResult;
-        }
-        try {
-          return {
-            type: "value",
-            result: operation(spillResult, numCharsResult),
-          };
-        } catch (error) {
-          return {
-            type: "error",
-            err: FormulaError.VALUE,
-            message: `${functionName} operation failed`,
-          };
-        }
-      },
-    };
-  }
-
-  // Single text value with spilled numChars
-  if (numCharsResult.type === "spilled-values") {
-    if (textResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Invalid text argument",
-      };
-    }
-
-    const numCharsValue: ValueEvaluationResult = {
-      type: "value",
-      result: numCharsResult.originResult,
-    };
-    
-    let originCellValue: CellString;
-    try {
-      originCellValue = operation(textResult, numCharsValue);
-    } catch (error) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: `${functionName} operation failed`,
-      };
-    }
-
-    return {
-      type: "spilled-values",
-      spillArea: numCharsResult.spillArea,
-      spillOrigin: context.currentCell,
-      source: `${functionName} with spilled numChars values`,
-      originResult: originCellValue,
-      evaluate: (spilledCell: { address: CellAddress; spillOffset: { x: number; y: number } }, evalContext: EvaluationContext) => {
-        const spillResult = numCharsResult.evaluate(spilledCell, evalContext);
-        if (!spillResult || spillResult.type === "error") {
-          return spillResult;
-        }
-        try {
-          return {
-            type: "value",
-            result: operation(textResult, spillResult),
-          };
-        } catch (error) {
-          return {
-            type: "error",
-            err: FormulaError.VALUE,
-            message: `${functionName} operation failed`,
-          };
-        }
-      },
-    };
-  }
-
-  // No spilled values - this shouldn't be called in this case
-  throw new Error("createTextSpilledResult called without spilled values");
+    },
+  };
 }

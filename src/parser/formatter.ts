@@ -1,5 +1,6 @@
 import { indexToColumn } from "src/core/utils";
 import { type CellValue, type SerializedCellValue } from "../core/types";
+import { parseOpenEndedRange, parseInfiniteRange } from "./grammar";
 import type {
   ArrayNode,
   ASTNode,
@@ -128,35 +129,48 @@ function formatInfiniteRange(ast: RangeNode): string {
 
   let rangeRef: string;
 
-  if (range.end.col.type === "infinity") {
-    // Infinite row range (e.g., 1:5, 10:20) - infinite columns, finite rows
+  // Canonical formatting rules:
+  // 1. Start is always explicit cell (A5, $A$5, etc.)
+  // 2. End varies by openness:
+  //    - Open→: A5:10 (row-bounded)
+  //    - Open↓: A5:D (column-bounded)  
+  //    - Open both: A5:INFINITY
+  // 3. Excel compatibility: whole rows/columns use canonical cell form
+  //    - 5:5 → A5:5, A:A → A1:A
+
+  const startCol = indexToColumn(range.start.col);
+  const startRow = range.start.row + 1;
+
+  const startColRef = isAbsolute.start.col ? `$${startCol}` : startCol;
+  const startRowRef = isAbsolute.start.row ? `$${startRow}` : startRow.toString();
+
+  if (range.end.col.type === "infinity" && range.end.row.type === "infinity") {
+    // Open both: A5:INFINITY
+    rangeRef = `${startColRef}${startRowRef}:INFINITY`;
+  } else if (range.end.col.type === "infinity") {
+    // Open→ (row-bounded): A5:10
     if (range.end.row.type !== "number") {
-      throw new Error("Expected finite row for infinite row range");
+      throw new Error("Expected finite row for infinite column range");
     }
-    const startRow = range.start.row + 1;
+    
     const endRow = range.end.row.value + 1;
-
-    const startRowRef = isAbsolute.start.row
-      ? `$${startRow}`
-      : startRow.toString();
     const endRowRef = isAbsolute.end.row ? `$${endRow}` : endRow.toString();
-
-    rangeRef = `${startRowRef}:${endRowRef}`;
+    
+    // Always use canonical cell form: A5:10 (not 5:10)
+    rangeRef = `${startColRef}${startRowRef}:${endRowRef}`;
   } else if (range.end.row.type === "infinity") {
-    // Infinite column range (e.g., A:B, C:Z) - infinite rows, finite columns
+    // Open↓ (column-bounded): A5:D
     if (range.end.col.type !== "number") {
-      throw new Error("Expected finite column for infinite column range");
+      throw new Error("Expected finite column for infinite row range");
     }
-    const startCol = indexToColumn(range.start.col);
+
     const endCol = indexToColumn(range.end.col.value);
-
-    const startColRef = isAbsolute.start.col ? `$${startCol}` : startCol;
     const endColRef = isAbsolute.end.col ? `$${endCol}` : endCol;
-
-    rangeRef = `${startColRef}:${endColRef}`;
+    
+    // Always use canonical cell form: A1:D (not A:D)
+    rangeRef = `${startColRef}${startRowRef}:${endColRef}`;
   } else {
-    // This shouldn't happen for infinite ranges, but handle it gracefully
-    throw new Error("formatInfiniteRange called with non-infinite range");
+    throw new Error("Expected at least one infinite dimension for infinite range");
   }
 
   if (sheetName) {

@@ -22,6 +22,7 @@ import {
   isBinaryOperator,
   parseCellReference,
   parseInfiniteRange,
+  parseOpenEndedRange,
   SPECIAL_FUNCTIONS,
 } from "./grammar";
 import { Lexer, TokenStream, type Token } from "./lexer";
@@ -468,10 +469,13 @@ export class Parser {
       const startRow = this.tokens.consume().value;
       this.tokens.consume(); // Consume ':'
 
-      // Get the end row
-      let endRow: string;
+      // Get the end row (handle absolute references like $5)
+      let endRow: string = "";
+      if (this.tokens.match("DOLLAR")) {
+        endRow += this.tokens.consume().value;
+      }
       if (this.tokens.match("NUMBER")) {
-        endRow = this.tokens.consume().value;
+        endRow += this.tokens.consume().value;
       } else {
         throw new ParseError(
           "Expected row number after :",
@@ -761,10 +765,16 @@ export class Parser {
   }
 
   /**
-   * Parse the end part of a range (handling $ signs and infinite ranges)
+   * Parse the end part of a range (handling $ signs, infinite ranges, and open-ended ranges)
    */
   private parseRangeEnd(): string {
     let result = "";
+
+    // Check for INFINITY token (for A5:INFINITY syntax)
+    if (this.tokens.match("INFINITY")) {
+      result += this.tokens.consume().value;
+      return result;
+    }
 
     // Check for $ before column or row
     if (this.tokens.match("DOLLAR")) {
@@ -784,13 +794,16 @@ export class Parser {
       if (this.tokens.match("NUMBER")) {
         result += this.tokens.consume().value;
       }
-      // If no number, it's an infinite column range (e.g., A:A)
+      // If no number, it's an infinite column range (e.g., A:A) or open-ended range (e.g., A5:D)
     } else if (this.tokens.match("NUMBER")) {
-      // Infinite row range (e.g., 5:5)
+      // This handles cases like:
+      // - Infinite row range (e.g., 5:5) 
+      // - Open-ended range (e.g., A5:15)
+      // - Absolute row reference (e.g., A5:$15)
       result += this.tokens.consume().value;
     } else {
       throw new ParseError(
-        "Expected cell reference after :",
+        "Expected cell reference, column, row, or INFINITY after :",
         this.tokens.peek().position
       );
     }
@@ -1789,13 +1802,14 @@ export class Parser {
     if (sheetMatch) {
       sheetName = sheetMatch[1] || sheetMatch[2];
 
-      // First, try to parse as an infinite range without modifying the range
-      // This handles cases like Sheet1!A:A or Sheet1!5:5
+      // First, try to parse as an infinite range or open-ended range without modifying the range
+      // This handles cases like Sheet1!A:A, Sheet1!5:5, Sheet1!A5:INFINITY, etc.
       const infiniteTest = parseInfiniteRange(fullRange);
-      if (infiniteTest) {
-        // It's an infinite range, skip to processing it below
+      const openEndedTest = parseOpenEndedRange(fullRange);
+      if (infiniteTest || openEndedTest) {
+        // It's an infinite or open-ended range, skip to processing it below
       } else {
-        // Not an infinite range, so handle normal cross-sheet ranges
+        // Not an infinite or open-ended range, so handle normal cross-sheet ranges
         const endSheetMatch = endRef.match(
           /^(?:([A-Za-z_][A-Za-z0-9_]*)|'([^']+)')!/
         );
@@ -1906,6 +1920,155 @@ export class Parser {
             end: {
               col: false,
               row: infiniteParsed.endAbsolute,
+            },
+          },
+          position: {
+            start: startPos,
+            end: endPos,
+          },
+        });
+      }
+    }
+
+    // Try to parse as an open-ended range (A5:INFINITY, A5:D, A5:15)
+    const openEndedParsed = parseOpenEndedRange(fullRange);
+    
+    if (openEndedParsed) {
+      // Handle open-ended range
+      sheetName = sheetName ?? openEndedParsed.sheet;
+      
+      const startCol = columnToIndex(openEndedParsed.startCol);
+      const startRow = parseInt(openEndedParsed.startRow) - 1; // Convert to 0-based
+      
+      if (startCol < 0 || startRow < 0) {
+        throw new ParseError(`Invalid range reference: ${startRef}:${endRef}`, {
+          start: startPos,
+          end: endPos,
+        });
+      }
+      
+      if (openEndedParsed.type === "infinity") {
+        // A5:INFINITY - both row and column unbounded
+        const range: SpreadsheetRange = {
+          start: {
+            col: startCol,
+            row: startRow,
+          },
+          end: {
+            col: {
+              type: "infinity",
+              sign: "positive",
+            },
+            row: {
+              type: "infinity",
+              sign: "positive",
+            },
+          },
+        };
+        
+        return createRangeNode({
+          sheetName,
+          range,
+          isAbsolute: {
+            start: {
+              col: openEndedParsed.startColAbsolute,
+              row: openEndedParsed.startRowAbsolute,
+            },
+            end: {
+              col: false, // INFINITY is never absolute
+              row: false, // INFINITY is never absolute
+            },
+          },
+          position: {
+            start: startPos,
+            end: endPos,
+          },
+        });
+      } else if (openEndedParsed.type === "column-bounded") {
+        // A5:D - open down only (bounded columns, unbounded rows)
+        const endCol = columnToIndex(openEndedParsed.endCol!);
+        
+        if (endCol < 0) {
+          throw new ParseError(`Invalid column range: ${startRef}:${endRef}`, {
+            start: startPos,
+            end: endPos,
+          });
+        }
+        
+        const range: SpreadsheetRange = {
+          start: {
+            col: Math.min(startCol, endCol),
+            row: startRow,
+          },
+          end: {
+            col: {
+              type: "number",
+              value: Math.max(startCol, endCol),
+            },
+            row: {
+              type: "infinity",
+              sign: "positive",
+            },
+          },
+        };
+        
+        return createRangeNode({
+          sheetName,
+          range,
+          isAbsolute: {
+            start: {
+              col: openEndedParsed.startColAbsolute,
+              row: openEndedParsed.startRowAbsolute,
+            },
+            end: {
+              col: openEndedParsed.endColAbsolute!,
+              row: false, // Row is infinite, so not absolute
+            },
+          },
+          position: {
+            start: startPos,
+            end: endPos,
+          },
+        });
+      } else if (openEndedParsed.type === "row-bounded") {
+        // A5:15 - open right only (bounded rows, unbounded columns)
+        const endRow = parseInt(openEndedParsed.endRow!) - 1; // Convert to 0-based
+        
+        if (endRow < 0) {
+          throw new ParseError(`Invalid row range: ${startRef}:${endRef}`, {
+            start: startPos,
+            end: endPos,
+          });
+        }
+        
+        const range: SpreadsheetRange = {
+          start: {
+            col: startCol,
+            row: Math.min(startRow, endRow),
+          },
+          end: {
+            col: {
+              type: "infinity",
+              sign: "positive",
+            },
+            row: {
+              type: "number",
+              value: Math.max(startRow, endRow),
+            },
+          },
+        };
+        
+        return createRangeNode({
+          sheetName,
+          range,
+          isAbsolute: {
+            start: {
+              col: openEndedParsed.startColAbsolute,
+              row: openEndedParsed.startRowAbsolute,
+            },
+            end: {
+              col: false, // Column is infinite, so not absolute
+              row: openEndedParsed.endRowAbsolute!,
             },
           },
           position: {

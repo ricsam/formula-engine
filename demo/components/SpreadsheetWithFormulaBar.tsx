@@ -29,6 +29,7 @@ interface SpreadsheetWithFormulaBarProps {
   engine: FormulaEngine;
   tables: Map<string, TableDefinition>;
   globalNamedExpressions: Map<string, NamedExpression>;
+  verboseErrors?: boolean;
 }
 
 export function SpreadsheetWithFormulaBar({
@@ -36,6 +37,7 @@ export function SpreadsheetWithFormulaBar({
   engine,
   tables,
   globalNamedExpressions,
+  verboseErrors = false,
 }: SpreadsheetWithFormulaBarProps) {
   const [selectedCell, setSelectedCell] = useState<string | null>(null);
   const [selectedArea, setSelectedArea] = useState<SMArea | null>(null);
@@ -570,7 +572,7 @@ export function SpreadsheetWithFormulaBar({
               sheetName,
               colIndex: cell.colIndex,
               rowIndex: cell.rowIndex,
-            });
+            }, verboseErrors);
 
             if (typeof value === "number") {
               // Format numbers nicely

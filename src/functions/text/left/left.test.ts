@@ -7,10 +7,10 @@ describe("LEFT function", () => {
   const sheetName = "TestSheet";
   let engine: FormulaEngine;
 
-  const cell = (ref: string) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) });
+  const cell = (ref: string, debug?: boolean) =>
+    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
 
-  const setCellContent = (ref: string, content: string) => {
+  const setCellContent = (ref: string, content: SerializedCellValue) => {
     engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
   };
 
