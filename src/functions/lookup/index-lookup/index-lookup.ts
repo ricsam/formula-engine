@@ -15,44 +15,20 @@ import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 /**
  * INDEX function - Returns a value from a table or array
  * INDEX(array, row_num, [column_num])
- * 
+ *
  * STRICT TYPE CHECKING:
  * - array: range/array only
  * - row_num: number only (integer, 1-based)
  * - column_num: number only (integer, 1-based, optional)
- * 
+ *
  * If array is 1-dimensional (single row or column):
  * - Only row_num is used (treats as a linear array)
  * - column_num is ignored if provided
- * 
+ *
  * If array is 2-dimensional:
  * - Both row_num and column_num can be used
  * - If column_num is omitted, returns entire row
  */
-
-// Helper function to get array dimensions from a spilled result
-function getArrayDimensions(spillArea: SpreadsheetRange): {
-  rows: number;
-  cols: number;
-  startRow: number;
-  startCol: number;
-  endRow: number;
-  endCol: number;
-} {
-  const startRow = spillArea.start.row;
-  const startCol = spillArea.start.col;
-  const endRow = spillArea.end.row.type === "number" ? spillArea.end.row.value : startRow;
-  const endCol = spillArea.end.col.type === "number" ? spillArea.end.col.value : startCol;
-  
-  return {
-    rows: endRow - startRow + 1,
-    cols: endCol - startCol + 1,
-    startRow,
-    startCol,
-    endRow,
-    endCol,
-  };
-}
 
 // Helper function to get value from array at specific position
 function getValueFromArray(
@@ -62,57 +38,67 @@ function getValueFromArray(
   col: number,
   context: EvaluationContext
 ): CellValue | { type: "error"; err: FormulaError; message: string } {
-  const dims = getArrayDimensions(arrayResult.spillArea);
-  
+  const dims = arrayResult.spillArea(context.currentCell);
+
   // Convert 1-based indices to 0-based
   const rowIndex = row - 1;
   const colIndex = col - 1;
-  
-  // Check bounds
-  if (rowIndex < 0 || rowIndex >= dims.rows) {
-    return {
-      type: "error",
-      err: FormulaError.REF,
-      message: `INDEX: row_num ${row} is out of range (1-${dims.rows})`,
-    };
-  }
-  
-  if (colIndex < 0 || colIndex >= dims.cols) {
-    return {
-      type: "error",
-      err: FormulaError.REF,
-      message: `INDEX: column_num ${col} is out of range (1-${dims.cols})`,
-    };
-  }
-  
+
   // Calculate actual cell position
-  const actualRow = dims.startRow + rowIndex;
-  const actualCol = dims.startCol + colIndex;
-  
+  const actualRow = dims.start.row + rowIndex;
+  const actualCol = dims.start.col + colIndex;
+
+  // Check bounds
+  if (
+    actualRow < 0 ||
+    (dims.end.row.type === "number" && actualRow > dims.end.row.value)
+  ) {
+    return {
+      type: "error",
+      err: FormulaError.REF,
+      message: `INDEX: row_num ${row} is out of range`,
+    };
+  }
+
+  if (
+    actualCol < 0 ||
+    (dims.end.col.type === "number" && actualCol > dims.end.col.value)
+  ) {
+    return {
+      type: "error",
+      err: FormulaError.REF,
+      message: `INDEX: column_num ${col} is out of range`,
+    };
+  }
+
   const spilledAddress: CellAddress = {
     colIndex: actualCol,
     rowIndex: actualRow,
     sheetName: context.currentSheet,
   };
-  
+
   const spill = {
     address: spilledAddress,
     spillOffset: {
-      x: actualCol - dims.startCol,
-      y: actualRow - dims.startRow,
+      x: actualCol - dims.start.col,
+      y: actualRow - dims.start.row,
     },
   };
-  
-  const spillResult = arrayResult.evaluate(spill, context);
-  
-  if (!spillResult || spillResult.type !== "value") {
+
+  const spillResult = arrayResult.evaluate(spill.spillOffset, context);
+
+  if (!spillResult) {
     return {
       type: "error",
       err: FormulaError.VALUE,
       message: "INDEX: Unable to retrieve value from array",
     };
   }
-  
+
+  if (spillResult.type === "error") {
+    return spillResult;
+  }
+
   return spillResult.result;
 }
 
@@ -157,7 +143,8 @@ export const INDEX: FunctionDefinition = {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        message: "INDEX: Spilled row_num/column_num arguments not yet implemented",
+        message:
+          "INDEX: Spilled row_num/column_num arguments not yet implemented",
       };
     }
 
@@ -197,8 +184,14 @@ export const INDEX: FunctionDefinition = {
     }
 
     // Extract row and column numbers (convert to integers)
-    const rowNum = Math.floor((rowNumResult.result as { type: "number"; value: number }).value);
-    const colNum = colNumResult ? Math.floor((colNumResult.result as { type: "number"; value: number }).value) : 1;
+    const rowNum = Math.floor(
+      (rowNumResult.result as { type: "number"; value: number }).value
+    );
+    const colNum = colNumResult
+      ? Math.floor(
+          (colNumResult.result as { type: "number"; value: number }).value
+        )
+      : 1;
 
     // Validate that indices are positive
     if (rowNum < 1) {
@@ -233,12 +226,18 @@ export const INDEX: FunctionDefinition = {
       } satisfies ValueEvaluationResult;
     } else if (arrayResult.type === "spilled-values") {
       // Array case - use helper function to get value
-      const result = getValueFromArray.call(this, arrayResult, rowNum, colNum, context);
-      
+      const result = getValueFromArray.call(
+        this,
+        arrayResult,
+        rowNum,
+        colNum,
+        context
+      );
+
       if (result.type === "error") {
         return result;
       }
-      
+
       return {
         type: "value",
         result,

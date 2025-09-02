@@ -9,6 +9,7 @@ import {
   type SpilledValuesEvaluationResult,
   type ValueEvaluationResult,
 } from "src/core/types";
+import { OpenRangeEvaluator } from "../open-range-evaluator";
 
 /**
  * AVERAGE function - Calculates the arithmetic mean of all numbers in the arguments
@@ -43,57 +44,24 @@ export const AVERAGE: FunctionDefinition = {
         };
       }
       // Handle spilled values
-      const range = result.spillArea;
+      const cellValues = result.evaluateAllCells.call(this, {
+        context,
+        evaluate: result.evaluate,
+        origin: context.currentCell,
+      });
+
       let subTotal = 0;
       let count = 0;
-      if (range.end.col.type === "number" && range.end.row.type === "number") {
-        for (let row = range.start.row; row <= range.end.row.value; row++) {
-          for (let col = range.start.col; col <= range.end.col.value; col++) {
-            if (
-              row === result.spillOrigin.rowIndex &&
-              col === result.spillOrigin.colIndex
-            ) {
-              const parsed = parseResult({
-                type: "value",
-                result: result.originResult,
-              });
-              if (parsed.type === "error") {
-                return parsed;
-              }
-              if (parsed.type === "infinity") {
-                return parsed;
-              }
-              subTotal += parsed.value;
-              count++;
-              continue;
-            }
-            const spilledAddress: CellAddress = {
-              colIndex: col,
-              rowIndex: row,
-              sheetName: result.spillOrigin.sheetName,
-            };
-            const spill = {
-              address: spilledAddress,
-              spillOffset: {
-                x: col - result.spillOrigin.colIndex,
-                y: row - result.spillOrigin.rowIndex,
-              },
-            };
-            const spillResult = result.evaluate(spill, context);
-
-            if (spillResult) {
-              const parsedSpillResult = parseResult(spillResult);
-              if (parsedSpillResult.type === "error") {
-                return parsedSpillResult;
-              }
-              if (parsedSpillResult.type === "infinity") {
-                return parsedSpillResult;
-              }
-              subTotal += parsedSpillResult.value;
-              count++;
-            }
-          }
+      for (const cellValue of cellValues) {
+        const parsed = parseResult(cellValue);
+        if (parsed.type === "error") {
+          return parsed;
         }
+        if (parsed.type === "infinity") {
+          return parsed;
+        }
+        subTotal += parsed.value;
+        count += parsed.count;
       }
 
       if (count === 0) {

@@ -12,60 +12,25 @@ import {
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import { OpenRangeEvaluator } from "../../math/open-range-evaluator";
 
 /**
  * MATCH function - Returns the position of a value in an array
  * MATCH(lookup_value, lookup_array, [match_type])
  * match_type: 1 = less than or equal (default), 0 = exact match, -1 = greater than or equal
- * 
+ *
  * STRICT TYPE CHECKING:
  * - lookup_value: string or number only
- * - lookup_array: array of strings or numbers only 
+ * - lookup_array: array of strings or numbers only
  * - match_type: number only (must be -1, 0, or 1)
  */
-
-// Helper function to extract values from a spilled array result
-function extractArrayValues(
-  this: FormulaEvaluator,
-  spilledResult: SpilledValuesEvaluationResult,
-  context: EvaluationContext
-): CellValue[] {
-  const values: CellValue[] = [];
-  const range = spilledResult.spillArea;
-  
-  // Handle finite ranges
-  if (range.end.col.type === "number" && range.end.row.type === "number") {
-    for (let row = range.start.row; row <= range.end.row.value; row++) {
-      for (let col = range.start.col; col <= range.end.col.value; col++) {
-        const spilledAddress: CellAddress = {
-          colIndex: col,
-          rowIndex: row,
-          sheetName: context.currentSheet,
-        };
-        const spill = {
-          address: spilledAddress,
-          spillOffset: {
-            x: col - range.start.col,
-            y: row - range.start.row,
-          },
-        };
-        const spillResult = spilledResult.evaluate(spill, context);
-        if (spillResult && spillResult.type === "value") {
-          values.push(spillResult.result);
-        }
-      }
-    }
-  }
-  
-  return values;
-}
 
 // Helper function to perform MATCH operation
 function matchOperation(
   lookupValue: CellValue,
-  lookupArray: CellValue[],
+  lookupArray: Iterable<FunctionEvaluationResult>,
   matchType: number
-): CellNumber | { type: "error"; err: FormulaError; message: string } {
+): FunctionEvaluationResult {
   // Strict type checking for lookup_value
   if (lookupValue.type !== "string" && lookupValue.type !== "number") {
     return {
@@ -84,19 +49,15 @@ function matchOperation(
     };
   }
 
-  // Strict type checking for lookup_array - all elements must be string or number
-  for (let i = 0; i < lookupArray.length; i++) {
-    const value = lookupArray[i]!;
-    if (value.type !== "string" && value.type !== "number") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: `MATCH lookup_array elements must be string or number, got ${value.type} at position ${i + 1}`,
-      };
+  const values: CellValue[] = [];
+
+  for (const value of lookupArray) {
+    if (value.type === "value") {
+      values.push(value.result);
     }
   }
 
-  if (lookupArray.length === 0) {
+  if (values.length === 0) {
     return {
       type: "error",
       err: FormulaError.VALUE,
@@ -106,10 +67,13 @@ function matchOperation(
 
   if (matchType === 0) {
     // Exact match
-    for (let i = 0; i < lookupArray.length; i++) {
-      const arrayValue = lookupArray[i]!;
-      if (arrayValue.type === lookupValue.type && arrayValue.value === lookupValue.value) {
-        return { type: "number", value: i + 1 }; // 1-based index
+    for (let i = 0; i < values.length; i++) {
+      const arrayValue = values[i]!;
+      if (
+        arrayValue.type === lookupValue.type &&
+        arrayValue.value === lookupValue.value
+      ) {
+        return { type: "value", result: { type: "number", value: i + 1 } }; // 1-based index
       }
     }
     return {
@@ -121,16 +85,20 @@ function matchOperation(
     // Approximate match (1 or -1) - requires sorted array
     // For now, implement exact match behavior until we add sorting validation
     // TODO: Add proper approximate match logic with sorted array validation
-    for (let i = 0; i < lookupArray.length; i++) {
-      const arrayValue = lookupArray[i]!;
-      if (arrayValue.type === lookupValue.type && arrayValue.value === lookupValue.value) {
-        return { type: "number", value: i + 1 }; // 1-based index
+    for (let i = 0; i < values.length; i++) {
+      const arrayValue = values[i]!;
+      if (
+        arrayValue.type === lookupValue.type &&
+        arrayValue.value === lookupValue.value
+      ) {
+        return { type: "value", result: { type: "number", value: i + 1 } }; // 1-based index
       }
     }
     return {
       type: "error",
       err: FormulaError.NA,
-      message: "MATCH: lookup_value not found in lookup_array (approximate match not fully implemented)",
+      message:
+        "MATCH: lookup_value not found in lookup_array (approximate match not fully implemented)",
     };
   }
 }
@@ -162,8 +130,8 @@ export const MATCH: FunctionDefinition = {
     let matchTypeResult: FunctionEvaluationResult = {
       type: "value",
       result: { type: "number", value: 1 },
-    } satisfies ValueEvaluationResult;
-    
+    };
+
     if (node.args[2]) {
       matchTypeResult = this.evaluateNode(node.args[2], context);
       if (matchTypeResult.type === "error") {
@@ -176,7 +144,6 @@ export const MATCH: FunctionDefinition = {
       lookupValueResult.type === "spilled-values" ||
       matchTypeResult.type === "spilled-values"
     ) {
-      // TODO: Implement comprehensive spilled array support like FIND function
       return {
         type: "error",
         err: FormulaError.VALUE,
@@ -211,35 +178,28 @@ export const MATCH: FunctionDefinition = {
     }
 
     // Extract lookup_array values
-    let lookupArray: CellValue[];
+    let lookupArray: Iterable<FunctionEvaluationResult> = [];
+
+    // Handle direct range arguments (like A:A) before extracting lookup_array values
+
+    // Extract lookup_array values for non-infinite ranges
     if (lookupArrayResult.type === "value") {
       // Single value case - treat as array with one element
-      lookupArray = [lookupArrayResult.result];
+      lookupArray = [lookupArrayResult];
     } else if (lookupArrayResult.type === "spilled-values") {
       // Extract values from spilled array
-      lookupArray = extractArrayValues.call(this, lookupArrayResult, context);
-    } else {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "MATCH: Invalid lookup_array result type",
-      };
+      lookupArray = lookupArrayResult.evaluateAllCells.call(this, {
+        context,
+        evaluate: lookupArrayResult.evaluate,
+        origin: context.currentCell,
+      });
     }
 
     // Perform MATCH operation
-    const result = matchOperation(
+    return matchOperation(
       lookupValueResult.result,
       lookupArray,
       Math.floor(matchTypeResult.result.value) // Floor to handle decimal inputs
     );
-
-    if (result.type === "error") {
-      return result;
-    }
-
-    return {
-      type: "value",
-      result,
-    } satisfies ValueEvaluationResult;
   },
 };

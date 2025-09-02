@@ -1,16 +1,19 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { FormulaEngine } from "src/core/engine";
-import { FormulaError, type SerializedCellValue } from "src/core/types";
+import {
+  FormulaError,
+  type SerializedCellValue,
+} from "src/core/types";
 import { parseCellReference } from "src/core/utils";
 
 describe("INDEX function", () => {
   const sheetName = "TestSheet";
   let engine: FormulaEngine;
 
-  const cell = (ref: string) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) });
+  const cell = (ref: string, debug?: boolean) =>
+    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
 
-  const setCellContent = (ref: string, content: string) => {
+  const setCellContent = (ref: string, content: SerializedCellValue) => {
     engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
   };
 
@@ -23,26 +26,40 @@ describe("INDEX function", () => {
 
   describe("basic functionality", () => {
     test("should return value from single cell array", () => {
-      setCellContent("A1", "Apple");
-      setCellContent("B1", "=INDEX(A1, 1, 1)");
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Apple"],
+          ["B1", "=INDEX(A1, 1, 1)"],
+        ])
+      );
 
       expect(cell("B1")).toBe("Apple");
     });
 
     test("should return value from single cell array with default column", () => {
-      setCellContent("A1", "Apple");
-      setCellContent("B1", "=INDEX(A1, 1)");
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Apple"],
+          ["B1", "=INDEX(A1, 1)"],
+        ])
+      );
 
       expect(cell("B1")).toBe("Apple");
     });
 
     test("should return value from row array", () => {
-      setCellContent("A1", "Apple");
-      setCellContent("B1", "Banana");
-      setCellContent("C1", "Cherry");
-      setCellContent("D1", "=INDEX(A1:C1, 1, 2)");
-
-      expect(cell("D1")).toBe("Banana");
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Apple"],
+          ["B1", "Banana"],
+          ["C1", "Cherry"],
+          ["D1", "=INDEX(A1:C1, 1, 2)"],
+        ])
+      );
+      expect(cell("D1", true)).toBe("Banana");
     });
 
     test("should return value from column array", () => {
@@ -56,10 +73,17 @@ describe("INDEX function", () => {
 
     test("should return value from 2D array", () => {
       // Set up 2x3 array
-      engine.setSheetContent(sheetName, new Map<string, SerializedCellValue>([
-        ["A1", "Apple"], ["B1", "Banana"], ["C1", "Cherry"],
-        ["A2", 10], ["B2", 20], ["C2", 30]
-      ]));
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Apple"],
+          ["B1", "Banana"],
+          ["C1", "Cherry"],
+          ["A2", 10],
+          ["B2", 20],
+          ["C2", 30],
+        ])
+      );
       setCellContent("D1", "=INDEX(A1:C2, 2, 3)");
 
       expect(cell("D1")).toBe(30);
@@ -67,11 +91,20 @@ describe("INDEX function", () => {
 
     test("should handle large array", () => {
       // Set up 3x3 array
-      engine.setSheetContent(sheetName, new Map<string, SerializedCellValue>([
-        ["A1", 1], ["B1", 2], ["C1", 3],
-        ["A2", 4], ["B2", 5], ["C2", 6],
-        ["A3", 7], ["B3", 8], ["C3", 9]
-      ]));
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", 1],
+          ["B1", 2],
+          ["C1", 3],
+          ["A2", 4],
+          ["B2", 5],
+          ["C2", 6],
+          ["A3", 7],
+          ["B3", 8],
+          ["C3", 9],
+        ])
+      );
       setCellContent("D1", "=INDEX(A1:C3, 3, 2)");
 
       expect(cell("D1")).toBe(8);
@@ -122,9 +155,14 @@ describe("INDEX function", () => {
     });
 
     test("should return #REF! for column_num out of bounds (too high)", () => {
-      setCellContent("A1", "Apple");
-      setCellContent("B1", "Banana");
-      setCellContent("C1", "=INDEX(A1:B1, 1, 3)");
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Apple"],
+          ["B1", "Banana"],
+          ["C1", "=INDEX(A1:B1, 1, 3)"],
+        ])
+      );
 
       expect(cell("C1")).toBe(FormulaError.REF);
     });
@@ -190,11 +228,14 @@ describe("INDEX function", () => {
 
   describe("edge cases", () => {
     test("should work with mixed data types in array", () => {
-      engine.setSheetContent(sheetName, new Map<string, SerializedCellValue>([
-        ["A1", "Text"],
-        ["A2", 42],
-        ["A3", true]
-      ]));
+      engine.setSheetContent(
+        sheetName,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Text"],
+          ["A2", 42],
+          ["A3", true],
+        ])
+      );
       setCellContent("B1", "=INDEX(A1:A3, 2, 1)");
       setCellContent("B2", "=INDEX(A1:A3, 3, 1)");
 

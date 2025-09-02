@@ -167,7 +167,34 @@ export interface EvaluationContext {
   currentCell: CellAddress;
   evaluationStack: Set<string>; // For cycle detection
   dependencies: Set<string>;
+  /**
+   * candidates for frontier dependencies that are in the intersection of the spilled range and the target range
+   */
+  frontierDependencies: Set<string>;
+  /**
+   * Frontier dependency candidates that were discarded because they are not in the intersection of the spilled range and the target range
+   */
+  discardedFrontierDependencies: Set<string>;
 }
+
+export type EvaluatedDependencyNode = {
+  /**
+   * deps is the set of dependency node keys
+   */
+  deps?: Set<string>;
+  /**
+   * frontierDependencies is the set of dependency node keys that are frontier dependencies
+   */
+  frontierDependencies?: Set<string>;
+  /**
+   * discardedFrontierDependencies is the set of dependency node keys that were discarded as frontier dependencies
+   */
+  discardedFrontierDependencies?: Set<string>;
+  /**
+   * evaluationResult is the evaluation result
+   */
+  evaluationResult?: FunctionEvaluationResult;
+};
 
 export type ValueEvaluationResult = {
   type: "value";
@@ -180,22 +207,62 @@ export type ErrorEvaluationResult = {
   message: string;
 };
 
+export type SingleEvaluationResult =
+  | ValueEvaluationResult
+  | ErrorEvaluationResult;
+
+export type SpilledValuesEvaluator = (
+  spillOffset: { x: number; y: number },
+  context: EvaluationContext
+) => SingleEvaluationResult | undefined;
+
 export type SpilledValuesEvaluationResult = {
   type: "spilled-values";
-  spillOrigin: CellAddress;
-  spillArea: SpreadsheetRange;
-  originResult: CellValue;
+  spillArea: (origin: CellAddress) => SpreadsheetRange;
   /**
    * for debugging we add a source string to denote where the spilled values were created
    */
   source: string;
-  evaluate: (
-    spilledCell: {
-      address: CellAddress;
-      spillOffset: { x: number; y: number };
-    },
-    context: EvaluationContext
-  ) => FunctionEvaluationResult | undefined;
+  evaluate: SpilledValuesEvaluator;
+  /**
+   * evaluateAllCells is a generator function that evaluates all cells in the spilled range.
+   * Because a spilled range can be open-ended, we need to have logic for which cells we should evaluate.
+   * e.g. when evaluating a range such as D:D only the cells in the current sheet residing in
+   * column D should be evaluated and cells producing spilled values that spill onto D:D.
+   *
+   * In order to evaluate spilled cells in D:D the range evaluateAllCells need to get all cells in the
+   * the intersection of the spilled range and D:D, for that reason evaluateAllCells gets an intersection parameter.
+   *
+   * #### Producers:
+   * In e.g. SEQUENCE and evaluateRange we have logic for which cells in a spilled range we should evaluate,
+   *
+   * #### Nesting:
+   * e.g. evaluation of scalar operators where we want to nest e.g. `5 * right.evaluate()`
+   * can be implemented by calling
+   * ```ts
+   * for (const val of child.evaluateAllCells.call(this, options))
+   *   yield 5 * val;
+   * ```
+   *
+   * #### Consumers:
+   * Only functions that need access to all spilled values in a range end up calling evaluateAllCells, e.g.
+   * SUM, MIN, MAX, MATCH. Other types of functions like INDEX doesn't need to evaluate all cells in a range,
+   * but does a lookup into a spilled range using the evaluate method.
+   *
+   */
+  evaluateAllCells: (
+    this: FormulaEvaluator,
+    options: {
+      intersection?: SpreadsheetRange;
+      evaluate: SpilledValuesEvaluator;
+      context: EvaluationContext;
+      origin: CellAddress;
+    }
+  ) => IterableIterator<
+    SingleEvaluationResult,
+    undefined | void,
+    SingleEvaluationResult | undefined
+  >;
 };
 
 export type FunctionEvaluationResult =

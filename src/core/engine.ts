@@ -8,6 +8,7 @@ import {
   type EvaluationContext,
   type NamedExpression,
   type SerializedCellValue,
+  type SingleEvaluationResult,
   type SpreadsheetRange,
   type SpreadsheetRangeEnd,
   type TableDefinition,
@@ -56,7 +57,7 @@ export class FormulaEngine {
 
   getCellEvaluationResult(
     cellAddress: CellAddress
-  ): FunctionEvaluationResult | undefined {
+  ): SingleEvaluationResult | undefined {
     return this.evaluationManager.getCellEvaluationResult(cellAddress);
   }
 

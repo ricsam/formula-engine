@@ -6,6 +6,8 @@ import {
   type EvaluationContext,
   type CellAddress,
   type SpreadsheetRange,
+  type ErrorEvaluationResult,
+  type SingleEvaluationResult,
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
@@ -42,8 +44,6 @@ export function extractNumericValue(result: FunctionEvaluationResult): number {
   }
 }
 
-
-
 /**
  * MID substring operation for MID function
  */
@@ -51,30 +51,36 @@ export function midOperation(
   textResult: FunctionEvaluationResult,
   startNumResult: FunctionEvaluationResult,
   numCharsResult: FunctionEvaluationResult
-): CellString {
+): { type: "value"; result: CellString } | ErrorEvaluationResult {
   const textStr = convertToString(textResult);
   const startNum = extractNumericValue(startNumResult);
   const numChars = extractNumericValue(numCharsResult);
 
   // Validate startNum and numChars
   if (startNum < 1) {
-    throw new Error(FormulaError.VALUE);
+    return {
+      type: "error",
+      err: FormulaError.VALUE,
+      message: "StartNum argument must be a positive number",
+    };
   }
   if (numChars < 0) {
-    throw new Error(FormulaError.VALUE);
+    return {
+      type: "error",
+      err: FormulaError.VALUE,
+      message: "NumChars argument must be a positive number",
+    };
   }
 
   // Convert to 0-based index (Excel uses 1-based)
   const startIndex = Math.floor(startNum) - 1;
   const length = Math.floor(numChars);
-  
+
   // Extract substring
   const result = textStr.substring(startIndex, startIndex + length);
 
-  return { type: "string", value: result };
+  return { type: "value", result: { type: "string", value: result } };
 }
-
-
 
 /**
  * Helper for creating spilled-values result for MID function (3 parameters)
@@ -101,74 +107,64 @@ export function createMidSpilledResult(
     throw new Error("createMidSpilledResult called without spilled values");
   }
 
-  // Calculate origin result using origin values
-  const textValue: FunctionEvaluationResult = hasSpilledText 
-    ? { type: "value", result: textResult.originResult }
-    : textResult;
-  const startNumValue: FunctionEvaluationResult = hasSpilledStart 
-    ? { type: "value", result: startNumResult.originResult }
-    : startNumResult;
-  const numCharsValue: FunctionEvaluationResult = hasSpilledNum 
-    ? { type: "value", result: numCharsResult.originResult }
-    : numCharsResult;
-
-  let originCellValue: CellString;
-  try {
-    originCellValue = midOperation(textValue, startNumValue, numCharsValue);
-  } catch (error) {
-    return {
-      type: "error",
-      err: FormulaError.VALUE,
-      message: "MID operation failed",
-    };
-  }
-
-  // Calculate spill area (union of all spilled ranges)
-  let spillArea: SpreadsheetRange;
-  
-  if (hasSpilledText && textResult.type === "spilled-values") {
-    spillArea = textResult.spillArea;
-  } else if (hasSpilledStart && startNumResult.type === "spilled-values") {
-    spillArea = startNumResult.spillArea;
-  } else if (hasSpilledNum && numCharsResult.type === "spilled-values") {
-    spillArea = numCharsResult.spillArea;
-  } else {
-    // This shouldn't happen since we check for spilled values at the beginning
-    throw new Error("No spilled values found");
-  }
-  
-  // Union with other spilled ranges if they exist
-  if (hasSpilledText && hasSpilledStart && 
-      textResult.type === "spilled-values" && startNumResult.type === "spilled-values") {
-    spillArea = this.unionRanges(
-      this.projectRange(textResult.spillArea, context.currentCell),
-      this.projectRange(startNumResult.spillArea, context.currentCell)
-    );
-  }
-  
-  if ((hasSpilledText || hasSpilledStart) && hasSpilledNum && 
-      numCharsResult.type === "spilled-values") {
-    const projectedSpillArea = this.projectRange(spillArea, context.currentCell);
-    const numSpillArea = this.projectRange(numCharsResult.spillArea, context.currentCell);
-    spillArea = this.unionRanges(projectedSpillArea, numSpillArea);
-  }
-
   return {
     type: "spilled-values",
-    spillArea,
-    spillOrigin: context.currentCell,
+    spillArea: (origin: CellAddress) => {
+      // Calculate spill area (union of all spilled ranges)
+      let spillArea: SpreadsheetRange;
+
+      if (hasSpilledText && textResult.type === "spilled-values") {
+        spillArea = textResult.spillArea(origin);
+      } else if (hasSpilledStart && startNumResult.type === "spilled-values") {
+        spillArea = startNumResult.spillArea(origin);
+      } else if (hasSpilledNum && numCharsResult.type === "spilled-values") {
+        spillArea = numCharsResult.spillArea(origin);
+      } else {
+        // This shouldn't happen since we check for spilled values at the beginning
+        throw new Error("No spilled values found");
+      }
+
+      // Union with other spilled ranges if they exist
+      if (
+        hasSpilledText &&
+        hasSpilledStart &&
+        textResult.type === "spilled-values" &&
+        startNumResult.type === "spilled-values"
+      ) {
+        spillArea = this.unionRanges(
+          this.projectRange(textResult.spillArea(origin), origin),
+          this.projectRange(startNumResult.spillArea(origin), origin)
+        );
+      }
+
+      if (
+        (hasSpilledText || hasSpilledStart) &&
+        hasSpilledNum &&
+        numCharsResult.type === "spilled-values"
+      ) {
+        const projectedSpillArea = this.projectRange(spillArea, origin);
+        const numSpillArea = this.projectRange(
+          numCharsResult.spillArea(origin),
+          origin
+        );
+        spillArea = this.unionRanges(projectedSpillArea, numSpillArea);
+      }
+      return spillArea;
+    },
     source: "MID with spilled values",
-    originResult: originCellValue,
-    evaluate: (spilledCell: { address: CellAddress; spillOffset: { x: number; y: number } }, evalContext: EvaluationContext) => {
+    evaluate: (
+      spilledCell,
+      evalContext
+    ): SingleEvaluationResult | undefined => {
       // Evaluate all arguments at this spilled position
-      const spillTextResult = hasSpilledText 
-        ? textResult.evaluate(spilledCell, evalContext) 
+      const spillTextResult = hasSpilledText
+        ? textResult.evaluate(spilledCell, evalContext)
         : textResult;
-      const spillStartResult = hasSpilledStart 
-        ? startNumResult.evaluate(spilledCell, evalContext) 
+      const spillStartResult = hasSpilledStart
+        ? startNumResult.evaluate(spilledCell, evalContext)
         : startNumResult;
-      const spillNumResult = hasSpilledNum 
-        ? numCharsResult.evaluate(spilledCell, evalContext) 
+      const spillNumResult = hasSpilledNum
+        ? numCharsResult.evaluate(spilledCell, evalContext)
         : numCharsResult;
 
       if (!spillTextResult || spillTextResult.type === "error") {
@@ -181,18 +177,10 @@ export function createMidSpilledResult(
         return spillNumResult;
       }
 
-      try {
-        return {
-          type: "value",
-          result: midOperation(spillTextResult, spillStartResult, spillNumResult),
-        };
-      } catch (error) {
-        return {
-          type: "error",
-          err: FormulaError.VALUE,
-          message: "MID operation failed",
-        };
-      }
+      return midOperation(spillTextResult, spillStartResult, spillNumResult);
+    },
+    evaluateAllCells: (intersectingRange) => {
+      throw new Error("WIP: evaluateAllCells for MID is not implemented");
     },
   };
 }

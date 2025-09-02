@@ -18,7 +18,7 @@ describe("dependencyNodeToKey", () => {
       };
 
       const key = dependencyNodeToKey(cellNode);
-      expect(key).toBe("cell:Sheet1:0:0");
+      expect(key).toBe("cell:Sheet1:A1");
     });
 
     test("should handle different sheets", () => {
@@ -34,8 +34,8 @@ describe("dependencyNodeToKey", () => {
         address: { rowIndex: 5, colIndex: 10 },
       };
 
-      expect(dependencyNodeToKey(cellNode1)).toBe("cell:Sheet1:5:10");
-      expect(dependencyNodeToKey(cellNode2)).toBe("cell:Sheet2:5:10");
+      expect(dependencyNodeToKey(cellNode1)).toBe("cell:Sheet1:K6");
+      expect(dependencyNodeToKey(cellNode2)).toBe("cell:Sheet2:K6");
       expect(dependencyNodeToKey(cellNode1)).not.toBe(
         dependencyNodeToKey(cellNode2)
       );
@@ -48,7 +48,7 @@ describe("dependencyNodeToKey", () => {
         address: { rowIndex: 1, colIndex: 2 },
       };
 
-      expect(dependencyNodeToKey(cellNode)).toBe("cell:My Sheet Name:1:2");
+      expect(dependencyNodeToKey(cellNode)).toBe("cell:My Sheet Name:C2");
     });
   });
 
@@ -66,7 +66,7 @@ describe("dependencyNodeToKey", () => {
         },
       };
 
-      expect(dependencyNodeToKey(rangeNode)).toBe("range:Sheet1:0:0:9:4");
+      expect(dependencyNodeToKey(rangeNode)).toBe("range:Sheet1:A1:E10");
     });
 
     test("should generate keys for infinite column ranges", () => {
@@ -83,7 +83,7 @@ describe("dependencyNodeToKey", () => {
       };
 
       expect(dependencyNodeToKey(rangeNode)).toBe(
-        "range:Sheet1:0:0:INFINITY:0"
+        "range:Sheet1:A1:A"
       );
     });
 
@@ -101,7 +101,7 @@ describe("dependencyNodeToKey", () => {
       };
 
       expect(dependencyNodeToKey(rangeNode)).toBe(
-        "range:Sheet1:0:0:0:INFINITY"
+        "range:Sheet1:A1:1"
       );
     });
 
@@ -119,7 +119,7 @@ describe("dependencyNodeToKey", () => {
       };
 
       expect(dependencyNodeToKey(rangeNode)).toBe(
-        "range:Sheet1:0:0:INFINITY:INFINITY"
+        "range:Sheet1:A1:INFINITY"
       );
     });
   });
@@ -142,7 +142,7 @@ describe("dependencyNodeToKey", () => {
       };
 
       expect(dependencyNodeToKey(multiRangeNode)).toBe(
-        "multi-range:list:Sheet1,Sheet2,Sheet3:0:0:9:4"
+        "multi-range:list:Sheet1,Sheet2,Sheet3:A1:E10"
       );
     });
 
@@ -164,7 +164,7 @@ describe("dependencyNodeToKey", () => {
       };
 
       expect(dependencyNodeToKey(multiRangeNode)).toBe(
-        "multi-range:range:Q1:Q4:1:1:5:5"
+        "multi-range:range:Q1:Q4:B2:F6"
       );
     });
 
@@ -185,7 +185,7 @@ describe("dependencyNodeToKey", () => {
       };
 
       expect(dependencyNodeToKey(multiRangeNode)).toBe(
-        "multi-range:list:Sheet1:0:0:INFINITY:INFINITY"
+        "multi-range:list:Sheet1:A1:INFINITY"
       );
     });
   });
@@ -332,7 +332,7 @@ describe("dependencyNodeToKey", () => {
         address: { rowIndex: 0, colIndex: 0 },
       };
 
-      expect(dependencyNodeToKey(cellNode)).toBe("cell::0:0");
+      expect(dependencyNodeToKey(cellNode)).toBe("cell::A1");
     });
 
     test("should handle special characters in names", () => {
@@ -354,7 +354,7 @@ describe("dependencyNodeToKey", () => {
         address: { rowIndex: 999999, colIndex: 16383 },
       };
 
-      expect(dependencyNodeToKey(cellNode)).toBe("cell:Sheet1:999999:16383");
+      expect(dependencyNodeToKey(cellNode)).toBe("cell:Sheet1:XFD1000000");
     });
 
     test("should throw error for undefined rowIndex or colIndex", () => {
@@ -398,7 +398,7 @@ describe("dependencyNodeToKey", () => {
 describe("keyToDependencyNode", () => {
   describe("Cell nodes", () => {
     test("should parse cell keys correctly", () => {
-      const key = "cell:Sheet1:0:0";
+      const key = "cell:Sheet1:A1";
       const expected: DependencyNode = {
         type: "cell",
         sheetName: "Sheet1",
@@ -409,8 +409,8 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should handle different sheets", () => {
-      const key1 = "cell:Sheet1:5:10";
-      const key2 = "cell:Sheet2:5:10";
+      const key1 = "cell:Sheet1:K6";
+      const key2 = "cell:Sheet2:K6";
 
       const node1 = keyToDependencyNode(key1);
       const node2 = keyToDependencyNode(key2);
@@ -426,7 +426,7 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should handle sheets with spaces in names", () => {
-      const key = "cell:My Sheet Name:1:2";
+      const key = "cell:My Sheet Name:C2";
       const node = keyToDependencyNode(key);
 
       expect(node.type).toBe("cell");
@@ -438,7 +438,7 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should handle empty sheet names", () => {
-      const key = "cell::0:0";
+      const key = "cell::A1";
       const node = keyToDependencyNode(key);
 
       expect(node.type).toBe("cell");
@@ -450,7 +450,7 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should handle large numbers", () => {
-      const key = "cell:Sheet1:999999:16383";
+      const key = "cell:Sheet1:XFD1000000";
       const node = keyToDependencyNode(key);
 
       expect(node.type).toBe("cell");
@@ -463,7 +463,7 @@ describe("keyToDependencyNode", () => {
 
   describe("Range nodes", () => {
     test("should parse finite range keys", () => {
-      const key = "range:Sheet1:0:0:9:4";
+      const key = "range:Sheet1:A1:E10";
       const expected: DependencyNode = {
         type: "range",
         sheetName: "Sheet1",
@@ -480,7 +480,7 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should parse infinite column range keys", () => {
-      const key = "range:Sheet1:0:0:INFINITY:0";
+      const key = "range:Sheet1:A1:A";
       const node = keyToDependencyNode(key);
 
       expect(node.type).toBe("range");
@@ -494,7 +494,7 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should parse infinite row range keys", () => {
-      const key = "range:Sheet1:0:0:0:INFINITY";
+      const key = "range:Sheet1:A1:1";
       const node = keyToDependencyNode(key);
 
       expect(node.type).toBe("range");
@@ -508,7 +508,7 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should parse fully infinite range keys", () => {
-      const key = "range:Sheet1:0:0:INFINITY:INFINITY";
+      const key = "range:Sheet1:A1:INFINITY";
       const node = keyToDependencyNode(key);
 
       expect(node.type).toBe("range");
@@ -527,7 +527,7 @@ describe("keyToDependencyNode", () => {
 
   describe("Multi-spreadsheet range nodes", () => {
     test("should parse list-based multi-sheet range keys", () => {
-      const key = "multi-range:list:Sheet1,Sheet2,Sheet3:0:0:9:4";
+      const key = "multi-range:list:Sheet1,Sheet2,Sheet3:A1:E10";
       const expected: DependencyNode = {
         type: "multi-spreadsheet-range",
         ranges: {
@@ -547,7 +547,7 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should parse range-based multi-sheet range keys", () => {
-      const key = "multi-range:range:Q1:Q4:1:1:5:5";
+      const key = "multi-range:range:Q1:Q4:B2:F6";
       const expected: DependencyNode = {
         type: "multi-spreadsheet-range",
         ranges: {
@@ -568,7 +568,7 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should parse infinite ranges in multi-sheet scenarios", () => {
-      const key = "multi-range:list:Sheet1:0:0:INFINITY:INFINITY";
+      const key = "multi-range:list:Sheet1:A1:INFINITY";
       const node = keyToDependencyNode(key);
 
       expect(node.type).toBe("multi-spreadsheet-range");
@@ -589,7 +589,7 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should handle empty sheet list", () => {
-      const key = "multi-range:list::0:0:9:4";
+      const key = "multi-range:list::A1:E10";
       const node = keyToDependencyNode(key);
 
       expect(node.type).toBe("multi-spreadsheet-range");
@@ -705,29 +705,29 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should throw error for invalid cell key parts", () => {
-      expect(() => keyToDependencyNode("cell:Sheet1:0")).toThrow(
-        "Invalid cell key format"
+      expect(() => keyToDependencyNode("cell:Sheet1:A")).toThrow(
+        "Invalid cell reference"
       );
-      expect(() => keyToDependencyNode("cell:Sheet1:0:0:extra")).toThrow(
+      expect(() => keyToDependencyNode("cell:Sheet1:A1:extra")).toThrow(
         "Invalid cell key format"
       );
     });
 
     test("should throw error for invalid range key parts", () => {
-      expect(() => keyToDependencyNode("range:Sheet1:0:0:9")).toThrow(
+      expect(() => keyToDependencyNode("range:Sheet1:A1:E10:extra")).toThrow(
         "Invalid range key format"
       );
     });
 
     test("should throw error for invalid multi-range key parts", () => {
-      expect(() => keyToDependencyNode("multi-range:list:Sheet1:0:0")).toThrow(
+      expect(() => keyToDependencyNode("multi-range:list:Sheet1:A1")).toThrow(
         "Invalid multi-range key format"
       );
-      expect(() => keyToDependencyNode("multi-range:range:Q1:Q4:1:1")).toThrow(
-        "Invalid multi-range key format"
+      expect(() => keyToDependencyNode("multi-range:range:Q1:Q4:B2")).toThrow(
+        "Invalid multi-range range key format"
       );
       expect(() =>
-        keyToDependencyNode("multi-range:invalid:Q1:Q4:1:1:5:5")
+        keyToDependencyNode("multi-range:invalid:Q1:Q4:B2:F6")
       ).toThrow("Invalid multi-range sheet names type");
     });
 
