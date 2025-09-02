@@ -8,6 +8,7 @@ import {
   type SpreadsheetRange,
 } from "src/core/types";
 import { convertToString } from "../text-helpers";
+import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 
 /**
  * LEN function - Returns the length of a text string
@@ -66,34 +67,26 @@ export const LEN: FunctionDefinition = {
       };
     }
 
-    try {
+    if (textResult.result.type === "string") {
       return {
         type: "value",
-        result: lenOperation(textResult),
-      };
-    } catch (error) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "LEN operation failed",
+        result: { type: "number", value: textResult.result.value.length },
       };
     }
+
+    return {
+      type: "error",
+      err: FormulaError.VALUE,
+      message: "LEN operation failed",
+    };
   },
 };
-
-/**
- * Core LEN operation
- */
-function lenOperation(textResult: FunctionEvaluationResult): CellNumber {
-  const textStr = convertToString(textResult);
-  return { type: "number", value: textStr.length };
-}
 
 /**
  * Helper for creating spilled-values result for LEN function
  */
 function createLenSpilledResult(
-  this: any,
+  this: FormulaEvaluator,
   {
     textResult,
     context,
@@ -103,50 +96,41 @@ function createLenSpilledResult(
   }
 ): FunctionEvaluationResult {
   if (textResult.type !== "spilled-values") {
-    throw new Error("createLenSpilledResult called without spilled values");
-  }
-
-  // Calculate origin result
-  const originTextResult = {
-    type: "value",
-    result: textResult.originResult,
-  } as FunctionEvaluationResult;
-
-  let originCellValue: CellNumber;
-  try {
-    originCellValue = lenOperation(originTextResult);
-  } catch (error) {
     return {
       type: "error",
       err: FormulaError.VALUE,
-      message: "LEN operation failed",
+      message: "createLenSpilledResult called without spilled values",
     };
   }
 
   return {
     type: "spilled-values",
-    spillArea: textResult.spillArea,
-    spillOrigin: context.currentCell,
+    spillArea: (origin: CellAddress) => textResult.spillArea(origin),
     source: "LEN with spilled text values",
-    originResult: originCellValue,
-    evaluate: (spilledCell: { address: CellAddress; spillOffset: { x: number; y: number } }, evalContext: EvaluationContext) => {
-      const spillTextResult = textResult.evaluate(spilledCell, evalContext);
+    evaluate: (spillOffset, evalContext) => {
+      const spillTextResult = textResult.evaluate(spillOffset, evalContext);
       if (!spillTextResult || spillTextResult.type === "error") {
         return spillTextResult;
       }
 
-      try {
-        return {
-          type: "value",
-          result: lenOperation(spillTextResult),
-        };
-      } catch (error) {
+      if (
+        spillTextResult.type !== "value" ||
+        spillTextResult.result.type !== "string"
+      ) {
         return {
           type: "error",
           err: FormulaError.VALUE,
           message: "LEN operation failed",
         };
       }
+
+      return {
+        type: "value",
+        result: { type: "number", value: spillTextResult.result.value.length },
+      };
+    },
+    evaluateAllCells: (intersectingRange) => {
+      throw new Error("WIP: evaluateAllCells for LEN is not implemented");
     },
   };
 }

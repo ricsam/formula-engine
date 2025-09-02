@@ -3,10 +3,7 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
 } from "src/core/types";
-import {
-  midOperation,
-  createMidSpilledResult,
-} from "../text-helpers";
+import { midOperation, createMidSpilledResult } from "../text-helpers";
 
 /**
  * MID function - Returns characters from the middle of a text string
@@ -56,9 +53,11 @@ export const MID: FunctionDefinition = {
     }
 
     // Handle spilled-values inputs
-    if (textResult.type === "spilled-values" || 
-        startNumResult.type === "spilled-values" || 
-        numCharsResult.type === "spilled-values") {
+    if (
+      textResult.type === "spilled-values" ||
+      startNumResult.type === "spilled-values" ||
+      numCharsResult.type === "spilled-values"
+    ) {
       return createMidSpilledResult.call(this, {
         textResult,
         startNumResult,
@@ -117,17 +116,13 @@ export const MID: FunctionDefinition = {
       };
     }
 
-    try {
-      return {
-        type: "value",
-        result: midOperation(textResult, startNumResult, numCharsResult),
-      };
-    } catch (error) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "MID operation failed",
-      };
+    const result = midOperation(textResult, startNumResult, numCharsResult);
+    if (result.type === "error") {
+      return result;
     }
+    return {
+      type: "value",
+      result: result.result,
+    };
   },
 };

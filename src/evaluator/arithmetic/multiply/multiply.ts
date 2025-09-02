@@ -73,6 +73,6 @@ export const multiply: ArethmeticEvaluator = (left, right) => {
   return {
     type: "error",
     err: FormulaError.VALUE,
-    message: `Cannot multiply ${left.type} and ${right.type}`,
+    message: `Cannot multiply ${left.type} and ${right.type} /2`,
   };
 };

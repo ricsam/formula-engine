@@ -3,8 +3,20 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
   type CellString,
+  type CellAddress,
+  type SpreadsheetRange,
+  type SpilledValuesEvaluationResult,
+  type ErrorEvaluationResult,
+  type EvaluationContext,
+  type SingleEvaluationResult,
 } from "src/core/types";
-import { midOperation, createMidSpilledResult, convertToString, extractNumericValue } from "../text-helpers";
+import { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import {
+  midOperation,
+  createMidSpilledResult,
+  convertToString,
+  extractNumericValue,
+} from "../text-helpers";
 
 /**
  * RIGHT function - Returns the rightmost characters from a text string
@@ -30,19 +42,23 @@ import { midOperation, createMidSpilledResult, convertToString, extractNumericVa
 function rightOperation(
   textResult: FunctionEvaluationResult,
   numCharsResult: FunctionEvaluationResult
-): CellString {
+): { type: "value"; result: CellString } | ErrorEvaluationResult {
   const textStr = convertToString(textResult);
   const numChars = extractNumericValue(numCharsResult);
 
   // Validate numChars
   if (numChars < 0) {
-    throw new Error(FormulaError.VALUE);
+    return {
+      type: "error",
+      err: FormulaError.VALUE,
+      message: "NumChars argument must be a positive number",
+    };
   }
 
   // Calculate start position: LEN(text) - num_chars + 1
   const textLength = textStr.length;
   const startPos = Math.max(1, textLength - Math.floor(numChars) + 1);
-  
+
   // Create start_num result
   const startNumResult: FunctionEvaluationResult = {
     type: "value",
@@ -85,7 +101,10 @@ export const RIGHT: FunctionDefinition = {
     }
 
     // Handle spilled-values inputs
-    if (textResult.type === "spilled-values" || numCharsResult.type === "spilled-values") {
+    if (
+      textResult.type === "spilled-values" ||
+      numCharsResult.type === "spilled-values"
+    ) {
       // For RIGHT with spilled values, we need a custom spilled result handler
       // because we need to calculate start_num dynamically for each text value
       return createRightSpilledResult.call(this, {
@@ -130,18 +149,7 @@ export const RIGHT: FunctionDefinition = {
     }
 
     // Use RIGHT operation: RIGHT(text, num_chars) = MID(text, LEN(text) - num_chars + 1, num_chars)
-    try {
-      return {
-        type: "value",
-        result: rightOperation(textResult, numCharsResult),
-      };
-    } catch (error) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "RIGHT operation failed",
-      };
-    }
+    return rightOperation(textResult, numCharsResult);
   },
 };
 
@@ -149,7 +157,7 @@ export const RIGHT: FunctionDefinition = {
  * Helper for creating spilled-values result for RIGHT function
  */
 function createRightSpilledResult(
-  this: any,
+  this: FormulaEvaluator,
   {
     textResult,
     numCharsResult,
@@ -157,85 +165,71 @@ function createRightSpilledResult(
   }: {
     textResult: FunctionEvaluationResult;
     numCharsResult: FunctionEvaluationResult;
-    context: any;
+    context: EvaluationContext;
   }
-): FunctionEvaluationResult {
-
-  if (textResult.type !== "spilled-values" && numCharsResult.type !== "spilled-values") {
+): SpilledValuesEvaluationResult | ErrorEvaluationResult {
+  if (
+    textResult.type !== "spilled-values" &&
+    numCharsResult.type !== "spilled-values"
+  ) {
     throw new Error("createRightSpilledResult called without spilled values");
-  }
-
-  // Calculate origin result
-  const originTextResult = textResult.type === "spilled-values" 
-    ? { type: "value" as const, result: textResult.originResult }
-    : textResult;
-  const originNumResult = numCharsResult.type === "spilled-values" 
-    ? { type: "value" as const, result: numCharsResult.originResult }
-    : numCharsResult;
-
-  let originCellValue: CellString;
-  try {
-    originCellValue = rightOperation(originTextResult, originNumResult);
-  } catch (error) {
-    return {
-      type: "error",
-      err: FormulaError.VALUE,
-      message: "RIGHT operation failed",
-    };
-  }
-
-  // Calculate spill area
-  let spillArea;
-  if (textResult.type === "spilled-values") {
-    spillArea = textResult.spillArea;
-  } else if (numCharsResult.type === "spilled-values") {
-    spillArea = numCharsResult.spillArea;
-  } else {
-    throw new Error("No spilled values found");
-  }
-
-  // Union spill areas if both are spilled
-  if (textResult.type === "spilled-values" && numCharsResult.type === "spilled-values") {
-    spillArea = this.unionRanges(
-      this.projectRange(textResult.spillArea, context.currentCell),
-      this.projectRange(numCharsResult.spillArea, context.currentCell)
-    );
   }
 
   return {
     type: "spilled-values",
-    spillArea,
-    spillOrigin: context.currentCell,
+    spillArea: (origin: CellAddress): SpreadsheetRange => {
+      // Calculate spill area
+      let spillArea;
+      if (textResult.type === "spilled-values") {
+        spillArea = textResult.spillArea(origin);
+      } else if (numCharsResult.type === "spilled-values") {
+        spillArea = numCharsResult.spillArea(origin);
+      } else {
+        throw new Error("No spilled values found");
+      }
+
+      // Union spill areas if both are spilled
+      if (
+        textResult.type === "spilled-values" &&
+        numCharsResult.type === "spilled-values"
+      ) {
+        spillArea = this.unionRanges(
+          this.projectRange(textResult.spillArea(origin), origin),
+          this.projectRange(numCharsResult.spillArea(origin), origin)
+        );
+      }
+      return spillArea;
+    },
     source: "RIGHT with spilled values",
-    originResult: originCellValue,
-    evaluate: (spilledCell: any, evalContext: any) => {
+    evaluate: (spilledCell, evalContext): SingleEvaluationResult => {
       // Evaluate arguments at this spilled position
-      const spillTextResult = textResult.type === "spilled-values" 
-        ? textResult.evaluate(spilledCell, evalContext) 
-        : textResult;
-      const spillNumResult = numCharsResult.type === "spilled-values" 
-        ? numCharsResult.evaluate(spilledCell, evalContext) 
-        : numCharsResult;
+      const spillTextResult =
+        textResult.type === "spilled-values"
+          ? textResult.evaluate(spilledCell, evalContext)
+          : textResult;
+      const spillNumResult =
+        numCharsResult.type === "spilled-values"
+          ? numCharsResult.evaluate(spilledCell, evalContext)
+          : numCharsResult;
 
-      if (!spillTextResult || spillTextResult.type === "error") {
-        return spillTextResult;
-      }
-      if (!spillNumResult || spillNumResult.type === "error") {
-        return spillNumResult;
-      }
-
-      try {
-        return {
-          type: "value",
-          result: rightOperation(spillTextResult, spillNumResult),
-        };
-      } catch (error) {
+      if (spillTextResult === undefined || spillNumResult === undefined) {
         return {
           type: "error",
-          err: FormulaError.VALUE,
-          message: "RIGHT operation failed",
+          err: FormulaError.REF,
+          message: "The spilled results have not been evaluated",
         };
       }
+      if (spillNumResult.type === "error") {
+        return spillNumResult;
+      }
+      if (spillTextResult.type === "error") {
+        return spillTextResult;
+      }
+
+      return rightOperation(spillTextResult, spillNumResult);
+    },
+    evaluateAllCells: (intersectingRange) => {
+      throw new Error("WIP: evaluateAllCells for RIGHT is not implemented");
     },
   };
 }

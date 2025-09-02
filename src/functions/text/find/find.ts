@@ -66,66 +66,33 @@ function createFindSpilledResult(
     findTextResult.type === "spilled-values" &&
     withinTextResult.type === "spilled-values"
   ) {
-    // Calculate origin result using origin values from both spilled arrays
-    const findValue: ValueEvaluationResult = {
-      type: "value",
-      result: findTextResult.originResult,
-    };
-    const withinValue: ValueEvaluationResult = {
-      type: "value",
-      result: withinTextResult.originResult,
-    };
-    // Handle startNum for origin calculation
-    let startNumValue = startNumResult;
-    if (startNumResult.type === "spilled-values") {
-      startNumValue = {
-        type: "value",
-        result: startNumResult.originResult,
-      } satisfies ValueEvaluationResult;
-    }
-    
-    const originCellValue = findOperation(
-      findValue,
-      withinValue,
-      startNumValue
-    );
-
-    if (originCellValue === null) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Text not found",
-      };
-    }
-
-    // Create unified spill area (union of all spilled ranges)
-    let spillArea = this.unionRanges(
-      this.projectRange(findTextResult.spillArea, context.currentCell),
-      this.projectRange(withinTextResult.spillArea, context.currentCell)
-    );
-    
-    // Also include startNum spill area if it's spilled
-    if (startNumResult.type === "spilled-values") {
-      spillArea = this.unionRanges(
-        spillArea,
-        this.projectRange(startNumResult.spillArea, context.currentCell)
-      );
-    }
-
     return {
       type: "spilled-values",
-      spillArea,
-      spillOrigin: context.currentCell,
+      spillArea: (origin: CellAddress) => {
+        // Create unified spill area (union of all spilled ranges)
+        let spillArea = this.unionRanges(
+          this.projectRange(findTextResult.spillArea(origin), origin),
+          this.projectRange(withinTextResult.spillArea(origin), origin)
+        );
+
+        // Also include startNum spill area if it's spilled
+        if (startNumResult.type === "spilled-values") {
+          spillArea = this.unionRanges(
+            spillArea,
+            this.projectRange(startNumResult.spillArea(origin), origin)
+          );
+        }
+        return spillArea;
+      },
       source: "FIND with zipped spilled findText and withinText values",
-      originResult: originCellValue,
-      evaluate: (spilledCell: { address: CellAddress; spillOffset: { x: number; y: number } }, evalContext: EvaluationContext) => {
+      evaluate: (spillOffset, evalContext: EvaluationContext) => {
         // Evaluate both spilled arrays at this position
         const spillFindResult = findTextResult.evaluate(
-          spilledCell,
+          spillOffset,
           evalContext
         );
         const spillWithinResult = withinTextResult.evaluate(
-          spilledCell,
+          spillOffset,
           evalContext
         );
 
@@ -139,7 +106,10 @@ function createFindSpilledResult(
         // Handle startNum - evaluate if spilled, otherwise use as-is
         let startNumArg = startNumResult;
         if (startNumResult.type === "spilled-values") {
-          const spillStartNumResult = startNumResult.evaluate(spilledCell, evalContext);
+          const spillStartNumResult = startNumResult.evaluate(
+            spillOffset,
+            evalContext
+          );
           if (!spillStartNumResult || spillStartNumResult.type === "error") {
             return spillStartNumResult;
           }
@@ -155,7 +125,7 @@ function createFindSpilledResult(
           return {
             type: "error",
             err: FormulaError.VALUE,
-            message: "Text not found",
+            message: "Text not found #2",
           };
         }
         return {
@@ -163,37 +133,25 @@ function createFindSpilledResult(
           result: result,
         };
       },
+      evaluateAllCells: (intersectingRange) => {
+        throw new Error("WIP: evaluateAllCells for FIND is not implemented");
+      },
     };
   }
   // If only findText is spilled-values
-  else if (findTextResult.type === "spilled-values" && withinTextResult.type !== "spilled-values" && startNumResult.type !== "spilled-values") {
-    // Use the origin result from the spilled-values
-    const findValue: ValueEvaluationResult = {
-      type: "value",
-      result: findTextResult.originResult,
-    };
-    const originCellValue = findOperation(
-      findValue,
-      withinTextResult,
-      startNumResult
-    );
-
-    if (originCellValue === null) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Text not found",
-      };
-    }
-
+  else if (
+    findTextResult.type === "spilled-values" &&
+    withinTextResult.type !== "spilled-values" &&
+    startNumResult.type !== "spilled-values"
+  ) {
     return {
       type: "spilled-values",
-      spillArea: findTextResult.spillArea,
-      spillOrigin: context.currentCell,
+      spillArea: (origin: CellAddress) => {
+        return findTextResult.spillArea(origin);
+      },
       source: "FIND with spilled findText values",
-      originResult: originCellValue,
-      evaluate: (spilledCell: { address: CellAddress; spillOffset: { x: number; y: number } }, evalContext: EvaluationContext) => {
-        const spillResult = findTextResult.evaluate(spilledCell, evalContext);
+      evaluate: (spillOffset, evalContext: EvaluationContext) => {
+        const spillResult = findTextResult.evaluate(spillOffset, evalContext);
         if (!spillResult || spillResult.type === "error") {
           return spillResult;
         }
@@ -206,7 +164,7 @@ function createFindSpilledResult(
           return {
             type: "error",
             err: FormulaError.VALUE,
-            message: "Text not found",
+            message: "Text not found #4",
           };
         }
         return {
@@ -214,37 +172,23 @@ function createFindSpilledResult(
           result: result,
         };
       },
+      evaluateAllCells: (intersectingRange) => {
+        throw new Error("WIP: evaluateAllCells for FIND is not implemented");
+      },
     };
-  } 
-  // If only withinText is spilled-values  
-  else if (withinTextResult.type === "spilled-values" && findTextResult.type !== "spilled-values" && startNumResult.type !== "spilled-values") {
-    // Use the origin result from the spilled-values
-    const withinValue: ValueEvaluationResult = {
-      type: "value",
-      result: withinTextResult.originResult,
-    };
-    const originCellValue = findOperation(
-      findTextResult,
-      withinValue,
-      startNumResult
-    );
-
-    if (originCellValue === null) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Text not found",
-      };
-    }
-
+  }
+  // If only withinText is spilled-values
+  else if (
+    withinTextResult.type === "spilled-values" &&
+    findTextResult.type !== "spilled-values" &&
+    startNumResult.type !== "spilled-values"
+  ) {
     return {
       type: "spilled-values",
-      spillArea: withinTextResult.spillArea,
-      spillOrigin: context.currentCell,
+      spillArea: (origin) => withinTextResult.spillArea(origin),
       source: "FIND with spilled withinText values",
-      originResult: originCellValue,
-      evaluate: (spilledCell: { address: CellAddress; spillOffset: { x: number; y: number } }, evalContext: EvaluationContext) => {
-        const spillResult = withinTextResult.evaluate(spilledCell, evalContext);
+      evaluate: (spillOffset, evalContext: EvaluationContext) => {
+        const spillResult = withinTextResult.evaluate(spillOffset, evalContext);
         if (!spillResult || spillResult.type === "error") {
           return spillResult;
         }
@@ -257,7 +201,7 @@ function createFindSpilledResult(
           return {
             type: "error",
             err: FormulaError.VALUE,
-            message: "Text not found",
+            message: "Text not found #6",
           };
         }
         return {
@@ -265,10 +209,17 @@ function createFindSpilledResult(
           result: result,
         };
       },
+      evaluateAllCells: (intersectingRange) => {
+        throw new Error("WIP: evaluateAllCells for FIND is not implemented");
+      },
     };
   }
   // If findText and startNum are spilled (but not withinText)
-  else if (findTextResult.type === "spilled-values" && startNumResult.type === "spilled-values" && withinTextResult.type !== "spilled-values") {
+  else if (
+    findTextResult.type === "spilled-values" &&
+    startNumResult.type === "spilled-values" &&
+    withinTextResult.type !== "spilled-values"
+  ) {
     if (withinTextResult.type !== "value") {
       return {
         type: "error",
@@ -286,44 +237,27 @@ function createFindSpilledResult(
       };
     }
 
-    const findValue: ValueEvaluationResult = {
-      type: "value",
-      result: findTextResult.originResult,
-    };
-    const startNumValue: ValueEvaluationResult = {
-      type: "value",
-      result: startNumResult.originResult,
-    };
-    const originCellValue = findOperation(
-      findValue,
-      withinTextResult,
-      startNumValue
-    );
-
-    if (originCellValue === null) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Text not found",
-      };
-    }
-
-    // Create unified spill area (union of both ranges)
-    const spillArea = this.unionRanges(
-      this.projectRange(findTextResult.spillArea, context.currentCell),
-      this.projectRange(startNumResult.spillArea, context.currentCell)
-    );
-
     return {
       type: "spilled-values",
-      spillArea,
-      spillOrigin: context.currentCell,
+      spillArea: (origin: CellAddress) => {
+        // Create unified spill area (union of both ranges)
+        const spillArea = this.unionRanges(
+          this.projectRange(findTextResult.spillArea(origin), origin),
+          this.projectRange(startNumResult.spillArea(origin), origin)
+        );
+        return spillArea;
+      },
       source: "FIND with spilled findText and startNum values",
-      originResult: originCellValue,
-      evaluate: (spilledCell: { address: CellAddress; spillOffset: { x: number; y: number } }, evalContext: EvaluationContext) => {
+      evaluate: (spillOffset, evalContext: EvaluationContext) => {
         // Evaluate both spilled arrays at this position
-        const spillFindResult = findTextResult.evaluate(spilledCell, evalContext);
-        const spillStartNumResult = startNumResult.evaluate(spilledCell, evalContext);
+        const spillFindResult = findTextResult.evaluate(
+          spillOffset,
+          evalContext
+        );
+        const spillStartNumResult = startNumResult.evaluate(
+          spillOffset,
+          evalContext
+        );
 
         if (!spillFindResult || spillFindResult.type === "error") {
           return spillFindResult;
@@ -341,7 +275,7 @@ function createFindSpilledResult(
           return {
             type: "error",
             err: FormulaError.VALUE,
-            message: "Text not found",
+            message: "Text not found #8",
           };
         }
         return {
@@ -349,10 +283,17 @@ function createFindSpilledResult(
           result: result,
         };
       },
+      evaluateAllCells: (intersectingRange) => {
+        throw new Error("WIP: evaluateAllCells for FIND is not implemented");
+      },
     };
   }
   // If withinText and startNum are spilled (but not findText)
-  else if (withinTextResult.type === "spilled-values" && startNumResult.type === "spilled-values" && findTextResult.type !== "spilled-values") {
+  else if (
+    withinTextResult.type === "spilled-values" &&
+    startNumResult.type === "spilled-values" &&
+    findTextResult.type !== "spilled-values"
+  ) {
     if (findTextResult.type !== "value") {
       return {
         type: "error",
@@ -370,44 +311,28 @@ function createFindSpilledResult(
       };
     }
 
-    const withinValue: ValueEvaluationResult = {
-      type: "value",
-      result: withinTextResult.originResult,
-    };
-    const startNumValue: ValueEvaluationResult = {
-      type: "value",
-      result: startNumResult.originResult,
-    };
-    const originCellValue = findOperation(
-      findTextResult,
-      withinValue,
-      startNumValue
-    );
-
-    if (originCellValue === null) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Text not found",
-      };
-    }
-
-    // Create unified spill area (union of both ranges)
-    const spillArea = this.unionRanges(
-      this.projectRange(withinTextResult.spillArea, context.currentCell),
-      this.projectRange(startNumResult.spillArea, context.currentCell)
-    );
 
     return {
       type: "spilled-values",
-      spillArea,
-      spillOrigin: context.currentCell,
+      spillArea: (origin: CellAddress) => {
+        // Create unified spill area (union of both ranges)
+        const spillArea = this.unionRanges(
+          this.projectRange(withinTextResult.spillArea(origin), origin),
+          this.projectRange(startNumResult.spillArea(origin), origin)
+        );
+        return spillArea;
+      },
       source: "FIND with spilled withinText and startNum values",
-      originResult: originCellValue,
-      evaluate: (spilledCell: { address: CellAddress; spillOffset: { x: number; y: number } }, evalContext: EvaluationContext) => {
+      evaluate: (spillOffset, evalContext: EvaluationContext) => {
         // Evaluate both spilled arrays at this position
-        const spillWithinResult = withinTextResult.evaluate(spilledCell, evalContext);
-        const spillStartNumResult = startNumResult.evaluate(spilledCell, evalContext);
+        const spillWithinResult = withinTextResult.evaluate(
+          spillOffset,
+          evalContext
+        );
+        const spillStartNumResult = startNumResult.evaluate(
+          spillOffset,
+          evalContext
+        );
 
         if (!spillWithinResult || spillWithinResult.type === "error") {
           return spillWithinResult;
@@ -425,7 +350,7 @@ function createFindSpilledResult(
           return {
             type: "error",
             err: FormulaError.VALUE,
-            message: "Text not found",
+            message: "Text not found #10",
           };
         }
         return {
@@ -433,10 +358,17 @@ function createFindSpilledResult(
           result: result,
         };
       },
+      evaluateAllCells: (intersectingRange) => {
+        throw new Error("WIP: evaluateAllCells for FIND is not implemented");
+      },
     };
   }
   // If only startNum is spilled-values
-  else if (startNumResult.type === "spilled-values" && findTextResult.type !== "spilled-values" && withinTextResult.type !== "spilled-values") {
+  else if (
+    startNumResult.type === "spilled-values" &&
+    findTextResult.type !== "spilled-values" &&
+    withinTextResult.type !== "spilled-values"
+  ) {
     if (findTextResult.type !== "value" || withinTextResult.type !== "value") {
       return {
         type: "error",
@@ -462,36 +394,16 @@ function createFindSpilledResult(
       };
     }
 
-    const startNumValue: ValueEvaluationResult = {
-      type: "value",
-      result: startNumResult.originResult,
-    };
-    const originCellValue = findOperation(
-      findTextResult,
-      withinTextResult,
-      startNumValue
-    );
-
-    if (originCellValue === null) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Text not found",
-      };
-    }
-
     return {
       type: "spilled-values",
-      spillArea: startNumResult.spillArea,
-      spillOrigin: context.currentCell,
+      spillArea: (origin: CellAddress) => startNumResult.spillArea(origin),
       source: "FIND with spilled startNum values",
-      originResult: originCellValue,
-      evaluate: (spilledCell: { address: CellAddress; spillOffset: { x: number; y: number } }, evalContext: EvaluationContext) => {
-        const spillResult = startNumResult.evaluate(spilledCell, evalContext);
+      evaluate: (spillOffset, evalContext: EvaluationContext) => {
+        const spillResult = startNumResult.evaluate(spillOffset, evalContext);
         if (!spillResult || spillResult.type === "error") {
           return spillResult;
         }
-        
+
         // Create a proper startNum argument for findOperation
         if (spillResult.type !== "value") {
           return spillResult;
@@ -500,7 +412,7 @@ function createFindSpilledResult(
           type: "value",
           result: spillResult.result,
         };
-        
+
         const result = findOperation(
           findTextResult,
           withinTextResult,
@@ -510,7 +422,7 @@ function createFindSpilledResult(
           return {
             type: "error",
             err: FormulaError.VALUE,
-            message: "Text not found",
+            message: "Text not found #12",
           };
         }
         return {
@@ -518,11 +430,16 @@ function createFindSpilledResult(
           result: result,
         };
       },
+      evaluateAllCells: (intersectingRange) => {
+        throw new Error("WIP: evaluateAllCells for FIND is not implemented");
+      },
     };
   }
-
-  // This should not be reached
-  throw new Error("createFindSpilledResult called without spilled values");
+  return {
+    type: "error",
+    err: FormulaError.VALUE,
+    message: "Invalid arguments for FIND",
+  };
 }
 
 /**
@@ -570,34 +487,6 @@ export const FIND: FunctionDefinition = {
     let startNumResult: FunctionEvaluationResult;
     if (node.args.length > 2) {
       startNumResult = this.evaluateNode(node.args[2]!, context);
-      if (startNumResult.type === "error") {
-        return {
-          type: "error",
-          err: FormulaError.VALUE,
-          message: "Invalid startNum argument",
-        };
-      }
-      
-      // Handle spilled-values for startNum
-      if (startNumResult.type === "spilled-values") {
-        if (startNumResult.originResult.type !== "number") {
-          return {
-            type: "error",
-            err: FormulaError.VALUE,
-            message: "Invalid startNum argument",
-          };
-        }
-        // Don't convert spilled startNum here - let createFindSpilledResult handle it
-      } else if (
-        startNumResult.type !== "value" ||
-        startNumResult.result.type !== "number"
-      ) {
-        return {
-          type: "error",
-          err: FormulaError.VALUE,
-          message: "Invalid startNum argument",
-        };
-      }
     } else {
       startNumResult = {
         type: "value",
@@ -645,13 +534,17 @@ export const FIND: FunctionDefinition = {
       };
     }
 
-    const result = findOperation(findTextResult, withinTextResult, startNumResult);
+    const result = findOperation(
+      findTextResult,
+      withinTextResult,
+      startNumResult
+    );
 
     if (result === null) {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        message: "Text not found",
+        message: "Text not found #13",
       };
     }
 

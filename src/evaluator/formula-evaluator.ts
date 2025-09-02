@@ -1,8 +1,12 @@
 import { parseFormula } from "src/parser/parser";
 import type {
+  EvaluatedDependencyNode,
   FormulaEngineEvents,
   NamedExpression,
   Sheet,
+  SingleEvaluationResult,
+  SpilledValuesEvaluationResult,
+  ValueEvaluationResult,
 } from "../core/types";
 import {
   FormulaError,
@@ -43,6 +47,11 @@ import { divide } from "./arithmetic/divide/divide";
 import { multiply } from "./arithmetic/multiply/multiply";
 import { power } from "./arithmetic/power/power";
 import { subtract } from "./arithmetic/subtract/subtract";
+import {
+  getRangeIntersection,
+  OpenRangeEvaluator,
+} from "src/functions/math/open-range-evaluator";
+import { serializeRange } from "src/core/utils/range-serializer";
 
 function isFormulaError(value: string): value is FormulaError {
   if (typeof value !== "string") return false;
@@ -107,16 +116,7 @@ export class FormulaEvaluator {
      * key is the dependency node key, from dependencyNodeToKey
      */
     string,
-    {
-      /**
-       * deps is the set of dependency node keys
-       */
-      deps: Set<string>;
-      /**
-       * evaluationResult is the evaluation result
-       */
-      evaluationResult?: FunctionEvaluationResult;
-    }
+    EvaluatedDependencyNode
   > = new Map();
 
   spilledValues: Map<
@@ -245,7 +245,7 @@ export class FormulaEvaluator {
       if (spillOrigin && spillOrigin.type === "spilled-values") {
         return {
           isSpilled: true,
-          result: spillOrigin.evaluate(spillSource, context),
+          result: spillOrigin.evaluate(spillSource.spillOffset, context),
         };
       }
     }
@@ -406,26 +406,6 @@ export class FormulaEvaluator {
         },
       };
 
-      const originCellValue = this.runtimeSafeEvaluatedNode(
-        {
-          colIndex: range.start.col,
-          rowIndex: range.start.row,
-          sheetName: table.sheetName,
-        },
-        context
-      );
-      if (!originCellValue) {
-        return {
-          type: "error",
-          err: FormulaError.REF,
-          message: `Origin cell not found`,
-        };
-      }
-
-      if (originCellValue.type === "error") {
-        return originCellValue;
-      }
-
       return this.evaluateRange(
         {
           type: "range",
@@ -493,20 +473,19 @@ export class FormulaEvaluator {
 
     return {
       type: "spilled-values",
-      spillArea: {
+      spillArea: (origin: CellAddress) => ({
         start: {
-          col: context.currentCell.colIndex,
-          row: context.currentCell.rowIndex,
+          col: origin.colIndex,
+          row: origin.rowIndex,
         },
         end: {
-          col: { type: "number", value: context.currentCell.colIndex },
+          col: { type: "number", value: origin.colIndex },
           row: {
             type: "number",
-            value: context.currentCell.rowIndex + numSheets - 1,
+            value: origin.rowIndex + numSheets - 1,
           },
         },
-      },
-      spillOrigin: context.currentCell,
+      }),
       source: `range`,
       originResult:
         originResult.type === "value"
@@ -533,15 +512,13 @@ export class FormulaEvaluator {
     node: RangeNode,
     context: EvaluationContext
   ): FunctionEvaluationResult {
-    const range = node.range;
-
-    if (this.isRangeOneCell(range)) {
+    if (this.isRangeOneCell(node.range)) {
       return this.evaluateReference(
         {
           type: "reference",
           address: {
-            colIndex: range.start.col,
-            rowIndex: range.start.row,
+            colIndex: node.range.start.col,
+            rowIndex: node.range.start.row,
           },
           isAbsolute: {
             col: node.isAbsolute.start.col || node.isAbsolute.end.col,
@@ -553,47 +530,56 @@ export class FormulaEvaluator {
       );
     }
 
-    const originSheetName = node.sheetName ?? context.currentSheet;
-    const originCellAddress: CellAddress = {
-      sheetName: originSheetName,
-      colIndex: range.start.col,
-      rowIndex: range.start.row,
-    };
-    const originResult = this.runtimeSafeEvaluatedNode(
-      originCellAddress,
-      context
-    );
-    if (!originResult) {
-      return {
-        type: "error",
-        err: FormulaError.REF,
-        message: "Range is empty",
-      };
-    }
-    if (originResult.type === "error") {
-      return originResult;
-    }
     return {
       type: "spilled-values",
-      spillArea: this.projectRange(range, context.currentCell),
-      spillOrigin: context.currentCell,
+      spillArea: (origin) => this.projectRange(node.range, origin),
       source: `range`,
-      originResult:
-        originResult.type === "value"
-          ? originResult.result
-          : originResult.originResult,
-      evaluate: (spilledCell, context) => {
-        const colIndex = range.start.col + spilledCell.spillOffset.x;
-        const rowIndex = range.start.row + spilledCell.spillOffset.y;
-        const sheetName = node.sheetName ?? context.currentSheet;
-        return this.runtimeSafeEvaluatedNode(
+      evaluate: (spillOffset, context) => {
+        const originSheetName = node.sheetName ?? context.currentSheet;
+        const colIndex = node.range.start.col + spillOffset.x;
+        const rowIndex = node.range.start.row + spillOffset.y;
+        const result = this.runtimeSafeEvaluatedNode(
           {
             colIndex,
             rowIndex,
-            sheetName,
+            sheetName: originSheetName,
           },
           context
         );
+
+        if (result) {
+          if (result.type === "spilled-values") {
+            const originResult = result.evaluate({ x: 0, y: 0 }, context);
+            return originResult;
+          }
+          return result;
+        }
+      },
+      evaluateAllCells: function* ({
+        evaluate,
+        intersection,
+        context,
+      }) {
+        const openRangeEvaluator = new OpenRangeEvaluator(this);
+        let range = node.range;
+        if (intersection) {
+          const calculateIntersection = getRangeIntersection(
+            node.range,
+            intersection
+          );
+          if (calculateIntersection) {
+            range = calculateIntersection;
+          }
+        }
+
+        return yield* openRangeEvaluator.evaluateCellsInRange({
+          evaluate,
+          context,
+          origin: {
+            range,
+            sheetName: node.sheetName ?? context.currentSheet,
+          },
+        });
       },
     };
   }
@@ -624,30 +610,25 @@ export class FormulaEvaluator {
     }
     return {
       type: "spilled-values",
-      spillArea: {
+      spillArea: (origin) => ({
         start: {
-          col: context.currentCell.colIndex,
-          row: context.currentCell.rowIndex,
+          col: origin.colIndex,
+          row: origin.rowIndex,
         },
         end: {
           col: {
             type: "number",
-            value: context.currentCell.colIndex + firstRow.length - 1,
+            value: origin.colIndex + firstRow.length - 1,
           },
           row: {
             type: "number",
-            value: context.currentCell.rowIndex + node.elements.length - 1,
+            value: origin.rowIndex + node.elements.length - 1,
           },
         },
-      },
-      spillOrigin: context.currentCell,
+      }),
       source: `array`,
-      originResult:
-        originResult.type === "value"
-          ? originResult.result
-          : originResult.originResult,
-      evaluate: (spilledCell, context) => {
-        const row = node.elements[spilledCell.spillOffset.y];
+      evaluate: (spillOffset, context) => {
+        const row = node.elements[spillOffset.y];
         if (!row) {
           return {
             type: "error",
@@ -655,7 +636,7 @@ export class FormulaEvaluator {
             message: "Array is empty",
           };
         }
-        const cell = row[spilledCell.spillOffset.x];
+        const cell = row[spillOffset.x];
         if (!cell) {
           return {
             type: "error",
@@ -663,7 +644,14 @@ export class FormulaEvaluator {
             message: "Array is empty",
           };
         }
-        return this.evaluateNode(cell, context);
+        const result = this.evaluateNode(cell, context);
+        if (result.type === "spilled-values") {
+          throw new Error("Arrays cannot contain spilled values");
+        }
+        return result;
+      },
+      evaluateAllCells: (intersectingRange) => {
+        throw new Error("WIP: evaluateAllCells for array is not implemented");
       },
     };
   }
@@ -682,30 +670,10 @@ export class FormulaEvaluator {
     }
 
     if (operandResult.type === "spilled-values") {
-      // Apply unary operation to each spilled value
-      const originResult = this.evaluateUnaryScalar(
-        node.operator,
-        operandResult.originResult
-      );
-
-      if (originResult.type === "error") {
-        return originResult;
-      }
-
-      if (originResult.type !== "value") {
-        return {
-          type: "error",
-          err: FormulaError.VALUE,
-          message: "Invalid origin result for unary operation",
-        };
-      }
-
       return {
         type: "spilled-values",
-        spillArea: operandResult.spillArea,
-        spillOrigin: context.currentCell,
+        spillArea: (origin) => operandResult.spillArea(origin),
         source: `unary ${node.operator} operation`,
-        originResult: originResult.result,
         evaluate: (spilledCell, context) => {
           const spillResult = operandResult.evaluate(spilledCell, context);
           if (!spillResult || spillResult.type === "error") {
@@ -719,6 +687,18 @@ export class FormulaEvaluator {
             };
           }
           return this.evaluateUnaryScalar(node.operator, spillResult.result);
+        },
+        evaluateAllCells: function* (options) {
+          for (const cellValue of operandResult.evaluateAllCells.call(
+            this,
+            options
+          )) {
+            if (cellValue.type === "error") {
+              yield cellValue;
+            } else {
+              yield this.evaluateUnaryScalar(node.operator, cellValue.result);
+            }
+          }
         },
       };
     }
@@ -740,7 +720,7 @@ export class FormulaEvaluator {
   private evaluateUnaryScalar(
     operator: "+" | "-" | "%",
     operand: CellValue
-  ): FunctionEvaluationResult {
+  ): SingleEvaluationResult {
     if (operand.type !== "number" && operand.type !== "infinity") {
       return {
         type: "error",
@@ -825,7 +805,7 @@ export class FormulaEvaluator {
         context
       );
       if (spillOrigin && spillOrigin.type === "spilled-values") {
-        return spillOrigin.evaluate(spillSource, context);
+        return spillOrigin.evaluate(spillSource.spillOffset, context);
       }
     }
     const key = dependencyNodeToKey({

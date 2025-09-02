@@ -2,9 +2,11 @@ import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 import {
   FormulaError,
   type ArethmeticEvaluator,
+  type CellAddress,
   type CellValue,
   type EvaluationContext,
   type FunctionEvaluationResult,
+  type SingleEvaluationResult,
 } from "../core/types";
 
 export type EvaluateScalarOperatorOptions = {
@@ -15,6 +17,18 @@ export type EvaluateScalarOperatorOptions = {
    */
   name: string;
 };
+
+function evaluateSingleScalarOperator(
+  leftValue: CellValue,
+  rightValue: CellValue,
+  evaluateScalar: ArethmeticEvaluator
+): SingleEvaluationResult {
+  const result = evaluateScalar(leftValue, rightValue);
+  if (result.type === "error") {
+    return result;
+  }
+  return { type: "value", result };
+}
 
 export function evaluateScalarOperator(
   this: FormulaEvaluator,
@@ -42,101 +56,141 @@ export function evaluateScalarOperator(
     }
   }
   if (left.type === "spilled-values" && right.type === "value") {
-    const leftRange = left.spillArea;
-    const originResult = evaluateScalar(left.originResult, right.result);
-
-    if (originResult.type === "error") {
-      return originResult;
-    }
-
     return {
       type: "spilled-values",
-      spillArea: this.projectRange(leftRange, context.currentCell),
-      spillOrigin: context.currentCell,
+      spillArea: (origin: CellAddress) => left.spillArea(origin),
       source: `evaulate left spilled range onto right value in scalar operator ${name}`,
-      originResult,
       evaluate: (spilled, context) => {
         const evaledLeft = left.evaluate(spilled, context);
         if (!evaledLeft) {
           return;
         }
-        return this.evaluateScalarOperator(evaledLeft, right, options);
+        if (evaledLeft.type === "error") {
+          return evaledLeft;
+        }
+        return evaluateSingleScalarOperator(
+          evaledLeft.result,
+          right.result,
+          evaluateScalar
+        );
+      },
+      evaluateAllCells: function* (options) {
+        for (const cellValue of left.evaluateAllCells.call(this, options)) {
+          if (cellValue.type === "error") {
+            yield cellValue;
+          } else {
+            yield evaluateSingleScalarOperator(
+              cellValue.result,
+              right.result,
+              evaluateScalar
+            );
+          }
+        }
       },
     };
   }
   if (right.type === "spilled-values" && left.type === "value") {
-    const rightRange = right.spillArea;
-    const originResult = evaluateScalar(left.result, right.originResult);
-
-    if (originResult.type === "error") {
-      return originResult;
-    }
-
     return {
       type: "spilled-values",
-      spillArea: this.projectRange(rightRange, context.currentCell),
-      spillOrigin: context.currentCell,
+      spillArea: (origin: CellAddress) => right.spillArea(origin),
       source: `evaluate right spilled range onto left value in scalar operator ${name}`,
-      originResult,
       evaluate: (spilled, context) => {
         const evaledRight = right.evaluate(spilled, context);
         if (!evaledRight) {
           return;
         }
-        return this.evaluateScalarOperator(left, evaledRight, options);
+        if (evaledRight.type === "error") {
+          return evaledRight;
+        }
+        return evaluateSingleScalarOperator(
+          left.result,
+          evaledRight.result,
+          evaluateScalar
+        );
+      },
+      evaluateAllCells: function* (options) {
+        for (const cellValue of right.evaluateAllCells.call(this, options)) {
+          if (cellValue.type === "error") {
+            yield cellValue;
+          } else {
+            yield evaluateSingleScalarOperator(
+              left.result,
+              cellValue.result,
+              evaluateScalar
+            );
+          }
+        }
       },
     };
   }
 
   if (left.type === "spilled-values" && right.type === "spilled-values") {
-    const rightRange = right.spillArea;
-    const leftRange = left.spillArea;
-
-    const originResult = evaluateScalar(left.originResult, right.originResult);
-
-    if (originResult.type === "error") {
-      return originResult;
-    }
-
     return {
       type: "spilled-values",
-      spillArea: this.unionRanges(
-        this.projectRange(leftRange, context.currentCell),
-        this.projectRange(rightRange, context.currentCell)
-      ),
-      spillOrigin: context.currentCell,
+      spillArea: (origin) =>
+        this.unionRanges(left.spillArea(origin), right.spillArea(origin)),
       source: `evaluate spilled ranges in scalar operator ${name}`,
-      originResult,
       evaluate: (spilled, context) => {
         const evaledLeft = left.evaluate(spilled, context);
         if (!evaledLeft) {
           return;
         }
+        if (evaledLeft.type === "error") {
+          return evaledLeft;
+        }
         const evaledRight = right.evaluate(spilled, context);
         if (!evaledRight) {
           return;
         }
-        return this.evaluateScalarOperator(evaledLeft, evaledRight, options);
+        if (evaledRight.type === "error") {
+          return evaledRight;
+        }
+        return evaluateSingleScalarOperator(
+          evaledLeft.result,
+          evaledRight.result,
+          evaluateScalar
+        );
+      },
+      evaluateAllCells: function* (options) {
+        const leftResults = left.evaluateAllCells.call(this, options);
+        const rightResults = right.evaluateAllCells.call(this, options);
+        let rightResult: SingleEvaluationResult | undefined | void;
+        let leftResult: SingleEvaluationResult | undefined | void;
+        do {
+          rightResult = rightResults.next().value;
+          leftResult = leftResults.next().value;
+
+          if (!leftResult) {
+            yield {
+              type: "error",
+              err: FormulaError.REF,
+              message: "Left result is not found",
+            };
+          } else if (!rightResult) {
+            yield {
+              type: "error",
+              err: FormulaError.REF,
+              message: "Right result is not found",
+            };
+          } else if (leftResult.type === "error") {
+            yield leftResult;
+          } else if (rightResult.type === "error") {
+            yield rightResult;
+          } else {
+            yield evaluateSingleScalarOperator(
+              leftResult.result,
+              rightResult.result,
+              evaluateScalar
+            );
+          }
+        } while (leftResult || rightResult);
       },
     };
   }
 
-  const leftVal =
-    left.type === "value"
-      ? left.result.type === "infinity"
-        ? "infinity"
-        : `(${left.result.type}, ${left.result.value})`
-      : left.type;
-  const rightVal =
-    right.type === "value"
-      ? right.result.type === "infinity"
-        ? "infinity"
-        : `(${right.result.type}, ${right.result.value})`
-      : right.type;
-
   return {
     type: "error",
     err: FormulaError.VALUE,
-    message: `Can't evaluate (${leftVal}, ${rightVal}) in scalar operator ${name}`,
+    message: `Can't evaluate (${left.type}, ${right.type}) in scalar operator ${name}`,
   };
 }

@@ -50,7 +50,7 @@ describe("Tables", () => {
     // Now add the formula that references the table
     setCellContent("D1", "=SUM(Products[Price])");
 
-    expect(cell("D1")).toBe(25); // 10 + 15
+    expect(cell("D1", true)).toBe(25); // 10 + 15
   });
 
   test("should handle table column references", () => {

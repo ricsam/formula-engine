@@ -1,4 +1,5 @@
 import type { DependencyNode } from "../types";
+import { getRowNumber, indexToColumn, parseCellReference, columnToIndex } from "../utils";
 
 export function dependencyNodeToKey(node: DependencyNode): string {
   switch (node.type) {
@@ -11,34 +12,58 @@ export function dependencyNodeToKey(node: DependencyNode): string {
           `Invalid cell address: rowIndex and colIndex must be defined (got rowIndex=${node.address.rowIndex}, colIndex=${node.address.colIndex})`
         );
       }
-      return `cell:${node.sheetName}:${node.address.rowIndex}:${node.address.colIndex}`;
+      const cellRef = `${indexToColumn(node.address.colIndex)}${getRowNumber(node.address.rowIndex)}`;
+      return `cell:${node.sheetName}:${cellRef}`;
 
     case "range":
-      const endCol =
-        node.range.end.col.type === "number"
-          ? node.range.end.col.value.toString()
-          : "INFINITY";
-      const endRow =
-        node.range.end.row.type === "number"
-          ? node.range.end.row.value.toString()
-          : "INFINITY";
-      return `range:${node.sheetName}:${node.range.start.row}:${node.range.start.col}:${endRow}:${endCol}`;
+      const startCell = `${indexToColumn(node.range.start.col)}${getRowNumber(node.range.start.row)}`;
+      
+      // Handle different range types according to canonical format
+      let rangeEnd: string;
+      if (node.range.end.row.type === "infinity" && node.range.end.col.type === "infinity") {
+        // Both infinite: A5:INFINITY
+        rangeEnd = "INFINITY";
+      } else if (node.range.end.row.type === "infinity" && node.range.end.col.type === "number") {
+        // Row infinite, col finite: A5:D (column only)
+        rangeEnd = indexToColumn(node.range.end.col.value);
+      } else if (node.range.end.row.type === "number" && node.range.end.col.type === "infinity") {
+        // Row finite, col infinite: A5:10 (row only)
+        rangeEnd = getRowNumber(node.range.end.row.value).toString();
+      } else if (node.range.end.row.type === "number" && node.range.end.col.type === "number") {
+        // Both finite: A5:D10
+        rangeEnd = `${indexToColumn(node.range.end.col.value)}${getRowNumber(node.range.end.row.value)}`;
+      } else {
+        throw new Error("Invalid range end configuration");
+      }
+      
+      return `range:${node.sheetName}:${startCell}:${rangeEnd}`;
 
     case "multi-spreadsheet-range":
-      const endColMulti =
-        node.ranges.end.col.type === "number"
-          ? node.ranges.end.col.value.toString()
-          : "INFINITY";
-      const endRowMulti =
-        node.ranges.end.row.type === "number"
-          ? node.ranges.end.row.value.toString()
-          : "INFINITY";
+      const startCellMulti = `${indexToColumn(node.ranges.start.col)}${getRowNumber(node.ranges.start.row)}`;
+      
+      // Handle different range types according to canonical format
+      let rangeEndMulti: string;
+      if (node.ranges.end.row.type === "infinity" && node.ranges.end.col.type === "infinity") {
+        // Both infinite: A5:INFINITY
+        rangeEndMulti = "INFINITY";
+      } else if (node.ranges.end.row.type === "infinity" && node.ranges.end.col.type === "number") {
+        // Row infinite, col finite: A5:D (column only)
+        rangeEndMulti = indexToColumn(node.ranges.end.col.value);
+      } else if (node.ranges.end.row.type === "number" && node.ranges.end.col.type === "infinity") {
+        // Row finite, col infinite: A5:10 (row only)
+        rangeEndMulti = getRowNumber(node.ranges.end.row.value).toString();
+      } else if (node.ranges.end.row.type === "number" && node.ranges.end.col.type === "number") {
+        // Both finite: A5:D10
+        rangeEndMulti = `${indexToColumn(node.ranges.end.col.value)}${getRowNumber(node.ranges.end.row.value)}`;
+      } else {
+        throw new Error("Invalid range end configuration");
+      }
 
       if (node.sheetNames.type === "list") {
         const sheetList = node.sheetNames.list.join(",");
-        return `multi-range:list:${sheetList}:${node.ranges.start.row}:${node.ranges.start.col}:${endRowMulti}:${endColMulti}`;
+        return `multi-range:list:${sheetList}:${startCellMulti}:${rangeEndMulti}`;
       } else {
-        return `multi-range:range:${node.sheetNames.startSpreadsheetName}:${node.sheetNames.endSpreadsheetName}:${node.ranges.start.row}:${node.ranges.start.col}:${endRowMulti}:${endColMulti}`;
+        return `multi-range:range:${node.sheetNames.startSpreadsheetName}:${node.sheetNames.endSpreadsheetName}:${startCellMulti}:${rangeEndMulti}`;
       }
 
     case "named-expression":
@@ -72,122 +97,145 @@ export function keyToDependencyNode(key: string): DependencyNode {
 
   switch (type) {
     case "cell": {
-      if (parts.length !== 4) {
+      if (parts.length !== 3) {
         throw new Error(`Invalid cell key format: ${key}`);
       }
       const sheetName = parts[1];
-      const rowStr = parts[2];
-      const colStr = parts[3];
+      const cellRef = parts[2];
 
-      if (
-        sheetName === undefined ||
-        rowStr === undefined ||
-        colStr === undefined
-      ) {
+      if (sheetName === undefined || cellRef === undefined) {
         throw new Error(`Invalid cell key format: ${key}`);
       }
+
+      const { rowIndex, colIndex } = parseCellReference(cellRef);
 
       return {
         type: "cell",
         sheetName,
         address: {
-          rowIndex: parseInt(rowStr, 10),
-          colIndex: parseInt(colStr, 10),
+          rowIndex,
+          colIndex,
         },
       };
     }
 
     case "range": {
-      if (parts.length !== 6) {
+      if (parts.length !== 4) {
         throw new Error(`Invalid range key format: ${key}`);
       }
 
       const sheetName = parts[1];
-      const startRowStr = parts[2];
-      const startColStr = parts[3];
-      const endRowStr = parts[4];
-      const endColStr = parts[5];
+      const startCellRef = parts[2];
+      const endRef = parts[3];
 
       if (
         sheetName === undefined ||
-        startRowStr === undefined ||
-        startColStr === undefined ||
-        endRowStr === undefined ||
-        endColStr === undefined
+        startCellRef === undefined ||
+        endRef === undefined
       ) {
         throw new Error(`Invalid range key format: ${key}`);
       }
 
-      const parseEndValue = (value: string) => {
-        if (value === "INFINITY") {
-          return { type: "infinity" as const, sign: "positive" as const };
-        }
-        return { type: "number" as const, value: parseInt(value, 10) };
-      };
+      // Parse start cell
+      const { rowIndex: startRow, colIndex: startCol } = parseCellReference(startCellRef);
+
+      // Parse end reference - could be INFINITY, column only, row only, or full cell
+      let endRow: { type: "number"; value: number } | { type: "infinity"; sign: "positive" };
+      let endCol: { type: "number"; value: number } | { type: "infinity"; sign: "positive" };
+
+      if (endRef === "INFINITY") {
+        // Both infinite: A5:INFINITY
+        endRow = { type: "infinity", sign: "positive" };
+        endCol = { type: "infinity", sign: "positive" };
+      } else if (/^[A-Z]+$/.test(endRef)) {
+        // Column only: A5:D (row infinite, col finite)
+        endRow = { type: "infinity", sign: "positive" };
+        endCol = { type: "number", value: columnToIndex(endRef) };
+      } else if (/^\d+$/.test(endRef)) {
+        // Row only: A5:10 (row finite, col infinite)
+        endRow = { type: "number", value: parseInt(endRef, 10) - 1 }; // Convert to 0-based
+        endCol = { type: "infinity", sign: "positive" };
+      } else {
+        // Full cell: A5:D10 (both finite)
+        const { rowIndex: endRowIndex, colIndex: endColIndex } = parseCellReference(endRef);
+        endRow = { type: "number", value: endRowIndex };
+        endCol = { type: "number", value: endColIndex };
+      }
 
       return {
         type: "range",
         sheetName,
         range: {
           start: {
-            row: parseInt(startRowStr, 10),
-            col: parseInt(startColStr, 10),
+            row: startRow,
+            col: startCol,
           },
           end: {
-            row: parseEndValue(endRowStr),
-            col: parseEndValue(endColStr),
+            row: endRow,
+            col: endCol,
           },
         },
       };
     }
 
     case "multi-range": {
-      if (parts.length < 7) {
+      if (parts.length < 5) {
         throw new Error(`Invalid multi-range key format: ${key}`);
       }
-
-      const parseEndValue = (value: string) => {
-        if (value === "INFINITY") {
-          return { type: "infinity" as const, sign: "positive" as const };
-        }
-        return { type: "number" as const, value: parseInt(value, 10) };
-      };
 
       const sheetNamesType = parts[1];
 
       if (sheetNamesType === "list") {
-        if (parts.length !== 7) {
+        if (parts.length !== 5) {
           throw new Error(`Invalid multi-range list key format: ${key}`);
         }
 
         const sheetListStr = parts[2];
-        const startRowStr = parts[3];
-        const startColStr = parts[4];
-        const endRowStr = parts[5];
-        const endColStr = parts[6];
+        const startCellRef = parts[3];
+        const endRef = parts[4];
 
         if (
           sheetListStr === undefined ||
-          startRowStr === undefined ||
-          startColStr === undefined ||
-          endRowStr === undefined ||
-          endColStr === undefined
+          startCellRef === undefined ||
+          endRef === undefined
         ) {
           throw new Error(`Invalid multi-range list key format: ${key}`);
         }
 
         const sheetList = sheetListStr === "" ? [] : sheetListStr.split(",");
 
+        // Parse start cell
+        const { rowIndex: startRow, colIndex: startCol } = parseCellReference(startCellRef);
+
+        // Parse end reference - same logic as regular ranges
+        let endRow: { type: "number"; value: number } | { type: "infinity"; sign: "positive" };
+        let endCol: { type: "number"; value: number } | { type: "infinity"; sign: "positive" };
+
+        if (endRef === "INFINITY") {
+          endRow = { type: "infinity", sign: "positive" };
+          endCol = { type: "infinity", sign: "positive" };
+        } else if (/^[A-Z]+$/.test(endRef)) {
+          endRow = { type: "infinity", sign: "positive" };
+          endCol = { type: "number", value: columnToIndex(endRef) };
+        } else if (/^\d+$/.test(endRef)) {
+          endRow = { type: "number", value: parseInt(endRef, 10) - 1 };
+          endCol = { type: "infinity", sign: "positive" };
+        } else {
+          const { rowIndex: endRowIndex, colIndex: endColIndex } = parseCellReference(endRef);
+          endRow = { type: "number", value: endRowIndex };
+          endCol = { type: "number", value: endColIndex };
+        }
+
         return {
           type: "multi-spreadsheet-range",
           ranges: {
             start: {
-              row: parseInt(startRowStr, 10),
-              col: parseInt(startColStr, 10),
+              row: startRow,
+              col: startCol,
             },
             end: {
-              row: parseEndValue(endRowStr),
-              col: parseEndValue(endColStr),
+              row: endRow,
+              col: endCol,
             },
           },
           sheetNames: {
@@ -196,38 +244,56 @@ export function keyToDependencyNode(key: string): DependencyNode {
           },
         };
       } else if (sheetNamesType === "range") {
-        if (parts.length !== 8) {
+        if (parts.length !== 6) {
           throw new Error(`Invalid multi-range range key format: ${key}`);
         }
 
         const startSheetName = parts[2];
         const endSheetName = parts[3];
-        const startRowStr = parts[4];
-        const startColStr = parts[5];
-        const endRowStr = parts[6];
-        const endColStr = parts[7];
+        const startCellRef = parts[4];
+        const endRef = parts[5];
 
         if (
           startSheetName === undefined ||
           endSheetName === undefined ||
-          startRowStr === undefined ||
-          startColStr === undefined ||
-          endRowStr === undefined ||
-          endColStr === undefined
+          startCellRef === undefined ||
+          endRef === undefined
         ) {
           throw new Error(`Invalid multi-range range key format: ${key}`);
+        }
+
+        // Parse start cell
+        const { rowIndex: startRow, colIndex: startCol } = parseCellReference(startCellRef);
+
+        // Parse end reference - same logic as regular ranges
+        let endRow: { type: "number"; value: number } | { type: "infinity"; sign: "positive" };
+        let endCol: { type: "number"; value: number } | { type: "infinity"; sign: "positive" };
+
+        if (endRef === "INFINITY") {
+          endRow = { type: "infinity", sign: "positive" };
+          endCol = { type: "infinity", sign: "positive" };
+        } else if (/^[A-Z]+$/.test(endRef)) {
+          endRow = { type: "infinity", sign: "positive" };
+          endCol = { type: "number", value: columnToIndex(endRef) };
+        } else if (/^\d+$/.test(endRef)) {
+          endRow = { type: "number", value: parseInt(endRef, 10) - 1 };
+          endCol = { type: "infinity", sign: "positive" };
+        } else {
+          const { rowIndex: endRowIndex, colIndex: endColIndex } = parseCellReference(endRef);
+          endRow = { type: "number", value: endRowIndex };
+          endCol = { type: "number", value: endColIndex };
         }
 
         return {
           type: "multi-spreadsheet-range",
           ranges: {
             start: {
-              row: parseInt(startRowStr, 10),
-              col: parseInt(startColStr, 10),
+              row: startRow,
+              col: startCol,
             },
             end: {
-              row: parseEndValue(endRowStr),
-              col: parseEndValue(endColStr),
+              row: endRow,
+              col: endCol,
             },
           },
           sheetNames: {
@@ -306,9 +372,7 @@ export function keyToDependencyNode(key: string): DependencyNode {
         const capitalizedAreaType =
           areaType.charAt(0).toUpperCase() + areaType.slice(1);
 
-        if (
-          !["Headers", "All", "AllData"].includes(capitalizedAreaType)
-        ) {
+        if (!["Headers", "All", "AllData"].includes(capitalizedAreaType)) {
           throw new Error(`Invalid table area type: ${areaType}`);
         }
 
@@ -317,10 +381,7 @@ export function keyToDependencyNode(key: string): DependencyNode {
           tableName,
           sheetName,
           area: {
-            kind: capitalizedAreaType as
-              | "Headers"
-              | "All"
-              | "AllData",
+            kind: capitalizedAreaType as "Headers" | "All" | "AllData",
           },
         };
       }

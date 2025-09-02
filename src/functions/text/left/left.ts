@@ -104,17 +104,13 @@ export const LEFT: FunctionDefinition = {
     }
 
     // Use MID operation: LEFT(text, num_chars) = MID(text, 1, num_chars)
-    try {
-      return {
-        type: "value",
-        result: midOperation(textResult, startNumResult, numCharsResult),
-      };
-    } catch (error) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "LEFT operation failed",
-      };
+    const result = midOperation(textResult, startNumResult, numCharsResult);
+    if (result.type === "error") {
+      return result;
     }
+    return {
+      type: "value",
+      result: result.result,
+    };
   },
 };
