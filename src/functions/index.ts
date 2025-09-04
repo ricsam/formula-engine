@@ -10,6 +10,7 @@ import type { FunctionDefinition } from "src/core/types";
 import { SEQUENCE } from "./array/sequence/sequence";
 import { INDEX } from "./lookup/index-lookup/index-lookup"; // Fixed import path
 import { MATCH } from "./lookup/match/match";
+import { COUNTIF } from "./lookup/countif/countif";
 import { AVERAGE } from "./math/average/average";
 import { MAX } from "./math/max/max";
 import { MIN } from "./math/min/min";
@@ -19,6 +20,8 @@ import { LEFT } from "./text/left/left";
 import { MID } from "./text/mid/mid";
 import { LEN } from "./text/len/len";
 import { RIGHT } from "./text/right/right";
+import { CONCATENATE } from "./text/concatenate/concatenate";
+import { IF } from "./logical/if/if";
 
 export const functions: Record<string, FunctionDefinition> = {
   AVERAGE,
@@ -26,6 +29,8 @@ export const functions: Record<string, FunctionDefinition> = {
   INDEX,
   LEFT,
   MID,
+  CONCATENATE,
+  COUNTIF,
   LEN,
   MATCH,
   MAX,
@@ -33,4 +38,5 @@ export const functions: Record<string, FunctionDefinition> = {
   RIGHT,
   SEQUENCE,
   SUM,
+  IF,
 };

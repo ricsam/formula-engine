@@ -183,7 +183,7 @@ describe("Edge cases", () => {
         row: { type: "invalid" as any },
         col: { type: "number", value: 0 },
       },
-    };
+    } as SpreadsheetRange;
 
     expect(() => serializeRange(invalidRange)).toThrow("Invalid range end configuration");
   });

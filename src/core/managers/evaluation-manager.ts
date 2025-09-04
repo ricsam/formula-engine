@@ -176,8 +176,6 @@ export class EvaluationManager extends FormulaEvaluator {
      */
     cellAddress: CellAddress
   ): boolean {
-    let requiresReRun = true;
-
     const node = keyToDependencyNode(nodeKey);
 
     const dependenciesDiscoveredInEvaluation: Set<string> = new Set();
@@ -209,10 +207,22 @@ export class EvaluationManager extends FormulaEvaluator {
             message: "Sheet not found",
           },
         });
-        return requiresReRun;
+        return false;
       }
 
-      const content = normalizeSerializedCellValue(sheet.content.get(cellId));
+      let content: SerializedCellValue;
+      try {
+        content = normalizeSerializedCellValue(sheet.content.get(cellId));
+      } catch (err) {
+        this.evaluatedNodes.set(nodeKey, {
+          evaluationResult: {
+            type: "error",
+            err: FormulaError.ERROR,
+            message: "Syntax error",
+          },
+        });
+        return false;
+      }
 
       const evaluationContext: EvaluationContext = {
         currentSheet: sheet.name,
@@ -246,7 +256,7 @@ export class EvaluationManager extends FormulaEvaluator {
               result: this.convertScalarValueToCellValue(content),
             },
           });
-          return requiresReRun;
+          return false;
         }
       } else {
         evaluation = this.evaluateFormula(content.slice(1), evaluationContext);
@@ -324,7 +334,7 @@ export class EvaluationManager extends FormulaEvaluator {
             message: "Named expression not found",
           },
         });
-        return requiresReRun;
+        return false;
       }
 
       evaluation = this.evaluateFormula(expression.expression, {
@@ -347,6 +357,8 @@ export class EvaluationManager extends FormulaEvaluator {
     const currentDeps = this.evaluatedNodes.get(nodeKey)?.deps ?? new Set();
     const currentFrontierDeps =
       this.evaluatedNodes.get(nodeKey)?.frontierDependencies ?? new Set();
+
+    let requiresReRun = true;
     if (
       !(
         dependenciesDiscoveredInEvaluation.isSubsetOf(currentDeps) &&
@@ -407,7 +419,19 @@ export class EvaluationManager extends FormulaEvaluator {
     let requiresReRun = true;
     while (requiresReRun) {
       requiresReRun = false;
-      const content = normalizeSerializedCellValue(sheet.content.get(cellId));
+      let content: SerializedCellValue;
+      try {
+        content = normalizeSerializedCellValue(sheet.content.get(cellId));
+      } catch (err) {
+        this.evaluatedNodes.set(nodeKey, {
+          evaluationResult: {
+            type: "error",
+            err: FormulaError.ERROR,
+            message: "Syntax error",
+          },
+        });
+        break;
+      }
       if (typeof content !== "string" || !content.startsWith("=")) {
         this.evaluatedNodes.set(nodeKey, {
           evaluationResult: {
