@@ -225,7 +225,7 @@ export type SpilledValuesEvaluationResult = {
   source: string;
   evaluate: SpilledValuesEvaluator;
   /**
-   * evaluateAllCells is a generator function that evaluates all cells in the spilled range.
+   * evaluateAllCells is a generator function that evaluates all non-empty cells in the spilled range.
    * Because a spilled range can be open-ended, we need to have logic for which cells we should evaluate.
    * e.g. when evaluating a range such as D:D only the cells in the current sheet residing in
    * column D should be evaluated and cells producing spilled values that spill onto D:D.

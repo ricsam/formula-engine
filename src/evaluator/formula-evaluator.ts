@@ -47,6 +47,13 @@ import { divide } from "./arithmetic/divide/divide";
 import { multiply } from "./arithmetic/multiply/multiply";
 import { power } from "./arithmetic/power/power";
 import { subtract } from "./arithmetic/subtract/subtract";
+import { equals } from "./comparison/equals";
+import { notEquals } from "./comparison/not-equals";
+import { lessThan } from "./comparison/less-than";
+import { lessThanOrEqual } from "./comparison/less-than-or-equal";
+import { greaterThan } from "./comparison/greater-than";
+import { greaterThanOrEqual } from "./comparison/greater-than-or-equal";
+import { concatenate } from "./concatenation/concatenate";
 import {
   getRangeIntersection,
   OpenRangeEvaluator,
@@ -882,20 +889,20 @@ export class FormulaEvaluator {
       case "^":
         return this.power(left, right, context);
 
-      // case "&":
-      //   return this.concatenate(left, right);
-      // case "=":
-      //   return this.equals(left, right);
-      // case "<>":
-      //   return this.notEquals(left, right);
-      // case "<":
-      //   return this.lessThan(left, right);
-      // case "<=":
-      //   return this.lessThanOrEqual(left, right);
-      // case ">":
-      //   return this.greaterThan(left, right);
-      // case ">=":
-      //   return this.greaterThanOrEqual(left, right);
+      case "&":
+        return this.concatenateOp(left, right, context);
+      case "=":
+        return this.equalsOp(left, right, context);
+      case "<>":
+        return this.notEqualsOp(left, right, context);
+      case "<":
+        return this.lessThanOp(left, right, context);
+      case "<=":
+        return this.lessThanOrEqualOp(left, right, context);
+      case ">":
+        return this.greaterThanOp(left, right, context);
+      case ">=":
+        return this.greaterThanOrEqualOp(left, right, context);
       default:
         throw new Error(FormulaError.ERROR);
     }
@@ -978,6 +985,92 @@ export class FormulaEvaluator {
       evaluateScalar: power,
       context,
       name: "power",
+    });
+  }
+
+  // Comparison operations
+  equalsOp(
+    left: FunctionEvaluationResult,
+    right: FunctionEvaluationResult,
+    context: EvaluationContext
+  ): FunctionEvaluationResult {
+    return this.evaluateScalarOperator(left, right, {
+      evaluateScalar: equals,
+      context,
+      name: "equals",
+    });
+  }
+
+  notEqualsOp(
+    left: FunctionEvaluationResult,
+    right: FunctionEvaluationResult,
+    context: EvaluationContext
+  ): FunctionEvaluationResult {
+    return this.evaluateScalarOperator(left, right, {
+      evaluateScalar: notEquals,
+      context,
+      name: "notEquals",
+    });
+  }
+
+  lessThanOp(
+    left: FunctionEvaluationResult,
+    right: FunctionEvaluationResult,
+    context: EvaluationContext
+  ): FunctionEvaluationResult {
+    return this.evaluateScalarOperator(left, right, {
+      evaluateScalar: lessThan,
+      context,
+      name: "lessThan",
+    });
+  }
+
+  lessThanOrEqualOp(
+    left: FunctionEvaluationResult,
+    right: FunctionEvaluationResult,
+    context: EvaluationContext
+  ): FunctionEvaluationResult {
+    return this.evaluateScalarOperator(left, right, {
+      evaluateScalar: lessThanOrEqual,
+      context,
+      name: "lessThanOrEqual",
+    });
+  }
+
+  greaterThanOp(
+    left: FunctionEvaluationResult,
+    right: FunctionEvaluationResult,
+    context: EvaluationContext
+  ): FunctionEvaluationResult {
+    return this.evaluateScalarOperator(left, right, {
+      evaluateScalar: greaterThan,
+      context,
+      name: "greaterThan",
+    });
+  }
+
+  greaterThanOrEqualOp(
+    left: FunctionEvaluationResult,
+    right: FunctionEvaluationResult,
+    context: EvaluationContext
+  ): FunctionEvaluationResult {
+    return this.evaluateScalarOperator(left, right, {
+      evaluateScalar: greaterThanOrEqual,
+      context,
+      name: "greaterThanOrEqual",
+    });
+  }
+
+  // Concatenation operation
+  concatenateOp(
+    left: FunctionEvaluationResult,
+    right: FunctionEvaluationResult,
+    context: EvaluationContext
+  ): FunctionEvaluationResult {
+    return this.evaluateScalarOperator(left, right, {
+      evaluateScalar: concatenate,
+      context,
+      name: "concatenate",
     });
   }
 
