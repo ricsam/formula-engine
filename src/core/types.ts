@@ -52,6 +52,17 @@ export type SpreadsheetRange = {
   };
 };
 
+export type FiniteSpreadsheetRange = {
+  start: {
+    col: number;
+    row: number;
+  };
+  end: {
+    col: number;
+    row: number;
+  };
+};
+
 export type CellString = {
   type: "string";
   value: string;

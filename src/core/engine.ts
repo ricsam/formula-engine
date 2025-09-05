@@ -24,6 +24,9 @@ import {
 import { renameNamedExpressionInFormula } from "./named-expression-renamer";
 import { renameTableInFormula } from "./table-renamer";
 import { type FunctionEvaluationResult } from "./types";
+import type { FillDirection } from "@ricsam/selection-manager";
+import { getCellReference } from "./utils";
+import { AutoFill } from "./autofill-utils";
 
 /**
  * Main FormulaEngine class
@@ -34,6 +37,7 @@ export class FormulaEngine {
   public tableManager: TableManager;
   public eventManager: EventManager;
   public evaluationManager: EvaluationManager;
+  public autoFillManager: AutoFill;
 
   constructor() {
     this.eventManager = new EventManager();
@@ -46,6 +50,7 @@ export class FormulaEngine {
       this.namedExpressionManager.getGlobalNamedExpressions(),
       this.tableManager.getTables()
     );
+    this.autoFillManager = new AutoFill(this.sheetManager, this);
   }
 
   /**
@@ -495,5 +500,40 @@ export class FormulaEngine {
 
   getTransitiveDeps(nodeKey: string): Set<string> {
     return this.evaluationManager.getTransitiveDeps(nodeKey);
+  }
+
+  /**
+   * Auto-fills the fillRange based on the seedRange and the direction.
+   */
+  autoFill(
+    sheetName: string,
+    /**
+     * The user's original selection that defines the pattern/series.
+     */
+    seedRange: SpreadsheetRange,
+    /**
+     * the new cells populated by the drag, excluding the seed
+     */
+    fillRange: SpreadsheetRange,
+    /**
+     * The direction of the fill.
+     */
+    direction: FillDirection
+  ) {
+    const sheet = this.sheetManager.getSheets().get(sheetName);
+    if (!sheet) {
+      throw new Error(`Sheet "${sheetName}" not found`);
+    }
+
+    this.autoFillManager.fill(sheetName, seedRange, fillRange, direction);
+  }
+
+  /**
+   * Removes the content in the spreadsheet that is inside the range.
+   */
+  clearSpreadsheetRange(sheetName: string, range: SpreadsheetRange) {
+    this.sheetManager.clearSpreadsheetRange(sheetName, range, (sheetName, content) => 
+      this.setSheetContent(sheetName, content)
+    );
   }
 }

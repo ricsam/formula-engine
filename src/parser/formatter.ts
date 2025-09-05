@@ -291,7 +291,7 @@ function formatThreeDRange(ast: ThreeDRangeNode): string {
  */
 function needsColumnBrackets(columnName: string): boolean {
   // Column names need extra brackets if they contain spaces or special characters
-  return /[\s\[\]#@,:]/.test(columnName);
+  return /[\s\[\]#@,:=]/.test(columnName);
 }
 
 function formatStructuredReference(ast: StructuredReferenceNode): string {

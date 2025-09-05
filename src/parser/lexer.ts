@@ -206,7 +206,7 @@ export class Lexer {
     }
     
     // Check for identifiers (cell references, function names, boolean values)
-    if (char && (this.isAlpha(char) || char === '_')) {
+    if (char && (this.isAlpha(char) || char === '_' || this.isIdentifierChar(char))) {
       return this.readIdentifier();
     }
     
@@ -394,7 +394,7 @@ export class Lexer {
     // Read identifier characters
     while (this.position < this.input.length) {
       const char = this.input[this.position];
-      if (char && (this.isAlnum(char) || char === '_' || char === '.')) {
+      if (char && (this.isAlnum(char) || char === '_' || char === '.' || this.isIdentifierChar(char))) {
         this.position++;
       } else {
         break;
@@ -460,7 +460,14 @@ export class Lexer {
    * Check if a character is alphabetic
    */
   private isAlpha(char: string): boolean {
-    return (char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z');
+    // Basic ASCII letters
+    if ((char >= 'A' && char <= 'Z') || (char >= 'a' && char <= 'z')) {
+      return true;
+    }
+    
+    // Unicode letter categories using regex
+    // This includes letters from all languages and special symbols like µ
+    return /\p{L}/u.test(char);
   }
   
   /**
@@ -468,6 +475,33 @@ export class Lexer {
    */
   private isAlnum(char: string): boolean {
     return this.isAlpha(char) || this.isDigit(char);
+  }
+  
+  /**
+   * Check if a character can be part of an identifier
+   * This includes letters, certain symbols that are commonly used in column names
+   */
+  private isIdentifierChar(char: string): boolean {
+    // Check for specific Unicode symbols that are commonly used in column names
+    // We need to be very selective to avoid breaking operator parsing
+    // Include: µ (micro), ° (degree), currency symbols, Greek letters, and other common scientific symbols
+    // Exclude: mathematical operators like +, -, =, <, >, etc.
+    const code = char.charCodeAt(0);
+    
+    // µ (micro symbol)
+    if (code === 0x00B5) return true;
+    
+    // ° (degree symbol)
+    if (code === 0x00B0) return true;
+    
+    // Currency symbols (but not $ which is handled separately)
+    if (/\p{Sc}/u.test(char) && char !== '$') return true;
+    
+    // Greek letters and other letter-like symbols that aren't basic ASCII
+    // This excludes mathematical operators
+    if (code > 127 && /\p{L}/u.test(char)) return true;
+    
+    return false;
   }
   
   /**

@@ -15,6 +15,7 @@ import { AVERAGE } from "./math/average/average";
 import { MAX } from "./math/max/max";
 import { MIN } from "./math/min/min";
 import { SUM } from "./math/sum/sum";
+import { CEILING } from "./math/ceiling/ceiling";
 import { FIND } from "./text/find/find";
 import { LEFT } from "./text/left/left";
 import { MID } from "./text/mid/mid";
@@ -22,21 +23,24 @@ import { LEN } from "./text/len/len";
 import { RIGHT } from "./text/right/right";
 import { CONCATENATE } from "./text/concatenate/concatenate";
 import { IF } from "./logical/if/if";
+import { IFERROR } from "./logical/iferror/iferror";
 
 export const functions: Record<string, FunctionDefinition> = {
   AVERAGE,
-  FIND,
-  INDEX,
-  LEFT,
-  MID,
+  CEILING,
   CONCATENATE,
   COUNTIF,
+  FIND,
+  IF,
+  IFERROR,
+  INDEX,
+  LEFT,
   LEN,
   MATCH,
   MAX,
+  MID,
   MIN,
   RIGHT,
   SEQUENCE,
   SUM,
-  IF,
 };

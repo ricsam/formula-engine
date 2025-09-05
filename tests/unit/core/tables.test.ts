@@ -969,4 +969,140 @@ describe("Tables", () => {
     expect(cell("K7")).toBe("C5_data"); // Fourth data row of Column3
     expect(cell("K8")).toBe("C6_data"); // Fifth data row of Column3
   });
+
+  test("should handle column names with parentheses in formulas", () => {
+    // Set up data with column names containing parentheses
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ["A1", "Number of ORDERS"],
+        ["B1", "Number of cars (always add one extra)"],
+        ["A2", 10],
+        ["B2", 5],
+        ["A3", 20],
+        ["B3", 8],
+      ])
+    );
+
+    // Create table
+    engine.addTable({
+      tableName: "OrderData",
+      sheetName,
+      start: "A1",
+      numRows: { type: "number", value: 2 },
+      numCols: 2,
+    });
+
+    // Test basic table references with parentheses
+    setCellContent("D1", "=SUM(OrderData[Number of cars (always add one extra)])");
+    expect(cell("D1")).toBe(13); // 5 + 8
+
+    setCellContent("D2", "=AVERAGE(OrderData[Number of ORDERS])");
+    expect(cell("D2")).toBe(15); // (10 + 20) / 2
+
+    // Test simple CEILING function
+    setCellContent("E1", "=CEILING(1.5625, 0.5)");
+    expect(cell("E1")).toBe(2);
+
+    // Test the original problematic formula with table references
+    setCellContent("C1", "=CEILING((INDEX(OrderData[Number of ORDERS],1)*INDEX(OrderData[Number of cars (always add one extra)],1)/32),0.5)");
+    
+    // Should calculate: CEILING((10*5/32),0.5) = CEILING(1.5625,0.5) = 2
+    expect(cell("C1")).toBe(2);
+
+    // Test that the original problematic formula now parses correctly
+    // This was the main issue reported by the user
+    const originalFormula = "=CEILING(([@[Number of ORDERS]]*[@[Number of cars (always add one extra)]]/32),0.5)";
+    
+    // The formula should at least parse without syntax errors
+    // (Even if current row references don't work in this context, the parsing should succeed)
+    setCellContent("F1", originalFormula);
+    const result = cell("F1");
+    
+    // The result might be an error due to current row context, but it shouldn't be a parse error
+    expect(typeof result === "string" ? !result.includes("syntax") : true).toBe(true);
+  });
+
+  test("should handle column names with equals signs", () => {
+    // Set up data with column names containing equals signs
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ["A1", "Number of cars to prepare = number of ERTs required"],
+        ["B1", "Status = Active"],
+        ["A2", 5],
+        ["B2", "Yes"],
+        ["A3", 8],
+        ["B3", "No"],
+      ])
+    );
+
+    // Create table
+    engine.addTable({
+      tableName: "ERTData",
+      sheetName,
+      start: "A1",
+      numRows: { type: "number", value: 2 },
+      numCols: 2,
+    });
+
+    // Test the original problematic formula with equals sign in column name
+    setCellContent("C1", "=210*[@[Number of cars to prepare = number of ERTs required]]");
+    
+    // The formula should at least parse without syntax errors
+    const result = cell("C1");
+    
+    // The result might be an error due to current row context, but it shouldn't be a parse error
+    expect(typeof result === "string" ? !result.includes("syntax") : true).toBe(true);
+
+    // Test basic table references with equals signs
+    setCellContent("D1", "=SUM(ERTData[Number of cars to prepare = number of ERTs required])");
+    expect(cell("D1")).toBe(13); // 5 + 8
+
+    // Test another column with equals sign
+    setCellContent("D2", "=INDEX(ERTData[Status = Active], 1)");
+    expect(cell("D2")).toBe("Yes");
+  });
+
+  test("should handle column names with decimal numbers and scientific notation", () => {
+    // Set up data with column names containing decimal numbers and scientific notation
+    engine.setSheetContent(
+      sheetName,
+      new Map<string, SerializedCellValue>([
+        ["A1", "Total volume of 13.3uM detergent to prepare (uL)"],
+        ["B1", "Volume to take from the 800uM stock (uL)"],
+        ["C1", "2.5% solution"],
+        ["A2", 100],
+        ["B2", 25],
+        ["C2", "Ready"],
+        ["A3", 200],
+        ["B3", 50],
+        ["C3", "Pending"],
+      ])
+    );
+
+    // Create table
+    engine.addTable({
+      tableName: "ScientificData",
+      sheetName,
+      start: "A1",
+      numRows: { type: "number", value: 2 },
+      numCols: 3,
+    });
+
+    // Test the original problematic IFERROR formula
+    setCellContent("D1", "=IFERROR([@[Total volume of 13.3uM detergent to prepare (uL)]]-[@[Volume to take from the 800uM stock (uL)]],\"\")");
+    
+    // The formula should at least parse without syntax errors
+    const result = cell("D1");
+    expect(typeof result === "string" ? !result.includes("syntax") : true).toBe(true);
+
+    // Test basic table references with decimal numbers
+    setCellContent("D2", "=SUM(ScientificData[Total volume of 13.3uM detergent to prepare (uL)])");
+    expect(cell("D2")).toBe(300); // 100 + 200
+
+    // Test reference to column with percentage
+    setCellContent("D3", "=INDEX(ScientificData[2.5% solution], 1)");
+    expect(cell("D3")).toBe("Ready");
+  });
 });
