@@ -649,4 +649,110 @@ describe("Formula Formatter", () => {
       });
     });
   });
-});
+
+  describe("Complex Column Names with Parentheses", () => {
+    test("should parse and format formula with parentheses in column names", () => {
+      const formula = "CEILING(([@[Number of ORDERS]]*[@[Number of cars (always add one extra)]]/32),0.5)";
+      
+      // First, let's see if we can parse it
+      expect(() => parseFormula(formula)).not.toThrow();
+      
+      // Then format it
+      const formatted = formatFormula(formula);
+      expect(formatted).toBeDefined();
+      
+      // And ensure it round-trips
+      const reparsed = parseFormula(formatted);
+      const reformatted = astToString(reparsed);
+      expect(reformatted).toBe(formatted);
+    });
+
+          test("should handle various parentheses patterns in column names", () => {
+        const testCases = [
+          "[@[Number of ORDERS]]",
+          "[@[Number of cars (always add one extra)]]", 
+          "Table1[Column (with parentheses)]",
+          "Table1[Price (USD)]",
+          "Table1[Count (items)]",
+          "[@[Total (including tax)]]"
+        ];
+
+        testCases.forEach(formula => {
+          expect(() => parseFormula(formula)).not.toThrow();
+          const formatted = formatFormula(formula);
+          expect(() => parseFormula(formatted)).not.toThrow();
+        });
+      });
+    });
+
+    describe("Complex Column Names with Equals Signs", () => {
+      test("should parse and format formula with equals signs in column names", () => {
+        const formula = "210*[@[Number of cars to prepare = number of ERTs required]]";
+        
+        // First, let's see if we can parse it
+        expect(() => parseFormula(formula)).not.toThrow();
+        
+        // Then format it
+        const formatted = formatFormula(formula);
+        expect(formatted).toBeDefined();
+        
+        // And ensure it round-trips
+        const reparsed = parseFormula(formatted);
+        const reformatted = astToString(reparsed);
+        expect(reformatted).toBe(formatted);
+      });
+
+      test("should handle various equals sign patterns in column names", () => {
+        const testCases = [
+          "[@[Status = Active]]",
+          "[@[Number of cars to prepare = number of ERTs required]]", 
+          "Table1[Column = Value]",
+          "Table1[Price = USD]",
+          "Table1[Count = items]",
+          "[@[Total = including tax]]"
+        ];
+
+        testCases.forEach(formula => {
+          expect(() => parseFormula(formula)).not.toThrow();
+          const formatted = formatFormula(formula);
+          expect(() => parseFormula(formatted)).not.toThrow();
+        });
+      });
+    });
+
+    describe("Complex Column Names with Numbers and Special Characters", () => {
+      test("should parse and format IFERROR formula with scientific notation in column names", () => {
+        const formula = "IFERROR([@[Total volume of 13.3uM detergent to prepare (uL)]]-[@[Volume to take from the 800uM stock (uL)]],\"\")";
+        
+        // First, let's see if we can parse it
+        expect(() => parseFormula(formula)).not.toThrow();
+        
+        // Then format it
+        const formatted = formatFormula(formula);
+        expect(formatted).toBeDefined();
+        
+        // And ensure it round-trips
+        const reparsed = parseFormula(formatted);
+        const reformatted = astToString(reparsed);
+        expect(reformatted).toBe(formatted);
+      });
+
+      test("should handle various number patterns in column names", () => {
+        const testCases = [
+          "Table1[13.3uM concentration]",
+          "[@[Volume 800uM stock]]",
+          "Table1[pH 7.4 buffer]",
+          "[@[2.5% solution]]",
+          "SUM(Table1[0.1M NaCl])",
+          "Table1[Column 123.456]",
+          "[@[3.14159 pi value]]"
+        ];
+
+        testCases.forEach(formula => {
+          expect(() => parseFormula(formula)).not.toThrow();
+          const formatted = formatFormula(formula);
+          expect(() => parseFormula(formatted)).not.toThrow();
+        });
+      });
+    });
+  });

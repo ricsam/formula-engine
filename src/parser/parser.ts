@@ -45,9 +45,11 @@ export class ParseError extends Error {
  */
 export class Parser {
   private tokens: TokenStream;
+  private input: string;
 
-  constructor(tokens: Token[]) {
+  constructor(tokens: Token[], input?: string) {
     this.tokens = new TokenStream(tokens);
+    this.input = input || "";
   }
 
   /**
@@ -120,33 +122,98 @@ export class Parser {
   }
 
   /**
-   * Parse a column name that might consist of multiple identifiers separated by spaces or contain dashes
+   * Parse a column name that might consist of multiple identifiers separated by spaces, contain dashes, or have parentheses
    */
   private parseColumnName(): string {
-    if (!this.tokens.match("IDENTIFIER")) {
+    if (
+      !this.tokens.match("IDENTIFIER") &&
+      !this.tokens.match("FUNCTION") &&
+      !this.tokens.match("NUMBER")
+    ) {
       throw new ParseError("Expected column name", this.tokens.peek().position);
     }
 
-    let columnName = this.tokens.consume().value;
+    // Track the start and end positions to reconstruct the original column name
+    const startToken = this.tokens.peek();
+    const startPos = startToken.position.start;
 
-    // Handle multi-word column names (e.g., "Net Sales") and column names with dashes (e.g., "ORDER-ID")
+    // Consume the first token
+    this.tokens.consume();
+
+    // Continue consuming tokens that are part of the column name
     while (
-      this.tokens.match("IDENTIFIER") || 
-      (this.tokens.match("OPERATOR") && this.tokens.peek().value === "-")
+      this.tokens.match("IDENTIFIER") ||
+      this.tokens.match("FUNCTION") ||
+      this.tokens.match("NUMBER") ||
+      (this.tokens.match("OPERATOR") &&
+        (this.tokens.peek().value === "-" ||
+          this.tokens.peek().value === "=" ||
+          this.tokens.peek().value === "%")) ||
+      this.tokens.match("LPAREN") ||
+      this.tokens.match("RPAREN")
     ) {
-      if (this.tokens.match("IDENTIFIER")) {
-        columnName += " " + this.tokens.consume().value;
-      } else if (this.tokens.match("OPERATOR") && this.tokens.peek().value === "-") {
-        // Handle dash as part of column name
-        columnName += this.tokens.consume().value;
-        // After a dash, we expect another identifier
-        if (this.tokens.match("IDENTIFIER")) {
-          columnName += this.tokens.consume().value;
+      if (
+        this.tokens.match("IDENTIFIER") ||
+        this.tokens.match("FUNCTION") ||
+        this.tokens.match("NUMBER")
+      ) {
+        this.tokens.consume();
+      } else if (
+        this.tokens.match("OPERATOR") &&
+        this.tokens.peek().value === "-"
+      ) {
+        this.tokens.consume(); // dash
+        // After a dash, we expect another identifier, function, or number
+        if (
+          this.tokens.match("IDENTIFIER") ||
+          this.tokens.match("FUNCTION") ||
+          this.tokens.match("NUMBER")
+        ) {
+          this.tokens.consume();
         } else {
-          throw new ParseError("Expected identifier after dash in column name", this.tokens.peek().position);
+          throw new ParseError(
+            "Expected identifier after dash in column name",
+            this.tokens.peek().position
+          );
         }
+      } else if (
+        this.tokens.match("OPERATOR") &&
+        this.tokens.peek().value === "="
+      ) {
+        this.tokens.consume(); // equals sign
+        // After an equals sign, we expect another identifier, function, or number
+        if (
+          this.tokens.match("IDENTIFIER") ||
+          this.tokens.match("FUNCTION") ||
+          this.tokens.match("NUMBER")
+        ) {
+          this.tokens.consume();
+        } else {
+          throw new ParseError(
+            "Expected identifier after equals sign in column name",
+            this.tokens.peek().position
+          );
+        }
+      } else if (
+        this.tokens.match("OPERATOR") &&
+        this.tokens.peek().value === "%"
+      ) {
+        this.tokens.consume(); // percent sign
+        // % can be followed by a space and more text, or it can end the token sequence
+      } else if (this.tokens.match("LPAREN") || this.tokens.match("RPAREN")) {
+        this.tokens.consume();
       }
     }
+
+    // Get the end position from the last consumed token
+    const currentPos = this.tokens.getPosition();
+    const endPos =
+      currentPos > 0
+        ? this.tokens.getTokens()[currentPos - 1]?.position?.end || startPos
+        : startPos;
+
+    // Extract the original column name from the input, preserving all spacing and case
+    const columnName = this.input.substring(startPos, endPos);
 
     return columnName;
   }
@@ -160,7 +227,7 @@ export class Parser {
     const tokens = lexer.tokenize();
 
     // Parse
-    const parser = new Parser(tokens);
+    const parser = new Parser(tokens, formula);
     return parser.parseFormula();
   }
 
@@ -797,7 +864,7 @@ export class Parser {
       // If no number, it's an infinite column range (e.g., A:A) or open-ended range (e.g., A5:D)
     } else if (this.tokens.match("NUMBER")) {
       // This handles cases like:
-      // - Infinite row range (e.g., 5:5) 
+      // - Infinite row range (e.g., 5:5)
       // - Open-ended range (e.g., A5:15)
       // - Absolute row reference (e.g., A5:$15)
       result += this.tokens.consume().value;
@@ -953,7 +1020,7 @@ export class Parser {
           );
         }
         const selectorName = this.tokens.consume().value;
-        selector = `#${selectorName}` as "#All" | "#Data" | "#Headers"
+        selector = `#${selectorName}` as "#All" | "#Data" | "#Headers";
 
         if (!this.tokens.match("RBRACKET")) {
           throw new ParseError(
@@ -976,7 +1043,11 @@ export class Parser {
           this.tokens.consume(); // [
 
           // Parse column specification that could be either Column1 or Column1:Column2
-          if (!this.tokens.match("IDENTIFIER")) {
+          if (
+            !this.tokens.match("IDENTIFIER") &&
+            !this.tokens.match("FUNCTION") &&
+            !this.tokens.match("NUMBER")
+          ) {
             throw new ParseError(
               "Expected column name",
               this.tokens.peek().position
@@ -988,7 +1059,11 @@ export class Parser {
           if (this.tokens.match("COLON")) {
             this.tokens.consume(); // :
 
-            if (!this.tokens.match("IDENTIFIER")) {
+            if (
+              !this.tokens.match("IDENTIFIER") &&
+              !this.tokens.match("FUNCTION") &&
+              !this.tokens.match("NUMBER")
+            ) {
               throw new ParseError(
                 "Expected end column name after :",
                 this.tokens.peek().position
@@ -1024,7 +1099,11 @@ export class Parser {
           );
         }
         this.tokens.consume(); // outer ]
-      } else if (this.tokens.match("IDENTIFIER")) {
+      } else if (
+        this.tokens.match("IDENTIFIER") ||
+        this.tokens.match("FUNCTION") ||
+        this.tokens.match("NUMBER")
+      ) {
         // Handle [[Column1]:[Column2]] syntax
         const colStart = this.parseColumnName();
 
@@ -1165,7 +1244,11 @@ export class Parser {
         }
         this.tokens.consume(); // ]
       }
-    } else if (this.tokens.match("IDENTIFIER")) {
+    } else if (
+      this.tokens.match("IDENTIFIER") ||
+      this.tokens.match("FUNCTION") ||
+      this.tokens.match("NUMBER")
+    ) {
       // Simple column reference like Table1[Column1] or range Table1[Column1:Column2]
       const colStart = this.parseColumnName();
 
@@ -1283,7 +1366,11 @@ export class Parser {
           this.tokens.consume(); // [
 
           // Parse column specification that could be either Column1 or Column1:Column2
-          if (!this.tokens.match("IDENTIFIER")) {
+          if (
+            !this.tokens.match("IDENTIFIER") &&
+            !this.tokens.match("FUNCTION") &&
+            !this.tokens.match("NUMBER")
+          ) {
             throw new ParseError(
               "Expected column name",
               this.tokens.peek().position
@@ -1295,7 +1382,11 @@ export class Parser {
           if (this.tokens.match("COLON")) {
             this.tokens.consume(); // :
 
-            if (!this.tokens.match("IDENTIFIER")) {
+            if (
+              !this.tokens.match("IDENTIFIER") &&
+              !this.tokens.match("FUNCTION") &&
+              !this.tokens.match("NUMBER")
+            ) {
               throw new ParseError(
                 "Expected end column name after :",
                 this.tokens.peek().position
@@ -1331,7 +1422,11 @@ export class Parser {
           );
         }
         this.tokens.consume(); // outer ]
-      } else if (this.tokens.match("IDENTIFIER")) {
+      } else if (
+        this.tokens.match("IDENTIFIER") ||
+        this.tokens.match("FUNCTION") ||
+        this.tokens.match("NUMBER")
+      ) {
         // Handle [[Column1]:[Column2]] syntax
         const colStart = this.parseColumnName();
 
@@ -1472,7 +1567,11 @@ export class Parser {
         }
         this.tokens.consume(); // ]
       }
-    } else if (this.tokens.match("IDENTIFIER")) {
+    } else if (
+      this.tokens.match("IDENTIFIER") ||
+      this.tokens.match("FUNCTION") ||
+      this.tokens.match("NUMBER")
+    ) {
       // Simple column reference like Table1[Column1] or range Table1[Column1:Column2]
       const colStart = this.parseColumnName();
 
@@ -1932,21 +2031,21 @@ export class Parser {
 
     // Try to parse as an open-ended range (A5:INFINITY, A5:D, A5:15)
     const openEndedParsed = parseOpenEndedRange(fullRange);
-    
+
     if (openEndedParsed) {
       // Handle open-ended range
       sheetName = sheetName ?? openEndedParsed.sheet;
-      
+
       const startCol = columnToIndex(openEndedParsed.startCol);
       const startRow = parseInt(openEndedParsed.startRow) - 1; // Convert to 0-based
-      
+
       if (startCol < 0 || startRow < 0) {
         throw new ParseError(`Invalid range reference: ${startRef}:${endRef}`, {
           start: startPos,
           end: endPos,
         });
       }
-      
+
       if (openEndedParsed.type === "infinity") {
         // A5:INFINITY - both row and column unbounded
         const range: SpreadsheetRange = {
@@ -1965,7 +2064,7 @@ export class Parser {
             },
           },
         };
-        
+
         return createRangeNode({
           sheetName,
           range,
@@ -1987,14 +2086,14 @@ export class Parser {
       } else if (openEndedParsed.type === "column-bounded") {
         // A5:D - open down only (bounded columns, unbounded rows)
         const endCol = columnToIndex(openEndedParsed.endCol!);
-        
+
         if (endCol < 0) {
           throw new ParseError(`Invalid column range: ${startRef}:${endRef}`, {
             start: startPos,
             end: endPos,
           });
         }
-        
+
         const range: SpreadsheetRange = {
           start: {
             col: Math.min(startCol, endCol),
@@ -2011,7 +2110,7 @@ export class Parser {
             },
           },
         };
-        
+
         return createRangeNode({
           sheetName,
           range,
@@ -2033,14 +2132,14 @@ export class Parser {
       } else if (openEndedParsed.type === "row-bounded") {
         // A5:15 - open right only (bounded rows, unbounded columns)
         const endRow = parseInt(openEndedParsed.endRow!) - 1; // Convert to 0-based
-        
+
         if (endRow < 0) {
           throw new ParseError(`Invalid row range: ${startRef}:${endRef}`, {
             start: startPos,
             end: endPos,
           });
         }
-        
+
         const range: SpreadsheetRange = {
           start: {
             col: startCol,
@@ -2057,7 +2156,7 @@ export class Parser {
             },
           },
         };
-        
+
         return createRangeNode({
           sheetName,
           range,

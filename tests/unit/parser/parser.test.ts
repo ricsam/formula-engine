@@ -605,6 +605,83 @@ describe("Parser - Structured References", () => {
     expect(ast.isCurrentRow).toBe(false);
   });
 
+  test("should parse column names with equals signs", () => {
+    const ast = parseFormula("Table1[Number of cars to prepare = number of ERTs required]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({
+      startCol: "Number of cars to prepare = number of ERTs required",
+      endCol: "Number of cars to prepare = number of ERTs required",
+    });
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse current row reference with equals signs in column names", () => {
+    const ast = parseFormula("[@[Status = Active]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBeUndefined();
+    expect(ast.cols).toEqual({
+      startCol: "Status = Active",
+      endCol: "Status = Active",
+    });
+    expect(ast.isCurrentRow).toBe(true);
+  });
+
+  test("should parse column names with decimal numbers", () => {
+    const ast = parseFormula("Table1[13.3uM concentration]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({
+      startCol: "13.3uM concentration",
+      endCol: "13.3uM concentration",
+    });
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse column names with percentage signs", () => {
+    const ast = parseFormula("[@[2.5% solution]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBeUndefined();
+    expect(ast.cols).toEqual({
+      startCol: "2.5% solution",
+      endCol: "2.5% solution",
+    });
+    expect(ast.isCurrentRow).toBe(true);
+  });
+
+  test("should parse column names with Unicode symbols", () => {
+    const testCases = [
+      { formula: "[@[Final Stock Concentration (µM)]]", expected: "Final Stock Concentration (µM)" },
+      { formula: "Table1[β-coefficient (°C)]", expected: "β-coefficient (°C)" },
+      { formula: "[@[€ price]]", expected: "€ price" },
+      { formula: "Table1[Δ temperature]", expected: "Δ temperature" },
+      { formula: "[@[λ wavelength (nm)]]", expected: "λ wavelength (nm)" },
+      { formula: "Table1[π value]", expected: "π value" },
+      { formula: "[@[Ω resistance]]", expected: "Ω resistance" },
+      { formula: "Table1[日本語 column]", expected: "日本語 column" }
+    ];
+
+    testCases.forEach(({ formula, expected }) => {
+      const ast = parseFormula(formula);
+      expect(ast.type).toBe("structured-reference");
+      expect(ast.cols).toEqual({
+        startCol: expected,
+        endCol: expected,
+      });
+    });
+  });
+
+  test("should parse complex scientific column names", () => {
+    const ast = parseFormula("[@[Total volume of 13.3uM detergent to prepare (uL)]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBeUndefined();
+    expect(ast.cols).toEqual({
+      startCol: "Total volume of 13.3uM detergent to prepare (uL)",
+      endCol: "Total volume of 13.3uM detergent to prepare (uL)",
+    });
+    expect(ast.isCurrentRow).toBe(true);
+  });
+
   test("should parse current row reference with column names containing dashes", () => {
     const ast = parseFormula("[@CUSTOMER-ID]");
     expect(ast.type).toBe("structured-reference");

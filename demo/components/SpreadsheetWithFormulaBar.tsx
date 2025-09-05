@@ -20,6 +20,8 @@ import type {
   CellAddress,
   NamedExpression,
   SerializedCellValue,
+  SpreadsheetRange,
+  SpreadsheetRangeEnd,
   TableDefinition,
 } from "src/core/types";
 import { indexToColumn } from "src/core/utils";
@@ -205,6 +207,55 @@ export function SpreadsheetWithFormulaBar({
   const selectionManagerEffects = useCallback(
     (selectionManager: SelectionManager) => {
       const cleanups = [
+        selectionManager.listenToFill((ev) => {
+          const convertSmAreaToSpreadsheetRange = (
+            area: SMArea
+          ): SpreadsheetRange => {
+            const rowEnd: SpreadsheetRangeEnd =
+              area.end.row.type === "infinity"
+                ? {
+                    type: "infinity",
+                    sign: "positive",
+                  }
+                : {
+                    type: "number",
+                    value: area.end.row.value,
+                  };
+            const colEnd: SpreadsheetRangeEnd =
+              area.end.col.type === "infinity"
+                ? {
+                    type: "infinity",
+                    sign: "positive",
+                  }
+                : {
+                    type: "number",
+                    value: area.end.col.value,
+                  };
+            return {
+              start: {
+                col: area.start.col,
+                row: area.start.row,
+              },
+              end: {
+                row: rowEnd,
+                col: colEnd,
+              },
+            };
+          };
+          if (ev.type === "extend") {
+            engine.autoFill(
+              sheetName,
+              convertSmAreaToSpreadsheetRange(ev.seedRange),
+              convertSmAreaToSpreadsheetRange(ev.fillRange),
+              ev.direction
+            );
+          } else {
+            engine.clearSpreadsheetRange(
+              sheetName,
+              convertSmAreaToSpreadsheetRange(ev.rangeToClear)
+            );
+          }
+        }),
         selectionManager.observeStateChange(
           (state) => {
             if (state.isSelecting?.type === "drag") {
@@ -309,7 +360,8 @@ export function SpreadsheetWithFormulaBar({
                           :
                           {indexToColumn(
                             currentSelectedTable.start.colIndex +
-                              currentSelectedTable.headers.size - 1
+                              currentSelectedTable.headers.size -
+                              1
                           )}
                           ∞
                         </>
@@ -568,19 +620,22 @@ export function SpreadsheetWithFormulaBar({
             return style;
           }}
           customCellRenderer={(cell) => {
-            const value = engine.getCellValue({
-              sheetName,
-              colIndex: cell.colIndex,
-              rowIndex: cell.rowIndex,
-            }, verboseErrors);
+            const value = engine.getCellValue(
+              {
+                sheetName,
+                colIndex: cell.colIndex,
+                rowIndex: cell.rowIndex,
+              },
+              verboseErrors
+            );
 
             if (typeof value === "number") {
               // Format numbers nicely
               return (
                 <div>
-                  {value.toLocaleString(undefined, {
+                  {value.toLocaleString("en-US", {
                     minimumFractionDigits: 0,
-                    maximumFractionDigits: 2,
+                    maximumFractionDigits: 10,
                   })}
                 </div>
               );

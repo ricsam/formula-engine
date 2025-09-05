@@ -3,6 +3,8 @@ import type {
   FormulaEngineEvents,
   SerializedCellValue,
   Sheet,
+  SpreadsheetRange,
+  FiniteSpreadsheetRange,
 } from "../types";
 import { getCellReference, parseCellReference } from "../utils";
 import { renameSheetInFormula } from "../sheet-renamer";
@@ -131,8 +133,6 @@ export class SheetManager {
     return sheet.content;
   }
 
-
-
   setCellContent(address: CellAddress, content: SerializedCellValue): void {
     const sheet = this.sheets.get(address.sheetName);
     if (!sheet) {
@@ -161,7 +161,10 @@ export class SheetManager {
    * Replace all content for a sheet (safely, without breaking references)
    * This method clears the existing Map and repopulates it rather than replacing the Map reference
    */
-  setSheetContent(sheetName: string, newContent: Map<string, SerializedCellValue>): void {
+  setSheetContent(
+    sheetName: string,
+    newContent: Map<string, SerializedCellValue>
+  ): void {
     const sheet = this.sheets.get(sheetName);
     if (!sheet) {
       throw new Error("Sheet not found");
@@ -169,12 +172,79 @@ export class SheetManager {
 
     // Clear existing content without breaking the Map reference
     sheet.content.clear();
-    
+
     // Repopulate with new content
     newContent.forEach((value, key) => {
       sheet.content.set(key, value);
     });
-    
+
     // Note: No specific sheet-updated event defined, content changes are handled elsewhere
+  }
+
+  /**
+   * Converts a SpreadsheetRange to FiniteSpreadsheetRange, throwing an error if infinite
+   */
+  private toFiniteRange(range: SpreadsheetRange): FiniteSpreadsheetRange {
+    if (range.end.col.type === "infinity" || range.end.row.type === "infinity") {
+      throw new Error("Clearing infinite ranges is not supported");
+    }
+    
+    return {
+      start: range.start,
+      end: {
+        col: range.end.col.value,
+        row: range.end.row.value,
+      },
+    };
+  }
+
+  /**
+   * Removes the content in the spreadsheet that is inside the range.
+   */
+  clearSpreadsheetRange(
+    sheetName: string,
+    range: SpreadsheetRange,
+    setSheetContent: (
+      sheetName: string,
+      content: Map<string, SerializedCellValue>
+    ) => void
+  ) {
+    // Check if range has infinite ends - not supported for now
+    if (
+      range.end.col.type === "infinity" ||
+      range.end.row.type === "infinity"
+    ) {
+      throw new Error("Clearing infinite ranges is not supported");
+    }
+
+    const sheet = this.sheets.get(sheetName);
+    if (!sheet) {
+      throw new Error(`Sheet "${sheetName}" not found`);
+    }
+
+    // Get current sheet content and prepare new content with cleared cells
+    const newContent = new Map(sheet.content);
+
+    // Convert to finite range (throws error if infinite)
+    const finiteRange = this.toFiniteRange(range);
+
+    // Iterate through all cells in the range and clear them
+    const startCol = finiteRange.start.col;
+    const startRow = finiteRange.start.row;
+    const endCol = finiteRange.end.col;
+    const endRow = finiteRange.end.row;
+
+    for (let row = startRow; row <= endRow; row++) {
+      for (let col = startCol; col <= endCol; col++) {
+        const cellRef = getCellReference({
+          colIndex: col,
+          rowIndex: row,
+        });
+        newContent.delete(cellRef);
+      }
+    }
+
+    // Update sheet content in a single operation
+    setSheetContent(sheetName, newContent);
   }
 }
