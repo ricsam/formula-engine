@@ -9,7 +9,7 @@
         "@radix-ui/react-label": "^2.1.7",
         "@radix-ui/react-select": "^2.2.5",
         "@radix-ui/react-slot": "^1.2.3",
-        "@ricsam/selection-manager": "^0.0.15",
+        "@ricsam/selection-manager": "^0.0.16",
         "@tanstack/react-router": "^1.130.12",
         "@tanstack/react-router-devtools": "^1.130.13",
         "@tanstack/router-cli": "^1.130.15",
@@ -274,7 +274,7 @@
 
     "@radix-ui/rect": ["@radix-ui/rect@1.1.1", "", {}, "sha512-HPwpGIzkl28mWyZqG52jiqDJ12waP11Pa1lGoiyUkIEuMLBP0oeK/C89esbXrxsky5we7dfd8U58nm0SgAWpVw=="],
 
-    "@ricsam/selection-manager": ["@ricsam/selection-manager@0.0.15", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-PYMRfYYZcX7RK8xlEfTvKIdKCNbhaePnYSV8WdbsPOSA2Z6vC2SwfNuSNorcvE+CNHUKgweNzzVmhEXbwIlAGw=="],
+    "@ricsam/selection-manager": ["@ricsam/selection-manager@0.0.16", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-qAVdK6eTEXm3OV6EoK2jPgJw7A80stO//jZev6PW+73+m8ABUhB3+1886z7Vk3GkjRETK8/rs6efMgFh8SdN0w=="],
 
     "@tanstack/history": ["@tanstack/history@1.130.12", "", {}, "sha512-2VO1nNFDWojgZ7Uqv/OJfH6LphZQ1kE6l8sI3YBgSPtj3qN6I/rsoTHW9rGjwiDO8sQoDRXod2hpH6HMs5NDsw=="],
 
