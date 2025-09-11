@@ -270,7 +270,8 @@ describe("Named Expressions", () => {
     expect(cell("B1")).toBe(150);
 
     // Verify old name no longer exists
-    const globalExpressions = engine.getGlobalNamedExpressionsSerialized();
+    const globalExpressions =
+      engine.getState().namedExpressions.globalExpressions;
     expect(globalExpressions.has("OLD_RATE")).toBe(false);
     expect(globalExpressions.has("NEW_RATE")).toBe(true);
     expect(globalExpressions.get("NEW_RATE")?.expression).toBe("0.15");
@@ -313,8 +314,7 @@ describe("Named Expressions", () => {
 
     // Verify old name no longer exists
     expect(
-      engine.namedExpressionManager.getNamedExpression({
-        type: "named-expression",
+      engine._namedExpressionManager.getNamedExpression({
         name: "OLD_DISCOUNT",
         scope: {
           type: "sheet",
@@ -324,8 +324,7 @@ describe("Named Expressions", () => {
       })
     ).toBeUndefined();
     expect(
-      engine.namedExpressionManager.getNamedExpression({
-        type: "named-expression",
+      engine._namedExpressionManager.getNamedExpression({
         name: "NEW_DISCOUNT",
         scope: {
           type: "sheet",
@@ -369,7 +368,7 @@ describe("Named Expressions", () => {
     expect(cell("B1")).toBe(200);
 
     // Verify MULTIPLIER was updated to reference new name
-    const globalExpressions = engine.getGlobalNamedExpressionsSerialized();
+    const globalExpressions = engine._namedExpressionManager.globalExpressions;
     expect(globalExpressions.get("MULTIPLIER")?.expression).toBe(
       "FOUNDATION_RATE*2"
     );
@@ -434,19 +433,21 @@ describe("Named Expressions", () => {
     });
 
     // Test serialization
-    const globalExpressions = engine.getGlobalNamedExpressionsSerialized();
-    const sheetExpressions = engine.getSheetExpressionsSerialized({
-      sheetName,
-      workbookName,
-    });
+    const globalExpressions = engine._namedExpressionManager.globalExpressions;
+    const sheetExpressions = engine._namedExpressionManager.sheetExpressions
+      .get(workbookName)
+      ?.get(sheetName);
+    expect(sheetExpressions?.size).toBe(2);
+    expect(sheetExpressions?.has("LOCAL_1")).toBe(true);
+    expect(sheetExpressions?.has("LOCAL_2")).toBe(true);
 
     expect(globalExpressions.size).toBe(2);
     expect(globalExpressions.has("RATE_1")).toBe(true);
     expect(globalExpressions.has("RATE_2")).toBe(true);
 
-    expect(sheetExpressions.size).toBe(2);
-    expect(sheetExpressions.has("LOCAL_1")).toBe(true);
-    expect(sheetExpressions.has("LOCAL_2")).toBe(true);
+    expect(sheetExpressions?.size).toBe(2);
+    expect(sheetExpressions?.has("LOCAL_1")).toBe(true);
+    expect(sheetExpressions?.has("LOCAL_2")).toBe(true);
 
     // Test bulk setting of global named expressions
     const newGlobalExpressions = new Map([
@@ -454,10 +455,13 @@ describe("Named Expressions", () => {
       ["BULK_2", { name: "BULK_2", expression: "0.40" }],
     ]);
 
-    engine.setGlobalNamedExpressions(newGlobalExpressions);
+    engine.setNamedExpressions({
+      type: "global",
+      expressions: newGlobalExpressions,
+    });
 
     const updatedGlobalExpressions =
-      engine.getGlobalNamedExpressionsSerialized();
+      engine._namedExpressionManager.globalExpressions;
     expect(updatedGlobalExpressions.size).toBe(2);
     expect(updatedGlobalExpressions.has("RATE_1")).toBe(false); // Old ones should be gone
     expect(updatedGlobalExpressions.has("BULK_1")).toBe(true);
@@ -469,18 +473,19 @@ describe("Named Expressions", () => {
     ]);
 
     engine.setNamedExpressions({
+      type: "sheet",
       sheetName,
       workbookName,
       expressions: newSheetExpressions,
     });
 
-    const updatedSheetExpressions = engine.getSheetExpressionsSerialized({
-      sheetName,
-      workbookName,
-    });
-    expect(updatedSheetExpressions.size).toBe(1);
-    expect(updatedSheetExpressions.has("LOCAL_1")).toBe(false); // Old ones should be gone
-    expect(updatedSheetExpressions.has("SHEET_BULK_1")).toBe(true);
+    const updatedSheetExpressions =
+      engine._namedExpressionManager.sheetExpressions
+        .get(workbookName)
+        ?.get(sheetName);
+    expect(updatedSheetExpressions?.size).toBe(1);
+    expect(updatedSheetExpressions?.has("LOCAL_1")).toBe(false); // Old ones should be gone
+    expect(updatedSheetExpressions?.has("SHEET_BULK_1")).toBe(true);
   });
 
   test("should handle named expression events", () => {
@@ -488,13 +493,11 @@ describe("Named Expressions", () => {
     let lastUpdatedGlobalExpressions: Map<string, NamedExpression> = new Map();
 
     // Listen for global named expression update events
-    const unsubscribe = engine.on(
-      "global-named-expressions-updated",
-      (expressions) => {
-        globalExpressionsUpdatedCount++;
-        lastUpdatedGlobalExpressions = expressions;
-      }
-    );
+    const unsubscribe = engine.onUpdate(() => {
+      const expressions = engine._namedExpressionManager.globalExpressions;
+      globalExpressionsUpdatedCount++;
+      lastUpdatedGlobalExpressions = expressions;
+    });
 
     // Add global named expression - should trigger event
     engine.addNamedExpression({
@@ -530,9 +533,10 @@ describe("Named Expressions", () => {
     expect(lastUpdatedGlobalExpressions.size).toBe(0);
 
     // Set global named expressions in bulk - should trigger event
-    engine.setGlobalNamedExpressions(
-      new Map([["BULK_EVENT", { name: "BULK_EVENT", expression: "0.25" }]])
-    );
+    engine.setNamedExpressions({
+      type: "global",
+      expressions: new Map([["BULK_EVENT", { name: "BULK_EVENT", expression: "0.25" }]]),
+    });
 
     expect(globalExpressionsUpdatedCount).toBe(5);
     expect(lastUpdatedGlobalExpressions.has("BULK_EVENT")).toBe(true);
@@ -584,7 +588,7 @@ describe("Named Expressions", () => {
     expect(cell("B1")).toBe(120); // Should still work
 
     // Verify all expressions were updated
-    const expressions = engine.getGlobalNamedExpressionsSerialized();
+    const expressions = engine._namedExpressionManager.globalExpressions;
     expect(expressions.get("DOUBLE")?.expression).toBe("FOUNDATION*2");
     expect(expressions.get("TRIPLE")?.expression).toBe("FOUNDATION*3");
   });
@@ -620,7 +624,10 @@ describe("Named Expressions", () => {
       ["NEW_GLOBAL_1", { name: "NEW_GLOBAL_1", expression: "0.15" }],
       ["NEW_GLOBAL_2", { name: "NEW_GLOBAL_2", expression: "0.25" }],
     ]);
-    engine.setGlobalNamedExpressions(newGlobalExpressions);
+    engine.setNamedExpressions({
+      type: "global",
+      expressions: newGlobalExpressions,
+    });
 
     // Replace all sheet-scoped named expressions
     const newSheetExpressions = new Map([
@@ -628,6 +635,7 @@ describe("Named Expressions", () => {
       ["NEW_LOCAL_2", { name: "NEW_LOCAL_2", expression: "0.40" }],
     ]);
     engine.setNamedExpressions({
+      type: "sheet",
       sheetName,
       workbookName,
       expressions: newSheetExpressions,
@@ -664,20 +672,19 @@ describe("Named Expressions", () => {
     expect(cell("E2")).toBe(400); // 1000 * 0.40
 
     // Verify old expressions are gone and new ones exist
-    const globalExpressions = engine.getGlobalNamedExpressionsSerialized();
-    const sheetExpressions = engine.getSheetExpressionsSerialized({
-      sheetName,
-      workbookName,
-    });
+    const globalExpressions = engine._namedExpressionManager.globalExpressions;
+    const sheetExpressions = engine._namedExpressionManager.sheetExpressions
+      .get(workbookName)
+      ?.get(sheetName);
 
     expect(globalExpressions.has("OLD_GLOBAL")).toBe(false);
     expect(globalExpressions.has("NEW_GLOBAL_1")).toBe(true);
     expect(globalExpressions.has("NEW_GLOBAL_2")).toBe(true);
     expect(globalExpressions.size).toBe(2);
 
-    expect(sheetExpressions.has("OLD_LOCAL")).toBe(false);
-    expect(sheetExpressions.has("NEW_LOCAL_1")).toBe(true);
-    expect(sheetExpressions.has("NEW_LOCAL_2")).toBe(true);
-    expect(sheetExpressions.size).toBe(2);
+    expect(sheetExpressions?.has("OLD_LOCAL")).toBe(false);
+    expect(sheetExpressions?.has("NEW_LOCAL_1")).toBe(true);
+    expect(sheetExpressions?.has("NEW_LOCAL_2")).toBe(true);
+    expect(sheetExpressions?.size).toBe(2);
   });
 });

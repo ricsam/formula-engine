@@ -128,6 +128,7 @@ export type ThreeDRangeNode = ASTNodeBase & {
 export type StructuredReferenceNode = ASTNodeBase & {
   type: "structured-reference";
   tableName?: string;
+  workbookName?: string;
   cols?: {
     startCol: string;
     endCol: string;

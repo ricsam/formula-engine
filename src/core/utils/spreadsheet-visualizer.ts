@@ -49,7 +49,7 @@ export function visualizeSpreadsheet(
   const targetSheetName =
     sheetName ||
     (() => {
-      const sheets = engine.workbookManager.getSheets(workbookName);
+      const sheets = engine.getSheets(workbookName);
       const sheetNames = Array.from(sheets.keys());
       return sheetNames.length > 0 ? sheetNames[0]! : null;
     })();

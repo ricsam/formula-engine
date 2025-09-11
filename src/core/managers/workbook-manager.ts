@@ -7,12 +7,9 @@ import type {
   Workbook,
 } from "../types";
 import { getCellReference, parseCellReference } from "../utils";
-import type { EventManager } from "./event-manager";
 
 export class WorkbookManager {
   private workbooks: Map<string, Workbook> = new Map();
-
-  constructor(private eventEmitter: EventManager) {}
 
   getSheets(workbookName: string): Map<string, Sheet> {
     const workbook = this.workbooks.get(workbookName);
@@ -34,7 +31,6 @@ export class WorkbookManager {
       name: workbookName,
       sheets: new Map(),
     });
-    this.eventEmitter.emit("workbook-added", { workbookName });
   }
 
   removeWorkbook(workbookName: string): void {
@@ -42,7 +38,6 @@ export class WorkbookManager {
       throw new Error("Workbook not found");
     }
     this.workbooks.delete(workbookName);
-    this.eventEmitter.emit("workbook-removed", { workbookName });
   }
 
   renameWorkbook(opts: {
@@ -55,9 +50,12 @@ export class WorkbookManager {
     }
     this.workbooks.set(opts.newWorkbookName, workbook);
     this.workbooks.delete(opts.workbookName);
-    this.eventEmitter.emit("workbook-renamed", {
-      oldName: opts.workbookName,
-      newName: opts.newWorkbookName,
+  }
+
+  resetWorkbooks(workbooks: Map<string, Workbook>): void {
+    this.workbooks.clear();
+    workbooks.forEach((workbook, workbookName) => {
+      this.workbooks.set(workbookName, workbook);
     });
   }
 
@@ -96,11 +94,6 @@ export class WorkbookManager {
 
     workbook.sheets.set(sheetName, sheet);
 
-    // Emit sheet-added event
-    this.eventEmitter?.emit("sheet-added", {
-      sheetName: sheetName,
-      workbookName: workbookName,
-    });
     return sheet;
   }
 
@@ -122,12 +115,6 @@ export class WorkbookManager {
 
     // Remove the sheet
     workbook.sheets.delete(sheetName);
-
-    // Emit sheet-removed event
-    this.eventEmitter?.emit("sheet-removed", {
-      sheetName: sheetName,
-      workbookName: workbookName,
-    });
 
     return sheet;
   }
@@ -160,13 +147,6 @@ export class WorkbookManager {
     // Update sheets map
     workbook.sheets.set(newSheetName, sheet);
     workbook.sheets.delete(sheetName);
-
-    // Emit sheet-renamed event
-    this.eventEmitter?.emit("sheet-renamed", {
-      oldSheetName: sheetName,
-      newSheetName: newSheetName,
-      workbookName: workbookName,
-    });
 
     return sheet;
   }
@@ -265,8 +245,6 @@ export class WorkbookManager {
     newContent.forEach((value, key) => {
       sheet.content.set(key, value);
     });
-
-    // Note: No specific sheet-updated event defined, content changes are handled elsewhere
   }
 
   /**

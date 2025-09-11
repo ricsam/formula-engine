@@ -125,7 +125,7 @@ describe("Tables", () => {
     expect(cell("C1")).toBe(100);
 
     // Rename table
-    engine.renameTable({ oldName: "Data", newName: "NewData" });
+    engine.renameTable(workbookName, { oldName: "Data", newName: "NewData" });
 
     // Formula should still work with new name
     expect(cell("C1")).toBe(100);
@@ -157,7 +157,7 @@ describe("Tables", () => {
     expect(cell("C1")).toBe(500);
 
     // Remove table
-    engine.removeTable({ tableName: "TempTable" });
+    engine.removeTable({ tableName: "TempTable", workbookName });
 
     // Formula should now show error
     const result = cell("C1");
@@ -258,7 +258,7 @@ describe("Tables", () => {
     expect(cell("C2")).toBe(135); // 150 * 0.9
 
     // Rename the table
-    engine.renameTable({
+    engine.renameTable(workbookName, {
       oldName: "Products",
       newName: "Inventory",
     });
@@ -269,11 +269,15 @@ describe("Tables", () => {
 
     // Verify that named expressions were updated
     const globalExpr = engine
-      .getGlobalNamedExpressionsSerialized()
+      ._namedExpressionManager.getNamedExpressions()
+      .globalExpressions
       .get("TOTAL_PRICE");
     const sheetExpr = engine
-      .getSheetExpressionsSerialized({ workbookName, sheetName })
-      .get("DISCOUNTED_PRICE");
+      ._namedExpressionManager.getNamedExpressions()
+      .sheetExpressions
+      .get(workbookName)
+      ?.get(sheetName)
+      ?.get("DISCOUNTED_PRICE");
 
     expect(globalExpr!.expression).toBe("SUM(Inventory[Price])*1.1");
     expect(sheetExpr!.expression).toBe("SUM(Inventory[Price])*0.9");
@@ -318,6 +322,7 @@ describe("Tables", () => {
     engine.updateTable({
       tableName: "Products",
       start: "D1",
+      workbookName,
     });
 
     // Add new formula after table update to reference new location
@@ -325,7 +330,7 @@ describe("Tables", () => {
     expect(cell("F2")).toBe(700); // 300 + 400 (from new location)
 
     // Verify table structure was updated
-    const tables = engine.getTablesSerialized();
+    const tables = engine.getTables(workbookName);
     const table = tables.get("Products")!;
     expect(table.start.rowIndex).toBe(0); // D1 row
     expect(table.start.colIndex).toBe(3); // D1 column
@@ -366,6 +371,7 @@ describe("Tables", () => {
     engine.updateTable({
       tableName: "Products",
       numRows: { type: "number", value: 4 }, // Now 4 data rows
+      workbookName,
     });
 
     // Formula should now include all 4 rows
@@ -407,6 +413,7 @@ describe("Tables", () => {
     engine.updateTable({
       tableName: "Products",
       numCols: 3,
+      workbookName,
     });
 
     // Now should have Quantity column available
@@ -458,6 +465,7 @@ describe("Tables", () => {
       start: "D1",
       numRows: { type: "number", value: 3 },
       numCols: 3,
+      workbookName,
     });
 
     // Add new formulas after table update to reference new structure
@@ -469,7 +477,7 @@ describe("Tables", () => {
     expect(cell("G2")).toBe(600); // 100 + 200 + 300
 
     // Verify table structure was updated
-    const tables = engine.getTablesSerialized();
+    const tables = engine.getTables(workbookName);
     const table = tables.get("Data")!;
     expect(table.start.rowIndex).toBe(0); // D1 row
     expect(table.start.colIndex).toBe(3); // D1 column
@@ -523,7 +531,7 @@ describe("Tables", () => {
     });
 
     // Verify table was moved to second sheet
-    const tables = engine.getTablesSerialized();
+    const tables = engine.getTables(workbookName);
     const table = tables.get("Products")!;
     expect(table.sheetName).toBe(sheet2);
 
@@ -537,6 +545,7 @@ describe("Tables", () => {
       engine.updateTable({
         tableName: "NonExistent",
         start: "A1",
+        workbookName,
       });
     }).toThrow("Table not found");
   });
@@ -574,13 +583,14 @@ describe("Tables", () => {
     engine.updateTable({
       tableName: "Products",
       numRows: { type: "number", value: 2 }, // Only 2 data rows now
+      workbookName,
     });
 
     // Should now sum only first 2 rows
     expect(cell("D1")).toBe(30); // 10 + 20
 
     // Verify table structure was updated
-    const tables = engine.getTablesSerialized();
+    const tables = engine.getTables(workbookName);
     const table = tables.get("Products")!;
     expect(table.endRow.type).toBe("number");
     expect(table.endRow.type === "number" ? table.endRow.value : 0).toBe(2); // 2 data rows + header = row 3 (0-indexed: 2)
@@ -622,6 +632,7 @@ describe("Tables", () => {
     engine.updateTable({
       tableName: "Products",
       numRows: { type: "number", value: 1 }, // Reduce to 1 row
+      workbookName,
     });
 
     // Should still have all columns but fewer rows
@@ -691,7 +702,7 @@ describe("Tables", () => {
     });
 
     // Test getTablesSerialized method
-    const serializedTables = engine.getTablesSerialized();
+    const serializedTables = engine.getTables(workbookName);
     expect(serializedTables.size).toBe(1);
     expect(serializedTables.has("Products")).toBe(true);
 
@@ -704,13 +715,11 @@ describe("Tables", () => {
   });
 
   test("should handle table events", () => {
-    let tablesUpdatedCount = 0;
-    let lastUpdatedTables: Map<string, TableDefinition> = new Map();
+    let updateCount = 0;
 
     // Listen for table update events
-    const unsubscribe = engine.on("tables-updated", (tables) => {
-      tablesUpdatedCount++;
-      lastUpdatedTables = tables;
+    const unsubscribe = engine._eventManager.onUpdate(() => {
+      updateCount++;
     });
 
     // Set up data
@@ -734,29 +743,29 @@ describe("Tables", () => {
       numCols: 2,
     });
 
-    expect(tablesUpdatedCount).toBe(1);
-    expect(lastUpdatedTables.has("Products")).toBe(true);
+    expect(updateCount).toBe(2);
 
     // Update table - should trigger event
     engine.updateTable({
       tableName: "Products",
       numRows: { type: "number", value: 1 },
+      workbookName,
     });
 
-    expect(tablesUpdatedCount).toBe(2);
+    expect(updateCount).toBe(3);
 
     // Rename table - should trigger event
-    engine.renameTable({ oldName: "Products", newName: "Items" });
+    engine.renameTable(workbookName, { oldName: "Products", newName: "Items" });
 
-    expect(tablesUpdatedCount).toBe(3);
-    expect(lastUpdatedTables.has("Items")).toBe(true);
-    expect(lastUpdatedTables.has("Products")).toBe(false);
+    expect(updateCount).toBe(4);
+    expect(engine.getTables(workbookName).has("Items")).toBe(true);
+    expect(engine.getTables(workbookName).has("Products")).toBe(false);
 
     // Remove table - should trigger event
-    engine.removeTable({ tableName: "Items" });
+    engine.removeTable({ tableName: "Items", workbookName });
 
-    expect(tablesUpdatedCount).toBe(4);
-    expect(lastUpdatedTables.size).toBe(0);
+    expect(updateCount).toBe(5);
+    expect(engine.getTables(workbookName).size).toBe(0);
 
     unsubscribe();
   });
@@ -823,7 +832,7 @@ describe("Tables", () => {
     ]);
 
     // Replace all tables with new ones
-    engine.setTables(newTables);
+    engine.resetTables(new Map([[workbookName, newTables]]));
 
     // Old table should be gone, new tables should work
     setCellContent("E2", "=SUM(Sales[Amount])");
@@ -833,7 +842,7 @@ describe("Tables", () => {
     expect(cell("E3")).toBe(100); // Inventory table (same data as old Products)
 
     // Verify tables were replaced
-    const tables = engine.getTablesSerialized();
+    const tables = engine.getTables(workbookName);
     expect(tables.size).toBe(2);
     expect(tables.has("Products")).toBe(false); // Old table gone
     expect(tables.has("Sales")).toBe(true);

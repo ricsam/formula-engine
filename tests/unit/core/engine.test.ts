@@ -258,7 +258,7 @@ describe("FormulaEngine", () => {
       { workbookName, sheetName: "Sheet1" },
       new Map([["C1", "=D1+E1"]])
     );
-    engine.storeManager.evaluatedNodes.set(
+    engine._storeManager.evaluatedNodes.set(
       dependencyNodeToKey({
         type: "cell",
         address: { colIndex: 0, rowIndex: 0 },
@@ -282,7 +282,7 @@ describe("FormulaEngine", () => {
         ]),
       }
     );
-    engine.storeManager.evaluatedNodes.set(
+    engine._storeManager.evaluatedNodes.set(
       dependencyNodeToKey({
         type: "cell",
         address: { colIndex: 1, rowIndex: 0 },
@@ -306,7 +306,7 @@ describe("FormulaEngine", () => {
         ]),
       }
     );
-    engine.storeManager.evaluatedNodes.set(
+    engine._storeManager.evaluatedNodes.set(
       dependencyNodeToKey({
         type: "cell",
         address: { colIndex: 2, rowIndex: 0 },
@@ -331,7 +331,7 @@ describe("FormulaEngine", () => {
       }
     );
 
-    const deps = engine.getTransitiveDeps(
+    const deps = engine._evaluationManager.getTransitiveDeps(
       dependencyNodeToKey({
         type: "cell",
         address: { colIndex: 0, rowIndex: 0 },
@@ -1188,13 +1188,13 @@ describe("FormulaEngine", () => {
 
   describe("Event System", () => {
     test("should trigger tables-updated event when sheet is deleted", () => {
-      let tablesUpdatedCount = 0;
+      let updateCount = 0;
       let lastUpdatedTables: Map<string, TableDefinition> | null = null;
 
-      // Listen for table update events
-      const unsubscribe = engine.on("tables-updated", (tables) => {
-        tablesUpdatedCount++;
-        lastUpdatedTables = tables;
+      // Listen for update events
+      const unsubscribe = engine._eventManager.onUpdate(() => {
+        updateCount++;
+        lastUpdatedTables = engine.getTables(sheetAddress.workbookName);
       });
 
       // Set up data and create table
@@ -1217,13 +1217,13 @@ describe("FormulaEngine", () => {
         numCols: 2,
       });
 
-      expect(tablesUpdatedCount).toBe(1); // From addTable
+      expect(updateCount).toBe(2); // From addTable
       expect(lastUpdatedTables!.has("TestTable")).toBe(true);
 
       // Remove sheet - should trigger tables-updated event because table is removed
       engine.removeSheet(sheetAddress);
 
-      expect(tablesUpdatedCount).toBe(2); // From removeSheet -> removeTablesForSheet
+      expect(updateCount).toBe(3); // From removeSheet -> removeTablesForSheet
       expect(lastUpdatedTables!.size).toBe(0); // Table should be gone
 
       unsubscribe();
@@ -1233,7 +1233,7 @@ describe("FormulaEngine", () => {
       let cellsUpdateCount = 0;
 
       // Add listener for cells update
-      const unsubscribe = engine.onCellsUpdate(sheetAddress, () => {
+      const unsubscribe = engine._eventManager.onUpdate(() => {
         cellsUpdateCount++;
       });
 
@@ -1272,7 +1272,7 @@ describe("FormulaEngine", () => {
       let cellsUpdateCount = 0;
 
       // Add listener for cells update
-      const unsubscribe = engine.onCellsUpdate(sheetAddress, () => {
+      const unsubscribe = engine._eventManager.onUpdate(() => {
         cellsUpdateCount++;
       });
 
@@ -1317,7 +1317,7 @@ describe("FormulaEngine", () => {
       let cellsUpdateCount = 0;
 
       // Add listener for cells update
-      const unsubscribe = engine.onCellsUpdate(sheetAddress, () => {
+      const unsubscribe = engine._eventManager.onUpdate(() => {
         cellsUpdateCount++;
       });
 
@@ -1349,7 +1349,10 @@ describe("FormulaEngine", () => {
       expect(cellsUpdateCount).toBe(2); // From addTable
 
       // Remove the table - should trigger cells update
-      engine.removeTable({ tableName: "Products" });
+      engine.removeTable({
+        tableName: "Products",
+        workbookName: sheetAddress.workbookName,
+      });
 
       expect(cellsUpdateCount).toBe(3); // From removeTable
 
@@ -1364,7 +1367,7 @@ describe("FormulaEngine", () => {
       let cellsUpdateCount = 0;
 
       // Add listener for cells update
-      const unsubscribe = engine.onCellsUpdate(sheetAddress, () => {
+      const unsubscribe = engine._eventManager.onUpdate(() => {
         cellsUpdateCount++;
       });
 
@@ -1403,7 +1406,7 @@ describe("FormulaEngine", () => {
       let cellsUpdateCount = 0;
 
       // Add listener for cells update
-      const unsubscribe = engine.onCellsUpdate(sheetAddress, () => {
+      const unsubscribe = engine._eventManager.onUpdate(() => {
         cellsUpdateCount++;
       });
 
@@ -1434,7 +1437,7 @@ describe("FormulaEngine", () => {
       expect(cellsUpdateCount).toBe(2); // From addTable
 
       // Rename the table - should trigger cells update
-      engine.renameTable({
+      engine.renameTable(sheetAddress.workbookName, {
         oldName: "OldTable",
         newName: "NewTable",
       });
@@ -1453,11 +1456,11 @@ describe("FormulaEngine", () => {
       let sheet2UpdateCount = 0;
 
       // Add listeners for both sheets
-      const unsubscribe1 = engine.onCellsUpdate(sheetAddress, () => {
+      const unsubscribe1 = engine._eventManager.onUpdate(() => {
         sheet1UpdateCount++;
       });
 
-      const unsubscribe2 = engine.onCellsUpdate(sheet2, () => {
+      const unsubscribe2 = engine._eventManager.onUpdate(() => {
         sheet2UpdateCount++;
       });
 
@@ -1473,21 +1476,35 @@ describe("FormulaEngine", () => {
       );
 
       expect(
-        engine.getCellValue({ sheetName: sheet2.sheetName, workbookName: sheet2.workbookName, rowIndex: 0, colIndex: 0 })
+        engine.getCellValue({
+          sheetName: sheet2.sheetName,
+          workbookName: sheet2.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
       ).toBe(200);
       expect(sheet1UpdateCount).toBe(2); // From setSheetContent on both sheets (cross-sheet dependency)
       expect(sheet2UpdateCount).toBe(2); // From setSheetContent on both sheets (cross-sheet dependency)
 
       // Rename sheet - should trigger cells update on sheets with references
       const newSheetName = "RenamedSheet";
-      engine.renameSheet({ sheetName: sheetAddress.sheetName, workbookName: sheetAddress.workbookName, newSheetName });
+      engine.renameSheet({
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
+        newSheetName,
+      });
 
       expect(sheet1UpdateCount).toBe(3); // From setSheetContent (2x) + renameSheet
       expect(sheet2UpdateCount).toBe(3); // From setSheetContent (2x) + renameSheet
 
       // Formula should still work
       expect(
-        engine.getCellValue({ sheetName: sheet2.sheetName, workbookName: sheet2.workbookName, rowIndex: 0, colIndex: 0 })
+        engine.getCellValue({
+          sheetName: sheet2.sheetName,
+          workbookName: sheet2.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
       ).toBe(200);
 
       unsubscribe1();
@@ -1495,24 +1512,11 @@ describe("FormulaEngine", () => {
     });
 
     test("should trigger multiple events when using bulk operations", () => {
-      let tablesUpdatedCount = 0;
-      let globalExpressionsUpdatedCount = 0;
-      let cellsUpdateCount = 0;
+      let updateCount = 0;
 
       // Listen for all events
-      const unsubscribeTables = engine.on("tables-updated", () => {
-        tablesUpdatedCount++;
-      });
-
-      const unsubscribeGlobal = engine.on(
-        "global-named-expressions-updated",
-        () => {
-          globalExpressionsUpdatedCount++;
-        }
-      );
-
-      const unsubscribeCells = engine.onCellsUpdate(sheetAddress, () => {
-        cellsUpdateCount++;
+      const unsubscribeCount = engine._eventManager.onUpdate(() => {
+        updateCount++;
       });
 
       // Set up initial data with formulas using tables and named expressions
@@ -1539,9 +1543,7 @@ describe("FormulaEngine", () => {
       });
 
       expect(cell("C1")).toBeCloseTo(110); // 100 * 1.1
-      expect(tablesUpdatedCount).toBe(1); // From addTable
-      expect(globalExpressionsUpdatedCount).toBe(1); // From addNamedExpression
-      expect(cellsUpdateCount).toBe(3); // From addNamedExpression + setSheetContent + addTable
+      expect(updateCount).toBe(3); // From addTable, setSheetContent, addNamedExpression
 
       // Use bulk operations - should trigger multiple events
       const newTables = new Map([
@@ -1565,16 +1567,15 @@ describe("FormulaEngine", () => {
         ["DISCOUNT", { name: "DISCOUNT", expression: "0.05" }],
       ]);
 
-      engine.setTables(newTables);
-      engine.setGlobalNamedExpressions(newGlobalExpressions);
+      engine.resetTables(new Map([[sheetAddress.workbookName, newTables]]));
+      engine.setNamedExpressions({
+        type: "global",
+        expressions: newGlobalExpressions,
+      });
 
-      expect(tablesUpdatedCount).toBe(2); // From setTables
-      expect(globalExpressionsUpdatedCount).toBe(2); // From setGlobalNamedExpressions
-      expect(cellsUpdateCount).toBe(5); // 3 from setup + setTables + setGlobalNamedExpressions
+      expect(updateCount).toBe(5); // From setNamedExpressions, resetTables, addTable, setSheetContent, addNamedExpression
 
-      unsubscribeTables();
-      unsubscribeGlobal();
-      unsubscribeCells();
+      unsubscribeCount();
     });
   });
 

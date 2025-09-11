@@ -1,43 +1,22 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
-import { FormulaEngine } from "../src/core/engine";
+import type { GridChild, ViewportState } from "@anocca-pub/components";
+import { Grid } from "@anocca-pub/components";
 import {
-  useGlobalNamedExpressions,
-  useSerializedSheet,
-  useTables,
-} from "../src/react/hooks";
-import { Button } from "./components/ui/button";
-import { Input } from "./components/ui/input";
-import {
-  Plus,
-  X,
-  Edit2,
-  Check,
-  X as Cancel,
-  Save,
-  Upload,
+  AlertTriangle,
   Calculator,
   ChevronDown,
   ChevronUp,
-  Bug,
-  AlertTriangle,
+  Edit2,
+  Plus,
+  Save,
+  Trash2,
+  X,
 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { FormulaEngine } from "../src/core/engine";
+import { useEngine } from "../src/react/hooks";
 import { SpreadsheetWithFormulaBar } from "./components/SpreadsheetWithFormulaBar";
-import { Spreadsheet, Grid } from "@anocca-pub/components";
-import type { GridChild } from "@anocca-pub/components";
-import type { SpreadsheetRangeEnd, TableDefinition } from "src/core/types";
-
-
-type SerializedTableDefinition = {
-  name: string;
-  start: {
-    rowIndex: number;
-    colIndex: number;
-  };
-  headers: [string, { name: string; index: number }][];
-  endRow: SpreadsheetRangeEnd;
-  sheetName: string;
-  workbookName: string;
-};
+import { Button } from "./components/ui/button";
+import { Input } from "./components/ui/input";
 
 interface WorkbookGridItem {
   name: string;
@@ -46,28 +25,25 @@ interface WorkbookGridItem {
   width: number;
   height: number;
   activeSheet: string;
-  sheets: Array<{
-    name: string;
-    cells: [string, any][];
-    namedExpressions: [string, { name: string; expression: string }][];
-  }>;
 }
 
-interface SavedSpreadsheetData {
-  workbooks: WorkbookGridItem[];
-  globalNamedExpressions: [string, { name: string; expression: string }][];
-  tables: [string, SerializedTableDefinition][];
+interface SavedState {
+  workbookGridItems: WorkbookGridItem[];
+  serializedEngine: string;
+  viewport?: ViewportState;
 }
 
 const STORAGE_KEY = "formula-engine-excel-demo";
 
-const loadFromLocalStorage = (): SavedSpreadsheetData | null => {
+const loadFromLocalStorage = (): undefined | SavedState => {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return undefined;
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : null;
+    const { serializedEngine, workbookGridItems, viewport } = JSON.parse(saved);
+    return { serializedEngine, workbookGridItems, viewport };
   } catch (error) {
     console.error("Failed to load from localStorage:", error);
-    return null;
+    return undefined;
   }
 };
 
@@ -75,84 +51,13 @@ const createEngine = () => {
   const engine = FormulaEngine.buildEmpty();
   const savedData = loadFromLocalStorage();
 
-  if (savedData && savedData.workbooks.length > 0) {
-    // Load saved workbooks and sheets
-    for (const savedWorkbook of savedData.workbooks) {
-      // Add workbook
-      engine.addWorkbook(savedWorkbook.name);
-
-      // Load sheets for this workbook
-      for (const savedSheet of savedWorkbook.sheets) {
-        const sheet = engine.addSheet({
-          workbookName: savedWorkbook.name,
-          sheetName: savedSheet.name,
-        });
-
-        // Build the cell content map for faster loading
-        const cellContentMap = new Map<string, any>();
-        for (const [cellId, value] of savedSheet.cells) {
-          if (value !== undefined) {
-            cellContentMap.set(cellId, value);
-          }
-        }
-
-        // Set all cell content at once (faster than individual setCellContent calls)
-        engine.setSheetContent(
-          { workbookName: savedWorkbook.name, sheetName: sheet.name },
-          cellContentMap
-        );
-
-        // Load named expressions for this sheet
-        const namedExpressionsMap = new Map();
-        for (const [name, expr] of savedSheet.namedExpressions || []) {
-          namedExpressionsMap.set(name, expr);
-        }
-        if (namedExpressionsMap.size > 0) {
-          engine.setNamedExpressions({
-            workbookName: savedWorkbook.name,
-            sheetName: sheet.name,
-            expressions: namedExpressionsMap,
-          });
-        }
-      }
-    }
-
-    // Load global named expressions
-    if (savedData.globalNamedExpressions) {
-      const globalNamedExpressionsMap = new Map();
-      for (const [name, expr] of savedData.globalNamedExpressions) {
-        globalNamedExpressionsMap.set(name, expr);
-      }
-      if (globalNamedExpressionsMap.size > 0) {
-        engine.setGlobalNamedExpressions(globalNamedExpressionsMap);
-      }
-    }
-
-    // Load global tables
-    if (savedData.tables) {
-      const tablesMap = new Map<string, TableDefinition>();
-      for (const [name, serializedTable] of savedData.tables) {
-        // Convert serialized headers array back to Map
-        const headersMap = new Map<string, { name: string; index: number }>();
-        for (const [headerName, headerData] of serializedTable.headers) {
-          headersMap.set(headerName, headerData);
-        }
-
-        const table: TableDefinition = {
-          ...serializedTable,
-          headers: headersMap,
-        };
-
-        tablesMap.set(name, table);
-      }
-      if (tablesMap.size > 0) {
-        engine.setTables(tablesMap);
-      }
-    }
+  if (savedData) {
+    engine.resetToSerializedEngine(savedData.serializedEngine);
 
     return {
       engine,
-      workbookGridItems: savedData.workbooks,
+      workbookGridItems: savedData.workbookGridItems,
+      viewport: savedData.viewport,
     };
   } else {
     // Create first workbook and sheet with sample data
@@ -162,7 +67,7 @@ const createEngine = () => {
       workbookName,
       sheetName: "Sheet1",
     }).name;
-    
+
     const defaultWorkbookItem: WorkbookGridItem = {
       name: workbookName,
       x: 100,
@@ -170,124 +75,90 @@ const createEngine = () => {
       width: 800,
       height: 600,
       activeSheet: sheetName,
-      sheets: [{
-        name: sheetName,
-        cells: [],
-        namedExpressions: [],
-      }],
     };
-    
-    return { 
-      engine, 
+
+    return {
+      engine,
       workbookGridItems: [defaultWorkbookItem],
+      viewport: undefined,
     };
   }
 };
 
+const {
+  engine,
+  workbookGridItems: initialWorkbookGridItems,
+  viewport: initialViewport,
+} = createEngine();
 export function ExcelDemo() {
-  const {
-    engine,
-    workbookGridItems: initialWorkbookGridItems,
-  } = useMemo(() => createEngine(), []);
-
-  const [workbookGridItems, setWorkbookGridItems] = useState<WorkbookGridItem[]>(initialWorkbookGridItems);
+  const [workbookGridItems, setWorkbookGridItems] = useState<
+    WorkbookGridItem[]
+  >(initialWorkbookGridItems);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
   const [verboseErrors, setVerboseErrors] = useState(false);
+  const [viewport, _setViewport] = useState<ViewportState | undefined>(
+    initialViewport
+  );
+
+  const setViewport: typeof _setViewport = useCallback(
+    (viewport) => {
+      _setViewport(viewport);
+      setHasUnsavedChanges(true);
+    },
+    [_setViewport]
+  );
 
   // Named expressions UI state
   const [showNamedExpressions, setShowNamedExpressions] = useState(false);
   const [newExpressionName, setNewExpressionName] = useState("");
   const [newExpressionFormula, setNewExpressionFormula] = useState("");
   const [newExpressionScope, setNewExpressionScope] = useState<
-    "global" | "sheet"
+    "global" | "workbook" | "sheet"
   >("global");
-  const [selectedWorkbookForExpression, setSelectedWorkbookForExpression] = useState<string>("");
 
-  // Editing states for named expressions
-  const [editingExpression, setEditingExpression] = useState<{
-    name: string;
-    isGlobal: boolean;
-    workbookName?: string;
+  // Sheet management state
+  const [renamingSheet, setRenamingSheet] = useState<{
+    workbookName: string;
+    sheetName: string;
   } | null>(null);
-  const [editingExpressionName, setEditingExpressionName] = useState("");
-  const [editingExpressionFormula, setEditingExpressionFormula] = useState("");
+  const [newSheetName, setNewSheetName] = useState("");
 
-  // Table management UI state
-  const [editingTable, setEditingTable] = useState<string | null>(null);
-  const [editingTableName, setEditingTableName] = useState("");
-
-  // Get named expressions and tables using hooks
-  const globalNamedExpressions = useGlobalNamedExpressions(engine);
-  const tables = useTables(engine);
+  const engineState = useEngine(engine);
 
   // Save to localStorage
-  const saveToLocalStorage = useCallback(() => {
+  const saveToLocalStorage = () => {
     try {
-      // Serialize workbooks with their grid positions and sheets
-      const workbooksData: WorkbookGridItem[] = workbookGridItems.map((gridItem) => {
-        const workbook = engine.getWorkbooks().get(gridItem.name);
-        if (!workbook) {
-          throw new Error(`Workbook ${gridItem.name} not found in engine`);
-        }
-
-        return {
-          ...gridItem,
-          sheets: Array.from(workbook.sheets.entries()).map(([sheetName, sheet]) => ({
-            name: sheetName,
-            cells: Array.from(sheet.content.entries()),
-            namedExpressions: Array.from(
-              engine.getSheetExpressionsSerialized({ sheetName, workbookName: gridItem.name }).entries()
-            ),
-          })),
-        };
-      });
-
-      // Serialize tables with headers converted from Map to array
-      const serializedTables: [string, SerializedTableDefinition][] = [];
-      for (const [tableName, table] of engine.getTablesSerialized()) {
-        serializedTables.push([
-          tableName,
-          {
-            ...table,
-            headers: Array.from(table.headers.entries()),
-          },
-        ]);
-      }
-
-      const dataToSave: SavedSpreadsheetData = {
-        workbooks: workbooksData,
-        globalNamedExpressions: Array.from(
-          engine.getGlobalNamedExpressionsSerialized().entries()
-        ),
-        tables: serializedTables,
+      const dataToSave: SavedState = {
+        workbookGridItems,
+        serializedEngine: engine.serializeEngine(),
+        viewport,
       };
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
       setHasUnsavedChanges(false);
       console.log("Spreadsheet saved to localStorage");
+      console.log(
+        "Viewport data saved:",
+        workbookGridItems.map((item) => ({
+          name: item.name,
+          position: { x: item.x, y: item.y },
+          size: { width: item.width, height: item.height },
+        }))
+      );
     } catch (error) {
       console.error("Failed to save to localStorage:", error);
     }
-  }, [engine, workbookGridItems]);
+  };
 
   // Mark as having unsaved changes when sheets change
   const markUnsavedChanges = useCallback(() => {
     setHasUnsavedChanges(true);
   }, []);
 
-  // Track global named expression changes
+  // Track changes
   useEffect(() => {
-    const unsubscribe = engine.on(
-      "global-named-expressions-updated",
-      markUnsavedChanges
-    );
-    return unsubscribe;
-  }, [engine, markUnsavedChanges]);
-
-  // Track table changes
-  useEffect(() => {
-    const unsubscribe = engine.on("tables-updated", markUnsavedChanges);
+    const unsubscribe = engine.onUpdate(markUnsavedChanges);
     return unsubscribe;
   }, [engine, markUnsavedChanges]);
 
@@ -296,7 +167,7 @@ export function ExcelDemo() {
     const newWorkbookCount = workbookGridItems.length + 1;
     const newWorkbookName = `Workbook${newWorkbookCount}`;
     const newSheetName = "Sheet1";
-    
+
     // Add to engine
     engine.addWorkbook(newWorkbookName);
     engine.addSheet({
@@ -312,52 +183,42 @@ export function ExcelDemo() {
       width: 800,
       height: 600,
       activeSheet: newSheetName,
-      sheets: [{
-        name: newSheetName,
-        cells: [],
-        namedExpressions: [],
-      }],
     };
 
-    setWorkbookGridItems(prev => [...prev, newGridItem]);
+    setWorkbookGridItems((prev) => [...prev, newGridItem]);
     markUnsavedChanges();
   }, [workbookGridItems.length, engine, markUnsavedChanges]);
 
-  // Update workbook grid position
-  const updateWorkbookPosition = useCallback((workbookName: string, x: number, y: number, width: number, height: number) => {
-    setWorkbookGridItems(prev => 
-      prev.map(item => 
-        item.name === workbookName 
-          ? { ...item, x, y, width, height }
-          : item
-      )
-    );
-    markUnsavedChanges();
-  }, [markUnsavedChanges]);
-
   // Update active sheet for a workbook
-  const updateWorkbookActiveSheet = useCallback((workbookName: string, sheetName: string) => {
-    setWorkbookGridItems(prev => 
-      prev.map(item => 
-        item.name === workbookName 
-          ? { ...item, activeSheet: sheetName }
-          : item
-      )
-    );
-    markUnsavedChanges();
-  }, [markUnsavedChanges]);
+  const updateWorkbookActiveSheet = useCallback(
+    (workbookName: string, sheetName: string) => {
+      setWorkbookGridItems((prev) =>
+        prev.map((item) =>
+          item.name === workbookName
+            ? { ...item, activeSheet: sheetName }
+            : item
+        )
+      );
+      markUnsavedChanges();
+    },
+    [markUnsavedChanges]
+  );
 
   // Add named expression
   const addNamedExpression = useCallback(() => {
     if (newExpressionName.trim() && newExpressionFormula.trim()) {
-      const workbookName = selectedWorkbookForExpression || workbookGridItems[0]?.name;
-      const activeSheet = workbookGridItems.find(w => w.name === workbookName)?.activeSheet;
-      
+      // Use the first workbook as the active workbook for scoped expressions
+      const workbookName = workbookGridItems[0]?.name;
+      const activeSheet = workbookGridItems[0]?.activeSheet;
+
       engine.addNamedExpression({
         expressionName: newExpressionName.trim(),
         expression: newExpressionFormula.trim(),
         sheetName: newExpressionScope === "sheet" ? activeSheet : undefined,
-        workbookName: newExpressionScope === "sheet" ? workbookName : undefined,
+        workbookName:
+          newExpressionScope === "workbook" || newExpressionScope === "sheet"
+            ? workbookName
+            : undefined,
       });
 
       setNewExpressionName("");
@@ -368,7 +229,6 @@ export function ExcelDemo() {
     newExpressionName,
     newExpressionFormula,
     newExpressionScope,
-    selectedWorkbookForExpression,
     workbookGridItems,
     engine,
     markUnsavedChanges,
@@ -379,8 +239,10 @@ export function ExcelDemo() {
     (name: string, isGlobal: boolean, workbookName?: string) => {
       try {
         const targetWorkbook = workbookName || workbookGridItems[0]?.name;
-        const activeSheet = workbookGridItems.find(w => w.name === targetWorkbook)?.activeSheet;
-        
+        const activeSheet = workbookGridItems.find(
+          (w) => w.name === targetWorkbook
+        )?.activeSheet;
+
         const success = engine.removeNamedExpression({
           expressionName: name,
           sheetName: isGlobal ? undefined : activeSheet,
@@ -397,35 +259,273 @@ export function ExcelDemo() {
     [engine, workbookGridItems, markUnsavedChanges]
   );
 
-  // Create WorkbookComponent for grid
-  const WorkbookComponent = useCallback(({ workbookName }: { workbookName: string }) => {
-    const workbookItem = workbookGridItems.find(item => item.name === workbookName);
-    if (!workbookItem) return null;
+  // Rename sheet
+  const renameSheet = useCallback(
+    (workbookName: string, oldSheetName: string, newSheetName: string) => {
+      try {
+        engine.renameSheet({
+          workbookName,
+          sheetName: oldSheetName,
+          newSheetName: newSheetName.trim(),
+        });
 
-    return (
-      <div className="w-full h-full border border-gray-300 rounded-lg overflow-hidden bg-white">
-        <div className="h-8 bg-gray-100 border-b border-gray-300 px-3 flex items-center justify-between">
-          <span className="text-sm font-medium text-gray-700">{workbookName}</span>
-          <span className="text-xs text-gray-500">Active: {workbookItem.activeSheet}</span>
+        // Update active sheet if it was the renamed one
+        updateWorkbookActiveSheet(workbookName, newSheetName.trim());
+        markUnsavedChanges();
+        setRenamingSheet(null);
+        setNewSheetName("");
+      } catch (error) {
+        console.error("Failed to rename sheet:", error);
+      }
+    },
+    [engine, updateWorkbookActiveSheet, markUnsavedChanges]
+  );
+
+  // Delete sheet
+  const deleteSheet = useCallback(
+    (workbookName: string, sheetName: string) => {
+      try {
+        const sheets = engine.getSheets(workbookName);
+        if (sheets.size <= 1) {
+          alert("Cannot delete the last sheet in a workbook");
+          return;
+        }
+
+        engine.removeSheet({ workbookName, sheetName });
+
+        // If we deleted the active sheet, switch to the first available sheet
+        const workbookItem = workbookGridItems.find(
+          (item) => item.name === workbookName
+        );
+        if (workbookItem?.activeSheet === sheetName) {
+          const remainingSheets = engine.getSheets(workbookName);
+          const firstSheet = Array.from(remainingSheets.keys())[0];
+          if (firstSheet) {
+            updateWorkbookActiveSheet(workbookName, firstSheet);
+          }
+        }
+
+        markUnsavedChanges();
+      } catch (error) {
+        console.error("Failed to delete sheet:", error);
+      }
+    },
+    [engine, workbookGridItems, updateWorkbookActiveSheet, markUnsavedChanges]
+  );
+
+  // Start renaming sheet
+  const startRenaming = useCallback(
+    (workbookName: string, sheetName: string) => {
+      setRenamingSheet({ workbookName, sheetName });
+      setNewSheetName(sheetName);
+    },
+    []
+  );
+
+  // Cancel renaming
+  const cancelRenaming = useCallback(() => {
+    setRenamingSheet(null);
+    setNewSheetName("");
+  }, []);
+
+  // Create WorkbookComponent for grid
+  const WorkbookComponent = useCallback(
+    ({ workbookName }: { workbookName: string }) => {
+      const workbookItem = workbookGridItems.find(
+        (item) => item.name === workbookName
+      );
+      if (!workbookItem) return null;
+
+      // Get all sheets for this workbook
+      const sheets = engine.getSheets(workbookName);
+      const sheetNames = Array.from(sheets.keys());
+
+      // Add new sheet handler
+      const addSheet = () => {
+        const newSheetCount = sheetNames.length + 1;
+        const newSheetName = `Sheet${newSheetCount}`;
+
+        try {
+          const result = engine.addSheet({
+            workbookName,
+            sheetName: newSheetName,
+          });
+
+          // Switch to the new sheet
+          updateWorkbookActiveSheet(workbookName, result.name);
+          markUnsavedChanges();
+        } catch (error) {
+          console.error("Failed to add sheet:", error);
+        }
+      };
+
+      return (
+        <div className="w-full h-full border border-gray-300 overflow-hidden bg-white flex flex-col">
+          {/* Workbook Header */}
+          <div className="h-8 bg-gray-100 border-b border-gray-300 px-3 flex items-center justify-between flex-shrink-0">
+            <span className="text-sm font-medium text-gray-700">
+              {workbookName}
+            </span>
+            <span
+              className="text-xs text-gray-500"
+              data-testid={`sheet-count-${workbookName}`}
+            >
+              Sheets: {sheetNames.length}
+            </span>
+          </div>
+
+          {/* Spreadsheet Content */}
+          <div className="flex-1 overflow-hidden">
+            <SpreadsheetWithFormulaBar
+              key={`${workbookName}-${workbookItem.activeSheet}`}
+              sheetName={workbookItem.activeSheet}
+              workbookName={workbookName}
+              engine={engine}
+              verboseErrors={verboseErrors}
+            />
+          </div>
+
+          {/* Sheet Tabs at Bottom (Excel-style) */}
+          <div className="h-8 bg-gray-50 border-t border-gray-200 flex items-center px-2 flex-shrink-0">
+            <div className="flex items-center gap-1">
+              {sheetNames.map((sheetName) => {
+                const isRenaming =
+                  renamingSheet?.workbookName === workbookName &&
+                  renamingSheet?.sheetName === sheetName;
+
+                return (
+                  <div key={sheetName} className="flex items-center group">
+                    {isRenaming ? (
+                      <div className="flex items-center gap-1 bg-white border border-blue-500 rounded px-2 py-1">
+                        <input
+                          type="text"
+                          value={newSheetName}
+                          onChange={(e) => setNewSheetName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              renameSheet(
+                                workbookName,
+                                sheetName,
+                                newSheetName
+                              );
+                            } else if (e.key === "Escape") {
+                              cancelRenaming();
+                            }
+                          }}
+                          onBlur={() => {
+                            if (
+                              newSheetName.trim() &&
+                              newSheetName.trim() !== sheetName
+                            ) {
+                              renameSheet(
+                                workbookName,
+                                sheetName,
+                                newSheetName
+                              );
+                            } else {
+                              cancelRenaming();
+                            }
+                          }}
+                          className="text-xs w-20 outline-none bg-transparent"
+                          autoFocus
+                          data-testid={`rename-sheet-input-${sheetName}`}
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        className={`
+                          px-3 py-1 text-xs font-medium rounded-t border-b-2 whitespace-nowrap relative flex items-center gap-1 group cursor-pointer
+                          ${
+                            workbookItem.activeSheet === sheetName
+                              ? "bg-white text-blue-600 border-blue-500 -mb-px"
+                              : "bg-transparent text-gray-600 border-transparent hover:bg-gray-100"
+                          }
+                        `}
+                        onClick={() =>
+                          updateWorkbookActiveSheet(workbookName, sheetName)
+                        }
+                        onDoubleClick={() =>
+                          startRenaming(workbookName, sheetName)
+                        }
+                        data-testid={`sheet-tab-${sheetName}`}
+                      >
+                        <span>{sheetName}</span>
+
+                        {/* Sheet actions (visible on hover, inside tab) */}
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 ml-1">
+                          <div
+                            className="h-4 w-4 p-0 text-gray-500 hover:text-blue-600 flex items-center justify-center cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startRenaming(workbookName, sheetName);
+                            }}
+                            title="Rename Sheet"
+                            data-testid={`rename-sheet-${sheetName}`}
+                          >
+                            <Edit2 className="h-3 w-3" />
+                          </div>
+                          {sheetNames.length > 1 && (
+                            <div
+                              className="h-4 w-4 p-0 text-gray-500 hover:text-red-600 flex items-center justify-center cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (
+                                  confirm(
+                                    `Are you sure you want to delete sheet "${sheetName}"?`
+                                  )
+                                ) {
+                                  deleteSheet(workbookName, sheetName);
+                                }
+                              }}
+                              title="Delete Sheet"
+                              data-testid={`delete-sheet-${sheetName}`}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Add Sheet Button (Excel-style, to the right) */}
+            <div className="flex items-center ml-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 w-6 p-0 text-gray-600 hover:text-gray-800 border border-gray-300 rounded"
+                onClick={addSheet}
+                title="Add Sheet"
+                data-testid={`add-sheet-${workbookName}`}
+              >
+                <Plus className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
         </div>
-        <div className="flex-1 h-full">
-          <SpreadsheetWithFormulaBar
-            key={`${workbookName}-${workbookItem.activeSheet}`}
-            sheetName={workbookItem.activeSheet}
-            workbookName={workbookName}
-            engine={engine}
-            tables={tables}
-            globalNamedExpressions={globalNamedExpressions}
-            verboseErrors={verboseErrors}
-          />
-        </div>
-      </div>
-    );
-  }, [workbookGridItems, engine, tables, globalNamedExpressions, verboseErrors, updateWorkbookActiveSheet]);
+      );
+    },
+    [
+      workbookGridItems,
+      engine,
+      verboseErrors,
+      updateWorkbookActiveSheet,
+      markUnsavedChanges,
+      renamingSheet,
+      newSheetName,
+      renameSheet,
+      cancelRenaming,
+      startRenaming,
+      deleteSheet,
+    ]
+  );
 
   // Create grid children from workbook items
   const gridChildren: GridChild[] = useMemo(() => {
-    return workbookGridItems.map(item => ({
+    return workbookGridItems.map((item) => ({
       id: item.name,
       title: item.name,
       x: item.x,
@@ -437,10 +537,18 @@ export function ExcelDemo() {
   }, [workbookGridItems]);
 
   // Grid components map
-  const gridComponents = useMemo(() => ({
-    WorkbookComponent: (gridChild: GridChild) => 
-      <WorkbookComponent workbookName={gridChild.id} />,
-  }), [WorkbookComponent]);
+  const gridComponents = useMemo(
+    () => ({
+      WorkbookComponent: (gridChild: GridChild) => (
+        <WorkbookComponent workbookName={gridChild.id} />
+      ),
+    }),
+    [WorkbookComponent]
+  );
+
+  const numTables = engineState.tables
+    .values()
+    .reduce((sum, wb) => sum + wb.size, 0);
 
   return (
     <div className="h-full flex flex-col">
@@ -455,6 +563,16 @@ export function ExcelDemo() {
               <span data-testid="total-workbooks-count">
                 Workbooks: {workbookGridItems.length}
               </span>
+              {workbookGridItems.length > 0 && (
+                <span className="text-blue-600 font-medium">
+                  Active:{" "}
+                  {workbookGridItems.find((w) => w.name === "Workbook1")
+                    ?.name || workbookGridItems[0]?.name}{" "}
+                  →{" "}
+                  {workbookGridItems.find((w) => w.name === "Workbook1")
+                    ?.activeSheet || workbookGridItems[0]?.activeSheet}
+                </span>
+              )}
               <div className="flex items-center gap-2">
                 <Button
                   size="sm"
@@ -545,11 +663,7 @@ export function ExcelDemo() {
                     Name
                   </label>
                   <Input
-                    placeholder={
-                      newExpressionScope === "sheet"
-                        ? "e.g., COMMISSION"
-                        : "e.g., TAX_RATE"
-                    }
+                    placeholder={"e.g., COMMISSION"}
                     value={newExpressionName}
                     onChange={(e) => setNewExpressionName(e.target.value)}
                     className="text-sm"
@@ -561,11 +675,7 @@ export function ExcelDemo() {
                     Formula
                   </label>
                   <Input
-                    placeholder={
-                      newExpressionScope === "sheet"
-                        ? "e.g., 0.05"
-                        : "e.g., 0.08"
-                    }
+                    placeholder={"e.g., 0.05"}
                     value={newExpressionFormula}
                     onChange={(e) => setNewExpressionFormula(e.target.value)}
                     className="text-sm"
@@ -576,34 +686,25 @@ export function ExcelDemo() {
                   <label className="block text-xs font-medium text-gray-600 mb-1">
                     Scope
                   </label>
-                  <div className="flex gap-2">
-                    <select
-                      value={newExpressionScope}
-                      onChange={(e) =>
-                        setNewExpressionScope(
-                          e.target.value as "global" | "sheet"
-                        )
-                      }
-                      className="flex-1 p-2 text-sm border border-gray-300 rounded-md"
-                      data-testid="expression-scope-select"
-                    >
-                      <option value="global">Global</option>
-                      <option value="sheet">Sheet</option>
-                    </select>
-                    {newExpressionScope === "sheet" && (
-                      <select
-                        value={selectedWorkbookForExpression}
-                        onChange={(e) => setSelectedWorkbookForExpression(e.target.value)}
-                        className="flex-1 p-2 text-sm border border-gray-300 rounded-md"
-                        data-testid="workbook-select"
-                      >
-                        <option value="">Select Workbook</option>
-                        {workbookGridItems.map(item => (
-                          <option key={item.name} value={item.name}>{item.name}</option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
+                  <select
+                    value={newExpressionScope}
+                    onChange={(e) =>
+                      setNewExpressionScope(
+                        e.target.value as "global" | "workbook" | "sheet"
+                      )
+                    }
+                    className="w-full p-2 text-sm border border-gray-300 rounded-md"
+                    data-testid="expression-scope-select"
+                  >
+                    <option value="global">Global</option>
+                    <option value="workbook">
+                      Workbook ({workbookGridItems[0]?.name || "None"})
+                    </option>
+                    <option value="sheet">
+                      Sheet ({workbookGridItems[0]?.name || "None"} →{" "}
+                      {workbookGridItems[0]?.activeSheet || "None"})
+                    </option>
+                  </select>
                 </div>
                 <div className="flex items-end">
                   <Button
@@ -623,77 +724,260 @@ export function ExcelDemo() {
             </div>
 
             {/* Existing Named Expressions and Tables */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Global Named Expressions */}
-              <div className="bg-white p-3 rounded border border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-800 mb-3">
-                  Global Named Expressions ({globalNamedExpressions.size})
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* All Named Expressions - Consolidated */}
+              <div
+                className="bg-white p-3 rounded border border-gray-200"
+                data-testid="named-expressions-section"
+              >
+                <h3
+                  className="text-sm font-semibold text-gray-800 mb-3"
+                  data-testid="named-expressions-title"
+                >
+                  Named Expressions (
+                  {engineState.namedExpressions.globalExpressions.size +
+                    Array.from(
+                      engineState.namedExpressions.workbookExpressions.values()
+                    ).reduce((sum, wb) => sum + wb.size, 0) +
+                    Array.from(
+                      engineState.namedExpressions.sheetExpressions.values()
+                    ).reduce(
+                      (sum, wb) =>
+                        sum +
+                        Array.from(wb.values()).reduce(
+                          (sheetSum, sheet) => sheetSum + sheet.size,
+                          0
+                        ),
+                      0
+                    )}
+                  )
                 </h3>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {globalNamedExpressions.size === 0 ? (
-                    <p className="text-xs text-gray-500 italic">
-                      No global named expressions
-                    </p>
-                  ) : (
-                    Array.from(globalNamedExpressions.entries()).map(
-                      ([name, expr]) => (
+                <div
+                  className="space-y-2 max-h-40 overflow-y-auto"
+                  data-testid="named-expressions-list"
+                >
+                  {/* Global expressions */}
+                  {Array.from(
+                    engineState.namedExpressions.globalExpressions.entries()
+                  ).map(([name, expr]) => (
+                    <div
+                      key={`global-${name}`}
+                      className="flex items-center justify-between bg-gray-50 p-2 rounded"
+                      data-testid={`named-expression-${name}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <div
+                            className="font-medium text-xs text-gray-800 truncate"
+                            data-testid={`expression-name-${name}`}
+                          >
+                            {name}
+                          </div>
+                          <span
+                            className="px-1.5 py-0.5 text-xs bg-gray-200 text-gray-700 rounded"
+                            data-testid={`expression-scope-${name}`}
+                          >
+                            Global
+                          </span>
+                        </div>
                         <div
-                          key={name}
-                          className="flex items-center justify-between bg-gray-50 p-2 rounded"
+                          className="text-xs text-gray-600 truncate"
+                          data-testid={`expression-formula-${name}`}
                         >
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-xs text-gray-800 truncate">
+                          {expr.expression}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                          onClick={() => deleteNamedExpression(name, true)}
+                          data-testid={`delete-global-named-expression-${name}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Workbook-scoped expressions */}
+                  {Array.from(
+                    engineState.namedExpressions.workbookExpressions.entries()
+                  ).flatMap(([workbookName, expressions]) =>
+                    Array.from(expressions.entries()).map(([name, expr]) => (
+                      <div
+                        key={`workbook-${workbookName}-${name}`}
+                        className="flex items-center justify-between bg-blue-50 p-2 rounded"
+                        data-testid={`named-expression-${name}`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <div
+                              className="font-medium text-xs text-gray-800 truncate"
+                              data-testid={`expression-name-${name}`}
+                            >
                               {name}
                             </div>
-                            <div className="text-xs text-gray-600 truncate">
-                              {expr.expression}
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
-                              onClick={() =>
-                                deleteNamedExpression(name, true)
-                              }
-                              data-testid={`delete-global-named-expression-${name}`}
+                            <span
+                              className="px-1.5 py-0.5 text-xs bg-blue-200 text-blue-800 rounded"
+                              data-testid={`expression-scope-${name}`}
                             >
-                              <X className="h-3 w-3" />
-                            </Button>
+                              {workbookName}
+                            </span>
+                          </div>
+                          <div
+                            className="text-xs text-blue-600 truncate"
+                            data-testid={`expression-formula-${name}`}
+                          >
+                            {expr.expression}
                           </div>
                         </div>
-                      )
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                            onClick={() =>
+                              deleteNamedExpression(name, false, workbookName)
+                            }
+                            data-testid={`delete-workbook-named-expression-${name}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+
+                  {/* Sheet-scoped expressions */}
+                  {Array.from(
+                    engineState.namedExpressions.sheetExpressions.entries()
+                  ).flatMap(([workbookName, workbookSheets]) =>
+                    Array.from(workbookSheets.entries()).flatMap(
+                      ([sheetName, expressions]) =>
+                        Array.from(expressions.entries()).map(
+                          ([name, expr]) => (
+                            <div
+                              key={`sheet-${workbookName}-${sheetName}-${name}`}
+                              className="flex items-center justify-between bg-green-50 p-2 rounded"
+                              data-testid={`named-expression-${name}`}
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <div
+                                    className="font-medium text-xs text-gray-800 truncate"
+                                    data-testid={`expression-name-${name}`}
+                                  >
+                                    {name}
+                                  </div>
+                                  <span
+                                    className="px-1.5 py-0.5 text-xs bg-green-200 text-green-800 rounded"
+                                    data-testid={`expression-scope-${name}`}
+                                  >
+                                    {workbookName} → {sheetName}
+                                  </span>
+                                </div>
+                                <div
+                                  className="text-xs text-green-600 truncate"
+                                  data-testid={`expression-formula-${name}`}
+                                >
+                                  {expr.expression}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                  onClick={() =>
+                                    deleteNamedExpression(
+                                      name,
+                                      false,
+                                      workbookName
+                                    )
+                                  }
+                                  data-testid={`delete-sheet-named-expression-${name}`}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </div>
+                          )
+                        )
                     )
                   )}
+
+                  {/* Show message if no expressions */}
+                  {engineState.namedExpressions.globalExpressions.size === 0 &&
+                    engineState.namedExpressions.workbookExpressions.size ===
+                      0 &&
+                    engineState.namedExpressions.sheetExpressions.size ===
+                      0 && (
+                      <p className="text-xs text-gray-500 italic">
+                        No named expressions
+                      </p>
+                    )}
                 </div>
               </div>
 
               {/* Tables */}
-              <div className="bg-white p-3 rounded border border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-800 mb-3">
-                  Tables ({tables.size})
+              <div
+                className="bg-white p-3 rounded border border-gray-200"
+                data-testid="tables-section"
+              >
+                <h3
+                  className="text-sm font-semibold text-gray-800 mb-3"
+                  data-testid="tables-title"
+                >
+                  Tables ({numTables})
                 </h3>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {tables.size === 0 ? (
+                <div
+                  className="space-y-2 max-h-40 overflow-y-auto"
+                  data-testid="tables-list"
+                >
+                  {numTables === 0 ? (
                     <p className="text-xs text-gray-500 italic">No tables</p>
                   ) : (
-                    Array.from(tables.entries()).map(([name, table]) => (
-                      <div
-                        key={name}
-                        className="flex items-center justify-between bg-gray-50 p-2 rounded"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-xs text-gray-800 truncate">
-                            {name}
-                          </div>
-                          <div className="text-xs text-gray-600 truncate">
-                            {table.sheetName} • {table.start.rowIndex + 1}:
-                            {String.fromCharCode(65 + table.start.colIndex)}
-                          </div>
-                        </div>
-                      </div>
-                    ))
+                    Array.from(engineState.tables).flatMap(
+                      ([workbookName, workbook]) =>
+                        Array.from(workbook.entries()).map(
+                          ([tableName, table]) => (
+                            <div
+                              key={tableName + "|" + workbookName}
+                              className="flex items-center justify-between bg-gray-50 p-2 rounded"
+                              data-testid={`table-${tableName}`}
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div
+                                  className="font-medium text-xs text-gray-800 truncate"
+                                  data-testid={`table-name-${tableName}`}
+                                >
+                                  {tableName}
+                                </div>
+                                <div className="text-xs text-gray-600 truncate">
+                                  {table.sheetName} • {workbookName}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  Range:{" "}
+                                  {String.fromCharCode(
+                                    65 + table.start.colIndex
+                                  )}
+                                  {table.start.rowIndex + 1}:
+                                  {String.fromCharCode(
+                                    65 +
+                                      table.start.colIndex +
+                                      table.headers.size
+                                  )}
+                                  {table.endRow.type === "number"
+                                    ? table.endRow.value + 1
+                                    : "∞"}
+                                </div>
+                              </div>
+                            </div>
+                          )
+                        )
+                    )
                   )}
                 </div>
               </div>
@@ -707,12 +991,32 @@ export function ExcelDemo() {
         <Grid
           children={gridChildren}
           components={gridComponents}
-          initialVisibleRect={{ x: 0, y: 0, w: 1200, h: 800 }}
+          viewport={viewport}
+          onViewportChange={setViewport}
           gridSize={20}
           style={{ width: "100%", height: "100%" }}
+          onChildrenChange={(newChildren) => {
+            // Update workbook grid items when children change (move/resize)
+            const updatedItems = workbookGridItems.map((item) => {
+              const updatedChild = newChildren.find(
+                (child) => child.id === item.name
+              );
+              if (updatedChild) {
+                return {
+                  ...item,
+                  x: updatedChild.x,
+                  y: updatedChild.y,
+                  width: updatedChild.width,
+                  height: updatedChild.height,
+                };
+              }
+              return item;
+            });
+            setWorkbookGridItems(updatedItems);
+            markUnsavedChanges();
+          }}
         />
       </div>
-
     </div>
   );
 }

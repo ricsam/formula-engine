@@ -123,28 +123,6 @@ export interface Workbook {
   sheets: Map<string, Sheet>;
 }
 
-// Event types
-export interface FormulaEngineEvents {
-  "workbook-added": { workbookName: string };
-  "workbook-removed": { workbookName: string };
-  "workbook-renamed": { oldName: string; newName: string };
-  "sheet-added": {
-    sheetName: string;
-    workbookName: string;
-  };
-  "sheet-removed": {
-    sheetName: string;
-    workbookName: string;
-  };
-  "sheet-renamed": {
-    oldSheetName: string;
-    newSheetName: string;
-    workbookName: string;
-  };
-  "global-named-expressions-updated": Map<string, NamedExpression>;
-  "tables-updated": Map<string, TableDefinition>;
-}
-
 export type NamedExpressionDependencyNode = {
   type: "named-expression";
   name: string;

@@ -1,33 +1,29 @@
 import { parseFormula } from "src/parser/parser";
-import type {
-  EvaluatedDependencyNode,
-  FormulaEngineEvents,
-  NamedExpression,
-  Sheet,
-  SingleEvaluationResult,
-  SpilledValuesEvaluationResult,
-  ValueEvaluationResult,
-} from "../core/types";
+import type { SingleEvaluationResult } from "../core/types";
 import {
   FormulaError,
   type CellAddress,
   type CellValue,
   type FunctionEvaluationResult,
-  type SerializedCellValue,
-  type SpilledValue,
   type SpreadsheetRange,
   type SpreadsheetRangeEnd,
   type TableDefinition,
 } from "../core/types";
-import { dependencyNodeToKey } from "../core/utils/dependency-node-key";
 
 import { type EvaluationContext } from "../core/types";
 
+import type { StoreManager } from "src/core/managers/store-manager";
+import type { TableManager } from "src/core/managers/table-manager";
+import type { WorkbookManager } from "src/core/managers/workbook-manager";
 import {
   evaluateScalarOperator,
   type EvaluateScalarOperatorOptions,
 } from "src/evaluator/evaluate-scalar-operator";
 import { functions } from "src/functions";
+import {
+  getRangeIntersection,
+  OpenRangeEvaluator,
+} from "src/functions/math/open-range-evaluator";
 import type {
   ArrayNode,
   ASTNode,
@@ -48,21 +44,12 @@ import { multiply } from "./arithmetic/multiply/multiply";
 import { power } from "./arithmetic/power/power";
 import { subtract } from "./arithmetic/subtract/subtract";
 import { equals } from "./comparison/equals";
-import { notEquals } from "./comparison/not-equals";
-import { lessThan } from "./comparison/less-than";
-import { lessThanOrEqual } from "./comparison/less-than-or-equal";
 import { greaterThan } from "./comparison/greater-than";
 import { greaterThanOrEqual } from "./comparison/greater-than-or-equal";
+import { lessThan } from "./comparison/less-than";
+import { lessThanOrEqual } from "./comparison/less-than-or-equal";
+import { notEquals } from "./comparison/not-equals";
 import { concatenate } from "./concatenation/concatenate";
-import {
-  getRangeIntersection,
-  OpenRangeEvaluator,
-} from "src/functions/math/open-range-evaluator";
-import { serializeRange } from "src/core/utils/range-serializer";
-import type { WorkbookManager } from "src/core/managers/workbook-manager";
-import type { NamedExpressionManager } from "src/core/managers/named-expression-manager";
-import type { TableManager } from "src/core/managers/table-manager";
-import type { StoreManager } from "src/core/managers/store-manager";
 
 function isFormulaError(value: string): value is FormulaError {
   if (typeof value !== "string") return false;
@@ -128,7 +115,11 @@ export class FormulaEvaluator {
     private storeManager: StoreManager,
     workbookManager: WorkbookManager
   ) {
-    this.openRangeEvaluator = new OpenRangeEvaluator(storeManager, workbookManager, this);
+    this.openRangeEvaluator = new OpenRangeEvaluator(
+      storeManager,
+      workbookManager,
+      this
+    );
   }
 
   isCellInTable(cellAddress: CellAddress): TableDefinition | undefined {
@@ -136,7 +127,9 @@ export class FormulaEvaluator {
 
     // Get all tables for this sheet
 
-    for (const table of this.tableManager.getTables().values()) {
+    for (const table of this.tableManager
+      .getTables(cellAddress.workbookName)
+      .values()) {
       // Check each table to see if the cell is within its bounds
       if (table.sheetName !== cellAddress.sheetName) {
         continue;
@@ -251,8 +244,14 @@ export class FormulaEvaluator {
     context: EvaluationContext
   ): FunctionEvaluationResult {
     let table: TableDefinition | undefined;
-    if (node.tableName) {
-      table = this.tableManager.getTables().get(node.tableName);
+    if (node.tableName && node.workbookName) {
+      table = this.tableManager
+        .getTables(node.workbookName)
+        .get(node.tableName);
+    } else if (node.tableName) {
+      table = this.tableManager
+        .getTables(context.currentWorkbook)
+        .get(node.tableName);
     } else {
       table = this.isCellInTable(context.currentCell);
     }

@@ -2,11 +2,13 @@ import { FormulaEngine } from "../../src/core/engine";
 
 export const createEngineWithMultiSheetData = () => {
   const engine = FormulaEngine.buildEmpty();
+  const workbookName = "Workbook1";
+  engine.addWorkbook(workbookName);
 
   // Create three sheets
-  const salesSheet = engine.addSheet("Sales");
-  const productsSheet = engine.addSheet("Products");
-  const dashboardSheet = engine.addSheet("Dashboard");
+  const salesSheet = engine.addSheet({ workbookName, sheetName: "Sales" });
+  const productsSheet = engine.addSheet({ workbookName, sheetName: "Products" });
+  const dashboardSheet = engine.addSheet({ workbookName, sheetName: "Dashboard" });
 
   // Products Sheet - Master product data (input only)
   const productsData = new Map<string, any>([
@@ -325,16 +327,16 @@ export const createEngineWithMultiSheetData = () => {
   ]);
 
   // Populate all sheets
-  engine.setSheetContent(productsSheet.name, productsData);
-  engine.setSheetContent(salesSheet.name, salesData);
-  engine.setSheetContent(dashboardSheet.name, dashboardData);
+  engine.setSheetContent({ sheetName: productsSheet.name, workbookName }, productsData);
+  engine.setSheetContent({ sheetName: salesSheet.name, workbookName }, salesData);
+  engine.setSheetContent({ sheetName: dashboardSheet.name, workbookName }, dashboardData);
 
   return {
     engine,
     sheets: {
-      sales: { name: salesSheet.name },
-      products: { name: productsSheet.name },
-      dashboard: { name: dashboardSheet.name },
+      sales: { name: salesSheet.name, workbookName },
+      products: { name: productsSheet.name, workbookName },
+      dashboard: { name: dashboardSheet.name, workbookName },
     },
   };
 };

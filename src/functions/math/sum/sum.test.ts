@@ -55,7 +55,7 @@ describe("SUM function", () => {
         ])
       );
 
-      const sheet = engine.workbookManager.getSheet({ workbookName, sheetName });
+      const sheet = engine.getSheet({ workbookName, sheetName });
       expect(sheet).toBeDefined();
       expect(sheet?.content).toBeDefined();
       
