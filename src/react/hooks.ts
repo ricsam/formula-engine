@@ -15,27 +15,29 @@ export type SerializedSheet = {
   namedExpressions: Map<string, NamedExpression>;
 };
 
-export function useSerializedSheet(
-  engine: FormulaEngine,
-  sheetName: string
-): SerializedSheet {
+export function useSerializedSheet(opts: {
+  engine: FormulaEngine;
+  sheetName: string;
+  workbookName: string;
+}): SerializedSheet {
+  const { engine, sheetName, workbookName } = opts;
   const [serialized, setSerialized] = useState<SerializedSheet>({
-    sheet: new Map(engine.getSheetSerialized(sheetName)),
-    namedExpressions: new Map(engine.getNamedExpressionsSerialized(sheetName)),
+    sheet: new Map(engine.getSheetSerialized(opts)),
+    namedExpressions: new Map(engine.getSheetExpressionsSerialized(opts)),
   });
 
   React.useEffect(() => {
-    return engine.onCellsUpdate(sheetName, () => {
-      const sheet = new Map(engine.getSheetSerialized(sheetName));
+    return engine.onCellsUpdate(opts, () => {
+      const sheet = new Map(engine.getSheetSerialized(opts));
       const namedExpressions = new Map(
-        engine.getNamedExpressionsSerialized(sheetName)
+        engine.getSheetExpressionsSerialized(opts)
       );
       setSerialized({
         sheet,
         namedExpressions,
       });
     });
-  }, [engine, sheetName]);
+  }, [engine, sheetName, workbookName]);
 
   return serialized;
 }

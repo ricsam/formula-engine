@@ -37,6 +37,7 @@ export type ReferenceNode = ASTNodeBase & {
     rowIndex: number;
   };
   sheetName?: string;
+  workbookName?: string;
   isAbsolute: {
     col: boolean;
     row: boolean;
@@ -49,6 +50,7 @@ export type ReferenceNode = ASTNodeBase & {
 export type RangeNode = ASTNodeBase & {
   type: "range";
   sheetName?: string;
+  workbookName?: string;
   range: SpreadsheetRange;
   isAbsolute: {
     start: {
@@ -163,6 +165,7 @@ export type NamedExpressionNode = ASTNodeBase & {
   type: "named-expression";
   name: string;
   sheetName?: string;
+  workbookName?: string;
 };
 
 /**

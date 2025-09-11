@@ -277,7 +277,7 @@ describe("Named Expressions", () => {
     expect(cell("B1")).toBe(100);
 
     // Verify old name no longer exists
-    const sheetExpressions = engine.getNamedExpressionsSerialized(sheetName);
+    const sheetExpressions = engine.getSheetExpressionsSerialized(sheetName);
     expect(sheetExpressions.has("OLD_DISCOUNT")).toBe(false);
     expect(sheetExpressions.has("NEW_DISCOUNT")).toBe(true);
     expect(sheetExpressions.get("NEW_DISCOUNT").expression).toBe("0.2");
@@ -370,7 +370,7 @@ describe("Named Expressions", () => {
 
     // Test serialization
     const globalExpressions = engine.getGlobalNamedExpressionsSerialized();
-    const sheetExpressions = engine.getNamedExpressionsSerialized(sheetName);
+    const sheetExpressions = engine.getSheetExpressionsSerialized(sheetName);
 
     expect(globalExpressions.size).toBe(2);
     expect(globalExpressions.has("RATE_1")).toBe(true);
@@ -401,7 +401,7 @@ describe("Named Expressions", () => {
 
     engine.setNamedExpressions(sheetName, newSheetExpressions);
 
-    const updatedSheetExpressions = engine.getNamedExpressionsSerialized(sheetName);
+    const updatedSheetExpressions = engine.getSheetExpressionsSerialized(sheetName);
     expect(updatedSheetExpressions.size).toBe(1);
     expect(updatedSheetExpressions.has("LOCAL_1")).toBe(false); // Old ones should be gone
     expect(updatedSheetExpressions.has("SHEET_BULK_1")).toBe(true);
@@ -558,7 +558,7 @@ describe("Named Expressions", () => {
 
     // Verify old expressions are gone and new ones exist
     const globalExpressions = engine.getGlobalNamedExpressionsSerialized();
-    const sheetExpressions = engine.getNamedExpressionsSerialized(sheetName);
+    const sheetExpressions = engine.getSheetExpressionsSerialized(sheetName);
 
     expect(globalExpressions.has("OLD_GLOBAL")).toBe(false);
     expect(globalExpressions.has("NEW_GLOBAL_1")).toBe(true);

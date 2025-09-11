@@ -143,7 +143,7 @@ export class OpenRangeEvaluator {
       // const offsetLeft = address.colIndex - range.start.col;
       // const offsetTop = address.rowIndex - range.start.row;
 
-      const result = this.evaluator.runtimeSafeEvaluatedNode(
+      const result = this.evaluator.evalTimeSafeEvaluateCell(
         { ...address, sheetName: options.origin.sheetName },
         context
       );

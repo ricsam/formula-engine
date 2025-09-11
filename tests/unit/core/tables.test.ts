@@ -254,7 +254,7 @@ describe("Tables", () => {
       .getGlobalNamedExpressionsSerialized()
       .get("TOTAL_PRICE");
     const sheetExpr = engine
-      .getNamedExpressionsSerialized(sheetName)
+      .getSheetExpressionsSerialized(sheetName)
       .get("DISCOUNTED_PRICE");
 
     expect(globalExpr.expression).toBe("SUM(Inventory[Price])*1.1");

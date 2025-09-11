@@ -40,10 +40,10 @@ export class EventManager {
   private eventEmitter: EventEmitter<FormulaEngineEvents>;
   private cellsUpdateListeners: Map<
     /**
-     * sheetName -> listeners
+     * workbookName -> sheetName -> listeners
      */
     string,
-    Set<() => void>
+    Map<string, Set<() => void>>
   > = new Map();
 
   constructor() {
@@ -98,40 +98,57 @@ export class EventManager {
   /**
    * Register listener for batched sheet updates. Returns an unsubscribe function.
    */
-  onCellsUpdate(sheetName: string, listener: () => void): () => void {
-    if (!this.cellsUpdateListeners.has(sheetName)) {
-      this.cellsUpdateListeners.set(sheetName, new Set());
+  onCellsUpdate(
+    opts: { sheetName: string; workbookName: string },
+    listener: () => void
+  ): () => void {
+    let wbLevel = this.cellsUpdateListeners.get(opts.workbookName);
+    if (!wbLevel) {
+      wbLevel = new Map();
+      this.cellsUpdateListeners.set(opts.workbookName, wbLevel);
     }
-    const set = this.cellsUpdateListeners.get(sheetName)!;
-    set.add(listener);
+    let sheetLevel = wbLevel.get(opts.sheetName);
+    if (!sheetLevel) {
+      sheetLevel = new Set();
+      wbLevel.set(opts.sheetName, sheetLevel);
+    }
+
+    sheetLevel.add(listener);
     return () => {
-      const listeners = this.cellsUpdateListeners.get(sheetName);
-      if (listeners) {
-        listeners.delete(listener);
-        if (listeners.size === 0) this.cellsUpdateListeners.delete(sheetName);
-      }
+      sheetLevel.delete(listener);
     };
   }
 
-  getCellsUpdateListeners(): Map<string, Set<() => void>> {
-    return this.cellsUpdateListeners;
-  }
-
   triggerCellsUpdateEvent(): void {
-    this.cellsUpdateListeners.forEach((sheetListeners) =>
-      sheetListeners.forEach((listener) => listener())
+    this.cellsUpdateListeners.forEach((wbLevel) =>
+      wbLevel.forEach((sheetLevel) =>
+        sheetLevel.forEach((listener) => listener())
+      )
     );
   }
 
-  removeCellsUpdateListenersForSheet(sheetName: string): void {
-    this.cellsUpdateListeners.delete(sheetName);
+  removeCellsUpdateListenersForSheet(opts: {
+    sheetName: string;
+    workbookName: string;
+  }): void {
+    const wbLevel = this.cellsUpdateListeners.get(opts.workbookName);
+    if (wbLevel) {
+      wbLevel.delete(opts.sheetName);
+    }
   }
 
-  renameCellsUpdateListenersForSheet(oldName: string, newName: string): void {
-    const listeners = this.cellsUpdateListeners.get(oldName);
-    if (listeners) {
-      this.cellsUpdateListeners.set(newName, listeners);
-      this.cellsUpdateListeners.delete(oldName);
+  renameCellsUpdateListenersForSheet(opts: {
+    sheetName: string;
+    newSheetName: string;
+    workbookName: string;
+  }): void {
+    const wbLevel = this.cellsUpdateListeners.get(opts.workbookName);
+    if (wbLevel) {
+      const sheetLevel = wbLevel.get(opts.sheetName);
+      if (sheetLevel) {
+        wbLevel.set(opts.newSheetName, sheetLevel);
+        wbLevel.delete(opts.sheetName);
+      }
     }
   }
 }

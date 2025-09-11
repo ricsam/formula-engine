@@ -171,7 +171,7 @@ export function ExcelDemo() {
         ([name, sheet]) => ({
           name,
           cells: Array.from(sheet.content.entries()),
-          namedExpressions: Array.from(engine.getNamedExpressionsSerialized(name).entries()),
+          namedExpressions: Array.from(engine.getSheetExpressionsSerialized(name).entries()),
         })
       );
 
@@ -456,7 +456,7 @@ export function ExcelDemo() {
     for (const [sheetName, sheet] of engine.sheets.entries()) {
       debugData.sheets.push([sheetName, {
         cells: Array.from(sheet.content.entries()),
-        namedExpressions: Array.from(engine.getNamedExpressionsSerialized(sheetName).entries()),
+        namedExpressions: Array.from(engine.getSheetExpressionsSerialized(sheetName).entries()),
       }]);
     }
 

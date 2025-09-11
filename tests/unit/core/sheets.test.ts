@@ -95,7 +95,7 @@ describe("Sheets", () => {
     });
 
     // Verify data exists
-    expect(engine.getNamedExpressionsSerialized(sheetName).size).toBe(1);
+    expect(engine.getSheetExpressionsSerialized(sheetName).size).toBe(1);
     expect(engine.getTablesSerialized().size).toBe(1);
 
     // Remove sheet
@@ -103,7 +103,7 @@ describe("Sheets", () => {
 
     // Verify cleanup
     expect(engine.sheets.has(sheetName)).toBe(false);
-    expect(engine.getNamedExpressionsSerialized(sheetName).size).toBe(0);
+    expect(engine.getSheetExpressionsSerialized(sheetName).size).toBe(0);
     // Tables should be automatically removed when sheet is removed
     expect(engine.getTablesSerialized().has("TestTable")).toBe(false);
   });
@@ -221,9 +221,9 @@ describe("Sheets", () => {
     expect(cell("NewSheet", "B1")).toBe(15);
 
     // Verify sheet-scoped named expression was moved
-    expect(engine.getNamedExpressionsSerialized("Sheet1").size).toBe(0);
-    expect(engine.getNamedExpressionsSerialized("NewSheet").size).toBe(1);
-    expect(engine.getNamedExpressionsSerialized("NewSheet").has("LOCAL_VALUE")).toBe(true);
+    expect(engine.getSheetExpressionsSerialized("Sheet1").size).toBe(0);
+    expect(engine.getSheetExpressionsSerialized("NewSheet").size).toBe(1);
+    expect(engine.getSheetExpressionsSerialized("NewSheet").has("LOCAL_VALUE")).toBe(true);
 
     // Note: Currently, global named expressions are not automatically updated when sheets are renamed
     // This might be a limitation that could be addressed in the future
@@ -334,7 +334,7 @@ describe("Sheets", () => {
 
     const unsubscribeRenamed = engine.on("sheet-renamed", (event) => {
       sheetRenamedCount++;
-      lastSheetRenamed = { oldName: event.oldName, newName: event.newName };
+      lastSheetRenamed = { oldName: event.oldSheetName, newName: event.newSheetName };
     });
 
     // Add sheet - should trigger event

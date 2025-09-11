@@ -5,18 +5,13 @@ import type {
   Sheet,
   SpreadsheetRange,
   FiniteSpreadsheetRange,
+  Workbook,
 } from "../types";
 import { getCellReference, parseCellReference } from "../utils";
 import { renameSheetInFormula } from "../sheet-renamer";
 
-export interface SheetManagerEvents {
-  "sheet-added": { sheetName: string };
-  "sheet-removed": { sheetName: string };
-  "sheet-renamed": { oldName: string; newName: string };
-}
-
-export class SheetManager {
-  private sheets: Map<string, Sheet> = new Map();
+export class WorkbookManager {
+  private workbooks: Map<string, Workbook> = new Map();
   private eventEmitter?: {
     emit<K extends keyof FormulaEngineEvents>(
       event: K,
@@ -33,108 +28,181 @@ export class SheetManager {
     this.eventEmitter = eventEmitter;
   }
 
-  getSheets(): Map<string, Sheet> {
-    return this.sheets;
+  getSheets(workbookName: string): Map<string, Sheet> {
+    const workbook = this.workbooks.get(workbookName);
+    if (!workbook) {
+      throw new Error("Workbook not found");
+    }
+    return workbook.sheets;
   }
 
-  getSheet(name: string): Sheet | undefined {
-    return this.sheets.get(name);
+  getWorkbooks(): Map<string, Workbook> {
+    return this.workbooks;
   }
 
-  addSheet(name: string): Sheet {
+  getSheet({
+    workbookName,
+    sheetName,
+  }: {
+    workbookName: string;
+    sheetName: string;
+  }): Sheet | undefined {
+    const workbook = this.workbooks.get(workbookName);
+    if (!workbook) {
+      throw new Error("Workbook not found");
+    }
+    const sheet = workbook.sheets.get(sheetName);
+    if (!sheet) {
+      throw new Error("Sheet not found");
+    }
+    return sheet;
+  }
+
+  addSheet({
+    workbookName,
+    sheetName,
+  }: {
+    workbookName: string;
+    sheetName: string;
+  }): Sheet {
+    const workbook = this.workbooks.get(workbookName);
+    if (!workbook) {
+      throw new Error("Workbook not found");
+    }
     const sheet = {
-      name,
-      index: this.sheets.size,
+      name: sheetName,
+      index: workbook.sheets.size,
       content: new Map(),
     };
 
-    if (this.sheets.has(sheet.name)) {
+    if (workbook.sheets.has(sheet.name)) {
       throw new Error("Sheet already exists");
     }
 
-    this.sheets.set(name, sheet);
+    workbook.sheets.set(sheetName, sheet);
 
     // Emit sheet-added event
     this.eventEmitter?.emit("sheet-added", {
-      sheetName: name,
+      sheetName: sheetName,
+      workbookName: workbookName,
     });
     return sheet;
   }
 
-  removeSheet(sheetName: string): Sheet {
-    const sheet = this.sheets.get(sheetName);
+  removeSheet({
+    workbookName,
+    sheetName,
+  }: {
+    workbookName: string;
+    sheetName: string;
+  }): Sheet {
+    const workbook = this.workbooks.get(workbookName);
+    if (!workbook) {
+      throw new Error("Workbook not found");
+    }
+    const sheet = workbook.sheets.get(sheetName);
     if (!sheet) {
       throw new Error("Sheet not found");
     }
 
     // Remove the sheet
-    this.sheets.delete(sheetName);
+    workbook.sheets.delete(sheetName);
 
     // Emit sheet-removed event
     this.eventEmitter?.emit("sheet-removed", {
       sheetName: sheetName,
+      workbookName: workbookName,
     });
 
     return sheet;
   }
 
-  renameSheet(sheetName: string, newName: string): Sheet {
-    const sheet = this.sheets.get(sheetName);
+  renameSheet({
+    workbookName,
+    sheetName,
+    newSheetName,
+  }: {
+    workbookName: string;
+    sheetName: string;
+    newSheetName: string;
+  }): Sheet {
+    const workbook = this.workbooks.get(workbookName);
+    if (!workbook) {
+      throw new Error("Workbook not found");
+    }
+    const sheet = workbook.sheets.get(sheetName);
     if (!sheet) {
       throw new Error("Sheet not found");
     }
 
-    if (this.sheets.has(newName)) {
+    if (workbook.sheets.has(newSheetName)) {
       throw new Error("Sheet with new name already exists");
     }
 
     // Update sheet name
-    sheet.name = newName;
+    sheet.name = newSheetName;
 
     // Update sheets map
-    this.sheets.set(newName, sheet);
-    this.sheets.delete(sheetName);
+    workbook.sheets.set(newSheetName, sheet);
+    workbook.sheets.delete(sheetName);
 
     // Emit sheet-renamed event
     this.eventEmitter?.emit("sheet-renamed", {
-      oldName: sheetName,
-      newName: newName,
+      oldSheetName: sheetName,
+      newSheetName: newSheetName,
+      workbookName: workbookName,
     });
 
     return sheet;
   }
 
-  updateFormulasForSheetRename(
-    oldName: string,
-    newName: string,
-    updateCallback: (formula: string) => string = (formula) =>
-      renameSheetInFormula(formula, oldName, newName)
-  ): void {
-    // Update all formulas that reference this sheet
-    this.sheets.forEach((sheet) => {
-      sheet.content.forEach((cell, key) => {
-        if (typeof cell === "string" && cell.startsWith("=")) {
-          const formula = cell.slice(1);
-          const updatedFormula = updateCallback(formula);
+  updateAllFormulas(updateCallback: (formula: string) => string): void {
+    const update = (map: Map<string, Sheet>) => {
+      map.forEach((sheet) => {
+        sheet.content.forEach((cell, key) => {
+          if (typeof cell === "string" && cell.startsWith("=")) {
+            const formula = cell.slice(1);
+            const updatedFormula = updateCallback(formula);
 
-          // Only update if the formula actually changed
-          if (updatedFormula !== formula) {
-            sheet.content.set(key, `=${updatedFormula}`);
+            // Only update if the formula actually changed
+            if (updatedFormula !== formula) {
+              sheet.content.set(key, `=${updatedFormula}`);
+            }
           }
-        }
+        });
       });
+    };
+
+    this.workbooks.forEach((workbook) => {
+      update(workbook.sheets);
     });
   }
 
-  getSheetSerialized(sheetName: string): Map<string, SerializedCellValue> {
-    const sheet = this.sheets.get(sheetName);
-    if (!sheet) return new Map();
+  getSheetSerialized({
+    workbookName,
+    sheetName,
+  }: {
+    workbookName: string;
+    sheetName: string;
+  }): Map<string, SerializedCellValue> {
+    const workbook = this.workbooks.get(workbookName);
+    if (!workbook) {
+      throw new Error("Workbook not found");
+    }
+    const sheet = workbook.sheets.get(sheetName);
+    if (!sheet) {
+      throw new Error("Sheet not found");
+    }
 
     return sheet.content;
   }
 
   setCellContent(address: CellAddress, content: SerializedCellValue): void {
-    const sheet = this.sheets.get(address.sheetName);
+    const sheet = this.getSheet({
+      sheetName: address.sheetName,
+      workbookName: address.workbookName,
+    });
+
     if (!sheet) {
       throw new Error("Sheet not found");
     }
@@ -143,17 +211,22 @@ export class SheetManager {
   }
 
   reevaluateSheet(
-    sheetName: string,
+    opts: { sheetName: string; workbookName: string },
     evaluateCallback: (address: CellAddress) => void
   ): void {
-    const sheet = this.sheets.get(sheetName);
+    const sheet = this.getSheet(opts);
+
     if (!sheet) {
       throw new Error("Sheet not found");
     }
 
     for (const key of sheet.content.keys()) {
       const address = parseCellReference(key);
-      evaluateCallback({ ...address, sheetName });
+      evaluateCallback({
+        ...address,
+        sheetName: opts.sheetName,
+        workbookName: opts.workbookName,
+      });
     }
   }
 
@@ -162,10 +235,10 @@ export class SheetManager {
    * This method clears the existing Map and repopulates it rather than replacing the Map reference
    */
   setSheetContent(
-    sheetName: string,
+    opts: { sheetName: string; workbookName: string },
     newContent: Map<string, SerializedCellValue>
   ): void {
-    const sheet = this.sheets.get(sheetName);
+    const sheet = this.getSheet(opts);
     if (!sheet) {
       throw new Error("Sheet not found");
     }
@@ -185,10 +258,13 @@ export class SheetManager {
    * Converts a SpreadsheetRange to FiniteSpreadsheetRange, throwing an error if infinite
    */
   private toFiniteRange(range: SpreadsheetRange): FiniteSpreadsheetRange {
-    if (range.end.col.type === "infinity" || range.end.row.type === "infinity") {
+    if (
+      range.end.col.type === "infinity" ||
+      range.end.row.type === "infinity"
+    ) {
       throw new Error("Clearing infinite ranges is not supported");
     }
-    
+
     return {
       start: range.start,
       end: {
@@ -202,12 +278,9 @@ export class SheetManager {
    * Removes the content in the spreadsheet that is inside the range.
    */
   clearSpreadsheetRange(
-    sheetName: string,
+    opts: { sheetName: string; workbookName: string },
     range: SpreadsheetRange,
-    setSheetContent: (
-      sheetName: string,
-      content: Map<string, SerializedCellValue>
-    ) => void
+    setSheetContent: (content: Map<string, SerializedCellValue>) => void
   ) {
     // Check if range has infinite ends - not supported for now
     if (
@@ -217,9 +290,10 @@ export class SheetManager {
       throw new Error("Clearing infinite ranges is not supported");
     }
 
-    const sheet = this.sheets.get(sheetName);
+    const sheet = this.getSheet(opts);
+
     if (!sheet) {
-      throw new Error(`Sheet "${sheetName}" not found`);
+      throw new Error("Sheet not found");
     }
 
     // Get current sheet content and prepare new content with cleared cells
@@ -245,6 +319,6 @@ export class SheetManager {
     }
 
     // Update sheet content in a single operation
-    setSheetContent(sheetName, newContent);
+    setSheetContent(newContent);
   }
 }

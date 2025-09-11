@@ -10,6 +10,7 @@ import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 // Cell addressing types
 export interface CellAddress {
   sheetName: string;
+  workbookName: string;
   colIndex: number;
   rowIndex: number;
 }
@@ -82,6 +83,7 @@ export interface NamedExpression {
   name: string;
   expression: string;
   sheetName?: string;
+  workbookName?: string;
 }
 
 export interface TableDefinition {
@@ -93,6 +95,7 @@ export interface TableDefinition {
   headers: Map<string, { name: string; index: number }>;
   endRow: SpreadsheetRangeEnd;
   sheetName: string;
+  workbookName: string;
 }
 
 // Formula errors
@@ -115,17 +118,28 @@ export interface Sheet {
   content: Map<string, SerializedCellValue>;
 }
 
+export interface Workbook {
+  name: string;
+  sheets: Map<string, Sheet>;
+}
+
 // Event types
 export interface FormulaEngineEvents {
+  "workbook-added": { workbookName: string };
+  "workbook-removed": { workbookName: string };
+  "workbook-renamed": { oldName: string; newName: string };
   "sheet-added": {
     sheetName: string;
+    workbookName: string;
   };
   "sheet-removed": {
     sheetName: string;
+    workbookName: string;
   };
   "sheet-renamed": {
-    oldName: string;
-    newName: string;
+    oldSheetName: string;
+    newSheetName: string;
+    workbookName: string;
   };
   "global-named-expressions-updated": Map<string, NamedExpression>;
   "tables-updated": Map<string, TableDefinition>;
@@ -139,11 +153,13 @@ export type DependencyNode =
       type: "cell";
       address: LocalCellAddress;
       sheetName: string;
+      workbookName: string;
     }
   | {
       type: "range";
       range: SpreadsheetRange;
       sheetName: string;
+      workbookName: string;
     }
   | {
       type: "multi-spreadsheet-range";
@@ -160,11 +176,13 @@ export type DependencyNode =
       type: "named-expression";
       name: string;
       sheetName: string;
+      workbookName: string;
     }
   | {
       type: "table";
       tableName: string;
       sheetName: string;
+      workbookName: string;
       area:
         | { kind: "Headers" | "All" | "AllData" }
         | { kind: "Data"; columns: string[]; isCurrentRow: boolean };
@@ -175,6 +193,7 @@ export type DependencyNode =
  */
 export interface EvaluationContext {
   currentSheet: string;
+  currentWorkbook: string;
   currentCell: CellAddress;
   evaluationStack: Set<string>; // For cycle detection
   dependencies: Set<string>;

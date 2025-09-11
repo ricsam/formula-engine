@@ -1,43 +1,56 @@
-import { functions } from "src/functions";
-import type { FunctionNode } from "src/parser/ast";
 import { normalizeSerializedCellValue } from "src/parser/formatter";
 import { FormulaEvaluator } from "../../evaluator/formula-evaluator";
 import {
   FormulaError,
   type CellAddress,
   type CellValue,
-  type DependencyNode,
+  type EvaluatedDependencyNode,
   type EvaluationContext,
   type FunctionEvaluationResult,
   type NamedExpression,
   type SerializedCellValue,
-  type Sheet,
   type SingleEvaluationResult,
   type SpilledValue,
   type SpreadsheetRange,
   type TableDefinition,
 } from "../types";
-import { getCellReference, parseCellReference } from "../utils";
+import {
+  getCellReference,
+  isCellInRange,
+  isRangeOneCell,
+  parseCellReference,
+} from "../utils";
 import {
   dependencyNodeToKey,
   keyToDependencyNode,
 } from "../utils/dependency-node-key";
+import type { NamedExpressionManager } from "./named-expression-manager";
+import type { WorkbookManager } from "./workbook-manager";
 
-export class EvaluationManager extends FormulaEvaluator {
+export class EvaluationManager {
   private isEvaluating = false;
 
+  evaluatedNodes: Map<
+    /**
+     * key is the dependency node key, from dependencyNodeToKey
+     */
+    string,
+    EvaluatedDependencyNode
+  > = new Map();
+
+  spilledValues: Map<
+    /**
+     * key is the dependency node key, from dependencyNodeToKey for the origin cell
+     */
+    string,
+    SpilledValue
+  > = new Map();
+
   constructor(
-    sheets: Map<string, Sheet>,
-    scopedNamedExpressions: Map<string, Map<string, NamedExpression>>,
-    globalNamedExpressions: Map<string, NamedExpression>,
-    tables: Map<string, TableDefinition>
-  ) {
-    super();
-    this.sheets = sheets;
-    this.scopedNamedExpressions = scopedNamedExpressions;
-    this.globalNamedExpressions = globalNamedExpressions;
-    this.tables = tables;
-  }
+    private workbookManager: WorkbookManager,
+    private namedExpressionManager: NamedExpressionManager,
+    private formulaEvaluator: FormulaEvaluator
+  ) {}
 
   getEvaluatedNodes() {
     return this.evaluatedNodes;
@@ -166,6 +179,129 @@ export class EvaluationManager extends FormulaEvaluator {
     return result;
   }
 
+  isSpilled(cellAddress: CellAddress): SpilledValue | undefined {
+    for (const spilledValue of this.spilledValues.values()) {
+      if (spilledValue.origin.sheetName !== cellAddress.sheetName) {
+        continue;
+      }
+      if (
+        spilledValue.origin.colIndex === cellAddress.colIndex &&
+        spilledValue.origin.rowIndex === cellAddress.rowIndex
+      ) {
+        return undefined;
+      }
+      if (isCellInRange(cellAddress, spilledValue.spillOnto)) {
+        return spilledValue;
+      }
+    }
+    return undefined;
+  }
+
+  evaluateSpilled(
+    cellAddress: CellAddress,
+    context: EvaluationContext
+  ):
+    | { isSpilled: true; result: FunctionEvaluationResult | undefined }
+    | { isSpilled: false } {
+    const spilled = this.isSpilled(cellAddress);
+    if (spilled) {
+      const spillSource = this.getSpilledAddress(cellAddress, spilled);
+      const spillOrigin = this.evalTimeSafeEvaluateCell(
+        spilled.origin,
+        context
+      );
+      if (spillOrigin && spillOrigin.type === "spilled-values") {
+        return {
+          isSpilled: true,
+          result: spillOrigin.evaluate(spillSource.spillOffset, context),
+        };
+      }
+    }
+    return { isSpilled: false };
+  }
+
+  /**
+   * During evaluation, we can't use the formula evaluator to evaluate a cell, because it will create a cycle.
+   * This method can be used to "evaluate" a cell during evaluation, without creating a cycle.
+   *
+   * Internally this method will try to look up the evaluated result for the cell,
+   * if it doesn't exist it will push the cell address to the dependency graph,
+   * causing the engine to re-evaluate the dependency graph,
+   * such that on the second evaluation the cell's evaluation result will be available.
+   */
+  evalTimeSafeEvaluateCell(
+    cellAddress: CellAddress,
+    context: EvaluationContext
+  ): FunctionEvaluationResult | undefined {
+    const spilled = this.isSpilled(cellAddress);
+    if (spilled) {
+      const spillSource = this.getSpilledAddress(cellAddress, spilled);
+      const spillOrigin = this.evalTimeSafeEvaluateCell(
+        spilled.origin,
+        context
+      );
+      if (spillOrigin && spillOrigin.type === "spilled-values") {
+        return spillOrigin.evaluate(spillSource.spillOffset, context);
+      }
+    }
+    const key = dependencyNodeToKey({
+      type: "cell",
+      address: cellAddress,
+      sheetName: cellAddress.sheetName,
+      workbookName: cellAddress.workbookName,
+    });
+    context.dependencies.add(key);
+    return this.evaluatedNodes.get(key)?.evaluationResult;
+  }
+
+  /**
+   * Similar logic as evalTimeSafeEvaluateCell, but for named expressions
+   */
+  evalTimeSafeEvaluateNamedExpression(
+    namedExpression: Pick<
+      NamedExpression,
+      "name" | "sheetName" | "workbookName"
+    >,
+    context: EvaluationContext
+  ): FunctionEvaluationResult | undefined {
+    const nodeKey = dependencyNodeToKey({
+      type: "named-expression",
+      name: namedExpression.name,
+      sheetName: namedExpression.sheetName ?? context.currentSheet,
+      workbookName: namedExpression.workbookName ?? context.currentWorkbook,
+    });
+    context.dependencies.add(nodeKey);
+
+    const value = this.evaluatedNodes.get(nodeKey);
+    return value?.evaluationResult;
+  }
+
+  getSpilledAddress(
+    cellAddress: CellAddress,
+    /**
+     * if the spilled value is already available, we can use it to get the source address
+     */
+    passedSpilledValue?: SpilledValue
+  ): { address: CellAddress; spillOffset: { x: number; y: number } } {
+    const spilledValue = passedSpilledValue ?? this.isSpilled(cellAddress);
+    if (!spilledValue) {
+      throw new Error("Cell is not spilled");
+    }
+    const offsetLeft = cellAddress.colIndex - spilledValue.origin.colIndex;
+    const offsetTop = cellAddress.rowIndex - spilledValue.origin.rowIndex;
+    const address: CellAddress = {
+      ...cellAddress,
+      colIndex: spilledValue.origin.colIndex + offsetLeft,
+      rowIndex: spilledValue.origin.rowIndex + offsetTop,
+    };
+    if (offsetLeft === 0 && offsetTop === 0) {
+      throw new Error(
+        "Spilled value is the same as the cell address! The origin has a pre-calculated value that can be used"
+      );
+    }
+    return { address, spillOffset: { x: offsetLeft, y: offsetTop } };
+  }
+
   evaluateDependencyNode(
     /**
      * nodeKey is the dependency node key, from dependencyNodeToKey
@@ -192,12 +328,13 @@ export class EvaluationManager extends FormulaEvaluator {
       });
 
       const nodeAddress: CellAddress = {
+        workbookName: node.workbookName,
         sheetName: node.sheetName,
         colIndex: node.address.colIndex,
         rowIndex: node.address.rowIndex,
       };
 
-      const sheet = this.sheets.get(node.sheetName);
+      const sheet = this.workbookManager.getSheet(cellAddress);
 
       if (!sheet) {
         this.evaluatedNodes.set(nodeKey, {
@@ -226,6 +363,7 @@ export class EvaluationManager extends FormulaEvaluator {
 
       const evaluationContext: EvaluationContext = {
         currentSheet: sheet.name,
+        currentWorkbook: node.workbookName,
         currentCell: nodeAddress,
         evaluationStack: new Set(),
         dependencies: dependenciesDiscoveredInEvaluation,
@@ -238,7 +376,7 @@ export class EvaluationManager extends FormulaEvaluator {
         const spilled = this.isSpilled(nodeAddress);
         if (spilled) {
           const spillTarget = this.getSpilledAddress(nodeAddress, spilled);
-          const spillOrigin = this.runtimeSafeEvaluatedNode(
+          const spillOrigin = this.evalTimeSafeEvaluateCell(
             spilled.origin,
             evaluationContext
           );
@@ -259,13 +397,16 @@ export class EvaluationManager extends FormulaEvaluator {
           return false;
         }
       } else {
-        evaluation = this.evaluateFormula(content.slice(1), evaluationContext);
+        evaluation = this.formulaEvaluator.evaluateFormula(
+          content.slice(1),
+          evaluationContext
+        );
       }
 
       // if a cell returns a range, we need to spill the values onto the sheet
       if (evaluation && evaluation.type === "spilled-values") {
         const spillArea = evaluation.spillArea(nodeAddress);
-        if (!this.isRangeOneCell(spillArea)) {
+        if (!isRangeOneCell(spillArea)) {
           if (this.canSpill(nodeAddress, spillArea)) {
             this.spilledValues.set(nodeKey, {
               spillOnto: spillArea,
@@ -279,8 +420,9 @@ export class EvaluationManager extends FormulaEvaluator {
                   const cellAddress: CellAddress = {
                     ...node.address,
                     sheetName: node.sheetName,
+                    workbookName: node.workbookName,
                   };
-                  return this.isCellInRange(cellAddress, spillArea);
+                  return isCellInRange(cellAddress, spillArea);
                 }
                 return false;
               };
@@ -323,9 +465,11 @@ export class EvaluationManager extends FormulaEvaluator {
         }
       }
     } else if (node.type === "named-expression") {
-      const expression =
-        this.scopedNamedExpressions.get(node.sheetName)?.get(node.name) ??
-        this.globalNamedExpressions.get(node.name);
+      const expression = this.namedExpressionManager.getNamedExpression({
+        sheetName: node.sheetName,
+        workbookName: node.workbookName,
+        name: node.name,
+      });
       if (!expression) {
         this.evaluatedNodes.set(nodeKey, {
           evaluationResult: {
@@ -337,15 +481,19 @@ export class EvaluationManager extends FormulaEvaluator {
         return false;
       }
 
-      evaluation = this.evaluateFormula(expression.expression, {
-        currentSheet: cellAddress.sheetName,
-        currentCell: cellAddress,
-        evaluationStack: new Set(),
-        dependencies: dependenciesDiscoveredInEvaluation,
-        frontierDependencies: frontierDependenciesDiscoveredInEvaluation,
-        discardedFrontierDependencies:
-          discardedFrontierDependenciesDiscoveredInEvaluation,
-      });
+      evaluation = this.formulaEvaluator.evaluateFormula(
+        expression.expression,
+        {
+          currentSheet: cellAddress.sheetName,
+          currentWorkbook: cellAddress.workbookName,
+          currentCell: cellAddress,
+          evaluationStack: new Set(),
+          dependencies: dependenciesDiscoveredInEvaluation,
+          frontierDependencies: frontierDependenciesDiscoveredInEvaluation,
+          discardedFrontierDependencies:
+            discardedFrontierDependenciesDiscoveredInEvaluation,
+        }
+      );
     } else {
       throw new Error(`${node.type} is not supported yet in the evaluator`);
     }
@@ -399,7 +547,7 @@ export class EvaluationManager extends FormulaEvaluator {
       throw new Error("Evaluation in progress");
     }
     this.isEvaluating = true;
-    const sheet = this.sheets.get(cellAddress.sheetName);
+    const sheet = this.workbookManager.getSheet(cellAddress);
     if (!sheet) {
       this.isEvaluating = false;
       throw new Error("Sheet not found");
@@ -413,7 +561,8 @@ export class EvaluationManager extends FormulaEvaluator {
     const nodeKey = dependencyNodeToKey({
       type: "cell",
       address: cellAddress,
-      sheetName: sheet.name,
+      sheetName: cellAddress.sheetName,
+      workbookName: cellAddress.workbookName,
     });
 
     let requiresReRun = true;
@@ -498,7 +647,7 @@ export class EvaluationManager extends FormulaEvaluator {
   }
 
   canSpill(originCellAddress: CellAddress, range: SpreadsheetRange): boolean {
-    const sheet = this.sheets.get(originCellAddress.sheetName);
+    const sheet = this.workbookManager.getSheet(originCellAddress);
     if (!sheet) {
       throw new Error("Sheet not found");
     }
@@ -537,7 +686,7 @@ export class EvaluationManager extends FormulaEvaluator {
       }
     }
     for (const value of this.spilledValues.values()) {
-      if (this.isCellInRange(originCellAddress, value.spillOnto)) {
+      if (isCellInRange(originCellAddress, value.spillOnto)) {
         if (
           value.origin.colIndex === originCellAddress.colIndex &&
           value.origin.rowIndex === originCellAddress.rowIndex
@@ -558,7 +707,7 @@ export class EvaluationManager extends FormulaEvaluator {
       throw new Error("Evaluation in progress");
     }
 
-    const sheet = this.sheets.get(cellAddress.sheetName);
+    const sheet = this.workbookManager.getSheet(cellAddress);
     if (!sheet) {
       throw new Error("Sheet not found");
     }
@@ -567,6 +716,7 @@ export class EvaluationManager extends FormulaEvaluator {
     // the context is quite irrelevant, because the cells are "cached" if spilled is true
     const dummyContext: EvaluationContext = {
       currentSheet: cellAddress.sheetName,
+      currentWorkbook: cellAddress.workbookName,
       currentCell: cellAddress,
       evaluationStack: new Set(),
       dependencies: new Set(),
@@ -591,7 +741,8 @@ export class EvaluationManager extends FormulaEvaluator {
       dependencyNodeToKey({
         type: "cell",
         address: cellAddress,
-        sheetName: sheet.name,
+        sheetName: cellAddress.sheetName,
+        workbookName: cellAddress.workbookName,
       })
     );
 
@@ -605,5 +756,9 @@ export class EvaluationManager extends FormulaEvaluator {
       return result.evaluate({ x: 0, y: 0 }, dummyContext);
     }
     return result;
+  }
+
+  isCellInTable(cellAddress: CellAddress): TableDefinition | undefined {
+    return this.formulaEvaluator.isCellInTable(cellAddress);
   }
 }

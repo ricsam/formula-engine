@@ -1,91 +1,125 @@
-import type {
-  FormulaEngineEvents,
-  NamedExpression,
-} from "../types";
+import type { NamedExpression } from "../types";
 import { renameNamedExpressionInFormula } from "../named-expression-renamer";
+import type { EventManager } from "./event-manager";
 
 export class NamedExpressionManager {
-  private scopedNamedExpressions: Map<string, Map<string, NamedExpression>> = new Map();
-  private globalNamedExpressions: Map<string, NamedExpression> = new Map();
-  private eventEmitter?: {
-    emit<K extends keyof FormulaEngineEvents>(
-      event: K,
-      data: FormulaEngineEvents[K]
-    ): void;
-  };
+  private sheetExpressions: Map<
+    string,
+    Map<string, Map<string, NamedExpression>>
+  > = new Map();
+  private workbookExpressions: Map<string, Map<string, NamedExpression>> =
+    new Map();
+  private globalExpressions: Map<string, NamedExpression> = new Map();
+  private eventEmitter: EventManager;
 
-  constructor(eventEmitter?: {
-    emit<K extends keyof FormulaEngineEvents>(
-      event: K,
-      data: FormulaEngineEvents[K]
-    ): void;
-  }) {
+  constructor(eventEmitter: EventManager) {
     this.eventEmitter = eventEmitter;
   }
 
-  getScopedNamedExpressions(): Map<string, Map<string, NamedExpression>> {
-    return this.scopedNamedExpressions;
+  getSheetNamedExpressions(): Map<
+    string,
+    Map<string, Map<string, NamedExpression>>
+  > {
+    return this.sheetExpressions;
+  }
+
+  getWorkbookNamedExpressions(): Map<string, Map<string, NamedExpression>> {
+    return this.workbookExpressions;
   }
 
   getGlobalNamedExpressions(): Map<string, NamedExpression> {
-    return this.globalNamedExpressions;
+    return this.globalExpressions;
   }
 
   addNamedExpression({
     expression,
     expressionName,
     sheetName,
+    workbookName,
   }: {
     expression: string;
     expressionName: string;
     sheetName?: string;
+    workbookName?: string;
   }): void {
-    if (!sheetName) {
-      this.globalNamedExpressions.set(expressionName, {
-        name: expressionName,
-        expression,
-      });
-      this.eventEmitter?.emit(
-        "global-named-expressions-updated",
-        this.globalNamedExpressions
-      );
-    } else {
-      let scopedNamedExpressions = this.scopedNamedExpressions.get(sheetName);
-      if (!scopedNamedExpressions) {
-        scopedNamedExpressions = new Map();
-        this.scopedNamedExpressions.set(sheetName, scopedNamedExpressions);
+    const namedExpression: NamedExpression = {
+      name: expressionName,
+      expression,
+      sheetName,
+      workbookName,
+    };
+
+    if (sheetName && !workbookName) {
+      throw new Error("Missing workbookName");
+    }
+
+    if (sheetName && workbookName) {
+      let wbLevel = this.sheetExpressions.get(workbookName);
+      if (!wbLevel) {
+        wbLevel = new Map();
+        this.sheetExpressions.set(sheetName, wbLevel);
       }
 
-      scopedNamedExpressions.set(expressionName, {
-        name: expressionName,
-        expression,
-      });
+      let sheetLevel = wbLevel.get(sheetName);
+      if (!sheetLevel) {
+        sheetLevel = new Map();
+        wbLevel.set(sheetName, sheetLevel);
+      }
+
+      sheetLevel.set(expressionName, namedExpression);
+    } else if (workbookName) {
+      let workbookNamedExpressions = this.workbookExpressions.get(workbookName);
+      if (!workbookNamedExpressions) {
+        workbookNamedExpressions = new Map();
+        this.workbookExpressions.set(workbookName, workbookNamedExpressions);
+      }
+
+      workbookNamedExpressions.set(expressionName, namedExpression);
+    } else {
+      this.globalExpressions.set(expressionName, namedExpression);
+      this.eventEmitter.emit(
+        "global-named-expressions-updated",
+        this.globalExpressions
+      );
     }
   }
 
   removeNamedExpression({
     expressionName,
     sheetName,
+    workbookName,
   }: {
     expressionName: string;
     sheetName?: string;
+    workbookName?: string;
   }): boolean {
     let found = false;
 
-    if (!sheetName) {
-      // Remove from global named expressions
-      found = this.globalNamedExpressions.delete(expressionName);
-      if (found) {
-        this.eventEmitter?.emit(
-          "global-named-expressions-updated",
-          this.globalNamedExpressions
-        );
+    if (sheetName && !workbookName) {
+      throw new Error("Missing workbookName");
+    }
+
+    if (sheetName && workbookName) {
+      const wbLevel = this.sheetExpressions.get(workbookName);
+      if (wbLevel) {
+        const sheetLevel = wbLevel.get(sheetName);
+        if (sheetLevel) {
+          found = sheetLevel.delete(expressionName);
+        }
+      }
+    } else if (workbookName) {
+      const workbookNamedExpressions =
+        this.workbookExpressions.get(workbookName);
+      if (workbookNamedExpressions) {
+        found = workbookNamedExpressions.delete(expressionName);
       }
     } else {
-      // Remove from sheet-scoped named expressions
-      const scopedNamedExpressions = this.scopedNamedExpressions.get(sheetName);
-      if (scopedNamedExpressions) {
-        found = scopedNamedExpressions.delete(expressionName);
+      found = this.globalExpressions.delete(expressionName);
+      if (found) {
+        this.eventEmitter.emit(
+          "global-named-expressions-updated",
+          this.globalExpressions
+        );
       }
     }
 
@@ -96,15 +130,37 @@ export class NamedExpressionManager {
     expression,
     expressionName,
     sheetName,
+    workbookName,
   }: {
     expression: string;
     expressionName: string;
     sheetName?: string;
+    workbookName?: string;
   }): void {
     // Check if the named expression exists
-    const exists = sheetName
-      ? this.scopedNamedExpressions.get(sheetName)?.has(expressionName)
-      : this.globalNamedExpressions.has(expressionName);
+    let exists = false;
+
+    if (sheetName && !workbookName) {
+      throw new Error("Missing workbookName");
+    }
+
+    if (sheetName && workbookName) {
+      const wbLevel = this.sheetExpressions.get(workbookName);
+      if (wbLevel) {
+        const sheetLevel = wbLevel.get(sheetName);
+        if (sheetLevel) {
+          exists = sheetLevel.has(expressionName);
+        }
+      }
+    } else if (workbookName) {
+      const workbookNamedExpressions =
+        this.workbookExpressions.get(workbookName);
+      if (workbookNamedExpressions) {
+        exists = workbookNamedExpressions.has(expressionName);
+      }
+    } else {
+      exists = this.globalExpressions.has(expressionName);
+    }
 
     if (!exists) {
       throw new Error(`Named expression '${expressionName}' does not exist`);
@@ -117,16 +173,36 @@ export class NamedExpressionManager {
   renameNamedExpression({
     expressionName,
     sheetName,
+    workbookName,
     newName,
   }: {
     expressionName: string;
     sheetName?: string;
+    workbookName?: string;
     newName: string;
   }): boolean {
     // Check if the named expression exists
-    const targetMap = sheetName
-      ? this.scopedNamedExpressions.get(sheetName)
-      : this.globalNamedExpressions;
+    let targetMap: Map<string, NamedExpression> | undefined;
+    if (sheetName && !workbookName) {
+      throw new Error("Missing workbookName");
+    }
+
+    let isGlobal = false;
+
+    if (sheetName && workbookName) {
+      const wbLevel = this.sheetExpressions.get(workbookName);
+      if (wbLevel) {
+        const sheetLevel = wbLevel.get(sheetName);
+        if (sheetLevel) {
+          targetMap = sheetLevel;
+        }
+      }
+    } else if (workbookName) {
+      targetMap = this.workbookExpressions.get(workbookName);
+    } else {
+      targetMap = this.globalExpressions;
+      isGlobal = true;
+    }
 
     if (!targetMap || !targetMap.has(expressionName)) {
       throw new Error(`Named expression '${expressionName}' does not exist`);
@@ -145,111 +221,182 @@ export class NamedExpressionManager {
     targetMap.set(newName, updatedExpression);
     targetMap.delete(expressionName);
 
-    this.eventEmitter?.emit("global-named-expressions-updated", this.globalNamedExpressions);
+    if (isGlobal) {
+      this.eventEmitter.emit(
+        "global-named-expressions-updated",
+        this.globalExpressions
+      );
+    }
 
     return true;
   }
 
-  updateFormulasForNamedExpressionRename(
-    oldName: string,
-    newName: string,
-    updateCallback: (formula: string) => string = (formula) =>
-      renameNamedExpressionInFormula(formula, oldName, newName)
-  ): void {
-    // Update global named expressions that reference this named expression
-    this.globalNamedExpressions.forEach((namedExpr, name) => {
-      if (name !== oldName) {
+  updateAllNamedExpressions(updateCallback: (formula: string) => string): void {
+    const update = (map: Map<string, NamedExpression>) => {
+      map.forEach((namedExpr, name) => {
         // Don't update the expression we're renaming
         const updatedExpression = updateCallback(namedExpr.expression);
 
         if (updatedExpression !== namedExpr.expression) {
-          this.globalNamedExpressions.set(name, {
+          map.set(name, {
             ...namedExpr,
             expression: updatedExpression,
           });
         }
-      }
+      });
+    };
+
+    update(this.globalExpressions);
+
+    this.workbookExpressions.forEach((workbookLevel) => {
+      update(workbookLevel);
     });
 
-    // Update scoped named expressions that reference this named expression
-    this.scopedNamedExpressions.forEach((namedExpressionsMap, sheetName) => {
-      namedExpressionsMap.forEach((namedExpr, name) => {
-        if (name !== oldName) {
-          // Don't update the expression we're renaming
-          const updatedExpression = updateCallback(namedExpr.expression);
-
-          if (updatedExpression !== namedExpr.expression) {
-            namedExpressionsMap.set(name, {
-              ...namedExpr,
-              expression: updatedExpression,
-            });
-          }
-        }
+    this.sheetExpressions.forEach((wbLevel) => {
+      wbLevel.forEach((sheetLevel) => {
+        update(sheetLevel);
       });
     });
   }
 
-  getNamedExpressionsSerialized(
-    sheetName: string
-  ): Map<string, NamedExpression> {
-    return this.scopedNamedExpressions.get(sheetName) ?? new Map();
+  getSheetExpressionsSerialized({
+    sheetName,
+    workbookName,
+  }: {
+    sheetName: string;
+    workbookName: string;
+  }): Map<string, NamedExpression> {
+    const wbLevel = this.sheetExpressions.get(workbookName);
+    if (wbLevel) {
+      const sheetLevel = wbLevel.get(sheetName);
+      if (sheetLevel) {
+        return sheetLevel;
+      }
+    }
+    throw new Error("Named expressions not found");
   }
 
   getGlobalNamedExpressionsSerialized(): Map<string, NamedExpression> {
-    return this.globalNamedExpressions;
+    return this.globalExpressions;
   }
 
-
-
-  removeSheetNamedExpressions(sheetName: string): void {
-    this.scopedNamedExpressions.delete(sheetName);
-  }
-
-  renameSheetNamedExpressions(oldName: string, newName: string): void {
-    const namedExpressions = this.scopedNamedExpressions.get(oldName);
-    if (namedExpressions) {
-      this.scopedNamedExpressions.set(newName, namedExpressions);
-      this.scopedNamedExpressions.delete(oldName);
+  removeSheetExpressions(options: {
+    sheetName: string;
+    workbookName: string;
+  }): void {
+    const wbLevel = this.sheetExpressions.get(options.workbookName);
+    if (wbLevel) {
+      const sheetLevel = wbLevel.get(options.sheetName);
+      if (sheetLevel) {
+        sheetLevel.delete(options.sheetName);
+      }
     }
+    throw new Error("Named expressions not found");
+  }
+
+  renameSheetExpressions(options: {
+    sheetName: string;
+    newSheetName: string;
+    workbookName: string;
+  }): void {
+    const wbLevel = this.sheetExpressions.get(options.workbookName);
+    if (wbLevel) {
+      const sheetLevel = wbLevel.get(options.sheetName);
+      if (sheetLevel) {
+        sheetLevel.set(
+          options.newSheetName,
+          sheetLevel.get(options.sheetName)!
+        );
+        sheetLevel.delete(options.sheetName);
+      }
+    }
+    throw new Error("Named expressions not found");
   }
 
   /**
    * Replace all global named expressions (safely, without breaking references)
    * This method clears the existing Map and repopulates it rather than replacing the Map reference
    */
-  setGlobalNamedExpressions(newExpressions: Map<string, NamedExpression>): void {
+  setGlobalNamedExpressions(
+    newExpressions: Map<string, NamedExpression>
+  ): void {
     // Clear existing expressions without breaking the Map reference
-    this.globalNamedExpressions.clear();
-    
+    this.globalExpressions.clear();
+
     // Repopulate with new expressions
     newExpressions.forEach((expression, name) => {
-      this.globalNamedExpressions.set(name, expression);
+      this.globalExpressions.set(name, expression);
     });
-    
-    this.eventEmitter?.emit("global-named-expressions-updated", this.globalNamedExpressions);
+
+    this.eventEmitter.emit(
+      "global-named-expressions-updated",
+      this.globalExpressions
+    );
   }
 
   /**
    * Replace all sheet-scoped named expressions for a specific sheet (safely, without breaking references)
    * This method clears the existing Map and repopulates it rather than replacing the Map reference
    */
-  setNamedExpressions(sheetName: string, newExpressions: Map<string, NamedExpression>): void {
+  setNamedExpressions(options: {
+    sheetName: string;
+    workbookName: string;
+    newExpressions: Map<string, NamedExpression>;
+  }): void {
     // Get or create the sheet's named expressions Map
-    let sheetExpressions = this.scopedNamedExpressions.get(sheetName);
+    const wbLevel = this.sheetExpressions.get(options.workbookName);
+    if (!wbLevel) {
+      throw new Error("Workbook not found");
+    }
+    let sheetExpressions = wbLevel.get(options.sheetName);
     if (!sheetExpressions) {
       sheetExpressions = new Map();
-      this.scopedNamedExpressions.set(sheetName, sheetExpressions);
+      wbLevel.set(options.sheetName, sheetExpressions);
     }
-    
+
     // Clear existing expressions without breaking the Map reference
     sheetExpressions.clear();
-    
+
     // Repopulate with new expressions
-    newExpressions.forEach((expression, name) => {
+    options.newExpressions.forEach((expression, name) => {
       sheetExpressions!.set(name, expression);
     });
-    
+
     // Note: No specific event for scoped named expressions, but global event covers the change
-    this.eventEmitter?.emit("global-named-expressions-updated", this.globalNamedExpressions);
+    this.eventEmitter.emit(
+      "global-named-expressions-updated",
+      this.globalExpressions
+    );
+  }
+
+  getNamedExpression({
+    sheetName,
+    workbookName,
+    name,
+  }: {
+    sheetName: string;
+    workbookName: string;
+    name: string;
+  }): NamedExpression | undefined {
+    if (sheetName && !workbookName) {
+      throw new Error("Missing workbookName");
+    }
+    if (sheetName && workbookName) {
+      const wbLevel = this.sheetExpressions.get(workbookName);
+      if (wbLevel) {
+        const sheetLevel = wbLevel.get(sheetName);
+        if (sheetLevel) {
+          return sheetLevel.get(name);
+        }
+      }
+    } else if (workbookName) {
+      const workbookLevel = this.workbookExpressions.get(workbookName);
+      if (workbookLevel) {
+        return workbookLevel.get(name);
+      }
+    } else {
+      return this.globalExpressions.get(name);
+    }
+    return undefined;
   }
 }

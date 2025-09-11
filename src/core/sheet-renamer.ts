@@ -14,11 +14,12 @@ import type { ASTNode } from "../parser/ast";
  * @param newSheetName The new sheet name to use
  * @returns The updated formula string
  */
-export function renameSheetInFormula(
+export function renameSheetInFormula(options: {
   formula: string,
-  oldSheetName: string,
-  newSheetName: string
-): string {
+  oldSheetName: string;
+  newSheetName: string;
+}): string {
+  const { formula, oldSheetName, newSheetName } = options;
   try {
     const ast = parseFormula(formula);
     
