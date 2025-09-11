@@ -5,20 +5,29 @@ import { parseCellReference } from "src/core/utils";
 
 describe("IF function", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      debug
+    );
 
   const setCellContent = (ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      content
+    );
   };
 
   const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   describe("basic functionality", () => {
@@ -55,7 +64,7 @@ describe("IF function", () => {
 
     test("should work with cell references and comparisons", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["B1", 5],
@@ -147,17 +156,26 @@ describe("IF function", () => {
 
   describe("nested IF statements", () => {
     test("should handle nested IF in true branch", () => {
-      setCellContent("A1", '=IF(TRUE, IF(TRUE, "Inner True", "Inner False"), "Outer False")');
+      setCellContent(
+        "A1",
+        '=IF(TRUE, IF(TRUE, "Inner True", "Inner False"), "Outer False")'
+      );
       expect(cell("A1")).toBe("Inner True");
     });
 
     test("should handle nested IF in false branch", () => {
-      setCellContent("A1", '=IF(FALSE, "Outer True", IF(TRUE, "Inner True", "Inner False"))');
+      setCellContent(
+        "A1",
+        '=IF(FALSE, "Outer True", IF(TRUE, "Inner True", "Inner False"))'
+      );
       expect(cell("A1")).toBe("Inner True");
     });
 
     test("should handle multiple levels of nesting", () => {
-      setCellContent("A1", '=IF(TRUE, IF(FALSE, "Level 2 True", IF(TRUE, "Level 3 True", "Level 3 False")), "Level 1 False")');
+      setCellContent(
+        "A1",
+        '=IF(TRUE, IF(FALSE, "Level 2 True", IF(TRUE, "Level 3 True", "Level 3 False")), "Level 1 False")'
+      );
       expect(cell("A1")).toBe("Level 3 True");
     });
   });
@@ -165,7 +183,7 @@ describe("IF function", () => {
   describe("dynamic arrays (spilled values)", () => {
     test("should handle spilled logical test", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 1],
           ["A2", 0],
@@ -174,14 +192,14 @@ describe("IF function", () => {
         ])
       );
 
-      expect(cell("B1")).toBe("True");  // 1 is truthy
+      expect(cell("B1")).toBe("True"); // 1 is truthy
       expect(cell("B2")).toBe("False"); // 0 is falsy
-      expect(cell("B3")).toBe("True");  // 5 is truthy
+      expect(cell("B3")).toBe("True"); // 5 is truthy
     });
 
     test("should handle spilled true values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Option A"],
           ["A2", "Option B"],
@@ -197,7 +215,7 @@ describe("IF function", () => {
 
     test("should handle spilled false values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Default A"],
           ["A2", "Default B"],
@@ -213,7 +231,7 @@ describe("IF function", () => {
 
     test("should handle multiple spilled arrays", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 1],
           ["A2", 0],
@@ -228,9 +246,9 @@ describe("IF function", () => {
         ])
       );
 
-      expect(cell("D1")).toBe("True A");  // 1 -> True A
+      expect(cell("D1")).toBe("True A"); // 1 -> True A
       expect(cell("D2")).toBe("False B"); // 0 -> False B
-      expect(cell("D3")).toBe("True C");  // 1 -> True C
+      expect(cell("D3")).toBe("True C"); // 1 -> True C
     });
   });
 
@@ -248,7 +266,7 @@ describe("IF function", () => {
 
     test("should propagate errors from logical test", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=1/0"], // Results in INFINITY
           ["B1", '=IF(A1, "True", "False")'],
@@ -260,10 +278,10 @@ describe("IF function", () => {
 
     test("should propagate errors from true value", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=1/0"], // Results in INFINITY
-          ["B1", "=IF(TRUE, A1, \"False\")"],
+          ["B1", '=IF(TRUE, A1, "False")'],
         ])
       );
 
@@ -272,10 +290,10 @@ describe("IF function", () => {
 
     test("should propagate errors from false value", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=1/0"], // Results in INFINITY
-          ["B1", "=IF(FALSE, \"True\", A1)"],
+          ["B1", '=IF(FALSE, "True", A1)'],
         ])
       );
 
@@ -284,7 +302,7 @@ describe("IF function", () => {
 
     test("should handle errors in spilled arrays", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 1],
           ["A2", "=1/0"], // Error in logical test array
@@ -293,9 +311,9 @@ describe("IF function", () => {
         ])
       );
 
-      expect(cell("B1")).toBe("True");     // 1 is truthy
-      expect(cell("B2")).toBe("True");     // INFINITY is truthy
-      expect(cell("B3")).toBe("False");    // 0 is falsy
+      expect(cell("B1")).toBe("True"); // 1 is truthy
+      expect(cell("B2")).toBe("True"); // INFINITY is truthy
+      expect(cell("B3")).toBe("False"); // 0 is falsy
     });
   });
 
@@ -308,7 +326,7 @@ describe("IF function", () => {
 
     test("should handle complex expressions with comparisons", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["B1", 5],
@@ -322,7 +340,7 @@ describe("IF function", () => {
 
     test("should handle string equality comparisons", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["B1", "Apple"],
@@ -338,11 +356,14 @@ describe("IF function", () => {
 
     test("should work with other functions and comparisons", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello"],
           ["A2", "World"],
-          ["B1", '=IF(LEN(A1)>LEN(A2), CONCATENATE(A1, " is longer"), CONCATENATE(A2, " is longer"))'],
+          [
+            "B1",
+            '=IF(LEN(A1)>LEN(A2), CONCATENATE(A1, " is longer"), CONCATENATE(A2, " is longer"))',
+          ],
         ])
       );
 

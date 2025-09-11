@@ -13,7 +13,7 @@ export function dependencyNodeToKey(node: DependencyNode): string {
         );
       }
       const cellRef = `${indexToColumn(node.address.colIndex)}${getRowNumber(node.address.rowIndex)}`;
-      return `cell:${node.sheetName}:${cellRef}`;
+      return `cell:${node.workbookName}:${node.sheetName}:${cellRef}`;
 
     case "range":
       const startCell = `${indexToColumn(node.range.start.col)}${getRowNumber(node.range.start.row)}`;
@@ -36,7 +36,7 @@ export function dependencyNodeToKey(node: DependencyNode): string {
         throw new Error("Invalid range end configuration");
       }
       
-      return `range:${node.sheetName}:${startCell}:${rangeEnd}`;
+      return `range:${node.workbookName}:${node.sheetName}:${startCell}:${rangeEnd}`;
 
     case "multi-spreadsheet-range":
       const startCellMulti = `${indexToColumn(node.ranges.start.col)}${getRowNumber(node.ranges.start.row)}`;
@@ -67,18 +67,23 @@ export function dependencyNodeToKey(node: DependencyNode): string {
       }
 
     case "named-expression":
-      if (node.sheetName) {
-        return `named:${node.sheetName}:${node.name}`;
-      } else {
-        return `named:global:${node.name}`;
+      switch (node.scope.type) {
+        case "global":
+          return `named:global:${node.name}`;
+        case "workbook":
+          return `named:workbook:${node.scope.workbookName}:${node.name}`;
+        case "sheet":
+          return `named:sheet:${node.scope.workbookName}:${node.scope.sheetName}:${node.name}`;
+        default:
+          throw new Error(`Unknown named expression scope type: ${(node.scope as any).type}`);
       }
 
     case "table":
       if (node.area.kind === "Data") {
         const columns = node.area.columns.join(",");
-        return `table:${node.sheetName}:${node.tableName}:data:${columns}`;
+        return `table:${node.workbookName}:${node.sheetName}:${node.tableName}:data:${columns}`;
       } else {
-        return `table:${node.sheetName}:${node.tableName}:${node.area.kind}`;
+        return `table:${node.workbookName}:${node.sheetName}:${node.tableName}:${node.area.kind}`;
       }
 
     default:
@@ -97,13 +102,14 @@ export function keyToDependencyNode(key: string): DependencyNode {
 
   switch (type) {
     case "cell": {
-      if (parts.length !== 3) {
+      if (parts.length !== 4) {
         throw new Error(`Invalid cell key format: ${key}`);
       }
-      const sheetName = parts[1];
-      const cellRef = parts[2];
+      const workbookName = parts[1];
+      const sheetName = parts[2];
+      const cellRef = parts[3];
 
-      if (sheetName === undefined || cellRef === undefined) {
+      if (workbookName === undefined || sheetName === undefined || cellRef === undefined) {
         throw new Error(`Invalid cell key format: ${key}`);
       }
 
@@ -111,6 +117,7 @@ export function keyToDependencyNode(key: string): DependencyNode {
 
       return {
         type: "cell",
+        workbookName,
         sheetName,
         address: {
           rowIndex,
@@ -120,15 +127,17 @@ export function keyToDependencyNode(key: string): DependencyNode {
     }
 
     case "range": {
-      if (parts.length !== 4) {
+      if (parts.length !== 5) {
         throw new Error(`Invalid range key format: ${key}`);
       }
 
-      const sheetName = parts[1];
-      const startCellRef = parts[2];
-      const endRef = parts[3];
+      const workbookName = parts[1];
+      const sheetName = parts[2];
+      const startCellRef = parts[3];
+      const endRef = parts[4];
 
       if (
+        workbookName === undefined ||
         sheetName === undefined ||
         startCellRef === undefined ||
         endRef === undefined
@@ -164,6 +173,7 @@ export function keyToDependencyNode(key: string): DependencyNode {
 
       return {
         type: "range",
+        workbookName,
         sheetName,
         range: {
           start: {
@@ -310,34 +320,75 @@ export function keyToDependencyNode(key: string): DependencyNode {
     }
 
     case "named": {
-      if (parts.length !== 3) {
+      if (parts.length < 3) {
         throw new Error(`Invalid named expression key format: ${key}`);
       }
 
-      const scope = parts[1];
-      const name = parts[2];
+      const scopeType = parts[1];
 
-      if (scope === undefined || name === undefined) {
-        throw new Error(`Invalid named expression key format: ${key}`);
+      switch (scopeType) {
+        case "global": {
+          if (parts.length !== 3) {
+            throw new Error(`Invalid global named expression key format: ${key}`);
+          }
+          const name = parts[2];
+          if (name === undefined) {
+            throw new Error(`Invalid global named expression key format: ${key}`);
+          }
+          return {
+            type: "named-expression",
+            name,
+            scope: { type: "global" },
+          };
+        }
+        case "workbook": {
+          if (parts.length !== 4) {
+            throw new Error(`Invalid workbook named expression key format: ${key}`);
+          }
+          const workbookName = parts[2];
+          const name = parts[3];
+          if (workbookName === undefined || name === undefined) {
+            throw new Error(`Invalid workbook named expression key format: ${key}`);
+          }
+          return {
+            type: "named-expression",
+            name,
+            scope: { type: "workbook", workbookName },
+          };
+        }
+        case "sheet": {
+          if (parts.length !== 5) {
+            throw new Error(`Invalid sheet named expression key format: ${key}`);
+          }
+          const workbookName = parts[2];
+          const sheetName = parts[3];
+          const name = parts[4];
+          if (workbookName === undefined || sheetName === undefined || name === undefined) {
+            throw new Error(`Invalid sheet named expression key format: ${key}`);
+          }
+          return {
+            type: "named-expression",
+            name,
+            scope: { type: "sheet", workbookName, sheetName },
+          };
+        }
+        default:
+          throw new Error(`Unknown named expression scope type: ${scopeType}`);
       }
-
-      return {
-        type: "named-expression",
-        name,
-        sheetName: scope,
-      };
     }
 
     case "table": {
-      if (parts.length < 4) {
+      if (parts.length < 5) {
         throw new Error(`Invalid table key format: ${key}`);
       }
 
-      const sheetName = parts[1];
-      const tableName = parts[2];
-      const areaType = parts[3];
+      const workbookName = parts[1];
+      const sheetName = parts[2];
+      const tableName = parts[3];
+      const areaType = parts[4];
 
       if (
+        workbookName === undefined ||
         sheetName === undefined ||
         tableName === undefined ||
         areaType === undefined
@@ -346,16 +397,17 @@ export function keyToDependencyNode(key: string): DependencyNode {
       }
 
       if (areaType === "data") {
-        if (parts.length !== 5) {
+        if (parts.length !== 6) {
           throw new Error(`Invalid table data key format: ${key}`);
         }
-        const columnsStr = parts[4];
+        const columnsStr = parts[5];
         if (columnsStr === undefined) {
           throw new Error(`Invalid table data key format: ${key}`);
         }
         const columns = columnsStr === "" ? [] : columnsStr.split(",");
         return {
           type: "table",
+          workbookName,
           tableName,
           sheetName,
           area: {
@@ -365,7 +417,7 @@ export function keyToDependencyNode(key: string): DependencyNode {
           },
         };
       } else {
-        if (parts.length !== 4) {
+        if (parts.length !== 5) {
           throw new Error(`Invalid table key format: ${key}`);
         }
 
@@ -378,6 +430,7 @@ export function keyToDependencyNode(key: string): DependencyNode {
 
         return {
           type: "table",
+          workbookName,
           tableName,
           sheetName,
           area: {

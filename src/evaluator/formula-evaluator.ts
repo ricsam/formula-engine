@@ -62,6 +62,7 @@ import { serializeRange } from "src/core/utils/range-serializer";
 import type { WorkbookManager } from "src/core/managers/workbook-manager";
 import type { NamedExpressionManager } from "src/core/managers/named-expression-manager";
 import type { TableManager } from "src/core/managers/table-manager";
+import type { StoreManager } from "src/core/managers/store-manager";
 
 function isFormulaError(value: string): value is FormulaError {
   if (typeof value !== "string") return false;
@@ -121,17 +122,14 @@ function mapJSErrorToFormulaError(error: Error): FormulaError {
 }
 
 export class FormulaEvaluator {
+  private openRangeEvaluator: OpenRangeEvaluator;
   constructor(
     private tableManager: TableManager,
-    private evalTimeSafeEvaluateCell: (
-      cellAddress: CellAddress,
-      context: EvaluationContext
-    ) => FunctionEvaluationResult | undefined,
-    private evalTimeSafeEvaluateNamedExpression: (
-      namedExpression: Pick<NamedExpression, "name" | "sheetName" | "workbookName">,
-      context: EvaluationContext
-    ) => FunctionEvaluationResult | undefined
-  ) {}
+    private storeManager: StoreManager,
+    workbookManager: WorkbookManager
+  ) {
+    this.openRangeEvaluator = new OpenRangeEvaluator(storeManager, workbookManager, this);
+  }
 
   isCellInTable(cellAddress: CellAddress): TableDefinition | undefined {
     const { rowIndex, colIndex } = cellAddress;
@@ -426,7 +424,7 @@ export class FormulaEvaluator {
         const originWorkbookName = node.workbookName ?? context.currentWorkbook;
         const colIndex = node.range.start.col + spillOffset.x;
         const rowIndex = node.range.start.row + spillOffset.y;
-        const result = this.evalTimeSafeEvaluateCell(
+        const result = this.storeManager.evalTimeSafeEvaluateCell(
           {
             colIndex,
             rowIndex,
@@ -445,7 +443,6 @@ export class FormulaEvaluator {
         }
       },
       evaluateAllCells: function* ({ evaluate, intersection, context }) {
-        const openRangeEvaluator = new OpenRangeEvaluator(this);
         let range = node.range;
         if (intersection) {
           const calculateIntersection = getRangeIntersection(
@@ -457,12 +454,13 @@ export class FormulaEvaluator {
           }
         }
 
-        return yield* openRangeEvaluator.evaluateCellsInRange({
+        return yield* this.openRangeEvaluator.evaluateCellsInRange({
           evaluate,
           context,
           origin: {
             range,
             sheetName: node.sheetName ?? context.currentSheet,
+            workbookName: node.workbookName ?? context.currentWorkbook,
           },
         });
       },
@@ -690,7 +688,10 @@ export class FormulaEvaluator {
       sheetName: node.sheetName ?? context.currentSheet,
       workbookName: node.workbookName ?? context.currentWorkbook,
     };
-    const result = this.evalTimeSafeEvaluateCell(cellAddress, context);
+    const result = this.storeManager.evalTimeSafeEvaluateCell(
+      cellAddress,
+      context
+    );
     if (!result) {
       return {
         type: "error",
@@ -708,11 +709,14 @@ export class FormulaEvaluator {
     node: NamedExpressionNode,
     context: EvaluationContext
   ): FunctionEvaluationResult {
-    const result = this.evalTimeSafeEvaluateNamedExpression(node, context);
+    const result = this.storeManager.evalTimeSafeEvaluateNamedExpression(
+      node,
+      context
+    );
     if (!result) {
       return {
         type: "error",
-        err: FormulaError.REF,
+        err: FormulaError.NAME,
         message: `Named expression ${node.name} not found`,
       };
     }

@@ -5,26 +5,30 @@ import { parseCellReference } from "src/core/utils";
 
 describe("FormulaEngine - isCellInTable", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) });
+    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) });
 
   const setCellContent = (ref: string, content: string) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
   };
 
-  const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
+  const address = (ref: string) => ({ sheetName, workbookName, ...parseCellReference(ref) });
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   test("can add a table with 1 row", () => {
     engine.addTable({
       tableName: "Table1",
       sheetName,
+      workbookName,
       start: "A3",
       numRows: { type: "number", value: 1 },
       numCols: 1,
@@ -37,6 +41,7 @@ describe("FormulaEngine - isCellInTable", () => {
   test("should return undefined when no tables exist", () => {
     const result = engine.isCellInTable({
       sheetName,
+      workbookName,
       colIndex: 0,
       rowIndex: 0,
     });
@@ -47,7 +52,7 @@ describe("FormulaEngine - isCellInTable", () => {
   test("should return undefined when cell is not in any table", () => {
     // Set up table data
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "Name"],
         ["B1", "Age"],
@@ -65,6 +70,7 @@ describe("FormulaEngine - isCellInTable", () => {
     engine.addTable({
       tableName: "Table1",
       sheetName,
+      workbookName,
       start: "A1",
       numRows: { type: "number", value: 3 },
       numCols: 3,
@@ -78,7 +84,7 @@ describe("FormulaEngine - isCellInTable", () => {
 
   test("should return table when cell is in table header", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "Name"],
         ["B1", "Age"],
@@ -89,6 +95,7 @@ describe("FormulaEngine - isCellInTable", () => {
     const table = engine.addTable({
       tableName: "Table1",
       sheetName,
+      workbookName,
       start: "A1",
       numRows: { type: "number", value: 3 },
       numCols: 3,
@@ -102,7 +109,7 @@ describe("FormulaEngine - isCellInTable", () => {
 
   test("should return table when cell is in table data", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "Name"],
         ["B1", "Age"],
@@ -116,6 +123,7 @@ describe("FormulaEngine - isCellInTable", () => {
     const table = engine.addTable({
       tableName: "Table1",
       sheetName,
+      workbookName,
       start: "A1",
       numRows: { type: "number", value: 3 },
       numCols: 2,
@@ -130,7 +138,7 @@ describe("FormulaEngine - isCellInTable", () => {
 
   test("should handle table boundaries correctly", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["B2", "Header1"],
         ["C2", "Header2"],
@@ -142,6 +150,7 @@ describe("FormulaEngine - isCellInTable", () => {
     const table = engine.addTable({
       tableName: "Table1",
       sheetName,
+      workbookName,
       start: "B2", // Start at B2, not A1
       numRows: { type: "number", value: 2 }, // 2 rows including header, one data row
       numCols: 2,
@@ -185,7 +194,7 @@ describe("FormulaEngine - isCellInTable", () => {
 
   test("should handle infinite table rows", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "Header1"],
         ["B1", "Header2"],
@@ -195,6 +204,7 @@ describe("FormulaEngine - isCellInTable", () => {
     const table = engine.addTable({
       tableName: "Table1",
       sheetName,
+      workbookName,
       start: "A1",
       numRows: { type: "infinity", sign: "positive" },
       numCols: 2,
@@ -217,7 +227,7 @@ describe("FormulaEngine - isCellInTable", () => {
 
   test("should return correct table when multiple tables exist", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         // Table1 data
         ["A1", "Name"],
@@ -235,6 +245,7 @@ describe("FormulaEngine - isCellInTable", () => {
     const table1 = engine.addTable({
       tableName: "Table1",
       sheetName,
+      workbookName,
       start: "A1",
       numRows: { type: "number", value: 2 },
       numCols: 2,
@@ -243,6 +254,7 @@ describe("FormulaEngine - isCellInTable", () => {
     const table2 = engine.addTable({
       tableName: "Table2",
       sheetName,
+      workbookName,
       start: "D1",
       numRows: { type: "number", value: 2 },
       numCols: 2,
@@ -273,11 +285,11 @@ describe("FormulaEngine - isCellInTable", () => {
   });
 
   test("should handle different sheet correctly", () => {
-    const sheet1Name = engine.addSheet("Sheet1").name;
-    const sheet2Name = engine.addSheet("Sheet2").name;
+    const sheet1Name = engine.addSheet({ workbookName, sheetName: "Sheet1" }).name;
+    const sheet2Name = engine.addSheet({ workbookName, sheetName: "Sheet2" }).name;
 
     engine.setSheetContent(
-      sheet1Name,
+      { workbookName, sheetName: sheet1Name },
       new Map<string, SerializedCellValue>([
         ["A1", "Header"],
         ["A2", "Data"],
@@ -287,6 +299,7 @@ describe("FormulaEngine - isCellInTable", () => {
     const table = engine.addTable({
       tableName: "Table1",
       sheetName: sheet1Name,
+      workbookName,
       start: "A1",
       numRows: { type: "number", value: 2 },
       numCols: 1,
@@ -295,6 +308,7 @@ describe("FormulaEngine - isCellInTable", () => {
     // Cell A1 in Sheet1 should be in table
     expect(
       engine.isCellInTable({
+        workbookName,
         sheetName: sheet1Name,
         colIndex: 0,
         rowIndex: 0,
@@ -304,6 +318,7 @@ describe("FormulaEngine - isCellInTable", () => {
     // Cell A1 in Sheet2 should not be in table
     expect(
       engine.isCellInTable({
+        workbookName,
         sheetName: sheet2Name,
         colIndex: 0,
         rowIndex: 0,

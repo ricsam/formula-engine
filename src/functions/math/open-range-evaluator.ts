@@ -1,3 +1,4 @@
+import type { WorkbookManager } from "src/core/managers";
 import {
   type CellAddress,
   type ErrorEvaluationResult,
@@ -10,15 +11,24 @@ import {
   type ValueEvaluationResult,
   FormulaError,
 } from "src/core/types";
-import { getCellReference, parseCellReference } from "src/core/utils";
+import {
+  getCellReference,
+  isCellInRange,
+  parseCellReference,
+} from "src/core/utils";
 import { dependencyNodeToKey } from "src/core/utils/dependency-node-key";
+import type { StoreManager } from "src/core/managers/store-manager";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 
 /**
  * Utility class for evaluating cells within open-ended ranges
  */
 export class OpenRangeEvaluator {
-  constructor(private evaluator: FormulaEvaluator) {}
+  constructor(
+    private storeManager: StoreManager,
+    private workbookManager: WorkbookManager,
+    private evaluator: FormulaEvaluator
+  ) {}
 
   /**
    * Evaluates all cells within an open-ended range and returns their values
@@ -31,18 +41,17 @@ export class OpenRangeEvaluator {
     origin: {
       range: SpreadsheetRange;
       sheetName: string;
+      workbookName: string;
     };
     context: EvaluationContext;
     evaluate: SpilledValuesEvaluator;
   }): Iterable<ValueEvaluationResult | ErrorEvaluationResult> {
-    const rawContent = this.evaluator.sheets.get(
-      options.origin.sheetName
-    )?.content;
+    const rawContent = this.workbookManager.getSheet(options.origin)?.content;
     const { evaluate, context } = options;
 
     if (
       options.origin.sheetName === context.currentSheet &&
-      this.evaluator.isCellInRange(context.currentCell, options.origin.range)
+      isCellInRange(context.currentCell, options.origin.range)
     ) {
       yield {
         type: "error",
@@ -65,7 +74,7 @@ export class OpenRangeEvaluator {
     const frontierCandidates = this.getFrontierCandidates(
       options.origin.range,
       rawContent,
-      options.origin.sheetName
+      options.origin
     );
 
     // Keep track of cells we've already processed to avoid double-counting
@@ -92,13 +101,15 @@ export class OpenRangeEvaluator {
         type: "cell",
         address: candidate,
         sheetName: candidate.sheetName,
+        workbookName: candidate.workbookName,
       });
 
       if (context.discardedFrontierDependencies.has(key)) {
         continue;
       }
 
-      const result = this.evaluator.evaluatedNodes.get(key)?.evaluationResult;
+      const result =
+        this.storeManager.evaluatedNodes.get(key)?.evaluationResult;
 
       if (!result) {
         context.frontierDependencies.add(key);
@@ -143,8 +154,12 @@ export class OpenRangeEvaluator {
       // const offsetLeft = address.colIndex - range.start.col;
       // const offsetTop = address.rowIndex - range.start.row;
 
-      const result = this.evaluator.evalTimeSafeEvaluateCell(
-        { ...address, sheetName: options.origin.sheetName },
+      const result = this.storeManager.evalTimeSafeEvaluateCell(
+        {
+          ...address,
+          sheetName: options.origin.sheetName,
+          workbookName: options.origin.workbookName,
+        },
         context
       );
 
@@ -156,6 +171,7 @@ export class OpenRangeEvaluator {
           candidate: {
             ...address,
             sheetName: options.origin.sheetName,
+            workbookName: options.origin.workbookName,
           },
         });
         yield* spillHandleResult;
@@ -231,7 +247,10 @@ export class OpenRangeEvaluator {
   private getFrontierCandidates(
     range: SpreadsheetRange,
     sheetContent: Map<string, any>,
-    sheetName: string
+    opts: {
+      sheetName: string;
+      workbookName: string;
+    }
   ): CellAddress[] {
     const candidates = new Set<string>();
     const formulaCells = new Map<string, LocalCellAddress>();
@@ -277,7 +296,8 @@ export class OpenRangeEvaluator {
 
     return Array.from(candidates).map((key) => ({
       ...parseCellReference(key),
-      sheetName,
+      sheetName: opts.sheetName,
+      workbookName: opts.workbookName,
     }));
   }
 

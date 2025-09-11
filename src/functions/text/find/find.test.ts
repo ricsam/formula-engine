@@ -5,18 +5,21 @@ import { parseCellReference } from "src/core/utils";
 
 describe("FIND function", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) });
+    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) });
 
   const setCellContent = (ref: string, content: string) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
   };
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   describe("basic functionality", () => {
@@ -118,7 +121,7 @@ describe("FIND function", () => {
   describe("dynamic arrays (spilled values)", () => {
     test("should handle spilled findText values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", ","],
           ["A2", "cat"],
@@ -134,7 +137,7 @@ describe("FIND function", () => {
 
     test("should handle spilled withinText values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "apple,banana"],
           ["A2", "dog,cat,bird"],
@@ -150,7 +153,7 @@ describe("FIND function", () => {
 
     test("should handle zipped spilled findText and withinText", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", ","],
           ["A2", "cat"],
@@ -169,7 +172,7 @@ describe("FIND function", () => {
 
     test("should work with LEFT for comma extraction", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "apple,banana,cherry"],
           ["A2", "dog,cat,bird"],
@@ -189,7 +192,7 @@ describe("FIND function", () => {
 
     test("should handle spilled arrays with some text not found", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "apple"],
           ["A2", "xyz"], // This won't be found
@@ -235,7 +238,7 @@ describe("FIND function", () => {
 
     test("should handle spilled startNum argument", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 1],
           ["A2", 3],
@@ -306,7 +309,7 @@ describe("FIND function", () => {
     test("should handle very long strings", () => {
       const longString = "A".repeat(500) + "FIND_ME" + "B".repeat(500);
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", longString],
           ["B1", '=FIND("FIND_ME",A1)'],

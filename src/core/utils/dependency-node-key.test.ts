@@ -10,6 +10,7 @@ describe("dependencyNodeToKey", () => {
     test("should generate unique keys for cell references", () => {
       const cellNode: DependencyNode = {
         type: "cell",
+        workbookName: "Workbook1",
         sheetName: "Sheet1",
         address: {
           rowIndex: 0,
@@ -18,24 +19,26 @@ describe("dependencyNodeToKey", () => {
       };
 
       const key = dependencyNodeToKey(cellNode);
-      expect(key).toBe("cell:Sheet1:A1");
+      expect(key).toBe("cell:Workbook1:Sheet1:A1");
     });
 
     test("should handle different sheets", () => {
       const cellNode1: DependencyNode = {
         type: "cell",
+        workbookName: "Workbook1",
         sheetName: "Sheet1",
         address: { rowIndex: 5, colIndex: 10 },
       };
 
       const cellNode2: DependencyNode = {
         type: "cell",
+        workbookName: "Workbook1",
         sheetName: "Sheet2",
         address: { rowIndex: 5, colIndex: 10 },
       };
 
-      expect(dependencyNodeToKey(cellNode1)).toBe("cell:Sheet1:K6");
-      expect(dependencyNodeToKey(cellNode2)).toBe("cell:Sheet2:K6");
+      expect(dependencyNodeToKey(cellNode1)).toBe("cell:Workbook1:Sheet1:K6");
+      expect(dependencyNodeToKey(cellNode2)).toBe("cell:Workbook1:Sheet2:K6");
       expect(dependencyNodeToKey(cellNode1)).not.toBe(
         dependencyNodeToKey(cellNode2)
       );
@@ -44,11 +47,12 @@ describe("dependencyNodeToKey", () => {
     test("should handle sheets with spaces in names", () => {
       const cellNode: DependencyNode = {
         type: "cell",
+        workbookName: "My Workbook",
         sheetName: "My Sheet Name",
         address: { rowIndex: 1, colIndex: 2 },
       };
 
-      expect(dependencyNodeToKey(cellNode)).toBe("cell:My Sheet Name:C2");
+      expect(dependencyNodeToKey(cellNode)).toBe("cell:My Workbook:My Sheet Name:C2");
     });
   });
 
@@ -56,6 +60,7 @@ describe("dependencyNodeToKey", () => {
     test("should generate keys for finite ranges", () => {
       const rangeNode: DependencyNode = {
         type: "range",
+        workbookName: "Workbook1",
         sheetName: "Sheet1",
         range: {
           start: { row: 0, col: 0 },
@@ -66,12 +71,13 @@ describe("dependencyNodeToKey", () => {
         },
       };
 
-      expect(dependencyNodeToKey(rangeNode)).toBe("range:Sheet1:A1:E10");
+      expect(dependencyNodeToKey(rangeNode)).toBe("range:Workbook1:Sheet1:A1:E10");
     });
 
     test("should generate keys for infinite column ranges", () => {
       const rangeNode: DependencyNode = {
         type: "range",
+        workbookName: "Workbook1",
         sheetName: "Sheet1",
         range: {
           start: { row: 0, col: 0 },
@@ -83,13 +89,14 @@ describe("dependencyNodeToKey", () => {
       };
 
       expect(dependencyNodeToKey(rangeNode)).toBe(
-        "range:Sheet1:A1:A"
+        "range:Workbook1:Sheet1:A1:A"
       );
     });
 
     test("should generate keys for infinite row ranges", () => {
       const rangeNode: DependencyNode = {
         type: "range",
+        workbookName: "Workbook1",
         sheetName: "Sheet1",
         range: {
           start: { row: 0, col: 0 },
@@ -101,13 +108,14 @@ describe("dependencyNodeToKey", () => {
       };
 
       expect(dependencyNodeToKey(rangeNode)).toBe(
-        "range:Sheet1:A1:1"
+        "range:Workbook1:Sheet1:A1:1"
       );
     });
 
     test("should generate keys for fully infinite ranges", () => {
       const rangeNode: DependencyNode = {
         type: "range",
+        workbookName: "Workbook1",
         sheetName: "Sheet1",
         range: {
           start: { row: 0, col: 0 },
@@ -119,7 +127,7 @@ describe("dependencyNodeToKey", () => {
       };
 
       expect(dependencyNodeToKey(rangeNode)).toBe(
-        "range:Sheet1:A1:INFINITY"
+        "range:Workbook1:Sheet1:A1:INFINITY"
       );
     });
   });
@@ -195,20 +203,30 @@ describe("dependencyNodeToKey", () => {
       const namedNode: DependencyNode = {
         type: "named-expression",
         name: "SALES_TAX",
-        sheetName: "Sheet1",
+        scope: { type: "global" },
       };
 
-      expect(dependencyNodeToKey(namedNode)).toBe("named:Sheet1:SALES_TAX");
+      expect(dependencyNodeToKey(namedNode)).toBe("named:global:SALES_TAX");
+    });
+
+    test("should generate keys for workbook-scoped named expressions", () => {
+      const namedNode: DependencyNode = {
+        type: "named-expression",
+        name: "WORKBOOK_RATE",
+        scope: { type: "workbook", workbookName: "Workbook1" },
+      };
+
+      expect(dependencyNodeToKey(namedNode)).toBe("named:workbook:Workbook1:WORKBOOK_RATE");
     });
 
     test("should generate keys for sheet-scoped named expressions", () => {
       const namedNode: DependencyNode = {
         type: "named-expression",
         name: "LOCAL_RATE",
-        sheetName: "Sheet1",
+        scope: { type: "sheet", workbookName: "Workbook1", sheetName: "Sheet1" },
       };
 
-      expect(dependencyNodeToKey(namedNode)).toBe("named:Sheet1:LOCAL_RATE");
+      expect(dependencyNodeToKey(namedNode)).toBe("named:sheet:Workbook1:Sheet1:LOCAL_RATE");
     });
   });
 
@@ -216,32 +234,35 @@ describe("dependencyNodeToKey", () => {
     test("should generate keys for table header areas", () => {
       const tableNode: DependencyNode = {
         type: "table",
+        workbookName: "Workbook1",
         tableName: "SalesData",
         sheetName: "Sheet1",
         area: { kind: "Headers" },
       };
 
       expect(dependencyNodeToKey(tableNode)).toBe(
-        "table:Sheet1:SalesData:Headers"
+        "table:Workbook1:Sheet1:SalesData:Headers"
       );
     });
 
     test("should generate keys for table data areas", () => {
       const tableNode: DependencyNode = {
         type: "table",
+        workbookName: "Workbook1",
         tableName: "SalesData",
         sheetName: "Sheet1",
         area: { kind: "AllData" },
       };
 
       expect(dependencyNodeToKey(tableNode)).toBe(
-        "table:Sheet1:SalesData:AllData"
+        "table:Workbook1:Sheet1:SalesData:AllData"
       );
     });
 
     test("should generate keys for table data with specific columns", () => {
       const tableNode: DependencyNode = {
         type: "table",
+        workbookName: "Workbook1",
         tableName: "SalesData",
         sheetName: "Sheet1",
         area: {
@@ -252,24 +273,26 @@ describe("dependencyNodeToKey", () => {
       };
 
       expect(dependencyNodeToKey(tableNode)).toBe(
-        "table:Sheet1:SalesData:data:Product,Sales,Region"
+        "table:Workbook1:Sheet1:SalesData:data:Product,Sales,Region"
       );
     });
 
     test("should generate keys for all table areas", () => {
       const tableNode: DependencyNode = {
         type: "table",
+        workbookName: "Workbook1",
         tableName: "SalesData",
         sheetName: "Sheet1",
         area: { kind: "All" },
       };
 
-      expect(dependencyNodeToKey(tableNode)).toBe("table:Sheet1:SalesData:All");
+      expect(dependencyNodeToKey(tableNode)).toBe("table:Workbook1:Sheet1:SalesData:All");
     });
 
     test("should handle different table names on same sheet", () => {
       const table1: DependencyNode = {
         type: "table",
+        workbookName: "Workbook1",
         tableName: "Table1",
         sheetName: "Sheet1",
         area: { kind: "All" },
@@ -277,13 +300,14 @@ describe("dependencyNodeToKey", () => {
 
       const table2: DependencyNode = {
         type: "table",
+        workbookName: "Workbook1",
         tableName: "Table2",
         sheetName: "Sheet1",
         area: { kind: "All" },
       };
 
-      expect(dependencyNodeToKey(table1)).toBe("table:Sheet1:Table1:All");
-      expect(dependencyNodeToKey(table2)).toBe("table:Sheet1:Table2:All");
+      expect(dependencyNodeToKey(table1)).toBe("table:Workbook1:Sheet1:Table1:All");
+      expect(dependencyNodeToKey(table2)).toBe("table:Workbook1:Sheet1:Table2:All");
       expect(dependencyNodeToKey(table1)).not.toBe(dependencyNodeToKey(table2));
     });
   });
@@ -292,12 +316,14 @@ describe("dependencyNodeToKey", () => {
     test("should generate unique keys for different node types", () => {
       const cellNode: DependencyNode = {
         type: "cell",
+        workbookName: "Workbook1",
         sheetName: "Sheet1",
         address: { rowIndex: 0, colIndex: 0 },
       };
 
       const rangeNode: DependencyNode = {
         type: "range",
+        workbookName: "Workbook1",
         sheetName: "Sheet1",
         range: {
           start: { row: 0, col: 0 },
@@ -311,7 +337,7 @@ describe("dependencyNodeToKey", () => {
       const namedNode: DependencyNode = {
         type: "named-expression",
         name: "Sheet1",
-        sheetName: "0",
+        scope: { type: "sheet", workbookName: "Workbook1", sheetName: "0" },
       };
 
       const cellKey = dependencyNodeToKey(cellNode);
@@ -328,44 +354,48 @@ describe("dependencyNodeToKey", () => {
     test("should handle empty sheet names", () => {
       const cellNode: DependencyNode = {
         type: "cell",
+        workbookName: "Workbook1",
         sheetName: "",
         address: { rowIndex: 0, colIndex: 0 },
       };
 
-      expect(dependencyNodeToKey(cellNode)).toBe("cell::A1");
+      expect(dependencyNodeToKey(cellNode)).toBe("cell:Workbook1::A1");
     });
 
     test("should handle special characters in names", () => {
       const namedNode: DependencyNode = {
         type: "named-expression",
         name: "MY_NAME!@#$%^&*()",
-        sheetName: "Sheet1",
+        scope: { type: "sheet", workbookName: "Workbook1", sheetName: "Sheet1" },
       };
 
       expect(dependencyNodeToKey(namedNode)).toBe(
-        "named:Sheet1:MY_NAME!@#$%^&*()"
+        "named:sheet:Workbook1:Sheet1:MY_NAME!@#$%^&*()"
       );
     });
 
     test("should handle large numbers", () => {
       const cellNode: DependencyNode = {
         type: "cell",
+        workbookName: "Workbook1",
         sheetName: "Sheet1",
         address: { rowIndex: 999999, colIndex: 16383 },
       };
 
-      expect(dependencyNodeToKey(cellNode)).toBe("cell:Sheet1:XFD1000000");
+      expect(dependencyNodeToKey(cellNode)).toBe("cell:Workbook1:Sheet1:XFD1000000");
     });
 
     test("should throw error for undefined rowIndex or colIndex", () => {
       const cellNodeWithUndefinedRow: DependencyNode = {
         type: "cell" as const,
+        workbookName: "Workbook1",
         sheetName: "Sheet1",
         address: { rowIndex: undefined as any, colIndex: 0 },
       };
 
       const cellNodeWithUndefinedCol: DependencyNode = {
         type: "cell" as const,
+        workbookName: "Workbook1",
         sheetName: "Sheet1",
         address: {
           rowIndex: 0,
@@ -375,6 +405,7 @@ describe("dependencyNodeToKey", () => {
 
       const cellNodeWithBothUndefined: DependencyNode = {
         type: "cell" as const,
+        workbookName: "Workbook1",
         sheetName: "Sheet1",
         address: {
           rowIndex: undefined as any,
@@ -398,9 +429,10 @@ describe("dependencyNodeToKey", () => {
 describe("keyToDependencyNode", () => {
   describe("Cell nodes", () => {
     test("should parse cell keys correctly", () => {
-      const key = "cell:Sheet1:A1";
+      const key = "cell:Workbook1:Sheet1:A1";
       const expected: DependencyNode = {
         type: "cell",
+        workbookName: "Workbook1",
         sheetName: "Sheet1",
         address: { rowIndex: 0, colIndex: 0 },
       };
@@ -409,8 +441,8 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should handle different sheets", () => {
-      const key1 = "cell:Sheet1:K6";
-      const key2 = "cell:Sheet2:K6";
+      const key1 = "cell:Workbook1:Sheet1:K6";
+      const key2 = "cell:Workbook1:Sheet2:K6";
 
       const node1 = keyToDependencyNode(key1);
       const node2 = keyToDependencyNode(key2);
@@ -418,6 +450,7 @@ describe("keyToDependencyNode", () => {
       expect(node1.type).toBe("cell");
       expect(node2.type).toBe("cell");
       if (node1.type === "cell" && node2.type === "cell") {
+        expect(node1.workbookName).toBe("Workbook1");
         expect(node1.sheetName).toBe("Sheet1");
         expect(node2.sheetName).toBe("Sheet2");
         expect(node1.address.rowIndex).toBe(5);
@@ -426,11 +459,12 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should handle sheets with spaces in names", () => {
-      const key = "cell:My Sheet Name:C2";
+      const key = "cell:My Workbook:My Sheet Name:C2";
       const node = keyToDependencyNode(key);
 
       expect(node.type).toBe("cell");
       if (node.type === "cell") {
+        expect(node.workbookName).toBe("My Workbook");
         expect(node.sheetName).toBe("My Sheet Name");
         expect(node.address.rowIndex).toBe(1);
         expect(node.address.colIndex).toBe(2);
@@ -438,11 +472,12 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should handle empty sheet names", () => {
-      const key = "cell::A1";
+      const key = "cell:Workbook1::A1";
       const node = keyToDependencyNode(key);
 
       expect(node.type).toBe("cell");
       if (node.type === "cell") {
+        expect(node.workbookName).toBe("Workbook1");
         expect(node.sheetName).toBe("");
         expect(node.address.rowIndex).toBe(0);
         expect(node.address.colIndex).toBe(0);
@@ -450,11 +485,12 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should handle large numbers", () => {
-      const key = "cell:Sheet1:XFD1000000";
+      const key = "cell:Workbook1:Sheet1:XFD1000000";
       const node = keyToDependencyNode(key);
 
       expect(node.type).toBe("cell");
       if (node.type === "cell") {
+        expect(node.workbookName).toBe("Workbook1");
         expect(node.address.rowIndex).toBe(999999);
         expect(node.address.colIndex).toBe(16383);
       }
@@ -463,9 +499,10 @@ describe("keyToDependencyNode", () => {
 
   describe("Range nodes", () => {
     test("should parse finite range keys", () => {
-      const key = "range:Sheet1:A1:E10";
+      const key = "range:Workbook1:Sheet1:A1:E10";
       const expected: DependencyNode = {
         type: "range",
+        workbookName: "Workbook1",
         sheetName: "Sheet1",
         range: {
           start: { row: 0, col: 0 },
@@ -480,11 +517,12 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should parse infinite column range keys", () => {
-      const key = "range:Sheet1:A1:A";
+      const key = "range:Workbook1:Sheet1:A1:A";
       const node = keyToDependencyNode(key);
 
       expect(node.type).toBe("range");
       if (node.type === "range") {
+        expect(node.workbookName).toBe("Workbook1");
         expect(node.range.end.row.type).toBe("infinity");
         if (node.range.end.row.type === "infinity") {
           expect(node.range.end.row.sign).toBe("positive");
@@ -494,11 +532,12 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should parse infinite row range keys", () => {
-      const key = "range:Sheet1:A1:1";
+      const key = "range:Workbook1:Sheet1:A1:1";
       const node = keyToDependencyNode(key);
 
       expect(node.type).toBe("range");
       if (node.type === "range") {
+        expect(node.workbookName).toBe("Workbook1");
         expect(node.range.end.row).toEqual({ type: "number", value: 0 });
         expect(node.range.end.col.type).toBe("infinity");
         if (node.range.end.col.type === "infinity") {
@@ -508,11 +547,12 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should parse fully infinite range keys", () => {
-      const key = "range:Sheet1:A1:INFINITY";
+      const key = "range:Workbook1:Sheet1:A1:INFINITY";
       const node = keyToDependencyNode(key);
 
       expect(node.type).toBe("range");
       if (node.type === "range") {
+        expect(node.workbookName).toBe("Workbook1");
         expect(node.range.end.row.type).toBe("infinity");
         expect(node.range.end.col.type).toBe("infinity");
         if (node.range.end.row.type === "infinity") {
@@ -608,18 +648,29 @@ describe("keyToDependencyNode", () => {
       const expected: DependencyNode = {
         type: "named-expression",
         name: "SALES_TAX",
-        sheetName: "global",
+        scope: { type: "global" },
+      };
+
+      expect(keyToDependencyNode(key)).toEqual(expected);
+    });
+
+    test("should parse workbook-scoped named expression keys", () => {
+      const key = "named:workbook:Workbook1:WORKBOOK_RATE";
+      const expected: DependencyNode = {
+        type: "named-expression",
+        name: "WORKBOOK_RATE",
+        scope: { type: "workbook", workbookName: "Workbook1" },
       };
 
       expect(keyToDependencyNode(key)).toEqual(expected);
     });
 
     test("should parse sheet-scoped named expression keys", () => {
-      const key = "named:Sheet1:LOCAL_RATE";
+      const key = "named:sheet:Workbook1:Sheet1:LOCAL_RATE";
       const expected: DependencyNode = {
         type: "named-expression",
         name: "LOCAL_RATE",
-        sheetName: "Sheet1",
+        scope: { type: "sheet", workbookName: "Workbook1", sheetName: "Sheet1" },
       };
 
       expect(keyToDependencyNode(key)).toEqual(expected);
@@ -629,9 +680,10 @@ describe("keyToDependencyNode", () => {
 
   describe("Table nodes", () => {
     test("should parse table header area keys", () => {
-      const key = "table:Sheet1:SalesData:headers";
+      const key = "table:Workbook1:Sheet1:SalesData:headers";
       const expected: DependencyNode = {
         type: "table",
+        workbookName: "Workbook1",
         tableName: "SalesData",
         sheetName: "Sheet1",
         area: { kind: "Headers" },
@@ -641,9 +693,10 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should parse table totals area keys", () => {
-      const key = "table:Sheet1:SalesData:AllData";
+      const key = "table:Workbook1:Sheet1:SalesData:AllData";
       const expected: DependencyNode = {
         type: "table",
+        workbookName: "Workbook1",
         tableName: "SalesData",
         sheetName: "Sheet1",
         area: { kind: "AllData" },
@@ -653,9 +706,10 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should parse table data area keys with columns", () => {
-      const key = "table:Sheet1:SalesData:data:Product,Sales,Region";
+      const key = "table:Workbook1:Sheet1:SalesData:data:Product,Sales,Region";
       const expected: DependencyNode = {
         type: "table",
+        workbookName: "Workbook1",
         tableName: "SalesData",
         sheetName: "Sheet1",
         area: {
@@ -669,9 +723,10 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should parse table all area keys", () => {
-      const key = "table:Sheet1:SalesData:all";
+      const key = "table:Workbook1:Sheet1:SalesData:all";
       const expected: DependencyNode = {
         type: "table",
+        workbookName: "Workbook1",
         tableName: "SalesData",
         sheetName: "Sheet1",
         area: { kind: "All" },
@@ -681,11 +736,12 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should handle empty columns list in data area", () => {
-      const key = "table:Sheet1:SalesData:data:";
+      const key = "table:Workbook1:Sheet1:SalesData:data:";
       const node = keyToDependencyNode(key);
 
       expect(node.type).toBe("table");
       if (node.type === "table" && node.area.kind === "Data") {
+        expect(node.workbookName).toBe("Workbook1");
         expect(node.area.columns).toEqual([]);
       }
     });
@@ -705,16 +761,16 @@ describe("keyToDependencyNode", () => {
     });
 
     test("should throw error for invalid cell key parts", () => {
-      expect(() => keyToDependencyNode("cell:Sheet1:A")).toThrow(
+      expect(() => keyToDependencyNode("cell:Workbook1:Sheet1:A")).toThrow(
         "Invalid cell reference"
       );
-      expect(() => keyToDependencyNode("cell:Sheet1:A1:extra")).toThrow(
+      expect(() => keyToDependencyNode("cell:Workbook1:Sheet1:A1:extra")).toThrow(
         "Invalid cell key format"
       );
     });
 
     test("should throw error for invalid range key parts", () => {
-      expect(() => keyToDependencyNode("range:Sheet1:A1:E10:extra")).toThrow(
+      expect(() => keyToDependencyNode("range:Workbook1:Sheet1:A1:E10:extra")).toThrow(
         "Invalid range key format"
       );
     });
@@ -735,19 +791,25 @@ describe("keyToDependencyNode", () => {
       expect(() => keyToDependencyNode("named:global")).toThrow(
         "Invalid named expression key format"
       );
-      expect(() => keyToDependencyNode("named:global:name:extra")).toThrow(
-        "Invalid named expression key format"
+      expect(() => keyToDependencyNode("named:workbook:Workbook1")).toThrow(
+        "Invalid workbook named expression key format"
+      );
+      expect(() => keyToDependencyNode("named:sheet:Workbook1:Sheet1")).toThrow(
+        "Invalid sheet named expression key format"
+      );
+      expect(() => keyToDependencyNode("named:invalid:name")).toThrow(
+        "Unknown named expression scope type"
       );
     });
 
     test("should throw error for invalid table key parts", () => {
-      expect(() => keyToDependencyNode("table:Sheet1:Table1")).toThrow(
+      expect(() => keyToDependencyNode("table:Workbook1:Sheet1:Table1")).toThrow(
         "Invalid table key format"
       );
-      expect(() => keyToDependencyNode("table:Sheet1:Table1:data")).toThrow(
+      expect(() => keyToDependencyNode("table:Workbook1:Sheet1:Table1:data")).toThrow(
         "Invalid table data key format"
       );
-      expect(() => keyToDependencyNode("table:Sheet1:Table1:invalid")).toThrow(
+      expect(() => keyToDependencyNode("table:Workbook1:Sheet1:Table1:invalid")).toThrow(
         "Invalid table area type"
       );
     });
@@ -758,6 +820,7 @@ describe("Roundtrip conversion (node -> key -> node)", () => {
   test("should preserve cell nodes through roundtrip", () => {
     const originalNode: DependencyNode = {
       type: "cell",
+      workbookName: "Workbook1",
       sheetName: "Sheet1",
       address: { rowIndex: 5, colIndex: 10 },
     };
@@ -771,6 +834,7 @@ describe("Roundtrip conversion (node -> key -> node)", () => {
   test("should preserve range nodes through roundtrip", () => {
     const originalNode: DependencyNode = {
       type: "range",
+      workbookName: "Workbook1",
       sheetName: "Sheet1",
               range: {
           start: { row: 0, col: 0 },
@@ -814,17 +878,26 @@ describe("Roundtrip conversion (node -> key -> node)", () => {
     const globalNode: DependencyNode = {
       type: "named-expression",
       name: "SALES_TAX",
-      sheetName: "global",
+      scope: { type: "global" },
+    };
+
+    const workbookNode: DependencyNode = {
+      type: "named-expression",
+      name: "WORKBOOK_RATE",
+      scope: { type: "workbook", workbookName: "Workbook1" },
     };
 
     const sheetNode: DependencyNode = {
       type: "named-expression",
       name: "LOCAL_RATE",
-      sheetName: "Sheet1",
+      scope: { type: "sheet", workbookName: "Workbook1", sheetName: "Sheet1" },
     };
 
     expect(keyToDependencyNode(dependencyNodeToKey(globalNode))).toEqual(
       globalNode
+    );
+    expect(keyToDependencyNode(dependencyNodeToKey(workbookNode))).toEqual(
+      workbookNode
     );
     expect(keyToDependencyNode(dependencyNodeToKey(sheetNode))).toEqual(
       sheetNode
@@ -834,6 +907,7 @@ describe("Roundtrip conversion (node -> key -> node)", () => {
   test("should preserve table nodes through roundtrip", () => {
     const dataNode: DependencyNode = {
       type: "table",
+      workbookName: "Workbook1",
       tableName: "SalesData",
       sheetName: "Sheet1",
       area: {
@@ -845,6 +919,7 @@ describe("Roundtrip conversion (node -> key -> node)", () => {
 
     const headerNode: DependencyNode = {
       type: "table",
+      workbookName: "Workbook1",
       tableName: "SalesData",
       sheetName: "Sheet1",
       area: { kind: "Headers" },
@@ -861,6 +936,7 @@ describe("Roundtrip conversion (node -> key -> node)", () => {
   test("should preserve edge cases through roundtrip", () => {
     const emptySheetNode: DependencyNode = {
       type: "cell",
+      workbookName: "Workbook1",
       sheetName: "",
       address: { rowIndex: 0, colIndex: 0 },
     };
@@ -868,11 +944,12 @@ describe("Roundtrip conversion (node -> key -> node)", () => {
     const specialCharNode: DependencyNode = {
       type: "named-expression",
       name: "MY_NAME!@#$%^&*()",
-      sheetName: "Sheet1",
+      scope: { type: "sheet", workbookName: "Workbook1", sheetName: "Sheet1" },
     };
 
     const largeNumberNode: DependencyNode = {
       type: "cell",
+      workbookName: "Workbook1",
       sheetName: "Sheet1",
       address: { rowIndex: 999999, colIndex: 16383 },
     };

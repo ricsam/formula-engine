@@ -145,6 +145,24 @@ export interface FormulaEngineEvents {
   "tables-updated": Map<string, TableDefinition>;
 }
 
+export type NamedExpressionDependencyNode = {
+  type: "named-expression";
+  name: string;
+  scope:
+    | {
+        type: "global";
+      }
+    | {
+        type: "workbook";
+        workbookName: string;
+      }
+    | {
+        type: "sheet";
+        sheetName: string;
+        workbookName: string;
+      };
+};
+
 /**
  * All dependency nodes are evaluated in the context of the current cell, so therefore it will always have a sheetName
  */
@@ -172,12 +190,7 @@ export type DependencyNode =
             endSpreadsheetName: string;
           };
     }
-  | {
-      type: "named-expression";
-      name: string;
-      sheetName: string;
-      workbookName: string;
-    }
+  | NamedExpressionDependencyNode
   | {
       type: "table";
       tableName: string;

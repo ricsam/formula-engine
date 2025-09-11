@@ -5,26 +5,29 @@ import { parseCellReference } from "src/core/utils";
 
 describe("SUM function", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) }, debug);
 
   const setCellContent = (ref: string, content: string) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
   };
 
   const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   describe("Engine API assumptions for open-ended ranges", () => {
     test("engine supports canonical open-ended range syntax", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["B10", 10],
           ["B11", 20],
@@ -44,7 +47,7 @@ describe("SUM function", () => {
 
     test("raw content API provides access to all cells", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["B2", "=A1+5"],
@@ -52,7 +55,7 @@ describe("SUM function", () => {
         ])
       );
 
-      const sheet = engine.sheets.get(sheetName);
+      const sheet = engine.workbookManager.getSheet({ workbookName, sheetName });
       expect(sheet).toBeDefined();
       expect(sheet?.content).toBeDefined();
       
@@ -88,7 +91,7 @@ describe("SUM function", () => {
 
     test("SEQUENCE function creates spilled values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SEQUENCE(2,3)"], // 2 rows, 3 cols
         ])
@@ -105,7 +108,7 @@ describe("SUM function", () => {
 
     test.skip("SEQUENCE with INFINITY creates infinite spills", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SEQUENCE(INFINITY)"], // Infinite rows
           ["B1", "=SEQUENCE(1,INFINITY)"], // Infinite cols
@@ -164,7 +167,7 @@ describe("SUM function", () => {
 
   test("basic scalar arguments", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([["A1", "=SUM(1, 2, 3)"]])
     );
 
@@ -173,7 +176,7 @@ describe("SUM function", () => {
 
   test("with cell references", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 10],
         ["A2", 20],
@@ -188,7 +191,7 @@ describe("SUM function", () => {
   test("with structured references", () => {
     // Create a table with data
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         // Table headers
         ["A1", "Name"],
@@ -212,7 +215,8 @@ describe("SUM function", () => {
     // Define the table
     engine.addTable({
       tableName: "DataTable",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 3 }, // 3 data rows
       numCols: 3, // 3 columns: Name, Value, Count
@@ -225,7 +229,7 @@ describe("SUM function", () => {
 
   test("with named expressions", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 10],
         ["A2", 20],
@@ -242,17 +246,20 @@ describe("SUM function", () => {
     engine.addNamedExpression({
       expression: "A1:A3",
       expressionName: "VALUES_A",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
     });
     engine.addNamedExpression({
       expression: "B1:B2",
       expressionName: "VALUES_B",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
     });
     engine.addNamedExpression({
       expression: "25",
       expressionName: "SINGLE_VALUE",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
     });
 
     // expect(cell("C1")).toBe(60); // 10 + 20 + 30
@@ -261,12 +268,12 @@ describe("SUM function", () => {
   });
 
   test("with cross-sheet references", () => {
-    const sheet1Name = engine.addSheet("Sheet1").name;
-    const sheet2Name = engine.addSheet("Sheet2").name;
+      const sheet1Name = engine.addSheet({ workbookName, sheetName: "Sheet1" }).name;
+    const sheet2Name = engine.addSheet({ workbookName, sheetName: "Sheet2" }).name;
 
     // Set up data on Sheet1
     engine.setSheetContent(
-      sheet1Name,
+      { workbookName, sheetName: sheet1Name },
       new Map<string, SerializedCellValue>([
         ["A1", 100],
         ["A2", 200],
@@ -279,7 +286,7 @@ describe("SUM function", () => {
 
     // Set up data on Sheet2
     engine.setSheetContent(
-      sheet2Name,
+      { workbookName, sheetName: sheet2Name },
       new Map<string, SerializedCellValue>([
         ["B1", 50],
         ["B2", 75],
@@ -287,7 +294,7 @@ describe("SUM function", () => {
     );
 
     const cell = (sheetName: string, ref: string) =>
-      engine.getCellValue({ sheetName, ...parseCellReference(ref) });
+      engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) });
 
     // ENGINE ISSUE: Cross-sheet references like Sheet2!B1:B2 not supported
     expect(cell(sheet1Name, "B1")).toBe(125); // 50 + 75
@@ -296,14 +303,14 @@ describe("SUM function", () => {
   });
 
   test.skip("with 3D sheet references", () => {
-    const sheet1Name = engine.addSheet("Sheet1").name;
-    const sheet2Name = engine.addSheet("Sheet2").name;
-    const sheet3Name = engine.addSheet("Sheet3").name;
+    const sheet1Name = engine.addSheet({ workbookName, sheetName: "Sheet1" }).name;
+    const sheet2Name = engine.addSheet({ workbookName, sheetName: "Sheet2" }).name;
+    const sheet3Name = engine.addSheet({ workbookName, sheetName: "Sheet3" }).name;
 
     // Set up same data on all sheets
     [sheet1Name, sheet2Name, sheet3Name].forEach((sheetName) => {
       engine.setSheetContent(
-        sheetName,
+        { workbookName, sheetName },
         new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["A2", 20],
@@ -313,7 +320,7 @@ describe("SUM function", () => {
 
     // Create 3D reference formulas
     engine.setSheetContent(
-      sheet1Name,
+      { workbookName, sheetName: sheet1Name },
       new Map<string, SerializedCellValue>([
         ["B1", "=SUM(Sheet1:Sheet3!A1)"], // Sum A1 across sheets 1-3
         ["B2", "=SUM(Sheet1:Sheet3!A1:A2)"], // Sum A1:A2 across sheets 1-3
@@ -324,6 +331,7 @@ describe("SUM function", () => {
       engine.getCellValue(
         {
           sheetName,
+          workbookName,
           ...parseCellReference(ref),
         },
         debug
@@ -347,7 +355,7 @@ describe("SUM function", () => {
 
   test("with dynamic arrays (SEQUENCE)", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "=SEQUENCE(3, 2, 10, 5)"], // Creates 2x3 array starting at 10, step 5
         // ["D1", "=SUM(A1:B3)"], // Sum the entire spilled array
@@ -366,7 +374,7 @@ describe("SUM function", () => {
 
   test("SUM used in dynamic array context", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         // Create multiple ranges to sum
         ["A1", 10],
@@ -402,7 +410,7 @@ describe("SUM function", () => {
 
   test("handling infinity", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "=1/0"], // Positive infinity
         ["A2", "=-1/0"], // Negative infinity
@@ -427,7 +435,7 @@ describe("SUM function", () => {
 
   test("error handling", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "text"],
         ["A2", 10],
@@ -448,7 +456,7 @@ describe("SUM function", () => {
 
   test("mixed argument types", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 10],
         ["A2", 20],
@@ -463,24 +471,25 @@ describe("SUM function", () => {
 
   test("SUM() with zero arguments", () => {
     const engine = FormulaEngine.buildEmpty();
-    const sheetName = engine.addSheet("Sheet1").name;
+    engine.addWorkbook(workbookName);
+    const sheetName = engine.addSheet({ workbookName, sheetName: "Sheet1" }).name;
 
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "=SUM()"], // Should be allowed by parser
       ])
     );
 
     const cell = (ref: string) =>
-      engine.getCellValue({ sheetName, ...parseCellReference(ref) });
+      engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) });
 
     expect(cell("A1")).toBe(0);
   });
 
   test("SUM over an infinite range", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A123", 3],
         ["A200", 4],
@@ -495,10 +504,10 @@ describe("SUM function", () => {
   describe("structured table references", () => {
     test("should work with table column references across sheets", () => {
       const inputSheetName = "InputSheet";
-      engine.addSheet(inputSheetName);
+      engine.addSheet({ workbookName, sheetName: inputSheetName });
 
       engine.setSheetContent(
-        inputSheetName,
+        { workbookName, sheetName: inputSheetName },
         new Map<string, SerializedCellValue>([
           ["A1", "OrderID"],
           ["B1", "Amount"],
@@ -514,7 +523,7 @@ describe("SUM function", () => {
       );
 
       engine.setSheetContent(
-        sheetName,
+        { workbookName, sheetName },
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(ORDERinput[Amount])"],
           ["B1", "=SUM(InputSheet!B2:B)"],
@@ -524,6 +533,7 @@ describe("SUM function", () => {
       engine.addTable({
         tableName: "ORDERinput",
         sheetName: inputSheetName,
+        workbookName: workbookName,
         start: "A1",
         numRows: { type: "infinity", sign: "positive" },
         numCols: 2,

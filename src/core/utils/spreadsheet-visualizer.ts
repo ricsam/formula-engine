@@ -1,6 +1,7 @@
 import { FormulaEngine } from "../engine";
 
 export interface SpreadsheetVisualizerOptions {
+  workbookName: string;
   /** Number of rows to display (1-based) */
   numRows: number;
   /** Number of columns to display (0-based, so 11 = A-K) */
@@ -31,6 +32,7 @@ export function visualizeSpreadsheet(
   options: SpreadsheetVisualizerOptions
 ): string {
   const {
+    workbookName,
     numRows,
     numCols,
     startRow = 1,
@@ -44,11 +46,13 @@ export function visualizeSpreadsheet(
   } = options;
 
   // Determine the sheet name to use upfront
-  const targetSheetName = sheetName || (() => {
-    const sheets = engine.sheets;
-    const sheetNames = Array.from(sheets.keys());
-    return sheetNames.length > 0 ? sheetNames[0]! : null;
-  })();
+  const targetSheetName =
+    sheetName ||
+    (() => {
+      const sheets = engine.workbookManager.getSheets(workbookName);
+      const sheetNames = Array.from(sheets.keys());
+      return sheetNames.length > 0 ? sheetNames[0]! : null;
+    })();
 
   // First pass: collect all cell values and calculate column widths
   const cellValues: string[][] = [];
@@ -71,21 +75,25 @@ export function visualizeSpreadsheet(
     for (let col = 0; col < numCols; col++) {
       let value: string;
       if (targetSheetName) {
-        const cellValue = engine.getCellValue({ 
-          sheetName: targetSheetName, 
-          rowIndex: row - 1, 
-          colIndex: startCol + col 
+        const cellValue = engine.getCellValue({
+          sheetName: targetSheetName,
+          workbookName,
+          rowIndex: row - 1,
+          colIndex: startCol + col,
         });
-        value = cellValue === "" || cellValue == null ? emptyCellChar : String(cellValue);
+        value =
+          cellValue === "" || cellValue == null
+            ? emptyCellChar
+            : String(cellValue);
       } else {
         // No sheets available
         value = emptyCellChar;
       }
-      
+
       rowValues.push(value);
       // Update column width, respecting max width
       columnWidths[col] = Math.max(
-        columnWidths[col]!, 
+        columnWidths[col]!,
         Math.min(value.length, maxColWidth)
       );
     }
@@ -110,11 +118,11 @@ export function visualizeSpreadsheet(
 
   // Second pass: format the output with proper column widths
   let result = "";
-  
+
   for (let i = 0; i < cellValues.length; i++) {
     const rowValues = cellValues[i]!;
     const formattedCells: string[] = [];
-    
+
     // Add row number if requested
     if (showRowNumbers) {
       if (i === 0 && showColumnHeaders) {
@@ -124,46 +132,44 @@ export function visualizeSpreadsheet(
         formattedCells.push(rowNum.toString().padStart(3));
       }
     }
-    
+
     // Format each cell with proper width
     for (let col = 0; col < rowValues.length; col++) {
       let cellValue = rowValues[col]!;
-      
+
       // Truncate if too long
       if (cellValue.length > maxColWidth) {
         cellValue = cellValue.substring(0, maxColWidth - 3) + "...";
       }
-      
+
       // Pad to column width
       formattedCells.push(cellValue.padEnd(columnWidths[col]!));
     }
-    
+
     // Join with consistent separators and ensure exact row width
     let rowContent = formattedCells.join(" | ");
     // Pad the entire row to ensure consistent width
     rowContent = rowContent.padEnd(totalRowWidth);
     result += rowContent + "\n";
-    
+
     // Add separator line after header
     if (i === 0 && showColumnHeaders) {
       const separatorParts: string[] = [];
-      
+
       if (showRowNumbers) {
         separatorParts.push("---");
       }
-      
+
       for (let col = 0; col < numCols; col++) {
         separatorParts.push("-".repeat(columnWidths[col]!));
       }
-      
+
       // Create separator line with same width as data rows
       let separatorLine = separatorParts.join("-+-");
       separatorLine = separatorLine.padEnd(totalRowWidth);
       result += separatorLine + "\n";
     }
   }
-  
+
   return result;
 }
-
-

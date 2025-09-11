@@ -1,25 +1,37 @@
-// @ts-nocheck
 import { beforeEach, describe, expect, test } from "bun:test";
-import { FormulaError, NamedExpression, type SerializedCellValue } from "src/core/types";
+import { type NamedExpression, type SerializedCellValue } from "src/core/types";
 import { parseCellReference } from "src/core/utils";
 import { FormulaEngine } from "../../../src/core/engine";
 
 describe("Named Expressions", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      debug
+    );
 
   const setCellContent = (ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      content
+    );
   };
 
-  const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
+  const address = (ref: string) => ({
+    sheetName,
+    workbookName,
+    ...parseCellReference(ref),
+  });
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   test("should add and use global named expressions", () => {
@@ -31,10 +43,10 @@ describe("Named Expressions", () => {
 
     // Use it in a formula
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 1000],
-        ["B1", "=A1*TAX_RATE"]
+        ["B1", "=A1*TAX_RATE"],
       ])
     );
 
@@ -47,14 +59,15 @@ describe("Named Expressions", () => {
       expressionName: "COMMISSION",
       expression: "0.05",
       sheetName,
+      workbookName,
     });
 
     // Use it in a formula
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 2000],
-        ["B1", "=A1*COMMISSION"]
+        ["B1", "=A1*COMMISSION"],
       ])
     );
 
@@ -64,12 +77,12 @@ describe("Named Expressions", () => {
   test("should update formulas when global named expression is edited", () => {
     // Add named expression and use it
     engine.addNamedExpression({ expressionName: "RATE", expression: "0.1" });
-    
+
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 500],
-        ["B1", "=A1*RATE"]
+        ["B1", "=A1*RATE"],
       ])
     );
 
@@ -91,13 +104,14 @@ describe("Named Expressions", () => {
       expressionName: "DISCOUNT",
       expression: "0.15",
       sheetName,
+      workbookName,
     });
-    
+
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 1000],
-        ["B1", "=A1*DISCOUNT"]
+        ["B1", "=A1*DISCOUNT"],
       ])
     );
 
@@ -108,6 +122,7 @@ describe("Named Expressions", () => {
       expressionName: "DISCOUNT",
       expression: "0.25",
       sheetName,
+      workbookName,
     });
 
     // Formula should automatically update
@@ -120,12 +135,12 @@ describe("Named Expressions", () => {
       expressionName: "TEMP_RATE",
       expression: "0.12",
     });
-    
+
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 800],
-        ["B1", "=A1*TEMP_RATE"]
+        ["B1", "=A1*TEMP_RATE"],
       ])
     );
 
@@ -151,14 +166,15 @@ describe("Named Expressions", () => {
       expressionName: "PRIORITY",
       expression: "0.2",
       sheetName,
+      workbookName,
     });
 
     // Use in formula - sheet-scoped should take precedence
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 100],
-        ["B1", "=A1*PRIORITY"]
+        ["B1", "=A1*PRIORITY"],
       ])
     );
 
@@ -167,7 +183,7 @@ describe("Named Expressions", () => {
 
   test("should handle named expressions across sheets", () => {
     const sheet2 = "Sheet2";
-    engine.addSheet(sheet2);
+    engine.addSheet({ workbookName, sheetName: sheet2 });
 
     // Add global named expression
     engine.addNamedExpression({
@@ -180,36 +196,49 @@ describe("Named Expressions", () => {
       expressionName: "LOCAL_RATE",
       expression: "0.05",
       sheetName,
+      workbookName,
     });
 
     // Set up data on Sheet1
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 1000],
         ["B1", "=A1*GLOBAL_RATE"],
-        ["C1", "=A1*LOCAL_RATE"]
+        ["C1", "=A1*LOCAL_RATE"],
       ])
     );
 
     // Set up data on Sheet2
     engine.setSheetContent(
-      sheet2,
+      { workbookName, sheetName: sheet2 },
       new Map<string, SerializedCellValue>([
         ["A1", 500],
         ["B1", "=A1*GLOBAL_RATE"],
-        ["C1", "=A1*LOCAL_RATE"] // Should error since LOCAL_RATE is scoped to Sheet1
+        ["C1", "=A1*LOCAL_RATE"], // Should error since LOCAL_RATE is scoped to Sheet1
       ])
     );
 
     expect(cell("B1")).toBe(80); // Sheet1: 1000 * 0.08
-    expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 1 })).toBe(40); // Sheet2: 500 * 0.08
+    expect(
+      engine.getCellValue({
+        workbookName,
+        sheetName: sheet2,
+        rowIndex: 0,
+        colIndex: 1,
+      })
+    ).toBe(40); // Sheet2: 500 * 0.08
 
     // Use sheet-scoped on Sheet1 (should work)
     expect(cell("C1")).toBe(50); // 1000 * 0.05
 
     // Try to use sheet-scoped on Sheet2 (should error)
-    const result = engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 2 });
+    const result = engine.getCellValue({
+      workbookName,
+      sheetName: sheet2,
+      rowIndex: 0,
+      colIndex: 2,
+    });
     expect(typeof result === "string" && result.startsWith("#")).toBe(true);
   });
 
@@ -222,10 +251,10 @@ describe("Named Expressions", () => {
 
     // Use it in a formula
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 1000],
-        ["B1", "=A1*OLD_RATE"]
+        ["B1", "=A1*OLD_RATE"],
       ])
     );
 
@@ -244,7 +273,7 @@ describe("Named Expressions", () => {
     const globalExpressions = engine.getGlobalNamedExpressionsSerialized();
     expect(globalExpressions.has("OLD_RATE")).toBe(false);
     expect(globalExpressions.has("NEW_RATE")).toBe(true);
-    expect(globalExpressions.get("NEW_RATE").expression).toBe("0.15");
+    expect(globalExpressions.get("NEW_RATE")?.expression).toBe("0.15");
   });
 
   test("should rename sheet-scoped named expressions", () => {
@@ -253,14 +282,15 @@ describe("Named Expressions", () => {
       expressionName: "OLD_DISCOUNT",
       expression: "0.20",
       sheetName,
+      workbookName,
     });
 
     // Use it in a formula
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 500],
-        ["B1", "=A1*OLD_DISCOUNT"]
+        ["B1", "=A1*OLD_DISCOUNT"],
       ])
     );
 
@@ -271,16 +301,39 @@ describe("Named Expressions", () => {
       expressionName: "OLD_DISCOUNT",
       newName: "NEW_DISCOUNT",
       sheetName,
+      workbookName,
     });
 
     // Formula should still work with new name
     expect(cell("B1")).toBe(100);
 
+    expect(engine.getSheetSerialized(sheetAddress).get("B1")).toBe(
+      "=A1*NEW_DISCOUNT"
+    );
+
     // Verify old name no longer exists
-    const sheetExpressions = engine.getSheetExpressionsSerialized(sheetName);
-    expect(sheetExpressions.has("OLD_DISCOUNT")).toBe(false);
-    expect(sheetExpressions.has("NEW_DISCOUNT")).toBe(true);
-    expect(sheetExpressions.get("NEW_DISCOUNT").expression).toBe("0.2");
+    expect(
+      engine.namedExpressionManager.getNamedExpression({
+        type: "named-expression",
+        name: "OLD_DISCOUNT",
+        scope: {
+          type: "sheet",
+          sheetName,
+          workbookName,
+        },
+      })
+    ).toBeUndefined();
+    expect(
+      engine.namedExpressionManager.getNamedExpression({
+        type: "named-expression",
+        name: "NEW_DISCOUNT",
+        scope: {
+          type: "sheet",
+          sheetName,
+          workbookName,
+        },
+      })
+    ).toBeDefined();
   });
 
   test("should handle renaming named expressions that reference other named expressions", () => {
@@ -297,10 +350,10 @@ describe("Named Expressions", () => {
 
     // Use in formula
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 1000],
-        ["B1", "=A1*MULTIPLIER"]
+        ["B1", "=A1*MULTIPLIER"],
       ])
     );
 
@@ -317,7 +370,9 @@ describe("Named Expressions", () => {
 
     // Verify MULTIPLIER was updated to reference new name
     const globalExpressions = engine.getGlobalNamedExpressionsSerialized();
-    expect(globalExpressions.get("MULTIPLIER").expression).toBe("FOUNDATION_RATE*2");
+    expect(globalExpressions.get("MULTIPLIER")?.expression).toBe(
+      "FOUNDATION_RATE*2"
+    );
   });
 
   test("should throw error when renaming non-existent named expression", () => {
@@ -365,12 +420,25 @@ describe("Named Expressions", () => {
     engine.addNamedExpression({ expressionName: "RATE_2", expression: "0.20" });
 
     // Add multiple sheet-scoped named expressions
-    engine.addNamedExpression({ expressionName: "LOCAL_1", expression: "0.05", sheetName });
-    engine.addNamedExpression({ expressionName: "LOCAL_2", expression: "0.15", sheetName });
+    engine.addNamedExpression({
+      expressionName: "LOCAL_1",
+      expression: "0.05",
+      sheetName,
+      workbookName,
+    });
+    engine.addNamedExpression({
+      expressionName: "LOCAL_2",
+      expression: "0.15",
+      sheetName,
+      workbookName,
+    });
 
     // Test serialization
     const globalExpressions = engine.getGlobalNamedExpressionsSerialized();
-    const sheetExpressions = engine.getSheetExpressionsSerialized(sheetName);
+    const sheetExpressions = engine.getSheetExpressionsSerialized({
+      sheetName,
+      workbookName,
+    });
 
     expect(globalExpressions.size).toBe(2);
     expect(globalExpressions.has("RATE_1")).toBe(true);
@@ -388,7 +456,8 @@ describe("Named Expressions", () => {
 
     engine.setGlobalNamedExpressions(newGlobalExpressions);
 
-    const updatedGlobalExpressions = engine.getGlobalNamedExpressionsSerialized();
+    const updatedGlobalExpressions =
+      engine.getGlobalNamedExpressionsSerialized();
     expect(updatedGlobalExpressions.size).toBe(2);
     expect(updatedGlobalExpressions.has("RATE_1")).toBe(false); // Old ones should be gone
     expect(updatedGlobalExpressions.has("BULK_1")).toBe(true);
@@ -399,9 +468,16 @@ describe("Named Expressions", () => {
       ["SHEET_BULK_1", { name: "SHEET_BULK_1", expression: "0.50" }],
     ]);
 
-    engine.setNamedExpressions(sheetName, newSheetExpressions);
+    engine.setNamedExpressions({
+      sheetName,
+      workbookName,
+      expressions: newSheetExpressions,
+    });
 
-    const updatedSheetExpressions = engine.getSheetExpressionsSerialized(sheetName);
+    const updatedSheetExpressions = engine.getSheetExpressionsSerialized({
+      sheetName,
+      workbookName,
+    });
     expect(updatedSheetExpressions.size).toBe(1);
     expect(updatedSheetExpressions.has("LOCAL_1")).toBe(false); // Old ones should be gone
     expect(updatedSheetExpressions.has("SHEET_BULK_1")).toBe(true);
@@ -409,13 +485,16 @@ describe("Named Expressions", () => {
 
   test("should handle named expression events", () => {
     let globalExpressionsUpdatedCount = 0;
-    let lastUpdatedGlobalExpressions: Map<string, NamedExpression> | null = null;
+    let lastUpdatedGlobalExpressions: Map<string, NamedExpression> = new Map();
 
     // Listen for global named expression update events
-    const unsubscribe = engine.on("global-named-expressions-updated", (expressions) => {
-      globalExpressionsUpdatedCount++;
-      lastUpdatedGlobalExpressions = expressions;
-    });
+    const unsubscribe = engine.on(
+      "global-named-expressions-updated",
+      (expressions) => {
+        globalExpressionsUpdatedCount++;
+        lastUpdatedGlobalExpressions = expressions;
+      }
+    );
 
     // Add global named expression - should trigger event
     engine.addNamedExpression({
@@ -424,7 +503,7 @@ describe("Named Expressions", () => {
     });
 
     expect(globalExpressionsUpdatedCount).toBe(1);
-    expect(lastUpdatedGlobalExpressions.has("EVENT_RATE")).toBe(true);
+    expect(lastUpdatedGlobalExpressions?.has("EVENT_RATE")).toBe(true);
 
     // Update global named expression - should trigger event
     engine.updateNamedExpression({
@@ -451,9 +530,9 @@ describe("Named Expressions", () => {
     expect(lastUpdatedGlobalExpressions.size).toBe(0);
 
     // Set global named expressions in bulk - should trigger event
-    engine.setGlobalNamedExpressions(new Map([
-      ["BULK_EVENT", { name: "BULK_EVENT", expression: "0.25" }],
-    ]));
+    engine.setGlobalNamedExpressions(
+      new Map([["BULK_EVENT", { name: "BULK_EVENT", expression: "0.25" }]])
+    );
 
     expect(globalExpressionsUpdatedCount).toBe(5);
     expect(lastUpdatedGlobalExpressions.has("BULK_EVENT")).toBe(true);
@@ -464,16 +543,25 @@ describe("Named Expressions", () => {
   test("should handle complex named expression dependencies", () => {
     // Create a chain of named expressions
     engine.addNamedExpression({ expressionName: "BASE", expression: "10" });
-    engine.addNamedExpression({ expressionName: "DOUBLE", expression: "BASE * 2" });
-    engine.addNamedExpression({ expressionName: "TRIPLE", expression: "BASE * 3" });
-    engine.addNamedExpression({ expressionName: "COMBINED", expression: "DOUBLE + TRIPLE" });
+    engine.addNamedExpression({
+      expressionName: "DOUBLE",
+      expression: "BASE * 2",
+    });
+    engine.addNamedExpression({
+      expressionName: "TRIPLE",
+      expression: "BASE * 3",
+    });
+    engine.addNamedExpression({
+      expressionName: "COMBINED",
+      expression: "DOUBLE + TRIPLE",
+    });
 
     // Use in formula
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "=COMBINED"],
-        ["B1", "=BASE + DOUBLE + TRIPLE"]
+        ["B1", "=BASE + DOUBLE + TRIPLE"],
       ])
     );
 
@@ -487,29 +575,40 @@ describe("Named Expressions", () => {
     expect(cell("B1")).toBe(120); // 20 + 40 + 60 = 120
 
     // Rename BASE - should update all references
-    engine.renameNamedExpression({ expressionName: "BASE", newName: "FOUNDATION" });
+    engine.renameNamedExpression({
+      expressionName: "BASE",
+      newName: "FOUNDATION",
+    });
 
     expect(cell("A1")).toBe(100); // Should still work
     expect(cell("B1")).toBe(120); // Should still work
 
     // Verify all expressions were updated
     const expressions = engine.getGlobalNamedExpressionsSerialized();
-    expect(expressions.get("DOUBLE").expression).toBe("FOUNDATION*2");
-    expect(expressions.get("TRIPLE").expression).toBe("FOUNDATION*3");
+    expect(expressions.get("DOUBLE")?.expression).toBe("FOUNDATION*2");
+    expect(expressions.get("TRIPLE")?.expression).toBe("FOUNDATION*3");
   });
 
   test("should handle bulk replacement with setGlobalNamedExpressions and setNamedExpressions", () => {
     // Set up initial named expressions
-    engine.addNamedExpression({ expressionName: "OLD_GLOBAL", expression: "0.10" });
-    engine.addNamedExpression({ expressionName: "OLD_LOCAL", expression: "0.20", sheetName });
+    engine.addNamedExpression({
+      expressionName: "OLD_GLOBAL",
+      expression: "0.10",
+    });
+    engine.addNamedExpression({
+      expressionName: "OLD_LOCAL",
+      expression: "0.20",
+      sheetName,
+      workbookName,
+    });
 
     // Use them in formulas
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 1000],
         ["B1", "=A1*OLD_GLOBAL"],
-        ["C1", "=A1*OLD_LOCAL"]
+        ["C1", "=A1*OLD_LOCAL"],
       ])
     );
 
@@ -528,27 +627,35 @@ describe("Named Expressions", () => {
       ["NEW_LOCAL_1", { name: "NEW_LOCAL_1", expression: "0.30" }],
       ["NEW_LOCAL_2", { name: "NEW_LOCAL_2", expression: "0.40" }],
     ]);
-    engine.setNamedExpressions(sheetName, newSheetExpressions);
+    engine.setNamedExpressions({
+      sheetName,
+      workbookName,
+      expressions: newSheetExpressions,
+    });
 
     // Old expressions should be gone, add new formulas with new expressions
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 1000],
         ["B1", "=A1*OLD_GLOBAL"], // Should error now
-        ["C1", "=A1*OLD_LOCAL"],  // Should error now
+        ["C1", "=A1*OLD_LOCAL"], // Should error now
         ["D1", "=A1*NEW_GLOBAL_1"],
         ["D2", "=A1*NEW_GLOBAL_2"],
         ["E1", "=A1*NEW_LOCAL_1"],
-        ["E2", "=A1*NEW_LOCAL_2"]
+        ["E2", "=A1*NEW_LOCAL_2"],
       ])
     );
 
     // Old expressions should error
     const oldGlobalResult = cell("B1");
     const oldLocalResult = cell("C1");
-    expect(typeof oldGlobalResult === "string" && oldGlobalResult.startsWith("#")).toBe(true);
-    expect(typeof oldLocalResult === "string" && oldLocalResult.startsWith("#")).toBe(true);
+    expect(
+      typeof oldGlobalResult === "string" && oldGlobalResult.startsWith("#")
+    ).toBe(true);
+    expect(
+      typeof oldLocalResult === "string" && oldLocalResult.startsWith("#")
+    ).toBe(true);
 
     // New expressions should work
     expect(cell("D1")).toBe(150); // 1000 * 0.15
@@ -558,7 +665,10 @@ describe("Named Expressions", () => {
 
     // Verify old expressions are gone and new ones exist
     const globalExpressions = engine.getGlobalNamedExpressionsSerialized();
-    const sheetExpressions = engine.getSheetExpressionsSerialized(sheetName);
+    const sheetExpressions = engine.getSheetExpressionsSerialized({
+      sheetName,
+      workbookName,
+    });
 
     expect(globalExpressions.has("OLD_GLOBAL")).toBe(false);
     expect(globalExpressions.has("NEW_GLOBAL_1")).toBe(true);

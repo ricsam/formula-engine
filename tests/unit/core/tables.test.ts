@@ -1,33 +1,44 @@
-// @ts-nocheck
-import { test, expect, describe, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
+import { type SerializedCellValue, type TableDefinition } from "src/core/types";
+import { parseCellReference } from "src/core/utils";
 import { FormulaEngine } from "../../../src/core/engine";
-import { getCellReference, parseCellReference } from "src/core/utils";
-import { FormulaError, TableDefinition, type SerializedCellValue } from "src/core/types";
-import { dependencyNodeToKey } from "src/core/utils/dependency-node-key";
 import { visualizeSpreadsheet } from "../../../src/core/utils/spreadsheet-visualizer";
 
 describe("Tables", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      debug
+    );
 
   const setCellContent = (ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      content
+    );
   };
 
-  const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
+  const address = (ref: string) => ({
+    sheetName,
+    workbookName,
+    ...parseCellReference(ref),
+  });
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   test("should create table and use in formulas", () => {
     // Set up data first
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Product"],
         ["B1", "Price"],
@@ -41,7 +52,8 @@ describe("Tables", () => {
     // Create table (3 rows total: 1 header + 2 data rows)
     engine.addTable({
       tableName: "Products",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 2 }, // 2 data rows (excluding header)
       numCols: 2,
@@ -56,7 +68,7 @@ describe("Tables", () => {
   test("should handle table column references", () => {
     // Set up data first
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Name"],
         ["B1", "Score"],
@@ -70,7 +82,8 @@ describe("Tables", () => {
     // Create table (3 rows total: 1 header + 2 data rows)
     engine.addTable({
       tableName: "Scores",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 2 }, // 2 data rows (excluding header)
       numCols: 2,
@@ -89,7 +102,7 @@ describe("Tables", () => {
   test("should update formulas when table is renamed", () => {
     // Set up data first
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Item"],
         ["B1", "Value"],
@@ -100,7 +113,8 @@ describe("Tables", () => {
 
     engine.addTable({
       tableName: "Data",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 1 }, // 1 data row (excluding header)
       numCols: 2,
@@ -120,7 +134,7 @@ describe("Tables", () => {
   test("should show error when table is removed", () => {
     // Set up data first
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Category"],
         ["B1", "Amount"],
@@ -131,7 +145,8 @@ describe("Tables", () => {
 
     engine.addTable({
       tableName: "TempTable",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 1 }, // 1 data row (excluding header)
       numCols: 2,
@@ -152,7 +167,7 @@ describe("Tables", () => {
   test("should handle cross-sheet table references", () => {
     // Create table on Sheet1
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Product"],
         ["B1", "Revenue"],
@@ -164,18 +179,19 @@ describe("Tables", () => {
 
     engine.addTable({
       tableName: "Revenue",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 1 }, // 1 data row (excluding header)
       numCols: 2,
     });
 
     const sheet2 = "Sheet2";
-    engine.addSheet(sheet2);
+    engine.addSheet({ workbookName, sheetName: sheet2 });
 
     // Reference table from Sheet2 - add formula after table is created
     engine.setSheetContent(
-      sheet2,
+      { workbookName, sheetName: sheet2 },
       new Map<string, SerializedCellValue>([["A1", `=Revenue[Revenue]`]])
     );
 
@@ -183,7 +199,7 @@ describe("Tables", () => {
 
     expect(
       engine.getCellValue(
-        { sheetName: sheet2, ...parseCellReference("A1") },
+        { workbookName, sheetName: sheet2, ...parseCellReference("A1") },
         true
       )
     ).toBe(1000);
@@ -192,7 +208,7 @@ describe("Tables", () => {
   test("should update named expressions when table is renamed", () => {
     // Create table
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Product"],
         ["B1", "Price"],
@@ -203,7 +219,8 @@ describe("Tables", () => {
 
     engine.addTable({
       tableName: "Products",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 1 },
       numCols: 2,
@@ -220,11 +237,12 @@ describe("Tables", () => {
       expressionName: "DISCOUNTED_PRICE",
       expression: "SUM(Products[Price])*0.9",
       sheetName,
+      workbookName,
     });
 
     // Use named expressions in formulas
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Product"],
         ["B1", "Price"],
@@ -254,17 +272,17 @@ describe("Tables", () => {
       .getGlobalNamedExpressionsSerialized()
       .get("TOTAL_PRICE");
     const sheetExpr = engine
-      .getSheetExpressionsSerialized(sheetName)
+      .getSheetExpressionsSerialized({ workbookName, sheetName })
       .get("DISCOUNTED_PRICE");
 
-    expect(globalExpr.expression).toBe("SUM(Inventory[Price])*1.1");
-    expect(sheetExpr.expression).toBe("SUM(Inventory[Price])*0.9");
+    expect(globalExpr!.expression).toBe("SUM(Inventory[Price])*1.1");
+    expect(sheetExpr!.expression).toBe("SUM(Inventory[Price])*0.9");
   });
 
   test("should update table location with updateTable", () => {
     // Set up initial data
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Product"],
         ["B1", "Price"],
@@ -285,7 +303,8 @@ describe("Tables", () => {
     // Create initial table
     engine.addTable({
       tableName: "Products",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 2 },
       numCols: 2,
@@ -307,7 +326,7 @@ describe("Tables", () => {
 
     // Verify table structure was updated
     const tables = engine.getTablesSerialized();
-    const table = tables.get("Products");
+    const table = tables.get("Products")!;
     expect(table.start.rowIndex).toBe(0); // D1 row
     expect(table.start.colIndex).toBe(3); // D1 column
   });
@@ -315,7 +334,7 @@ describe("Tables", () => {
   test("should update table size with updateTable", () => {
     // Set up data with more rows
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Product"],
         ["B1", "Price"],
@@ -333,7 +352,8 @@ describe("Tables", () => {
     // Create table with 2 data rows initially
     engine.addTable({
       tableName: "Products",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 2 },
       numCols: 2,
@@ -355,7 +375,7 @@ describe("Tables", () => {
   test("should update table columns with updateTable", () => {
     // Set up data with more columns
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Product"],
         ["B1", "Price"],
@@ -372,7 +392,8 @@ describe("Tables", () => {
     // Create table with 2 columns initially
     engine.addTable({
       tableName: "Products",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 2 },
       numCols: 2,
@@ -396,7 +417,7 @@ describe("Tables", () => {
   test("should update multiple table properties at once", () => {
     // Set up initial data
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Old"],
         ["B1", "Data"],
@@ -421,7 +442,8 @@ describe("Tables", () => {
     // Create initial table
     engine.addTable({
       tableName: "Data",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 1 },
       numCols: 2,
@@ -448,7 +470,7 @@ describe("Tables", () => {
 
     // Verify table structure was updated
     const tables = engine.getTablesSerialized();
-    const table = tables.get("Data");
+    const table = tables.get("Data")!;
     expect(table.start.rowIndex).toBe(0); // D1 row
     expect(table.start.colIndex).toBe(3); // D1 column
     expect(table.headers.size).toBe(3); // 3 columns now
@@ -456,11 +478,11 @@ describe("Tables", () => {
 
   test("should move table to different sheet", () => {
     const sheet2 = "Sheet2";
-    engine.addSheet(sheet2);
+    engine.addSheet({ workbookName, sheetName: sheet2 });
 
     // Set up data on both sheets
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Product"],
         ["B1", "Price"],
@@ -470,7 +492,7 @@ describe("Tables", () => {
     );
 
     engine.setSheetContent(
-      sheet2,
+      { workbookName, sheetName: sheet2 },
       new Map<string, SerializedCellValue>([
         ["A1", "Item"],
         ["B1", "Cost"],
@@ -482,7 +504,8 @@ describe("Tables", () => {
     // Create table on first sheet
     engine.addTable({
       tableName: "Products",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 1 },
       numCols: 2,
@@ -496,11 +519,12 @@ describe("Tables", () => {
     engine.updateTable({
       tableName: "Products",
       sheetName: sheet2,
+      workbookName: sheetAddress.workbookName,
     });
 
     // Verify table was moved to second sheet
     const tables = engine.getTablesSerialized();
-    const table = tables.get("Products");
+    const table = tables.get("Products")!;
     expect(table.sheetName).toBe(sheet2);
 
     // Add new formula after table move to reference new sheet data
@@ -520,7 +544,7 @@ describe("Tables", () => {
   test("should handle basic table creation and updates", () => {
     // Set up data
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Product"],
         ["B1", "Price"],
@@ -536,7 +560,8 @@ describe("Tables", () => {
     // Create table with finite rows
     engine.addTable({
       tableName: "Products",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 3 }, // 3 data rows
       numCols: 2,
@@ -556,7 +581,7 @@ describe("Tables", () => {
 
     // Verify table structure was updated
     const tables = engine.getTablesSerialized();
-    const table = tables.get("Products");
+    const table = tables.get("Products")!;
     expect(table.endRow.type).toBe("number");
     expect(table.endRow.type === "number" ? table.endRow.value : 0).toBe(2); // 2 data rows + header = row 3 (0-indexed: 2)
   });
@@ -564,7 +589,7 @@ describe("Tables", () => {
   test("should preserve table properties when not specified in update", () => {
     // Set up data
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Product"],
         ["B1", "Price"],
@@ -581,7 +606,8 @@ describe("Tables", () => {
     // Create table
     engine.addTable({
       tableName: "Products",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 2 },
       numCols: 3,
@@ -606,7 +632,7 @@ describe("Tables", () => {
   test("should handle edge case: update table to same values", () => {
     // Set up data
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Product"],
         ["B1", "Price"],
@@ -618,7 +644,8 @@ describe("Tables", () => {
     // Create table
     engine.addTable({
       tableName: "Products",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 1 },
       numCols: 2,
@@ -630,7 +657,8 @@ describe("Tables", () => {
     // Update table with same values
     engine.updateTable({
       tableName: "Products",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 1 },
       numCols: 2,
@@ -643,7 +671,7 @@ describe("Tables", () => {
   test("should handle table serialization methods", () => {
     // Set up data
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Product"],
         ["B1", "Price"],
@@ -655,7 +683,8 @@ describe("Tables", () => {
     // Create table
     engine.addTable({
       tableName: "Products",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 1 },
       numCols: 2,
@@ -666,7 +695,7 @@ describe("Tables", () => {
     expect(serializedTables.size).toBe(1);
     expect(serializedTables.has("Products")).toBe(true);
 
-    const table = serializedTables.get("Products");
+    const table = serializedTables.get("Products")!;
     expect(table).toBeDefined();
     expect(table.name).toBe("Products");
     expect(table.sheetName).toBe(sheetName);
@@ -676,7 +705,7 @@ describe("Tables", () => {
 
   test("should handle table events", () => {
     let tablesUpdatedCount = 0;
-    let lastUpdatedTables: Map<string, TableDefinition> | null = null;
+    let lastUpdatedTables: Map<string, TableDefinition> = new Map();
 
     // Listen for table update events
     const unsubscribe = engine.on("tables-updated", (tables) => {
@@ -686,7 +715,7 @@ describe("Tables", () => {
 
     // Set up data
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Product"],
         ["B1", "Price"],
@@ -698,7 +727,8 @@ describe("Tables", () => {
     // Create table - should trigger event
     engine.addTable({
       tableName: "Products",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 1 },
       numCols: 2,
@@ -734,7 +764,7 @@ describe("Tables", () => {
   test("should handle bulk table replacement with setTables", () => {
     // Set up initial data
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Product"],
         ["B1", "Price"],
@@ -750,7 +780,8 @@ describe("Tables", () => {
     // Create initial table
     engine.addTable({
       tableName: "Products",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 1 },
       numCols: 2,
@@ -765,7 +796,8 @@ describe("Tables", () => {
         "Sales",
         {
           name: "Sales",
-          sheetName,
+          sheetName: sheetAddress.sheetName,
+          workbookName: sheetAddress.workbookName,
           start: { rowIndex: 0, colIndex: 2 }, // C1
           headers: new Map([
             ["Category", { name: "Category", index: 0 }],
@@ -778,7 +810,8 @@ describe("Tables", () => {
         "Inventory",
         {
           name: "Inventory",
-          sheetName,
+          sheetName: sheetAddress.sheetName,
+          workbookName: sheetAddress.workbookName,
           start: { rowIndex: 0, colIndex: 0 }, // A1
           headers: new Map([
             ["Product", { name: "Product", index: 0 }],
@@ -810,7 +843,7 @@ describe("Tables", () => {
   test("should not crop source data when referencing infinite table columns", () => {
     // Set up data for infinite table with 5 columns and 5 data rows
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         // Headers in row 1
         ["A1", "Column1"],
@@ -848,10 +881,10 @@ describe("Tables", () => {
       ])
     );
 
-    engine.addSheet("expected-result");
+    engine.addSheet({ workbookName, sheetName: "expected-result" });
 
     engine.setSheetContent(
-      "expected-result",
+      { workbookName, sheetName: "expected-result" },
       new Map<string, SerializedCellValue>([
         // Headers in row 1
         ["A1", "Column1"],
@@ -896,19 +929,19 @@ describe("Tables", () => {
     // Create infinite table starting at A1 with 5 columns
     engine.addTable({
       tableName: "Table1",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "infinity", sign: "positive" }, // Infinite rows
       numCols: 5,
     });
 
-
-    
     // // Create a visual representation of the entire spreadsheet (A-K, rows 1-8)
     const actualGrid = visualizeSpreadsheet(engine, {
+      workbookName,
       numRows: 8,
       numCols: 11, // A-K
-      sheetName,
+      sheetName: sheetAddress.sheetName,
       emptyCellChar: "",
     });
 
@@ -973,7 +1006,7 @@ describe("Tables", () => {
   test("should handle column names with parentheses in formulas", () => {
     // Set up data with column names containing parentheses
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Number of ORDERS"],
         ["B1", "Number of cars (always add one extra)"],
@@ -987,14 +1020,18 @@ describe("Tables", () => {
     // Create table
     engine.addTable({
       tableName: "OrderData",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 2 },
       numCols: 2,
     });
 
     // Test basic table references with parentheses
-    setCellContent("D1", "=SUM(OrderData[Number of cars (always add one extra)])");
+    setCellContent(
+      "D1",
+      "=SUM(OrderData[Number of cars (always add one extra)])"
+    );
     expect(cell("D1")).toBe(13); // 5 + 8
 
     setCellContent("D2", "=AVERAGE(OrderData[Number of ORDERS])");
@@ -1005,28 +1042,34 @@ describe("Tables", () => {
     expect(cell("E1")).toBe(2);
 
     // Test the original problematic formula with table references
-    setCellContent("C1", "=CEILING((INDEX(OrderData[Number of ORDERS],1)*INDEX(OrderData[Number of cars (always add one extra)],1)/32),0.5)");
-    
+    setCellContent(
+      "C1",
+      "=CEILING((INDEX(OrderData[Number of ORDERS],1)*INDEX(OrderData[Number of cars (always add one extra)],1)/32),0.5)"
+    );
+
     // Should calculate: CEILING((10*5/32),0.5) = CEILING(1.5625,0.5) = 2
     expect(cell("C1")).toBe(2);
 
     // Test that the original problematic formula now parses correctly
     // This was the main issue reported by the user
-    const originalFormula = "=CEILING(([@[Number of ORDERS]]*[@[Number of cars (always add one extra)]]/32),0.5)";
-    
+    const originalFormula =
+      "=CEILING(([@[Number of ORDERS]]*[@[Number of cars (always add one extra)]]/32),0.5)";
+
     // The formula should at least parse without syntax errors
     // (Even if current row references don't work in this context, the parsing should succeed)
     setCellContent("F1", originalFormula);
     const result = cell("F1");
-    
+
     // The result might be an error due to current row context, but it shouldn't be a parse error
-    expect(typeof result === "string" ? !result.includes("syntax") : true).toBe(true);
+    expect(typeof result === "string" ? !result.includes("syntax") : true).toBe(
+      true
+    );
   });
 
   test("should handle column names with equals signs", () => {
     // Set up data with column names containing equals signs
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Number of cars to prepare = number of ERTs required"],
         ["B1", "Status = Active"],
@@ -1040,23 +1083,32 @@ describe("Tables", () => {
     // Create table
     engine.addTable({
       tableName: "ERTData",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 2 },
       numCols: 2,
     });
 
     // Test the original problematic formula with equals sign in column name
-    setCellContent("C1", "=210*[@[Number of cars to prepare = number of ERTs required]]");
-    
+    setCellContent(
+      "C1",
+      "=210*[@[Number of cars to prepare = number of ERTs required]]"
+    );
+
     // The formula should at least parse without syntax errors
     const result = cell("C1");
-    
+
     // The result might be an error due to current row context, but it shouldn't be a parse error
-    expect(typeof result === "string" ? !result.includes("syntax") : true).toBe(true);
+    expect(typeof result === "string" ? !result.includes("syntax") : true).toBe(
+      true
+    );
 
     // Test basic table references with equals signs
-    setCellContent("D1", "=SUM(ERTData[Number of cars to prepare = number of ERTs required])");
+    setCellContent(
+      "D1",
+      "=SUM(ERTData[Number of cars to prepare = number of ERTs required])"
+    );
     expect(cell("D1")).toBe(13); // 5 + 8
 
     // Test another column with equals sign
@@ -1067,7 +1119,7 @@ describe("Tables", () => {
   test("should handle column names with decimal numbers and scientific notation", () => {
     // Set up data with column names containing decimal numbers and scientific notation
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "Total volume of 13.3uM detergent to prepare (uL)"],
         ["B1", "Volume to take from the 800uM stock (uL)"],
@@ -1084,21 +1136,30 @@ describe("Tables", () => {
     // Create table
     engine.addTable({
       tableName: "ScientificData",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 2 },
       numCols: 3,
     });
 
     // Test the original problematic IFERROR formula
-    setCellContent("D1", "=IFERROR([@[Total volume of 13.3uM detergent to prepare (uL)]]-[@[Volume to take from the 800uM stock (uL)]],\"\")");
-    
+    setCellContent(
+      "D1",
+      '=IFERROR([@[Total volume of 13.3uM detergent to prepare (uL)]]-[@[Volume to take from the 800uM stock (uL)]],"")'
+    );
+
     // The formula should at least parse without syntax errors
     const result = cell("D1");
-    expect(typeof result === "string" ? !result.includes("syntax") : true).toBe(true);
+    expect(typeof result === "string" ? !result.includes("syntax") : true).toBe(
+      true
+    );
 
     // Test basic table references with decimal numbers
-    setCellContent("D2", "=SUM(ScientificData[Total volume of 13.3uM detergent to prepare (uL)])");
+    setCellContent(
+      "D2",
+      "=SUM(ScientificData[Total volume of 13.3uM detergent to prepare (uL)])"
+    );
     expect(cell("D2")).toBe(300); // 100 + 200
 
     // Test reference to column with percentage

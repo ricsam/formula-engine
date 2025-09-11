@@ -28,6 +28,7 @@ import { indexToColumn } from "src/core/utils";
 
 interface SpreadsheetWithFormulaBarProps {
   sheetName: string;
+  workbookName: string;
   engine: FormulaEngine;
   tables: Map<string, TableDefinition>;
   globalNamedExpressions: Map<string, NamedExpression>;
@@ -36,6 +37,7 @@ interface SpreadsheetWithFormulaBarProps {
 
 export function SpreadsheetWithFormulaBar({
   sheetName,
+  workbookName,
   engine,
   tables,
   globalNamedExpressions,
@@ -47,7 +49,11 @@ export function SpreadsheetWithFormulaBar({
   const [tableCreationCounter, setTableCreationCounter] = useState(0);
   const formulaInputRef = useRef<HTMLInputElement>(null);
 
-  const { sheet, namedExpressions } = useSerializedSheet(engine, sheetName);
+  const { sheet, namedExpressions } = useSerializedSheet({
+    sheetName,
+    workbookName,
+    engine,
+  });
 
   const currentSelectedTable = useMemo(() => {
     if (!selectedCell) {
@@ -56,10 +62,11 @@ export function SpreadsheetWithFormulaBar({
     const parsed = parseCellReference(selectedCell);
     return engine.isCellInTable({
       sheetName,
+      workbookName,
       colIndex: parsed.columnIndex,
       rowIndex: parsed.rowIndex,
     });
-  }, [selectedCell, sheetName, engine, sheet]);
+  }, [selectedCell, sheetName, engine, sheet, workbookName]);
 
   // Get existing table names to avoid duplicates
   const existingTableNames = useMemo(() => {
@@ -122,6 +129,7 @@ export function SpreadsheetWithFormulaBar({
       engine.addTable({
         tableName: trimmedName,
         sheetName,
+        workbookName,
         start: getCellReference({
           rowIndex: selectedArea.start.row,
           colIndex: selectedArea.start.col,
@@ -145,6 +153,7 @@ export function SpreadsheetWithFormulaBar({
   }, [
     selectedArea,
     sheetName,
+    workbookName,
     engine,
     newTableName,
     defaultTableName,
@@ -177,9 +186,9 @@ export function SpreadsheetWithFormulaBar({
           }
         }
       });
-      engine.setSheetContent(sheetName, data);
+      engine.setSheetContent({ sheetName, workbookName }, data);
     },
-    [sheetName, engine]
+    [sheetName, engine, workbookName]
   );
 
   // Handle formula submission from formula bar
@@ -190,6 +199,7 @@ export function SpreadsheetWithFormulaBar({
           const { columnIndex, rowIndex } = parseCellReference(selectedCell);
           const address: CellAddress = {
             sheetName,
+            workbookName,
             colIndex: columnIndex,
             rowIndex: rowIndex,
           };
@@ -244,14 +254,14 @@ export function SpreadsheetWithFormulaBar({
           };
           if (ev.type === "extend") {
             engine.autoFill(
-              sheetName,
+              { sheetName, workbookName },
               convertSmAreaToSpreadsheetRange(ev.seedRange),
               convertSmAreaToSpreadsheetRange(ev.fillRange),
               ev.direction
             );
           } else {
             engine.clearSpreadsheetRange(
-              sheetName,
+              { sheetName, workbookName },
               convertSmAreaToSpreadsheetRange(ev.rangeToClear)
             );
           }
@@ -563,6 +573,7 @@ export function SpreadsheetWithFormulaBar({
               sheetName,
               colIndex: cell.colIndex,
               rowIndex: cell.rowIndex,
+              workbookName,
             });
 
             if (!tableInfo) {
@@ -623,6 +634,7 @@ export function SpreadsheetWithFormulaBar({
             const value = engine.getCellValue(
               {
                 sheetName,
+                workbookName,
                 colIndex: cell.colIndex,
                 rowIndex: cell.rowIndex,
               },

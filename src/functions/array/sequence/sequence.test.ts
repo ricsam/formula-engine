@@ -5,25 +5,28 @@ import { parseCellReference } from "src/core/utils";
 
 describe("SEQUENCE function", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) }, debug);
 
   const setCellContent = (ref: string, content: string) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
   };
 
   const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   test("basic 1D sequence", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([["A1", "=SEQUENCE(3)"]])
     );
 
@@ -35,7 +38,7 @@ describe("SEQUENCE function", () => {
 
   test("2D sequence", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([["A1", "=SEQUENCE(2,3)"]])
     );
 
@@ -52,7 +55,7 @@ describe("SEQUENCE function", () => {
 
   test("custom start and step", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([["A1", "=SEQUENCE(3, 2, 10, 5)"]])
     );
 
@@ -70,7 +73,7 @@ describe("SEQUENCE function", () => {
 
   test("negative step", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([["A1", "=SEQUENCE(4, 1, 10, -2)"]])
     );
 
@@ -84,7 +87,7 @@ describe("SEQUENCE function", () => {
 
   test("single cell", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([["A1", "=SEQUENCE(1, 1, 42)"]])
     );
 
@@ -94,7 +97,7 @@ describe("SEQUENCE function", () => {
 
   test("error cases", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "=SEQUENCE(0)"], // Invalid: rows must be > 0
         ["A2", "=SEQUENCE(2, 0)"], // Invalid: columns must be > 0
@@ -109,7 +112,7 @@ describe("SEQUENCE function", () => {
 
   test("with computed arguments", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 2],
         ["B1", 3],
@@ -132,12 +135,12 @@ describe("SEQUENCE function", () => {
 
   test.skip("array input", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([["A1", "=SEQUENCE(SEQUENCE(3))"]])
     );
 
     const cell = (ref: string, debug?: boolean) =>
-      engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+      engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) }, debug);
 
     // SEQUENCE(3) produces {1; 2; 3}
     // SEQUENCE(SEQUENCE(3)) uses origin value 1, so it's SEQUENCE(1) which is {1}
@@ -149,14 +152,14 @@ describe("SEQUENCE function", () => {
 
   test.skip("array input - SEQUENCE(SEQUENCE(5), 1, 10)", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "=SEQUENCE(SEQUENCE(5), 1, 10)"],
       ])
     );
 
     const cell = (ref: string) =>
-      engine.getCellValue({ sheetName, ...parseCellReference(ref) });
+      engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) });
 
     // SEQUENCE(5) produces {1; 2; 3; 4; 5}
     // SEQUENCE(SEQUENCE(5), 1, 10) uses origin value 1, so it's SEQUENCE(1, 1, 10) which is {10}
@@ -170,7 +173,7 @@ describe("SEQUENCE function", () => {
 
   test("SEQUENCE with INFINITY rows", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([["A1", "=SEQUENCE(INFINITY)"]])
     );
 
@@ -184,7 +187,7 @@ describe("SEQUENCE function", () => {
 
   test("SEQUENCE with INFINITY columns", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([["A1", "=SEQUENCE(1, INFINITY)"]])
     );
 
@@ -198,7 +201,7 @@ describe("SEQUENCE function", () => {
 
   test("SEQUENCE with INFINITY and custom start/step", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "=SEQUENCE(INFINITY, 1, 10, 5)"],
       ])
@@ -213,7 +216,7 @@ describe("SEQUENCE function", () => {
 
   test("SEQUENCE with both INFINITY rows and columns", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "=SEQUENCE(INFINITY, INFINITY)"],
       ])
@@ -230,7 +233,7 @@ describe("SEQUENCE function", () => {
 
   test("SUM with SEQUENCE(INFINITY) should return INFINITY", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "=SEQUENCE(INFINITY)"],
         ["B1", "=SUM(A1:A10)"], // Sum finite portion

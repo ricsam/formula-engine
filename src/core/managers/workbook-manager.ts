@@ -1,32 +1,18 @@
 import type {
   CellAddress,
-  FormulaEngineEvents,
+  FiniteSpreadsheetRange,
   SerializedCellValue,
   Sheet,
   SpreadsheetRange,
-  FiniteSpreadsheetRange,
   Workbook,
 } from "../types";
 import { getCellReference, parseCellReference } from "../utils";
-import { renameSheetInFormula } from "../sheet-renamer";
+import type { EventManager } from "./event-manager";
 
 export class WorkbookManager {
   private workbooks: Map<string, Workbook> = new Map();
-  private eventEmitter?: {
-    emit<K extends keyof FormulaEngineEvents>(
-      event: K,
-      data: FormulaEngineEvents[K]
-    ): void;
-  };
 
-  constructor(eventEmitter?: {
-    emit<K extends keyof FormulaEngineEvents>(
-      event: K,
-      data: FormulaEngineEvents[K]
-    ): void;
-  }) {
-    this.eventEmitter = eventEmitter;
-  }
+  constructor(private eventEmitter: EventManager) {}
 
   getSheets(workbookName: string): Map<string, Sheet> {
     const workbook = this.workbooks.get(workbookName);
@@ -40,6 +26,41 @@ export class WorkbookManager {
     return this.workbooks;
   }
 
+  addWorkbook(workbookName: string): void {
+    if (this.workbooks.has(workbookName)) {
+      throw new Error("Workbook already exists");
+    }
+    this.workbooks.set(workbookName, {
+      name: workbookName,
+      sheets: new Map(),
+    });
+    this.eventEmitter.emit("workbook-added", { workbookName });
+  }
+
+  removeWorkbook(workbookName: string): void {
+    if (!this.workbooks.has(workbookName)) {
+      throw new Error("Workbook not found");
+    }
+    this.workbooks.delete(workbookName);
+    this.eventEmitter.emit("workbook-removed", { workbookName });
+  }
+
+  renameWorkbook(opts: {
+    workbookName: string;
+    newWorkbookName: string;
+  }): void {
+    const workbook = this.workbooks.get(opts.workbookName);
+    if (!workbook) {
+      throw new Error("Workbook not found");
+    }
+    this.workbooks.set(opts.newWorkbookName, workbook);
+    this.workbooks.delete(opts.workbookName);
+    this.eventEmitter.emit("workbook-renamed", {
+      oldName: opts.workbookName,
+      newName: opts.newWorkbookName,
+    });
+  }
+
   getSheet({
     workbookName,
     sheetName,
@@ -48,13 +69,7 @@ export class WorkbookManager {
     sheetName: string;
   }): Sheet | undefined {
     const workbook = this.workbooks.get(workbookName);
-    if (!workbook) {
-      throw new Error("Workbook not found");
-    }
-    const sheet = workbook.sheets.get(sheetName);
-    if (!sheet) {
-      throw new Error("Sheet not found");
-    }
+    const sheet = workbook?.sheets.get(sheetName);
     return sheet;
   }
 

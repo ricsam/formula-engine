@@ -75,6 +75,7 @@ function getValueFromArray(
     colIndex: actualCol,
     rowIndex: actualRow,
     sheetName: context.currentSheet,
+    workbookName: context.currentWorkbook,
   };
 
   const spill = {

@@ -5,10 +5,12 @@
 
 import {
   type CellAddress,
+  type EvaluatedDependencyNode,
   type EvaluationContext,
   type NamedExpression,
   type SerializedCellValue,
   type SingleEvaluationResult,
+  type SpilledValue,
   type SpreadsheetRange,
   type SpreadsheetRangeEnd,
   type TableDefinition,
@@ -29,6 +31,8 @@ import { AutoFill } from "./autofill-utils";
 import { WorkbookManager } from "./managers/workbook-manager";
 import { renameSheetInFormula } from "./sheet-renamer";
 import { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import { OpenRangeEvaluator } from "src/functions/math/open-range-evaluator";
+import { StoreManager } from "./managers/store-manager";
 
 /**
  * Main FormulaEngine class
@@ -40,6 +44,7 @@ export class FormulaEngine {
   public eventManager: EventManager;
   public evaluationManager: EvaluationManager;
   public autoFillManager: AutoFill;
+  public storeManager: StoreManager;
 
   constructor() {
     this.eventManager = new EventManager();
@@ -49,16 +54,21 @@ export class FormulaEngine {
       this.eventManager,
       this.workbookManager
     );
+    this.storeManager = new StoreManager(this.namedExpressionManager);
+
     const formulaEvaluator = new FormulaEvaluator(
       this.tableManager,
-      (...args) => this.evaluationManager.evalTimeSafeEvaluateCell(...args),
-      (...args) => this.evaluationManager.evalTimeSafeEvaluateNamedExpression(...args)
+      this.storeManager,
+      this.workbookManager
     );
+
     this.evaluationManager = new EvaluationManager(
       this.workbookManager,
       this.namedExpressionManager,
-      formulaEvaluator
+      formulaEvaluator,
+      this.storeManager
     );
+
     this.autoFillManager = new AutoFill(this.workbookManager, this);
   }
 
@@ -103,15 +113,18 @@ export class FormulaEngine {
     expression,
     expressionName,
     sheetName,
+    workbookName,
   }: {
     expression: string;
     expressionName: string;
     sheetName?: string;
+    workbookName?: string;
   }) {
     this.namedExpressionManager.addNamedExpression({
       expression,
       expressionName,
       sheetName,
+      workbookName,
     });
 
     // Re-evaluate all sheets since named expressions can be referenced from anywhere
@@ -122,13 +135,16 @@ export class FormulaEngine {
   removeNamedExpression({
     expressionName,
     sheetName,
+    workbookName,
   }: {
     expressionName: string;
     sheetName?: string;
+    workbookName?: string;
   }) {
     const found = this.namedExpressionManager.removeNamedExpression({
       expressionName,
       sheetName,
+      workbookName,
     });
 
     if (found) {
@@ -484,14 +500,6 @@ export class FormulaEngine {
     return this.namedExpressionManager.getGlobalNamedExpressions();
   }
 
-  get evaluatedNodes() {
-    return this.evaluationManager.getEvaluatedNodes();
-  }
-
-  get spilledValues() {
-    return this.evaluationManager.getSpilledValues();
-  }
-
   getTransitiveDeps(nodeKey: string): Set<string> {
     return this.evaluationManager.getTransitiveDeps(nodeKey);
   }
@@ -529,8 +537,10 @@ export class FormulaEngine {
     );
   }
 
-  addWorkbook(workbookName: string) {}
-  getWorkbooks(): unknown {
-    throw new Error("Not implemented");
+  addWorkbook(workbookName: string) {
+    return this.workbookManager.addWorkbook(workbookName);
+  }
+  getWorkbooks() {
+    return this.workbookManager.getWorkbooks();
   }
 }

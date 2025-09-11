@@ -6,6 +6,8 @@ import { parseCellReference } from "src/core/utils";
 
 describe("OpenRangeEvaluator", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   /**
@@ -15,23 +17,24 @@ describe("OpenRangeEvaluator", () => {
    * @returns The cell value
    */
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) }, debug);
 
   const setCellContent = (ref: string, content: string) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
   };
 
-  const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
+  const address = (ref: string) => ({ sheetName, workbookName, ...parseCellReference(ref) });
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   describe("Basic open range evaluation", () => {
     it("should evaluate all values in an open row range", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(B10:B)"],
           ["B10", 10],
@@ -48,7 +51,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should evaluate all values in an open column range", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(B10:10)"],
           ["B10", 10],
@@ -65,7 +68,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle empty open ranges", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([["A1", "=SUM(B10:INFINITY)"]])
       );
 
@@ -76,7 +79,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle mixed content in open ranges", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(B10:B)"],
           ["B10", 10],
@@ -94,7 +97,7 @@ describe("OpenRangeEvaluator", () => {
   describe("Spilled values in open ranges", () => {
     it("should include finite spilled values in range", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(B10:INFINITY)"],
           ["A10", "=SEQUENCE(3,3)"],
@@ -109,7 +112,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should return error for infinite spills in range", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(B10:D)"],
           ["B100", "=SEQUENCE(INFINITY)"],
@@ -123,7 +126,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle partial spill intersections", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(B10:D)"],
           ["A100", "=SEQUENCE(1,INFINITY)"],
@@ -138,7 +141,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle spills that don't intersect the range", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SEQUENCE(3,2)"],
           ["A5", "=SUM(B10:INFINITY)"],
@@ -154,7 +157,7 @@ describe("OpenRangeEvaluator", () => {
   describe("Frontier candidate detection", () => {
     it("should detect and evaluate top frontier candidates", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(B10:D)"],
           ["C8", "=SEQUENCE(5,1)"],
@@ -169,7 +172,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should detect and evaluate left frontier candidates", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(B10:INFINITY)"],
           ["A10", "=SEQUENCE(1,5)"],
@@ -184,7 +187,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should ignore blocked frontier candidates", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(C10:INFINITY)"],
           ["A8", "=SEQUENCE(5,5)"],
@@ -200,7 +203,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle multiple frontier candidates", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(B10:D)"],
           ["C8", "=SEQUENCE(3,1)"],
@@ -219,7 +222,7 @@ describe("OpenRangeEvaluator", () => {
   describe("Error handling", () => {
     it("should propagate errors from cells in range", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(B10:B)"],
           ["B10", 10],
@@ -233,7 +236,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle circular references in frontier candidates", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(A10:B)"],
           ["A10", "=B10"],
@@ -247,7 +250,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle missing sheet references", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(NonExistentSheet!B10:INFINITY)"],
         ])
@@ -271,7 +274,7 @@ describe("OpenRangeEvaluator", () => {
 
       const start = performance.now();
 
-      engine.setSheetContent(sheetName, content);
+      engine.setSheetContent(sheetAddress, content);
 
       const duration = performance.now() - start;
       const result = cell("A1");
@@ -293,7 +296,7 @@ describe("OpenRangeEvaluator", () => {
         }
       }
 
-      engine.setSheetContent(sheetName, content);
+      engine.setSheetContent(sheetAddress, content);
 
       // Multiple SUMs with open ranges
       const result = cell("A1");
@@ -312,7 +315,7 @@ describe("OpenRangeEvaluator", () => {
         ["B12", 30],
       ]);
 
-      engine.setSheetContent(sheetName, content);
+      engine.setSheetContent(sheetAddress, content);
 
       const result = cell("A1", true);
       expect(result).toBe(20);
@@ -326,7 +329,7 @@ describe("OpenRangeEvaluator", () => {
         ["B12", 20],
       ]);
 
-      engine.setSheetContent(sheetName, content);
+      engine.setSheetContent(sheetAddress, content);
 
       const result = cell("A1", true);
       expect(result).toBe(10);
@@ -340,7 +343,7 @@ describe("OpenRangeEvaluator", () => {
         ["B12", 20],
       ]);
 
-      engine.setSheetContent(sheetName, content);
+      engine.setSheetContent(sheetAddress, content);
 
       const result = cell("A1");
       expect(result).toBe(30);
@@ -351,19 +354,19 @@ describe("OpenRangeEvaluator", () => {
     const sheet2Name = "Sheet2";
     
     beforeEach(() => {
-      engine.addSheet(sheet2Name);
+      engine.addSheet({ workbookName, sheetName: sheet2Name });
     });
 
     it("should sum values from another sheet with open row range", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(Sheet2!B10:B)"],
         ])
       );
       
       engine.setSheetContent(
-        sheet2Name,
+        { workbookName, sheetName: sheet2Name },
         new Map<string, SerializedCellValue>([
           ["B10", 10],
           ["B11", 20],
@@ -378,14 +381,14 @@ describe("OpenRangeEvaluator", () => {
 
     it("should sum values from another sheet with open column range", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(Sheet2!B10:10)"],
         ])
       );
       
       engine.setSheetContent(
-        sheet2Name,
+        { workbookName, sheetName: sheet2Name },
         new Map<string, SerializedCellValue>([
           ["B10", 10],
           ["C10", 20],
@@ -400,14 +403,14 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle cross-sheet spills intersecting with open ranges", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(Sheet2!B10:INFINITY)"],
         ])
       );
       
       engine.setSheetContent(
-        sheet2Name,
+        { workbookName, sheetName: sheet2Name },
         new Map<string, SerializedCellValue>([
           ["A10", "=SEQUENCE(3,3)"],
           ["B15", 100], // Direct value outside spill
@@ -424,14 +427,14 @@ describe("OpenRangeEvaluator", () => {
 
     it("should detect infinite spills from another sheet", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(Sheet2!B10:D)"],
         ])
       );
       
       engine.setSheetContent(
-        sheet2Name,
+        { workbookName, sheetName: sheet2Name },
         new Map<string, SerializedCellValue>([
           ["B100", "=SEQUENCE(INFINITY)"],
         ])
@@ -443,14 +446,14 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle cross-sheet frontier candidates - top frontier", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(Sheet2!B10:D)"],
         ])
       );
       
       engine.setSheetContent(
-        sheet2Name,
+        { workbookName, sheetName: sheet2Name },
         new Map<string, SerializedCellValue>([
           ["C8", "=SEQUENCE(5,1)"],
         ])
@@ -463,14 +466,14 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle cross-sheet frontier candidates - left frontier", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(Sheet2!B10:INFINITY)"],
         ])
       );
       
       engine.setSheetContent(
-        sheet2Name,
+        { workbookName, sheetName: sheet2Name },
         new Map<string, SerializedCellValue>([
           ["A10", "=SEQUENCE(1,5)"],
         ])
@@ -483,14 +486,14 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle blocked cross-sheet frontier candidates", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(Sheet2!C10:INFINITY)"],
         ])
       );
       
       engine.setSheetContent(
-        sheet2Name,
+        { workbookName, sheetName: sheet2Name },
         new Map<string, SerializedCellValue>([
           ["A8", "=SEQUENCE(5,5)"],
           ["B9", 999], // Blocks the spill
@@ -504,7 +507,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle mixed cross-sheet and same-sheet data", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(B10:B) + SUM(Sheet2!B10:B)"],
           ["B10", 10],
@@ -513,7 +516,7 @@ describe("OpenRangeEvaluator", () => {
       );
       
       engine.setSheetContent(
-        sheet2Name,
+        { workbookName, sheetName: sheet2Name },
         new Map<string, SerializedCellValue>([
           ["B10", 100],
           ["B11", 200],
@@ -526,14 +529,14 @@ describe("OpenRangeEvaluator", () => {
 
     it("should propagate cross-sheet errors in open ranges", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(Sheet2!B10:B)"],
         ])
       );
       
       engine.setSheetContent(
-        sheet2Name,
+        { workbookName, sheetName: sheet2Name },
         new Map<string, SerializedCellValue>([
           ["B10", 10],
           ["B11", "=INVALID_FUNCTION()"],
@@ -547,7 +550,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle cross-sheet circular references", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(Sheet2!A10:B)"],
           ["A10", "=Sheet2!B10"],
@@ -555,7 +558,7 @@ describe("OpenRangeEvaluator", () => {
       );
       
       engine.setSheetContent(
-        sheet2Name,
+        { workbookName, sheetName: sheet2Name },
         new Map<string, SerializedCellValue>([
           ["B10", "=TestSheet!A10"],
         ])
@@ -567,7 +570,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle references to non-existent sheets", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(NonExistentSheet!B10:INFINITY)"],
         ])
@@ -579,7 +582,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle complex cross-sheet spill chains", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(Sheet2!B10:INFINITY)"],
           ["X1", "=SEQUENCE(2,2)"], // Creates spill on current sheet
@@ -587,7 +590,7 @@ describe("OpenRangeEvaluator", () => {
       );
       
       engine.setSheetContent(
-        sheet2Name,
+        { workbookName, sheetName: sheet2Name },
         new Map<string, SerializedCellValue>([
           ["A10", "=TestSheet!X1:Y2*10"], // References spill from TestSheet
           ["B15", 1000], // Direct value
@@ -605,17 +608,17 @@ describe("OpenRangeEvaluator", () => {
 
     it("should work with multiple sheets and open ranges", () => {
       const sheet3Name = "Sheet3";
-      engine.addSheet(sheet3Name);
+      engine.addSheet({ workbookName, sheetName: sheet3Name });
 
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(Sheet2!B10:B, Sheet3!C10:C)"],
         ])
       );
       
       engine.setSheetContent(
-        sheet2Name,
+        { workbookName, sheetName: sheet2Name },
         new Map<string, SerializedCellValue>([
           ["B10", 10],
           ["B11", 20],
@@ -623,7 +626,7 @@ describe("OpenRangeEvaluator", () => {
       );
       
       engine.setSheetContent(
-        sheet3Name,
+        { workbookName, sheetName: sheet3Name },
         new Map<string, SerializedCellValue>([
           ["C10", 100],
           ["C11", 200],
@@ -638,7 +641,7 @@ describe("OpenRangeEvaluator", () => {
   describe("Edge cases", () => {
     it("should handle ranges starting at row/column 0", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["A2", 20],
@@ -652,7 +655,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should be circular?", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["B2", 20],
@@ -666,7 +669,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle entire sheet ranges", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(B1:INFINITY)"],
           ["B1", 10],
@@ -680,7 +683,7 @@ describe("OpenRangeEvaluator", () => {
 
     it("should handle nested spills with open ranges", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["X1", "=SEQUENCE(2,2)"],
           ["A10", "=X1:Y2*10"],
@@ -695,7 +698,7 @@ describe("OpenRangeEvaluator", () => {
     });
     it("should handle nested spills with open ranges /2", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["X1", "=SEQUENCE(8,8)"],
           ["A10", "=X1:Y2"],
@@ -710,7 +713,7 @@ describe("OpenRangeEvaluator", () => {
     });
     it("should handle frontier dependencies", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A10", "=5:5"],
           ["B5", 2],

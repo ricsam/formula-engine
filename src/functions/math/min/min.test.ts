@@ -5,25 +5,28 @@ import { parseCellReference } from "src/core/utils";
 
 describe("MIN function", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) }, debug);
 
   const setCellContent = (ref: string, content: string) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
   };
 
   const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   test("basic scalar arguments", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([["A1", "=MIN(6, 2, 8, 1, 9)"]])
     );
 
@@ -32,7 +35,7 @@ describe("MIN function", () => {
 
   test("with cell references", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 30],
         ["A2", 10],
@@ -47,7 +50,7 @@ describe("MIN function", () => {
   test("with structured references", () => {
     // Create a table with data
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         // Table headers
         ["A1", "Name"],
@@ -71,7 +74,8 @@ describe("MIN function", () => {
     // Define the table
     engine.addTable({
       tableName: "DataTable",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 3 }, // 3 data rows
       numCols: 3, // 3 columns: Name, Value, Count
@@ -84,7 +88,7 @@ describe("MIN function", () => {
 
   test("with named expressions", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 30],
         ["A2", 10],
@@ -101,17 +105,20 @@ describe("MIN function", () => {
     engine.addNamedExpression({
       expression: "A1:A3",
       expressionName: "VALUES_A",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
     });
     engine.addNamedExpression({
       expression: "B1:B2",
       expressionName: "VALUES_B",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
     });
     engine.addNamedExpression({
       expression: "25",
       expressionName: "SINGLE_VALUE",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
     });
 
     // ENGINE ISSUE: Named expressions that evaluate to ranges not supported in function calls
@@ -121,12 +128,12 @@ describe("MIN function", () => {
   });
 
   test("with cross-sheet references", () => {
-    const sheet1Name = engine.addSheet("Sheet1").name;
-    const sheet2Name = engine.addSheet("Sheet2").name;
+    const sheet1Name = engine.addSheet({ workbookName, sheetName: "Sheet1" }).name;
+    const sheet2Name = engine.addSheet({ workbookName, sheetName: "Sheet2" }).name;
 
     // Set up data on Sheet1
     engine.setSheetContent(
-      sheet1Name,
+      { workbookName, sheetName: sheet1Name },
       new Map<string, SerializedCellValue>([
         ["A1", 100],
         ["A2", 200],
@@ -139,7 +146,7 @@ describe("MIN function", () => {
 
     // Set up data on Sheet2
     engine.setSheetContent(
-      sheet2Name,
+      { workbookName, sheetName: sheet2Name },
       new Map<string, SerializedCellValue>([
         ["B1", 50],
         ["B2", 75],
@@ -147,7 +154,7 @@ describe("MIN function", () => {
     );
 
     const cell = (sheetName: string, ref: string) =>
-      engine.getCellValue({ sheetName, ...parseCellReference(ref) });
+      engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) });
 
     // ENGINE ISSUE: Cross-sheet references like Sheet2!B1:B2 not supported
     expect(cell(sheet1Name, "B1")).toBe(50); // Min of 50, 75 is 50
@@ -156,14 +163,14 @@ describe("MIN function", () => {
   });
 
   test.skip("with 3D sheet references", () => {
-    const sheet1Name = engine.addSheet("Sheet1").name;
-    const sheet2Name = engine.addSheet("Sheet2").name;
-    const sheet3Name = engine.addSheet("Sheet3").name;
+    const sheet1Name = engine.addSheet({ workbookName, sheetName: "Sheet1" }).name;
+    const sheet2Name = engine.addSheet({ workbookName, sheetName: "Sheet2" }).name;
+    const sheet3Name = engine.addSheet({ workbookName, sheetName: "Sheet3" }).name;
 
     // Set up same data on all sheets
     [sheet1Name, sheet2Name, sheet3Name].forEach((sheetName) => {
       engine.setSheetContent(
-        sheetName,
+        { workbookName, sheetName },
         new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["A2", 20],
@@ -173,7 +180,7 @@ describe("MIN function", () => {
 
     // Create 3D reference formulas
     engine.setSheetContent(
-      sheet1Name,
+      { workbookName, sheetName: sheet1Name },
       new Map<string, SerializedCellValue>([
         ["B1", "=MIN(Sheet1:Sheet3!A1)"], // Min A1 across sheets 1-3
         ["B2", "=MIN(Sheet1:Sheet3!A1:A2)"], // Min A1:A2 across sheets 1-3
@@ -184,6 +191,7 @@ describe("MIN function", () => {
       engine.getCellValue(
         {
           sheetName,
+          workbookName,
           ...parseCellReference(ref),
         },
         debug
@@ -196,7 +204,7 @@ describe("MIN function", () => {
 
   test("with dynamic arrays (SEQUENCE)", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "=SEQUENCE(3, 2, 10, 5)"], // Creates 2x3 array starting at 10, step 5
         ["D1", "=MIN(A1:B3)"], // Min the entire spilled array
@@ -215,7 +223,7 @@ describe("MIN function", () => {
 
   test("MIN used in dynamic array context", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         // Create multiple ranges to find min
         ["A1", 10],
@@ -251,7 +259,7 @@ describe("MIN function", () => {
 
   test("handling infinity", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "=1/0"], // Positive infinity
         ["A2", "=-1/0"], // Negative infinity
@@ -274,7 +282,7 @@ describe("MIN function", () => {
 
   test("error handling", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "text"],
         ["A2", 10],
@@ -295,7 +303,7 @@ describe("MIN function", () => {
 
   test("mixed argument types", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 10],
         ["A2", 20],
@@ -310,17 +318,18 @@ describe("MIN function", () => {
 
   test("MIN() with zero arguments", () => {
     const engine = FormulaEngine.buildEmpty();
-    const sheetName = engine.addSheet("Sheet1").name;
+    engine.addWorkbook(workbookName);
+    const sheetName = engine.addSheet({ workbookName, sheetName: "Sheet1" }).name;
 
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ["A1", "=MIN()"], // Should be allowed by parser
       ])
     );
 
     const cell = (ref: string) =>
-      engine.getCellValue({ sheetName, ...parseCellReference(ref) });
+      engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) });
 
     // MIN with no arguments should return error
     expect(cell("A1")).toBe(FormulaError.VALUE);
@@ -328,7 +337,7 @@ describe("MIN function", () => {
 
   test("single argument", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 42],
         ["B1", "=MIN(A1)"], // Single cell reference
@@ -342,7 +351,7 @@ describe("MIN function", () => {
 
   test("negative numbers", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "=MIN(-10, -5, -20, -1)"], // All negative
         ["A2", "=MIN(-10, 5, -20, 1)"], // Mix of positive and negative
@@ -357,7 +366,7 @@ describe("MIN function", () => {
 
   test("decimal numbers", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "=MIN(1.5, 2.7, 0.3, 1.9)"], // Decimal numbers
         ["A2", "=MIN(0.001, 0.002, 0.0005)"], // Small decimals
