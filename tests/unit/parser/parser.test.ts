@@ -1130,6 +1130,162 @@ describe("Parser - Open-Ended Ranges", () => {
   });
 });
 
+describe("Parser - Workbook References", () => {
+  test("should parse workbook sheet alias", () => {
+    const ast = parseFormula("[MyWorkbook]Sheet1");
+    expect(ast.type).toBe("range");
+    expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.sheetName).toBe("Sheet1");
+    // Should be equivalent to [MyWorkbook]Sheet1!A1:INFINITY
+    expect(ast.range.start).toEqual({ col: 0, row: 0 });
+    expect(ast.range.end.col.type).toBe("infinity");
+    expect(ast.range.end.row.type).toBe("infinity");
+  });
+
+  test("should parse workbook sheet alias with spaces", () => {
+    const ast = parseFormula("[My Workbook]'Sheet With Spaces'");
+    expect(ast.type).toBe("range");
+    expect(ast.workbookName).toBe("My Workbook");
+    expect(ast.sheetName).toBe("Sheet With Spaces");
+  });
+
+  test("should parse workbook cell reference", () => {
+    const ast = parseFormula("[MyWorkbook]Sheet1!A1");
+    expect(ast.type).toBe("reference");
+    expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.sheetName).toBe("Sheet1");
+    expect(ast.address).toEqual({ colIndex: 0, rowIndex: 0 });
+  });
+
+  test("should parse workbook absolute cell reference", () => {
+    const ast = parseFormula("[MyWorkbook]'Sheet With Spaces'!$A$1");
+    expect(ast.type).toBe("reference");
+    expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.sheetName).toBe("Sheet With Spaces");
+    expect(ast.address).toEqual({ colIndex: 0, rowIndex: 0 });
+    expect(ast.isAbsolute).toEqual({ col: true, row: true });
+  });
+
+  test("should parse workbook range reference", () => {
+    const ast = parseFormula("[MyWorkbook]Sheet1!A1:C5");
+    expect(ast.type).toBe("range");
+    expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.sheetName).toBe("Sheet1");
+    expect(ast.range.start).toEqual({ col: 0, row: 0 });
+    expect(ast.range.end.col.value).toBe(2); // Column C
+    expect(ast.range.end.row.value).toBe(4); // Row 5 (0-based)
+  });
+
+  test("should parse workbook 3D range reference", () => {
+    const ast = parseFormula("[MyWorkbook]Sheet1:Sheet3!A1:C5");
+    expect(ast.type).toBe("3d-range");
+    expect(ast.startSheet).toBe("Sheet1");
+    expect(ast.endSheet).toBe("Sheet3");
+    expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.reference.type).toBe("range");
+    // The inner reference should not have the workbook name (it's on the 3D range node)
+    expect(ast.reference.workbookName).toBeUndefined();
+  });
+
+  test("should parse workbook named expression", () => {
+    const ast = parseFormula("[MyWorkbook]Sheet1!TaxRate");
+    expect(ast.type).toBe("named-expression");
+    expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.sheetName).toBe("Sheet1");
+    expect(ast.name).toBe("TaxRate");
+  });
+
+  test("should parse workbook table reference", () => {
+    const ast = parseFormula("[MyWorkbook]Sheet1!Table1[Column1]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({ startCol: "Column1", endCol: "Column1" });
+  });
+
+  test("should parse workbook infinite ranges", () => {
+    // Column range
+    const ast1 = parseFormula("[MyWorkbook]Sheet1!A:A");
+    expect(ast1.type).toBe("range");
+    expect(ast1.workbookName).toBe("MyWorkbook");
+    expect(ast1.sheetName).toBe("Sheet1");
+    expect(ast1.range.end.row.type).toBe("infinity");
+
+    // Row range
+    const ast2 = parseFormula("[MyWorkbook]Sheet1!1:1");
+    expect(ast2.type).toBe("range");
+    expect(ast2.workbookName).toBe("MyWorkbook");
+    expect(ast2.sheetName).toBe("Sheet1");
+    expect(ast2.range.end.col.type).toBe("infinity");
+
+    // Open-ended range
+    const ast3 = parseFormula("[MyWorkbook]Sheet1!A1:INFINITY");
+    expect(ast3.type).toBe("range");
+    expect(ast3.workbookName).toBe("MyWorkbook");
+    expect(ast3.sheetName).toBe("Sheet1");
+    expect(ast3.range.end.col.type).toBe("infinity");
+    expect(ast3.range.end.row.type).toBe("infinity");
+  });
+
+  test("should parse workbook references in functions", () => {
+    const ast = parseFormula("SUM([MyWorkbook]Sheet1!A1:A10)");
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("SUM");
+    expect(ast.args[0].type).toBe("range");
+    expect(ast.args[0].workbookName).toBe("MyWorkbook");
+    expect(ast.args[0].sheetName).toBe("Sheet1");
+  });
+
+  test("should parse complex workbook names", () => {
+    // Workbook name with spaces, numbers, and special characters
+    const testCases = [
+      "[Budget 2024]Sheet1",
+      "[My-Workbook]Sheet1",
+      "[Workbook_v2]Sheet1",
+      "[Report (Final)]Sheet1",
+      "[Data=Analysis]Sheet1",
+      "[50% Complete]Sheet1",
+    ];
+
+    testCases.forEach(formula => {
+      expect(() => parseFormula(formula)).not.toThrow();
+      const ast = parseFormula(formula);
+      expect(ast.type).toBe("range");
+      expect(ast.workbookName).toBeDefined();
+      expect(ast.sheetName).toBe("Sheet1");
+    });
+  });
+
+  test("should distinguish workbook references from bare column references", () => {
+    // This should be parsed as a bare column reference, not a workbook reference
+    const ast1 = parseFormula("[Column1]");
+    expect(ast1.type).toBe("structured-reference");
+    expect(ast1.workbookName).toBeUndefined();
+    expect(ast1.cols?.startCol).toBe("Column1");
+
+    // This should be parsed as a workbook reference
+    const ast2 = parseFormula("[MyWorkbook]Sheet1");
+    expect(ast2.type).toBe("range");
+    expect(ast2.workbookName).toBe("MyWorkbook");
+    expect(ast2.sheetName).toBe("Sheet1");
+  });
+
+  test("should handle mixed workbook and same-workbook references", () => {
+    const ast = parseFormula("SUM([External]Sheet1!A1:A10, 'Local Sheet'!B1:B10)");
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("SUM");
+    expect(ast.args).toHaveLength(2);
+    
+    // First argument: external workbook reference
+    expect(ast.args[0].workbookName).toBe("External");
+    expect(ast.args[0].sheetName).toBe("Sheet1");
+    
+    // Second argument: same-workbook reference (no workbook name)
+    expect(ast.args[1].workbookName).toBeUndefined();
+    expect(ast.args[1].sheetName).toBe("Local Sheet");
+  });
+});
+
 describe("Parser - Error Handling", () => {
   test("should throw on invalid syntax", () => {
     expect(() => parseFormula("=")).toThrow(ParseError);

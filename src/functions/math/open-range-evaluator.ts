@@ -50,7 +50,7 @@ export class OpenRangeEvaluator {
     const { evaluate, context } = options;
 
     if (
-      options.origin.sheetName === context.currentSheet &&
+      options.origin.sheetName === context.currentCell.sheetName &&
       isCellInRange(context.currentCell, options.origin.range)
     ) {
       yield {
@@ -98,7 +98,6 @@ export class OpenRangeEvaluator {
       processedCells.add(candidateKey);
 
       const key = dependencyNodeToKey({
-        type: "cell",
         address: candidate,
         sheetName: candidate.sheetName,
         workbookName: candidate.workbookName,

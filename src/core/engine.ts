@@ -31,6 +31,7 @@ import { getCellReference } from "./utils";
 import { AutoFill } from "./autofill-utils";
 import { WorkbookManager } from "./managers/workbook-manager";
 import { renameSheetInFormula } from "./sheet-renamer";
+import { renameWorkbookInFormula } from "./workbook-renamer";
 import { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 import { OpenRangeEvaluator } from "src/functions/math/open-range-evaluator";
 import { StoreManager } from "./managers/store-manager";
@@ -69,12 +70,12 @@ export class FormulaEngine {
     const formulaEvaluator = new FormulaEvaluator(
       this.tableManager,
       this.storeManager,
+      this.namedExpressionManager,
       this.workbookManager
     );
 
     this.evaluationManager = new EvaluationManager(
       this.workbookManager,
-      this.namedExpressionManager,
       formulaEvaluator,
       this.storeManager
     );
@@ -473,7 +474,16 @@ export class FormulaEngine {
 
   renameWorkbook(opts: { workbookName: string; newWorkbookName: string }) {
     this.workbookManager.renameWorkbook(opts);
-    // TODO rename formulas in named expressions and sheets
+
+    // Update all formulas that reference this workbook
+    this.workbookManager.updateAllFormulas((formula) =>
+      renameWorkbookInFormula({
+        formula,
+        oldWorkbookName: opts.workbookName,
+        newWorkbookName: opts.newWorkbookName,
+      })
+    );
+
     this.reevaluate();
     this.eventManager.emitUpdate();
   }

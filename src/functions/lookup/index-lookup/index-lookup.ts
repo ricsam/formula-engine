@@ -74,8 +74,8 @@ function getValueFromArray(
   const spilledAddress: CellAddress = {
     colIndex: actualCol,
     rowIndex: actualRow,
-    sheetName: context.currentSheet,
-    workbookName: context.currentWorkbook,
+    sheetName: context.currentCell.sheetName,
+    workbookName: context.currentCell.workbookName,
   };
 
   const spill = {

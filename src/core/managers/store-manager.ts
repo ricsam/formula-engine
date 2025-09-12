@@ -3,8 +3,6 @@ import {
   type EvaluatedDependencyNode,
   type EvaluationContext,
   type FunctionEvaluationResult,
-  type NamedExpression,
-  type NamedExpressionDependencyNode,
   type SpilledValue,
 } from "../types";
 import { isCellInRange } from "../utils";
@@ -99,7 +97,6 @@ export class StoreManager {
       }
     }
     const key = dependencyNodeToKey({
-      type: "cell",
       address: cellAddress,
       sheetName: cellAddress.sheetName,
       workbookName: cellAddress.workbookName,
@@ -107,32 +104,6 @@ export class StoreManager {
     context.dependencies.add(key);
     const result = this.evaluatedNodes.get(key)?.evaluationResult;
     return result;
-  }
-
-  /**
-   * Similar logic as evalTimeSafeEvaluateCell, but for named expressions
-   */
-  evalTimeSafeEvaluateNamedExpression(
-    namedExpression: Pick<
-      NamedExpression,
-      "name" | "sheetName" | "workbookName"
-    >,
-    context: EvaluationContext
-  ): FunctionEvaluationResult | undefined {
-    const namedExpressionNode: NamedExpressionDependencyNode | undefined =
-      this.namedExpressionManager.resolveNamedExpression(
-        namedExpression,
-        context
-      );
-    if (!namedExpressionNode) {
-      return undefined;
-    }
-
-    const nodeKey = dependencyNodeToKey(namedExpressionNode);
-    context.dependencies.add(nodeKey);
-
-    const value = this.evaluatedNodes.get(nodeKey);
-    return value?.evaluationResult;
   }
 
   clearEvaluationCache(): void {

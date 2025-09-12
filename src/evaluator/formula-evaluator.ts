@@ -50,6 +50,7 @@ import { lessThan } from "./comparison/less-than";
 import { lessThanOrEqual } from "./comparison/less-than-or-equal";
 import { notEquals } from "./comparison/not-equals";
 import { concatenate } from "./concatenation/concatenate";
+import type { NamedExpressionManager } from "src/core/managers/named-expression-manager";
 
 function isFormulaError(value: string): value is FormulaError {
   if (typeof value !== "string") return false;
@@ -113,6 +114,7 @@ export class FormulaEvaluator {
   constructor(
     private tableManager: TableManager,
     private storeManager: StoreManager,
+    private namedExpressionManager: NamedExpressionManager,
     workbookManager: WorkbookManager
   ) {
     this.openRangeEvaluator = new OpenRangeEvaluator(
@@ -250,7 +252,7 @@ export class FormulaEvaluator {
         .get(node.tableName);
     } else if (node.tableName) {
       table = this.tableManager
-        .getTables(context.currentWorkbook)
+        .getTables(context.currentCell.workbookName)
         .get(node.tableName);
     } else {
       table = this.isCellInTable(context.currentCell);
@@ -419,8 +421,8 @@ export class FormulaEvaluator {
       spillArea: (origin) => this.projectRange(node.range, origin),
       source: `range`,
       evaluate: (spillOffset, context) => {
-        const originSheetName = node.sheetName ?? context.currentSheet;
-        const originWorkbookName = node.workbookName ?? context.currentWorkbook;
+        const originSheetName = node.sheetName ?? context.currentCell.sheetName;
+        const originWorkbookName = node.workbookName ?? context.currentCell.workbookName;
         const colIndex = node.range.start.col + spillOffset.x;
         const rowIndex = node.range.start.row + spillOffset.y;
         const result = this.storeManager.evalTimeSafeEvaluateCell(
@@ -458,8 +460,8 @@ export class FormulaEvaluator {
           context,
           origin: {
             range,
-            sheetName: node.sheetName ?? context.currentSheet,
-            workbookName: node.workbookName ?? context.currentWorkbook,
+            sheetName: node.sheetName ?? context.currentCell.sheetName,
+            workbookName: node.workbookName ?? context.currentCell.workbookName,
           },
         });
       },
@@ -684,8 +686,8 @@ export class FormulaEvaluator {
   ): FunctionEvaluationResult {
     const cellAddress: CellAddress = {
       ...node.address,
-      sheetName: node.sheetName ?? context.currentSheet,
-      workbookName: node.workbookName ?? context.currentWorkbook,
+      sheetName: node.sheetName ?? context.currentCell.sheetName,
+      workbookName: node.workbookName ?? context.currentCell.workbookName,
     };
     const result = this.storeManager.evalTimeSafeEvaluateCell(
       cellAddress,
@@ -708,11 +710,12 @@ export class FormulaEvaluator {
     node: NamedExpressionNode,
     context: EvaluationContext
   ): FunctionEvaluationResult {
-    const result = this.storeManager.evalTimeSafeEvaluateNamedExpression(
+    const expression = this.namedExpressionManager.resolveNamedExpression(
       node,
       context
     );
-    if (!result) {
+
+    if (!expression) {
       return {
         type: "error",
         err: FormulaError.NAME,
@@ -720,7 +723,7 @@ export class FormulaEvaluator {
       };
     }
 
-    return result;
+    return this.evaluateFormula(expression, context);
   }
 
   /**

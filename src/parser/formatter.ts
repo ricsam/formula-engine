@@ -76,7 +76,7 @@ function formatValue(value: CellValue): string {
 }
 
 function formatReference(ast: ReferenceNode): string {
-  const { address, isAbsolute, sheetName } = ast;
+  const { address, isAbsolute, sheetName, workbookName } = ast;
   const colLetter = indexToColumn(address.colIndex);
   const rowNumber = address.rowIndex + 1; // Convert from 0-based to 1-based
 
@@ -85,16 +85,22 @@ function formatReference(ast: ReferenceNode): string {
 
   const cellRef = `${colRef}${rowRef}`;
 
+  let result = cellRef;
+
   if (sheetName) {
     const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
-    return `${quotedSheet}!${cellRef}`;
+    result = `${quotedSheet}!${cellRef}`;
   }
 
-  return cellRef;
+  if (workbookName) {
+    result = `[${workbookName}]${result}`;
+  }
+
+  return result;
 }
 
 function formatRange(ast: RangeNode): string {
-  const { range, isAbsolute, sheetName } = ast;
+  const { range, isAbsolute, sheetName, workbookName } = ast;
 
   // Handle infinite ranges
   if (range.end.col.type === "infinity" || range.end.row.type === "infinity") {
@@ -116,16 +122,22 @@ function formatRange(ast: RangeNode): string {
 
   const rangeRef = `${startColRef}${startRowRef}:${endColRef}${endRowRef}`;
 
+  let result = rangeRef;
+
   if (sheetName) {
     const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
-    return `${quotedSheet}!${rangeRef}`;
+    result = `${quotedSheet}!${rangeRef}`;
   }
 
-  return rangeRef;
+  if (workbookName) {
+    result = `[${workbookName}]${result}`;
+  }
+
+  return result;
 }
 
 function formatInfiniteRange(ast: RangeNode): string {
-  const { range, isAbsolute, sheetName } = ast;
+  const { range, isAbsolute, sheetName, workbookName } = ast;
 
   let rangeRef: string;
 
@@ -173,12 +185,18 @@ function formatInfiniteRange(ast: RangeNode): string {
     throw new Error("Expected at least one infinite dimension for infinite range");
   }
 
+  let result = rangeRef;
+
   if (sheetName) {
     const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
-    return `${quotedSheet}!${rangeRef}`;
+    result = `${quotedSheet}!${rangeRef}`;
   }
 
-  return rangeRef;
+  if (workbookName) {
+    result = `[${workbookName}]${result}`;
+  }
+
+  return result;
 }
 
 function formatFunction(ast: FunctionNode): string {
@@ -262,28 +280,50 @@ function formatArray(ast: ArrayNode): string {
 }
 
 function formatNamedExpression(ast: NamedExpressionNode): string {
-  const { name, sheetName } = ast;
+  const { name, sheetName, workbookName } = ast;
+  
+  let result = name;
+  
   if (sheetName !== undefined) {
     // Sheet-scoped named expression
     const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
-    return `${quotedSheet}!${name}`;
+    result = `${quotedSheet}!${name}`;
   }
-  return name;
+  
+  if (workbookName) {
+    result = `[${workbookName}]${result}`;
+  }
+  
+  return result;
 }
 
 function formatThreeDRange(ast: ThreeDRangeNode): string {
-  const { startSheet, endSheet, reference } = ast;
+  const { startSheet, endSheet, workbookName, reference } = ast;
   const refStr = astToString(reference);
 
-  // Remove sheet name from reference if present (since we're adding the 3D range prefix)
-  const cleanRef = refStr.includes("!") ? refStr.split("!")[1] : refStr;
+  // Remove sheet name and workbook name from reference if present (since we're adding the 3D range prefix)
+  let cleanRef = refStr;
+  if (cleanRef.includes("!")) {
+    cleanRef = cleanRef.split("!")[1]!;
+  }
+  // Remove workbook prefix if present
+  if (cleanRef.startsWith("[") && cleanRef.includes("]")) {
+    const bracketEnd = cleanRef.indexOf("]");
+    cleanRef = cleanRef.substring(bracketEnd + 1);
+  }
 
   const quotedStartSheet = startSheet.includes(" ")
     ? `'${startSheet}'`
     : startSheet;
   const quotedEndSheet = endSheet.includes(" ") ? `'${endSheet}'` : endSheet;
 
-  return `${quotedStartSheet}:${quotedEndSheet}!${cleanRef}`;
+  let result = `${quotedStartSheet}:${quotedEndSheet}!${cleanRef}`;
+
+  if (workbookName) {
+    result = `[${workbookName}]${result}`;
+  }
+
+  return result;
 }
 
 /**
@@ -295,7 +335,7 @@ function needsColumnBrackets(columnName: string): boolean {
 }
 
 function formatStructuredReference(ast: StructuredReferenceNode): string {
-  const { tableName, cols, selector, isCurrentRow } = ast;
+  const { tableName, sheetName, workbookName, cols, selector, isCurrentRow } = ast;
 
   if (!tableName && isCurrentRow) {
     // Current row reference like [@Column] or @Column
@@ -334,6 +374,15 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
   }
 
   let result = "";
+
+  if (workbookName) {
+    result += `[${workbookName}]`;
+  }
+
+  if (sheetName) {
+    const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
+    result += `${quotedSheet}!`;
+  }
 
   result += tableName;
 

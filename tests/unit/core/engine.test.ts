@@ -260,7 +260,6 @@ describe("FormulaEngine", () => {
     );
     engine._storeManager.evaluatedNodes.set(
       dependencyNodeToKey({
-        type: "cell",
         address: { colIndex: 0, rowIndex: 0 },
         sheetName: sheet.name,
         workbookName,
@@ -268,13 +267,11 @@ describe("FormulaEngine", () => {
       {
         deps: new Set([
           dependencyNodeToKey({
-            type: "cell",
             address: { colIndex: 1, rowIndex: 0 },
             sheetName: sheet.name,
             workbookName,
           }),
           dependencyNodeToKey({
-            type: "cell",
             address: { colIndex: 2, rowIndex: 0 },
             sheetName: sheet.name,
             workbookName,
@@ -284,7 +281,6 @@ describe("FormulaEngine", () => {
     );
     engine._storeManager.evaluatedNodes.set(
       dependencyNodeToKey({
-        type: "cell",
         address: { colIndex: 1, rowIndex: 0 },
         sheetName: sheet.name,
         workbookName,
@@ -292,13 +288,11 @@ describe("FormulaEngine", () => {
       {
         deps: new Set([
           dependencyNodeToKey({
-            type: "cell",
             address: { colIndex: 2, rowIndex: 0 },
             sheetName: sheet.name,
             workbookName,
           }),
           dependencyNodeToKey({
-            type: "cell",
             address: { colIndex: 3, rowIndex: 0 },
             sheetName: sheet.name,
             workbookName,
@@ -308,7 +302,6 @@ describe("FormulaEngine", () => {
     );
     engine._storeManager.evaluatedNodes.set(
       dependencyNodeToKey({
-        type: "cell",
         address: { colIndex: 2, rowIndex: 0 },
         sheetName: sheet.name,
         workbookName,
@@ -316,13 +309,11 @@ describe("FormulaEngine", () => {
       {
         deps: new Set([
           dependencyNodeToKey({
-            type: "cell",
             address: { colIndex: 3, rowIndex: 0 },
             sheetName: sheet.name,
             workbookName,
           }),
           dependencyNodeToKey({
-            type: "cell",
             address: { colIndex: 4, rowIndex: 0 },
             sheetName: sheet.name,
             workbookName,
@@ -333,7 +324,6 @@ describe("FormulaEngine", () => {
 
     const deps = engine._evaluationManager.getTransitiveDeps(
       dependencyNodeToKey({
-        type: "cell",
         address: { colIndex: 0, rowIndex: 0 },
         sheetName: sheet.name,
         workbookName,
@@ -342,25 +332,21 @@ describe("FormulaEngine", () => {
     expect(deps).toEqual(
       new Set([
         dependencyNodeToKey({
-          type: "cell",
           address: { colIndex: 1, rowIndex: 0 },
           sheetName: sheet.name,
           workbookName,
         }),
         dependencyNodeToKey({
-          type: "cell",
           address: { colIndex: 2, rowIndex: 0 },
           sheetName: sheet.name,
           workbookName,
         }),
         dependencyNodeToKey({
-          type: "cell",
           address: { colIndex: 3, rowIndex: 0 },
           sheetName: sheet.name,
           workbookName,
         }),
         dependencyNodeToKey({
-          type: "cell",
           address: { colIndex: 4, rowIndex: 0 },
           sheetName: sheet.name,
           workbookName,
@@ -1598,6 +1584,55 @@ describe("FormulaEngine", () => {
       expect(cell("C20", true)).toBe(5);
       expect(cell("D10")).toBe(7);
       expect(cell("D20", true)).toBe(8);
+    });
+  });
+
+  describe("Cycle Detection", () => {
+    test("should detect and mark all nodes in a simple cycle", () => {
+      // Create a simple cycle: A1 -> B1 -> A1
+      setCellContent("A1", "=B1");
+      setCellContent("B1", "=A1");
+
+      // Both cells should show cycle error
+      expect(cell("A1", true)).toBe("#CYCLE!: Cycle detected");
+      expect(cell("B1", true)).toBe("#CYCLE!: Cycle detected");
+    });
+
+    test("should detect and mark all nodes in a complex cycle", () => {
+      // Create a more complex cycle: A1 -> B1 -> C1 -> A1
+      setCellContent("A1", "=B1");
+      setCellContent("B1", "=C1");
+      setCellContent("C1", "=A1");
+
+      // All three cells should show cycle error
+      expect(cell("A1", true)).toBe("#CYCLE!: Cycle detected");
+      expect(cell("B1", true)).toBe("#CYCLE!: Cycle detected");
+      expect(cell("C1", true)).toBe("#CYCLE!: Cycle detected");
+    });
+
+    test("should detect cycles with non-cycle dependencies", () => {
+      // Create a cycle with additional dependencies: A1 -> B1 -> C1 -> B1, D1 -> A1
+      setCellContent("A1", "=B1");
+      setCellContent("B1", "=C1");
+      setCellContent("C1", "=B1"); // Creates cycle B1 -> C1 -> B1
+      setCellContent("D1", "=A1"); // Depends on A1 but not part of cycle
+
+      // Cycle participants should show cycle error
+      expect(cell("B1", true)).toBe("#CYCLE!: Cycle detected");
+      expect(cell("C1", true)).toBe("#CYCLE!: Cycle detected");
+
+      // A1 should also show cycle error since it depends on the cycle
+      expect(cell("A1", true)).toBe("#CYCLE!: Cycle detected");
+
+      // D1 should also show cycle error since it depends on A1 which has a cycle
+      expect(cell("D1", true)).toBe("#CYCLE!: Cycle detected");
+    });
+
+    test("should handle self-referencing cell", () => {
+      // Create a self-reference: A1 -> A1
+      setCellContent("A1", "=A1");
+
+      expect(cell("A1", true)).toBe("#CYCLE!: Cycle detected");
     });
   });
 });

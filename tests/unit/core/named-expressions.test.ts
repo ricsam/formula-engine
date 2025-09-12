@@ -535,7 +535,9 @@ describe("Named Expressions", () => {
     // Set global named expressions in bulk - should trigger event
     engine.setNamedExpressions({
       type: "global",
-      expressions: new Map([["BULK_EVENT", { name: "BULK_EVENT", expression: "0.25" }]]),
+      expressions: new Map([
+        ["BULK_EVENT", { name: "BULK_EVENT", expression: "0.25" }],
+      ]),
     });
 
     expect(globalExpressionsUpdatedCount).toBe(5);
@@ -570,7 +572,7 @@ describe("Named Expressions", () => {
     );
 
     expect(cell("A1")).toBe(50); // (10 * 2) + (10 * 3) = 20 + 30 = 50
-    expect(cell("B1")).toBe(60); // 10 + 20 + 30 = 60
+    expect(cell("B1", true)).toBe(60); // 10 + 20 + 30 = 60
 
     // Update BASE - should cascade through all dependent expressions
     engine.updateNamedExpression({ expressionName: "BASE", expression: "20" });

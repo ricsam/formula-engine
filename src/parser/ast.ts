@@ -119,6 +119,7 @@ export type ThreeDRangeNode = ASTNodeBase & {
   type: "3d-range";
   startSheet: string;
   endSheet: string;
+  workbookName?: string;
   reference: ReferenceNode | RangeNode;
 };
 
@@ -128,6 +129,7 @@ export type ThreeDRangeNode = ASTNodeBase & {
 export type StructuredReferenceNode = ASTNodeBase & {
   type: "structured-reference";
   tableName?: string;
+  sheetName?: string;
   workbookName?: string;
   cols?: {
     startCol: string;
@@ -214,6 +216,7 @@ export function createReferenceNode({
   isAbsolute,
   position,
   sheetName,
+  workbookName,
 }: {
   address: {
     colIndex: number;
@@ -225,12 +228,14 @@ export function createReferenceNode({
     end: number;
   };
   sheetName?: string;
+  workbookName?: string;
 }): ReferenceNode {
   return {
     type: "reference",
     address,
     isAbsolute,
     sheetName,
+    workbookName,
     position,
   };
 }
@@ -240,11 +245,13 @@ export function createReferenceNode({
  */
 export function createRangeNode({
   sheetName,
+  workbookName,
   range,
   isAbsolute,
   position,
 }: {
   sheetName?: string;
+  workbookName?: string;
   range: SpreadsheetRange;
   isAbsolute: RangeNode["isAbsolute"];
   position?: {
@@ -256,6 +263,7 @@ export function createRangeNode({
     type: "range",
     range,
     sheetName,
+    workbookName,
     isAbsolute,
     position,
   };
@@ -346,12 +354,14 @@ export function createNamedExpressionNode(
     start: number;
     end: number;
   },
-  sheetName?: string
+  sheetName?: string,
+  workbookName?: string
 ): NamedExpressionNode {
   return {
     type: "named-expression",
     name,
     sheetName,
+    workbookName,
     position,
   };
 }
@@ -385,12 +395,14 @@ export function createThreeDRangeNode(
   position?: {
     start: number;
     end: number;
-  }
+  },
+  workbookName?: string
 ): ThreeDRangeNode {
   return {
     type: "3d-range",
     startSheet,
     endSheet,
+    workbookName,
     reference,
     position,
   };
@@ -401,12 +413,16 @@ export function createThreeDRangeNode(
  */
 export function createStructuredReferenceNode({
   tableName,
+  sheetName,
+  workbookName,
   cols,
   selector,
   isCurrentRow = false,
   position,
 }: {
   tableName?: string;
+  sheetName?: string;
+  workbookName?: string;
   cols?: {
     startCol: string;
     endCol: string;
@@ -421,6 +437,8 @@ export function createStructuredReferenceNode({
   return {
     type: "structured-reference",
     tableName,
+    sheetName,
+    workbookName,
     cols,
     selector,
     isCurrentRow,

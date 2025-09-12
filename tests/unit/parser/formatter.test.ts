@@ -333,6 +333,74 @@ describe("Formula Formatter", () => {
     });
   });
 
+  describe("Workbook References", () => {
+    test("should format workbook cell references", () => {
+      expect(formatFormula("[MyWorkbook]Sheet1!A1")).toBe("[MyWorkbook]Sheet1!A1");
+      expect(formatFormula("[My Workbook]'Sheet With Spaces'!$A$1")).toBe("[My Workbook]'Sheet With Spaces'!$A$1");
+    });
+
+    test("should format workbook range references", () => {
+      expect(formatFormula("[MyWorkbook]Sheet1!A1:C5")).toBe("[MyWorkbook]Sheet1!A1:C5");
+      expect(formatFormula("[My Workbook]Sheet1!$A$1:$C$5")).toBe("[My Workbook]Sheet1!$A$1:$C$5");
+    });
+
+    test("should format workbook sheet aliases", () => {
+      // Sheet alias should format as the canonical infinite range
+      expect(formatFormula("[MyWorkbook]Sheet1")).toBe("[MyWorkbook]Sheet1!A1:INFINITY");
+      expect(formatFormula("[My Workbook]'Sheet With Spaces'")).toBe("[My Workbook]'Sheet With Spaces'!A1:INFINITY");
+    });
+
+    test("should format workbook infinite ranges", () => {
+      expect(formatFormula("[MyWorkbook]Sheet1!A:A")).toBe("[MyWorkbook]Sheet1!A1:A");
+      expect(formatFormula("[MyWorkbook]Sheet1!1:1")).toBe("[MyWorkbook]Sheet1!A1:1");
+      expect(formatFormula("[MyWorkbook]Sheet1!A1:INFINITY")).toBe("[MyWorkbook]Sheet1!A1:INFINITY");
+    });
+
+    test("should format workbook named expressions", () => {
+      expect(formatFormula("[MyWorkbook]Sheet1!TaxRate")).toBe("[MyWorkbook]Sheet1!TaxRate");
+      expect(formatFormula("[My Workbook]'Sheet With Spaces'!TaxRate")).toBe("[My Workbook]'Sheet With Spaces'!TaxRate");
+    });
+
+    test("should format workbook table references", () => {
+      expect(formatFormula("[MyWorkbook]Sheet1!Table1[Column1]")).toBe("[MyWorkbook]Sheet1!Table1[Column1]");
+      expect(formatFormula("[My Workbook]Sheet1!Table1[Column With Spaces]")).toBe("[My Workbook]Sheet1!Table1[Column With Spaces]");
+    });
+
+    test("should format complex workbook names", () => {
+      const testCases = [
+        { input: "[Budget 2024]Sheet1", expected: "[Budget 2024]Sheet1!A1:INFINITY" },
+        { input: "[My-Workbook]Sheet1", expected: "[My-Workbook]Sheet1!A1:INFINITY" },
+        { input: "[Workbook_v2]Sheet1", expected: "[Workbook_v2]Sheet1!A1:INFINITY" },
+        { input: "[Report (Final)]Sheet1", expected: "[Report (Final)]Sheet1!A1:INFINITY" },
+        { input: "[Data=Analysis]Sheet1", expected: "[Data=Analysis]Sheet1!A1:INFINITY" },
+        { input: "[50% Complete]Sheet1", expected: "[50% Complete]Sheet1!A1:INFINITY" },
+      ];
+
+      testCases.forEach(({ input, expected }) => {
+        expect(formatFormula(input)).toBe(expected);
+      });
+    });
+
+    test("should format workbook references in functions", () => {
+      expect(formatFormula("SUM([MyWorkbook]Sheet1!A1:A10)")).toBe("SUM([MyWorkbook]Sheet1!A1:A10)");
+      expect(formatFormula("VLOOKUP(A1,[External]Data!A:D,2,FALSE)")).toBe("VLOOKUP(A1,[External]Data!A1:D,2,FALSE)");
+    });
+
+    test("should format mixed workbook and same-workbook references", () => {
+      expect(formatFormula("SUM([External]Sheet1!A1:A10, 'Local Sheet'!B1:B10)")).toBe(
+        "SUM([External]Sheet1!A1:A10,'Local Sheet'!B1:B10)"
+      );
+    });
+
+    test("should distinguish workbook references from bare column references", () => {
+      // Bare column reference should not have workbook prefix
+      expect(formatFormula("[Column1]")).toBe("[Column1]");
+      
+      // Workbook reference should have workbook prefix and be formatted as infinite range
+      expect(formatFormula("[MyWorkbook]Sheet1")).toBe("[MyWorkbook]Sheet1!A1:INFINITY");
+    });
+  });
+
   describe("Round-trip Tests", () => {
     const testCases = [
       "A1",
@@ -384,6 +452,13 @@ describe("Formula Formatter", () => {
       "A$5:D", // Open↓ range with row absolute
       "A1:A", // Whole column canonical form
       "A5:5", // Whole row canonical form
+      // Workbook references (these will be normalized to canonical forms)
+      "[MyWorkbook]Sheet1!A1",
+      "[My Workbook]'Sheet With Spaces'!$A$1",
+      "[MyWorkbook]Sheet1!A1:C5",
+      "[MyWorkbook]Sheet1!A1:INFINITY",
+      "[MyWorkbook]Sheet1!TaxRate",
+      "[MyWorkbook]Sheet1!Table1[Column1]"
     ];
 
     test.each(testCases)("should round-trip formula: %s", (formula) => {

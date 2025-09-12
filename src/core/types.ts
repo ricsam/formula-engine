@@ -82,8 +82,6 @@ export type SerializedCellValue = string | number | boolean | undefined;
 export interface NamedExpression {
   name: string;
   expression: string;
-  sheetName?: string;
-  workbookName?: string;
 }
 
 export interface TableDefinition {
@@ -123,70 +121,20 @@ export interface Workbook {
   sheets: Map<string, Sheet>;
 }
 
-export type NamedExpressionDependencyNode = {
-  type: "named-expression";
-  name: string;
-  scope:
-    | {
-        type: "global";
-      }
-    | {
-        type: "workbook";
-        workbookName: string;
-      }
-    | {
-        type: "sheet";
-        sheetName: string;
-        workbookName: string;
-      };
-};
-
 /**
  * All dependency nodes are evaluated in the context of the current cell, so therefore it will always have a sheetName
  */
-export type DependencyNode =
-  | {
-      type: "cell";
-      address: LocalCellAddress;
-      sheetName: string;
-      workbookName: string;
-    }
-  | {
-      type: "range";
-      range: SpreadsheetRange;
-      sheetName: string;
-      workbookName: string;
-    }
-  | {
-      type: "multi-spreadsheet-range";
-      ranges: SpreadsheetRange;
-      sheetNames:
-        | { type: "list"; list: string[] }
-        | {
-            type: "range";
-            startSpreadsheetName: string;
-            endSpreadsheetName: string;
-          };
-    }
-  | NamedExpressionDependencyNode
-  | {
-      type: "table";
-      tableName: string;
-      sheetName: string;
-      workbookName: string;
-      area:
-        | { kind: "Headers" | "All" | "AllData" }
-        | { kind: "Data"; columns: string[]; isCurrentRow: boolean };
-    };
+export type DependencyNode = {
+  address: LocalCellAddress;
+  sheetName: string;
+  workbookName: string;
+};
 
 /**
  * Evaluation context containing necessary information
  */
 export interface EvaluationContext {
-  currentSheet: string;
-  currentWorkbook: string;
   currentCell: CellAddress;
-  evaluationStack: Set<string>; // For cycle detection
   dependencies: Set<string>;
   /**
    * candidates for frontier dependencies that are in the intersection of the spilled range and the target range
@@ -204,11 +152,12 @@ export type EvaluatedDependencyNode = {
    */
   deps?: Set<string>;
   /**
-   * frontierDependencies is the set of dependency node keys that are frontier dependencies
+   * frontierDependencies is the set of dependency node keys that could spill values onto the target range (if evaluationResult is spilled-values)
    */
   frontierDependencies?: Set<string>;
   /**
-   * discardedFrontierDependencies is the set of dependency node keys that were discarded as frontier dependencies
+   * discardedFrontierDependencies is the set of dependency node keys that were discarded as frontier dependencies because
+   * they they do not produce spilled values that spill onto the target range
    */
   discardedFrontierDependencies?: Set<string>;
   /**
