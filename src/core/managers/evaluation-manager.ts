@@ -621,25 +621,7 @@ export class EvaluationManager {
       const sorted = this.topologicalSort(allDeps)?.reverse();
 
       if (!sorted) {
-        // This shouldn't happen since we already checked for cycles above
-        // But just in case, handle it gracefully
-        this.storeManager.evaluatedNodes.set(nodeKey, {
-          deps:
-            this.storeManager.evaluatedNodes.get(nodeKey)?.deps ?? new Set(),
-          frontierDependencies:
-            this.storeManager.evaluatedNodes.get(nodeKey)
-              ?.frontierDependencies ?? new Set(),
-          discardedFrontierDependencies:
-            this.storeManager.evaluatedNodes.get(nodeKey)
-              ?.discardedFrontierDependencies ?? new Set(),
-          evaluationResult: {
-            type: "error",
-            err: FormulaError.ERROR,
-            message: "Unexpected topological sort failure",
-          },
-        });
-        this.isEvaluating = false;
-        return;
+        throw new Error("Unexpected topological sort failure");
       }
 
       sorted.forEach((nodeKey) =>
