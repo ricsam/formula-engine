@@ -70,7 +70,7 @@ function extractCrossSheetReferences(formula: SerializedCellValue): Array<{ shee
  */
 export function analyzeDependencies(
   engine: FormulaEngine,
-  sheets: { [key: string]: { name: string; } }
+  sheets: { [key: string]: { name: string; workbookName: string; } }
 ): DependencyGraph {
   const dependencies = new Map<string, SheetDependency>();
   
@@ -78,7 +78,7 @@ export function analyzeDependencies(
   
   // Iterate through all sheets and their cells
   Object.entries(sheets).forEach(([sheetKey, sheet]) => {
-      const sheetFormulas = engine.getSheetSerialized(sheet.name);
+      const sheetFormulas = engine.getSheetSerialized({ sheetName: sheet.name, workbookName: sheet.workbookName });
     console.log(`Analyzing sheet: ${sheet.name} (${sheetKey}) with ${sheetFormulas.size} formulas`);
     
     let crossSheetCount = 0;

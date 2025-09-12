@@ -1,9 +1,4 @@
-import type {
-  CellAddress,
-  CellNumber,
-  DependencyNode,
-  SpreadsheetRange,
-} from "./types";
+import type { CellAddress, LocalCellAddress, SpreadsheetRange } from "./types";
 
 // Column utilities
 export const columnToIndex = (col: string): number => {
@@ -88,3 +83,49 @@ export const parseCellReference = (
   };
 };
 
+/**
+ * Returns true if the range is a single cell, false otherwise
+ */
+export function isRangeOneCell(range: SpreadsheetRange) {
+  if (range.end.col.type === "infinity" || range.end.row.type === "infinity") {
+    return false;
+  }
+  return (
+    range.start.col === range.end.col.value &&
+    range.start.row === range.end.row.value
+  );
+}
+
+export function isCellInRange(
+  cellAddress: LocalCellAddress,
+  range: SpreadsheetRange
+) {
+  const endCol = range.end.col;
+  const endRow = range.end.row;
+  if (endCol.type === "number" && endRow.type === "number") {
+    return (
+      cellAddress.colIndex >= range.start.col &&
+      cellAddress.colIndex <= endCol.value &&
+      cellAddress.rowIndex >= range.start.row &&
+      cellAddress.rowIndex <= endRow.value
+    );
+  } else if (endCol.type === "infinity" && endRow.type === "number") {
+    return (
+      cellAddress.colIndex >= range.start.col &&
+      cellAddress.rowIndex >= range.start.row &&
+      cellAddress.rowIndex <= endRow.value
+    );
+  } else if (endCol.type === "number" && endRow.type === "infinity") {
+    return (
+      cellAddress.rowIndex >= range.start.row &&
+      cellAddress.colIndex >= range.start.col &&
+      cellAddress.colIndex <= endCol.value
+    );
+  } else if (endCol.type === "infinity" && endRow.type === "infinity") {
+    return (
+      cellAddress.colIndex >= range.start.col &&
+      cellAddress.rowIndex >= range.start.row
+    );
+  }
+  return false;
+}

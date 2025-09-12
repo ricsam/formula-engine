@@ -1,43 +1,54 @@
 import { test, expect, describe, beforeEach } from "bun:test";
 import { FormulaEngine } from "../../../src/core/engine";
 import { getCellReference, parseCellReference } from "src/core/utils";
-import { FormulaError, type SerializedCellValue, type TableDefinition } from "src/core/types";
+import {
+  FormulaError,
+  type SerializedCellValue,
+  type TableDefinition,
+} from "src/core/types";
 import { dependencyNodeToKey } from "src/core/utils/dependency-node-key";
 
 describe("FormulaEngine", () => {
+  const workbookName = "TestWorkbook";
   const sheetName = "TestSheet";
+
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      debug
+    );
 
   const setCellContent = (ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      content
+    );
   };
 
   const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   test("basic scalar arguments", () => {
-    engine.setSheetContent(
-      sheetName,
-      new Map<string, SerializedCellValue>([["A1", "=SUM(1, 2, 3)"]])
-    );
+    setCellContent("A1", "=SUM(1, 2, 3)");
 
     expect(cell("A1")).toBe(6);
   });
 
   test("should set and get cell values", () => {
-    engine.setSheetContent(sheetName, new Map([["A1", 42]]));
+    setCellContent("A1", 42);
     expect(cell("A1")).toBe(42);
   });
 
   test("should handle empty cells", () => {
-    engine.setSheetContent(sheetName, new Map([["A1", ""]]));
+    setCellContent("A1", "");
     expect(cell("A1")).toBe("");
   });
 
@@ -50,13 +61,14 @@ describe("FormulaEngine", () => {
       ["B2", 5],
       ["C2", 6],
     ]);
-    engine.setSheetContent(sheetName, rawData);
+    engine.setSheetContent(sheetAddress, rawData);
 
     // Verify all values
     for (let row = 0; row < 2; row++) {
       for (let col = 0; col < 3; col++) {
         const value = engine.getCellValue({
           sheetName,
+          workbookName,
           colIndex: col,
           rowIndex: row,
         });
@@ -76,18 +88,19 @@ describe("FormulaEngine", () => {
       ["B2", 2],
     ]);
 
-    engine.setSheetContent(sheetName, data);
+    engine.setSheetContent(sheetAddress, data);
 
     expect(cell("A1")).toBe(3);
   });
 
   test("should handle formulas with cross sheet references", () => {
     const engine = FormulaEngine.buildEmpty();
-    engine.addSheet("Sheet1");
-    engine.addSheet("Sheet2");
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    engine.addSheet({ workbookName, sheetName: "Sheet2" });
 
     engine.setSheetContent(
-      "Sheet1",
+      { workbookName, sheetName: "Sheet1" },
       new Map<string, SerializedCellValue>([
         ["A1", "=Sheet2!C1 + B2"],
         ["B2", "=A4 + 5"],
@@ -96,30 +109,62 @@ describe("FormulaEngine", () => {
     );
 
     engine.setSheetContent(
-      "Sheet2",
+      { workbookName, sheetName: "Sheet2" },
       new Map<string, SerializedCellValue>([
         ["C1", "=A3 + 100"], // A3 must refer to Sheet2
         ["A3", 23],
       ])
     );
 
-    const value = engine.getCellValue(
-      {
-        sheetName: "Sheet1",
-        colIndex: 0,
-        rowIndex: 0,
-      },
-      true
-    );
-    expect(value).toBe(133);
+    expect(
+      engine.getCellValue(
+        {
+          // C1
+          workbookName,
+          sheetName: "Sheet2",
+          colIndex: 2,
+          rowIndex: 0,
+        },
+        true
+      )
+    ).toBe(123);
+
+    expect(
+      engine.getCellValue(
+        {
+          // B2
+          workbookName,
+          sheetName: "Sheet1",
+          colIndex: 1,
+          rowIndex: 1,
+        },
+        true
+      )
+    ).toBe(10);
+
+    expect(
+      engine.getCellValue(
+        {
+          workbookName,
+          sheetName: "Sheet1",
+          colIndex: 0,
+          rowIndex: 0,
+        },
+        true
+      )
+    ).toBe(133);
   });
 
   test("should handle named expressions", () => {
     const engine = FormulaEngine.buildEmpty();
     const sheetName = "Sheet1";
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
 
-    engine.setSheetContent(sheetName, new Map([["A1", "=SOME_EXPRESSION"]]));
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map([["A1", "=SOME_EXPRESSION"]])
+    );
 
     // Add global named expression
     engine.addNamedExpression({
@@ -127,14 +172,23 @@ describe("FormulaEngine", () => {
       expressionName: "SOME_EXPRESSION",
     });
 
-    const value = engine.getCellValue({ sheetName, colIndex: 0, rowIndex: 0 });
+    const value = engine.getCellValue(
+      {
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 0,
+      },
+      true
+    );
     expect(value).toBe(246);
   });
 
   test("should handle named expressions with cross sheet references", () => {
     const engine = FormulaEngine.buildEmpty();
-    engine.addSheet("Sheet1");
-    engine.addSheet("Sheet2");
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    engine.addSheet({ workbookName, sheetName: "Sheet2" });
 
     // global named expression
     engine.addNamedExpression({
@@ -147,14 +201,15 @@ describe("FormulaEngine", () => {
       expression: "10",
       expressionName: "SOME_EXPRESSION",
       sheetName: "Sheet1",
+      workbookName,
     });
 
     engine.setSheetContent(
-      "Sheet1",
+      { workbookName, sheetName: "Sheet1" },
       new Map<string, SerializedCellValue>([["A1", "=SOME_EXPRESSION"]])
     );
     engine.setSheetContent(
-      "Sheet2",
+      { workbookName, sheetName: "Sheet2" },
       new Map<string, SerializedCellValue>([
         ["B1", "=SOME_EXPRESSION"],
         ["C1", "=Sheet1!SOME_EXPRESSION"],
@@ -163,6 +218,7 @@ describe("FormulaEngine", () => {
 
     expect(
       engine.getCellValue({
+        workbookName,
         sheetName: "Sheet1",
         colIndex: 0,
         rowIndex: 0,
@@ -170,6 +226,7 @@ describe("FormulaEngine", () => {
     ).toBe(10);
     expect(
       engine.getCellValue({
+        workbookName,
         sheetName: "Sheet2",
         colIndex: 1,
         rowIndex: 0,
@@ -177,6 +234,7 @@ describe("FormulaEngine", () => {
     ).toBe(246);
     expect(
       engine.getCellValue({
+        workbookName,
         sheetName: "Sheet2",
         colIndex: 2,
         rowIndex: 0,
@@ -186,102 +244,112 @@ describe("FormulaEngine", () => {
 
   test("should resolve transitive deps", () => {
     const engine = FormulaEngine.buildEmpty();
-    const sheet = engine.addSheet("Sheet1");
-    engine.setSheetContent(sheet.name, new Map([["A1", "=B1+C1"]]));
-    engine.setSheetContent(sheet.name, new Map([["B1", "=C1+D1"]]));
-    engine.setSheetContent(sheet.name, new Map([["C1", "=D1+E1"]]));
-    engine.evaluatedNodes.set(
+    engine.addWorkbook(workbookName);
+    const sheet = engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    engine.setSheetContent(
+      { workbookName, sheetName: "Sheet1" },
+      new Map([["A1", "=B1+C1"]])
+    );
+    engine.setSheetContent(
+      { workbookName, sheetName: "Sheet1" },
+      new Map([["B1", "=C1+D1"]])
+    );
+    engine.setSheetContent(
+      { workbookName, sheetName: "Sheet1" },
+      new Map([["C1", "=D1+E1"]])
+    );
+    engine._storeManager.evaluatedNodes.set(
       dependencyNodeToKey({
-        type: "cell",
         address: { colIndex: 0, rowIndex: 0 },
         sheetName: sheet.name,
+        workbookName,
       }),
       {
         deps: new Set([
           dependencyNodeToKey({
-            type: "cell",
             address: { colIndex: 1, rowIndex: 0 },
             sheetName: sheet.name,
+            workbookName,
           }),
           dependencyNodeToKey({
-            type: "cell",
             address: { colIndex: 2, rowIndex: 0 },
             sheetName: sheet.name,
+            workbookName,
           }),
         ]),
       }
     );
-    engine.evaluatedNodes.set(
+    engine._storeManager.evaluatedNodes.set(
       dependencyNodeToKey({
-        type: "cell",
         address: { colIndex: 1, rowIndex: 0 },
         sheetName: sheet.name,
+        workbookName,
       }),
       {
         deps: new Set([
           dependencyNodeToKey({
-            type: "cell",
             address: { colIndex: 2, rowIndex: 0 },
             sheetName: sheet.name,
+            workbookName,
           }),
           dependencyNodeToKey({
-            type: "cell",
             address: { colIndex: 3, rowIndex: 0 },
             sheetName: sheet.name,
+            workbookName,
           }),
         ]),
       }
     );
-    engine.evaluatedNodes.set(
+    engine._storeManager.evaluatedNodes.set(
       dependencyNodeToKey({
-        type: "cell",
         address: { colIndex: 2, rowIndex: 0 },
         sheetName: sheet.name,
+        workbookName,
       }),
       {
         deps: new Set([
           dependencyNodeToKey({
-            type: "cell",
             address: { colIndex: 3, rowIndex: 0 },
             sheetName: sheet.name,
+            workbookName,
           }),
           dependencyNodeToKey({
-            type: "cell",
             address: { colIndex: 4, rowIndex: 0 },
             sheetName: sheet.name,
+            workbookName,
           }),
         ]),
       }
     );
 
-    const deps = engine.getTransitiveDeps(
+    const deps = engine._evaluationManager.getTransitiveDeps(
       dependencyNodeToKey({
-        type: "cell",
         address: { colIndex: 0, rowIndex: 0 },
         sheetName: sheet.name,
+        workbookName,
       })
     );
     expect(deps).toEqual(
       new Set([
         dependencyNodeToKey({
-          type: "cell",
           address: { colIndex: 1, rowIndex: 0 },
           sheetName: sheet.name,
+          workbookName,
         }),
         dependencyNodeToKey({
-          type: "cell",
           address: { colIndex: 2, rowIndex: 0 },
           sheetName: sheet.name,
+          workbookName,
         }),
         dependencyNodeToKey({
-          type: "cell",
           address: { colIndex: 3, rowIndex: 0 },
           sheetName: sheet.name,
+          workbookName,
         }),
         dependencyNodeToKey({
-          type: "cell",
           address: { colIndex: 4, rowIndex: 0 },
           sheetName: sheet.name,
+          workbookName,
         }),
       ])
     );
@@ -289,7 +357,7 @@ describe("FormulaEngine", () => {
 
   test("should handle structured references", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "num"],
         ["B1", "result"],
@@ -309,7 +377,8 @@ describe("FormulaEngine", () => {
 
     engine.addTable({
       tableName: "Table1",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 3 },
       numCols: 3,
@@ -345,7 +414,7 @@ describe("FormulaEngine", () => {
 
   test("should handle spilling", () => {
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([...fourByFour, ["F1", "=A1:D4"]])
     );
 
@@ -355,7 +424,7 @@ describe("FormulaEngine", () => {
 
   test("should handle reduced spilled values, when evaluating the spill origin first", () => {
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ...fourByFour,
         ["F1", "=A1:D4 * 10"],
@@ -368,7 +437,7 @@ describe("FormulaEngine", () => {
 
   test("should handle reduced spilled values, when evaluating the spill origin last", () => {
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ...fourByFour,
         ["F1", "=A1:D4 * 10"],
@@ -383,7 +452,7 @@ describe("FormulaEngine", () => {
 
   test("should get spill errors", () => {
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ...fourByFour,
         ["F1", "=A1:D4 * 10"],
@@ -397,7 +466,7 @@ describe("FormulaEngine", () => {
 
   test("should work with a spilled value as a dependency", () => {
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ...fourByFour,
         ["F1", "=A1:D4 * 10"],
@@ -410,7 +479,7 @@ describe("FormulaEngine", () => {
 
   test("should be able to update the spreadsheet content", () => {
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ...fourByFour,
         ["F1", "=A1:D4 * 10"],
@@ -421,7 +490,7 @@ describe("FormulaEngine", () => {
     expect(cell("F10")).toBe(2460);
 
     engine.setSheetContent(
-      sheetName,
+      { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
         ...fourByFour,
         ["F1", "=A1:D4"],
@@ -439,7 +508,7 @@ describe("FormulaEngine", () => {
     // 3	=[@num] * 10	            =SUM(Table1[[num]:[result]])
     // 4	=[@num] * 10	            =SUM(Table1[@[num]:[result]])
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         // Headers
         ["A1", "num"],
@@ -462,7 +531,8 @@ describe("FormulaEngine", () => {
     // Define the table (A1:D4, so 4 rows including header)
     engine.addTable({
       tableName: "Table1",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 3 },
       numCols: 4,
@@ -492,7 +562,7 @@ describe("FormulaEngine", () => {
   test("should handle complex formula with LEFT and FIND in table", () => {
     // Set up a table with comma-separated values in the Payload column
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         // Headers
         ["A1", "ID"],
@@ -514,7 +584,8 @@ describe("FormulaEngine", () => {
     // Define the table
     engine.addTable({
       tableName: "DataTable",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 4 },
       numCols: 3,
@@ -535,7 +606,7 @@ describe("FormulaEngine", () => {
   test("should handle INDEX+MATCH with structured references", () => {
     // Set up a table with ORDER-ID and CUSTOMER-ID columns
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         // Headers
         ["A1", "ORDER-ID"],
@@ -570,7 +641,8 @@ describe("FormulaEngine", () => {
     // Define the table
     engine.addTable({
       tableName: "Table1",
-      sheetName,
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
       start: "A1",
       numRows: { type: "number", value: 3 },
       numCols: 4,
@@ -589,7 +661,7 @@ describe("FormulaEngine", () => {
 
   test("Special case", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         [
           "A1",
@@ -602,7 +674,7 @@ describe("FormulaEngine", () => {
 
   test("evaluation should handle range inputs as gracefully /1", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "apple,banana,cherry"],
         ["A2", "dog,cat,bird"],
@@ -621,7 +693,7 @@ describe("FormulaEngine", () => {
 
   test("evaluation should handle range inputs as gracefully /2", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 1],
         ["A2", 2],
@@ -635,7 +707,7 @@ describe("FormulaEngine", () => {
 
   test("multiplication of ranges", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 1],
         ["A2", 2],
@@ -657,7 +729,7 @@ describe("FormulaEngine", () => {
 
   test("evaluation should handle range inputs as gracefully /3", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", 60],
         ["A2", 50],
@@ -677,14 +749,23 @@ describe("FormulaEngine", () => {
   });
 
   test.skip("with 3D sheet references", () => {
-    const sheet1Name = engine.addSheet("Sheet1").name;
-    const sheet2Name = engine.addSheet("Sheet2").name;
-    const sheet3Name = engine.addSheet("Sheet3").name;
+    const sheet1Name = engine.addSheet({
+      workbookName,
+      sheetName: "Sheet1",
+    }).name;
+    const sheet2Name = engine.addSheet({
+      workbookName,
+      sheetName: "Sheet2",
+    }).name;
+    const sheet3Name = engine.addSheet({
+      workbookName,
+      sheetName: "Sheet3",
+    }).name;
 
     // Set up same data on all sheets
     [sheet1Name, sheet2Name, sheet3Name].forEach((sheetName) => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["A2", 20],
@@ -694,7 +775,7 @@ describe("FormulaEngine", () => {
 
     // Create 3D reference formulas
     engine.setSheetContent(
-      sheet1Name,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["B1", "=SUM(Sheet1:Sheet3!A1)"], // Sum A1 across sheets 1-3
         ["B2", "=SUM(Sheet1:Sheet3!A1:A2)"], // Sum A1:A2 across sheets 1-3
@@ -704,7 +785,8 @@ describe("FormulaEngine", () => {
     const cell = (sheetName: string, ref: string, debug?: boolean) =>
       engine.getCellValue(
         {
-          sheetName,
+          sheetName: sheetAddress.sheetName,
+          workbookName: sheetAddress.workbookName,
           ...parseCellReference(ref),
         },
         debug
@@ -717,7 +799,7 @@ describe("FormulaEngine", () => {
 
   test("Division by zero should produce Infinity", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "=1/0"], // Should produce Infinity
         ["A2", "=-1/0"], // Should produce -Infinity
@@ -732,7 +814,7 @@ describe("FormulaEngine", () => {
 
   test("Infinity * Infinity should produce Infinity", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "=INFINITY * INFINITY"], // Should produce Infinity
         ["A2", "=-INFINITY * INFINITY"], // Should produce -Infinity
@@ -747,7 +829,7 @@ describe("FormulaEngine", () => {
 
   test("Array row syntax", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([["A1", "={1;2;3}"]])
     );
 
@@ -758,7 +840,7 @@ describe("FormulaEngine", () => {
 
   test("Array col syntax", () => {
     engine.setSheetContent(
-      sheetName,
+      sheetAddress,
       new Map<string, SerializedCellValue>([["A1", "={1,2,3}"]])
     );
 
@@ -769,12 +851,12 @@ describe("FormulaEngine", () => {
 
   describe("Sheet Operations with Formula Dependencies", () => {
     test("should handle cross-sheet references", () => {
-      const sheet2 = "Sheet2";
+      const sheet2 = { workbookName, sheetName: "Sheet2" };
       engine.addSheet(sheet2);
 
       // Set data on Sheet1
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 100],
           ["B1", 200],
@@ -786,22 +868,36 @@ describe("FormulaEngine", () => {
         sheet2,
         new Map<string, SerializedCellValue>([
           ["A1", `=${sheetName}!A1+${sheetName}!B1`],
-          ["A2", `=${sheetName}!A1*2`]
+          ["A2", `=${sheetName}!A1*2`],
         ])
       );
 
-      expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 0 })).toBe(300); // 100 + 200
-      expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 1, colIndex: 0 })).toBe(200); // 100 * 2
+      expect(
+        engine.getCellValue({
+          sheetName: sheet2.sheetName,
+          workbookName: sheet2.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
+      ).toBe(300); // 100 + 200
+      expect(
+        engine.getCellValue({
+          sheetName: sheet2.sheetName,
+          workbookName: sheet2.workbookName,
+          rowIndex: 1,
+          colIndex: 0,
+        })
+      ).toBe(200); // 100 * 2
     });
 
     test("should update cross-sheet references when sheet is renamed", () => {
-      const sheet2 = "Sheet2";
+      const sheet2 = { workbookName, sheetName: "Sheet2" };
       const newSheetName = "DataSheet";
       engine.addSheet(sheet2);
 
       // Set data on Sheet1
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([["A1", 150]])
       );
 
@@ -809,28 +905,46 @@ describe("FormulaEngine", () => {
       engine.setSheetContent(
         sheet2,
         new Map<string, SerializedCellValue>([
-          ["A1", `=${sheetName}!A1*3`]
+          ["A1", `=${sheetAddress.sheetName}!A1*3`],
         ])
       );
 
-      expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 0 })).toBe(450); // 150 * 3
+      expect(
+        engine.getCellValue({
+          sheetName: sheet2.sheetName,
+          workbookName: sheet2.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
+      ).toBe(450); // 150 * 3
 
       // Rename Sheet1
-      engine.renameSheet(sheetName, newSheetName);
+      engine.renameSheet({
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
+        newSheetName,
+      });
 
       // Formula should still work
-      expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 0 })).toBe(450);
+      expect(
+        engine.getCellValue({
+          sheetName: sheet2.sheetName,
+          workbookName: sheet2.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
+      ).toBe(450);
     });
 
     test("should show error when referenced sheet is removed", () => {
-      const sheet2 = "Sheet2";
-      const sheet3 = "Sheet3";
+      const sheet2 = { workbookName, sheetName: "Sheet2" };
+      const sheet3 = { workbookName, sheetName: "Sheet3" };
       engine.addSheet(sheet2);
       engine.addSheet(sheet3);
 
       // Set data on Sheet1
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([["A1", 250]])
       );
 
@@ -838,23 +952,35 @@ describe("FormulaEngine", () => {
       engine.setSheetContent(
         sheet2,
         new Map<string, SerializedCellValue>([
-          ["A1", `=${sheetName}!A1+100`]
+          ["A1", `=${sheetAddress.sheetName}!A1+100`],
         ])
       );
 
-      expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 0 })).toBe(350); // 250 + 100
+      expect(
+        engine.getCellValue({
+          sheetName: sheet2.sheetName,
+          workbookName: sheet2.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
+      ).toBe(350); // 250 + 100
 
       // Remove Sheet1
-      engine.removeSheet(sheetName);
+      engine.removeSheet(sheetAddress);
 
       // Formula should now show error
-      const result = engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 0 });
+      const result = engine.getCellValue({
+        sheetName: sheet2.sheetName,
+        workbookName: sheet2.workbookName,
+        rowIndex: 0,
+        colIndex: 0,
+      });
       expect(typeof result === "string" && result.startsWith("#")).toBe(true);
     });
 
     test("should handle complex dependencies across multiple sheets", () => {
-      const sheet2 = "Sheet2";
-      const sheet3 = "Sheet3";
+      const sheet2 = { workbookName, sheetName: "Sheet2" };
+      const sheet3 = { workbookName, sheetName: "Sheet3" };
       engine.addSheet(sheet2);
       engine.addSheet(sheet3);
 
@@ -866,7 +992,7 @@ describe("FormulaEngine", () => {
 
       // Set data on Sheet1
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([["A1", 100]])
       );
 
@@ -874,7 +1000,7 @@ describe("FormulaEngine", () => {
       engine.setSheetContent(
         sheet2,
         new Map<string, SerializedCellValue>([
-          ["A1", `=${sheetName}!A1*MULTIPLIER`]
+          ["A1", `=${sheetAddress.sheetName}!A1*MULTIPLIER`],
         ])
       );
 
@@ -882,12 +1008,26 @@ describe("FormulaEngine", () => {
       engine.setSheetContent(
         sheet3,
         new Map<string, SerializedCellValue>([
-          ["A1", `=${sheet2}!A1+50`]
+          ["A1", `=${sheet2.sheetName}!A1+50`],
         ])
       );
 
-      expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 0 })).toBe(200); // 100 * 2
-      expect(engine.getCellValue({ sheetName: sheet3, rowIndex: 0, colIndex: 0 })).toBe(250); // 200 + 50
+      expect(
+        engine.getCellValue({
+          sheetName: sheet2.sheetName,
+          workbookName: sheet2.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
+      ).toBe(200); // 100 * 2
+      expect(
+        engine.getCellValue({
+          sheetName: sheet3.sheetName,
+          workbookName: sheet3.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
+      ).toBe(250); // 200 + 50
 
       // Update named expression
       engine.updateNamedExpression({
@@ -896,22 +1036,50 @@ describe("FormulaEngine", () => {
       });
 
       // All dependent formulas should update
-      expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 0 })).toBe(300); // 100 * 3
-      expect(engine.getCellValue({ sheetName: sheet3, rowIndex: 0, colIndex: 0 })).toBe(350); // 300 + 50
+      expect(
+        engine.getCellValue({
+          sheetName: sheet2.sheetName,
+          workbookName: sheet2.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
+      ).toBe(300); // 100 * 3
+      expect(
+        engine.getCellValue({
+          sheetName: sheet3.sheetName,
+          workbookName: sheet3.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
+      ).toBe(350); // 300 + 50
 
       // Change source data
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([["A1", 200]])
       );
 
       // All dependent formulas should update
-      expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 0 })).toBe(600); // 200 * 3
-      expect(engine.getCellValue({ sheetName: sheet3, rowIndex: 0, colIndex: 0 })).toBe(650); // 600 + 50
+      expect(
+        engine.getCellValue({
+          sheetName: sheet2.sheetName,
+          workbookName: sheet2.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
+      ).toBe(600); // 200 * 3
+      expect(
+        engine.getCellValue({
+          sheetName: sheet3.sheetName,
+          workbookName: sheet3.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
+      ).toBe(650); // 600 + 50
     });
 
     test("should handle sheet operations with global tables and named expressions", () => {
-      const sheet2 = "Sheet2";
+      const sheet2 = { workbookName, sheetName: "Sheet2" };
       engine.addSheet(sheet2);
 
       // Add global named expression
@@ -921,12 +1089,13 @@ describe("FormulaEngine", () => {
       engine.addNamedExpression({
         expressionName: "DISCOUNT",
         expression: "0.05",
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
       });
 
       // Create table on Sheet1 (but table name is global)
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Item"],
           ["B1", "Price"],
@@ -938,7 +1107,8 @@ describe("FormulaEngine", () => {
 
       engine.addTable({
         tableName: "Products",
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         start: "A1",
         numRows: { type: "number", value: 1 },
         numCols: 2,
@@ -948,37 +1118,74 @@ describe("FormulaEngine", () => {
       engine.setSheetContent(
         sheet2,
         new Map<string, SerializedCellValue>([
-          ["A1", "=SUM(Products[Price])*TAX"]
+          ["A1", "=SUM(Products[Price])*TAX"],
         ])
       );
 
       expect(cell("C1")).toBeCloseTo(104.5); // 100 * 0.95 * 1.1
-      expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 0 })).toBe(10); // 100 * 0.1
+      expect(
+        engine.getCellValue({
+          sheetName: sheet2.sheetName,
+          workbookName: sheet2.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
+      ).toBe(10); // 100 * 0.1
 
       // Rename Sheet1 - table references should still work since tables are global
       const newSheetName = "Inventory";
-      engine.renameSheet(sheetName, newSheetName);
+      engine.renameSheet({
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
+        newSheetName,
+      });
+
+      expect(
+        engine.getCellValue(
+          {
+            sheetName: newSheetName,
+            workbookName: sheetAddress.workbookName,
+            rowIndex: 0,
+            colIndex: 2,
+          },
+          true
+        )
+      ).toBeNumber();
 
       // Formulas should still work
-      expect(engine.getCellValue({ sheetName: newSheetName, rowIndex: 0, colIndex: 2 })).toBeCloseTo(104.5);
-      expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 0 })).toBe(10);
+      expect(
+        engine.getCellValue({
+          sheetName: newSheetName,
+          workbookName: sheetAddress.workbookName,
+          rowIndex: 0,
+          colIndex: 2,
+        })
+      ).toBeCloseTo(104.5);
+      expect(
+        engine.getCellValue({
+          sheetName: sheet2.sheetName,
+          workbookName: sheet2.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
+      ).toBe(10);
     });
   });
 
   describe("Event System", () => {
     test("should trigger tables-updated event when sheet is deleted", () => {
-      let tablesUpdatedCount = 0;
+      let updateCount = 0;
       let lastUpdatedTables: Map<string, TableDefinition> | null = null;
 
-      // Listen for table update events
-      const unsubscribe = engine.on("tables-updated", (tables) => {
-        tablesUpdatedCount++;
-        lastUpdatedTables = tables;
+      // Listen for update events
+      const unsubscribe = engine._eventManager.onUpdate(() => {
+        updateCount++;
+        lastUpdatedTables = engine.getTables(sheetAddress.workbookName);
       });
 
       // Set up data and create table
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Product"],
           ["B1", "Price"],
@@ -989,19 +1196,20 @@ describe("FormulaEngine", () => {
 
       engine.addTable({
         tableName: "TestTable",
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         start: "A1",
         numRows: { type: "number", value: 1 },
         numCols: 2,
       });
 
-      expect(tablesUpdatedCount).toBe(1); // From addTable
+      expect(updateCount).toBe(2); // From addTable
       expect(lastUpdatedTables!.has("TestTable")).toBe(true);
 
       // Remove sheet - should trigger tables-updated event because table is removed
-      engine.removeSheet(sheetName);
+      engine.removeSheet(sheetAddress);
 
-      expect(tablesUpdatedCount).toBe(2); // From removeSheet -> removeTablesForSheet
+      expect(updateCount).toBe(3); // From removeSheet -> removeTablesForSheet
       expect(lastUpdatedTables!.size).toBe(0); // Table should be gone
 
       unsubscribe();
@@ -1011,7 +1219,7 @@ describe("FormulaEngine", () => {
       let cellsUpdateCount = 0;
 
       // Add listener for cells update
-      const unsubscribe = engine.onCellsUpdate(sheetName, () => {
+      const unsubscribe = engine._eventManager.onUpdate(() => {
         cellsUpdateCount++;
       });
 
@@ -1024,10 +1232,10 @@ describe("FormulaEngine", () => {
       expect(cellsUpdateCount).toBe(1); // From addNamedExpression
 
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 1000],
-          ["B1", "=A1*RATE"]
+          ["B1", "=A1*RATE"],
         ])
       );
 
@@ -1038,7 +1246,7 @@ describe("FormulaEngine", () => {
       engine.removeNamedExpression({ expressionName: "RATE" });
 
       expect(cellsUpdateCount).toBe(3); // From removeNamedExpression
-      
+
       // Formula should now error
       const result = cell("B1");
       expect(typeof result === "string" && result.startsWith("#")).toBe(true);
@@ -1050,7 +1258,7 @@ describe("FormulaEngine", () => {
       let cellsUpdateCount = 0;
 
       // Add listener for cells update
-      const unsubscribe = engine.onCellsUpdate(sheetName, () => {
+      const unsubscribe = engine._eventManager.onUpdate(() => {
         cellsUpdateCount++;
       });
 
@@ -1058,16 +1266,17 @@ describe("FormulaEngine", () => {
       engine.addNamedExpression({
         expressionName: "DISCOUNT",
         expression: "0.15",
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
       });
 
       expect(cellsUpdateCount).toBe(1); // From addNamedExpression
 
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 1000],
-          ["B1", "=A1*DISCOUNT"]
+          ["B1", "=A1*DISCOUNT"],
         ])
       );
 
@@ -1075,13 +1284,14 @@ describe("FormulaEngine", () => {
       expect(cellsUpdateCount).toBe(2); // From setSheetContent
 
       // Remove the sheet-scoped named expression - should trigger cells update
-      engine.removeNamedExpression({ 
+      engine.removeNamedExpression({
         expressionName: "DISCOUNT",
-        sheetName 
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
       });
 
       expect(cellsUpdateCount).toBe(3); // From removeNamedExpression
-      
+
       // Formula should now error
       const result = cell("B1");
       expect(typeof result === "string" && result.startsWith("#")).toBe(true);
@@ -1093,19 +1303,19 @@ describe("FormulaEngine", () => {
       let cellsUpdateCount = 0;
 
       // Add listener for cells update
-      const unsubscribe = engine.onCellsUpdate(sheetName, () => {
+      const unsubscribe = engine._eventManager.onUpdate(() => {
         cellsUpdateCount++;
       });
 
       // Set up data - should trigger cells update
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Product"],
           ["B1", "Price"],
           ["A2", "Widget"],
           ["B2", 100],
-          ["C1", "=SUM(Products[Price])"]
+          ["C1", "=SUM(Products[Price])"],
         ])
       );
 
@@ -1114,7 +1324,8 @@ describe("FormulaEngine", () => {
       // Create table - should trigger cells update
       engine.addTable({
         tableName: "Products",
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         start: "A1",
         numRows: { type: "number", value: 1 },
         numCols: 2,
@@ -1124,10 +1335,13 @@ describe("FormulaEngine", () => {
       expect(cellsUpdateCount).toBe(2); // From addTable
 
       // Remove the table - should trigger cells update
-      engine.removeTable({ tableName: "Products" });
+      engine.removeTable({
+        tableName: "Products",
+        workbookName: sheetAddress.workbookName,
+      });
 
       expect(cellsUpdateCount).toBe(3); // From removeTable
-      
+
       // Formula should now error
       const result = cell("C1");
       expect(typeof result === "string" && result.startsWith("#")).toBe(true);
@@ -1139,7 +1353,7 @@ describe("FormulaEngine", () => {
       let cellsUpdateCount = 0;
 
       // Add listener for cells update
-      const unsubscribe = engine.onCellsUpdate(sheetName, () => {
+      const unsubscribe = engine._eventManager.onUpdate(() => {
         cellsUpdateCount++;
       });
 
@@ -1152,10 +1366,10 @@ describe("FormulaEngine", () => {
       expect(cellsUpdateCount).toBe(1); // From addNamedExpression
 
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 100],
-          ["B1", "=A1*MULTIPLIER"]
+          ["B1", "=A1*MULTIPLIER"],
         ])
       );
 
@@ -1178,19 +1392,19 @@ describe("FormulaEngine", () => {
       let cellsUpdateCount = 0;
 
       // Add listener for cells update
-      const unsubscribe = engine.onCellsUpdate(sheetName, () => {
+      const unsubscribe = engine._eventManager.onUpdate(() => {
         cellsUpdateCount++;
       });
 
       // Set up data and create table
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Product"],
           ["B1", "Price"],
           ["A2", "Widget"],
           ["B2", 150],
-          ["C1", "=SUM(OldTable[Price])"]
+          ["C1", "=SUM(OldTable[Price])"],
         ])
       );
 
@@ -1198,7 +1412,8 @@ describe("FormulaEngine", () => {
 
       engine.addTable({
         tableName: "OldTable",
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         start: "A1",
         numRows: { type: "number", value: 1 },
         numCols: 2,
@@ -1208,9 +1423,9 @@ describe("FormulaEngine", () => {
       expect(cellsUpdateCount).toBe(2); // From addTable
 
       // Rename the table - should trigger cells update
-      engine.renameTable({
+      engine.renameTable(sheetAddress.workbookName, {
         oldName: "OldTable",
-        newName: "NewTable"
+        newName: "NewTable",
       });
 
       expect(cellsUpdateCount).toBe(3); // From renameTable
@@ -1220,132 +1435,140 @@ describe("FormulaEngine", () => {
     });
 
     test("should trigger onCellsUpdate callbacks when sheet is renamed", () => {
-      const sheet2 = "Sheet2";
+      const sheet2 = { workbookName, sheetName: "Sheet2" };
       engine.addSheet(sheet2); // Add sheet2 first
-      
+
       let sheet1UpdateCount = 0;
       let sheet2UpdateCount = 0;
 
       // Add listeners for both sheets
-      const unsubscribe1 = engine.onCellsUpdate(sheetName, () => {
+      const unsubscribe1 = engine._eventManager.onUpdate(() => {
         sheet1UpdateCount++;
       });
 
-      const unsubscribe2 = engine.onCellsUpdate(sheet2, () => {
+      const unsubscribe2 = engine._eventManager.onUpdate(() => {
         sheet2UpdateCount++;
       });
 
       // Set up cross-sheet reference
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([["A1", 100]])
       );
 
       engine.setSheetContent(
         sheet2,
-        new Map<string, SerializedCellValue>([
-          ["A1", `=${sheetName}!A1*2`]
-        ])
+        new Map<string, SerializedCellValue>([["A1", `=${sheetName}!A1*2`]])
       );
 
-      expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 0 })).toBe(200);
+      expect(
+        engine.getCellValue({
+          sheetName: sheet2.sheetName,
+          workbookName: sheet2.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
+      ).toBe(200);
       expect(sheet1UpdateCount).toBe(2); // From setSheetContent on both sheets (cross-sheet dependency)
       expect(sheet2UpdateCount).toBe(2); // From setSheetContent on both sheets (cross-sheet dependency)
 
       // Rename sheet - should trigger cells update on sheets with references
       const newSheetName = "RenamedSheet";
-      engine.renameSheet(sheetName, newSheetName);
+      engine.renameSheet({
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
+        newSheetName,
+      });
 
       expect(sheet1UpdateCount).toBe(3); // From setSheetContent (2x) + renameSheet
       expect(sheet2UpdateCount).toBe(3); // From setSheetContent (2x) + renameSheet
 
       // Formula should still work
-      expect(engine.getCellValue({ sheetName: sheet2, rowIndex: 0, colIndex: 0 })).toBe(200);
+      expect(
+        engine.getCellValue({
+          sheetName: sheet2.sheetName,
+          workbookName: sheet2.workbookName,
+          rowIndex: 0,
+          colIndex: 0,
+        })
+      ).toBe(200);
 
       unsubscribe1();
       unsubscribe2();
     });
 
     test("should trigger multiple events when using bulk operations", () => {
-      let tablesUpdatedCount = 0;
-      let globalExpressionsUpdatedCount = 0;
-      let cellsUpdateCount = 0;
+      let updateCount = 0;
 
       // Listen for all events
-      const unsubscribeTables = engine.on("tables-updated", () => {
-        tablesUpdatedCount++;
-      });
-
-      const unsubscribeGlobal = engine.on("global-named-expressions-updated", () => {
-        globalExpressionsUpdatedCount++;
-      });
-
-      const unsubscribeCells = engine.onCellsUpdate(sheetName, () => {
-        cellsUpdateCount++;
+      const unsubscribeCount = engine._eventManager.onUpdate(() => {
+        updateCount++;
       });
 
       // Set up initial data with formulas using tables and named expressions
       engine.addNamedExpression({ expressionName: "TAX", expression: "0.1" });
-      
+
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Item"],
           ["B1", "Price"],
           ["A2", "Widget"],
           ["B2", 100],
-          ["C1", "=SUM(Products[Price])*(1+TAX)"]
+          ["C1", "=SUM(Products[Price])*(1+TAX)"],
         ])
       );
 
       engine.addTable({
         tableName: "Products",
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         start: "A1",
         numRows: { type: "number", value: 1 },
         numCols: 2,
       });
 
       expect(cell("C1")).toBeCloseTo(110); // 100 * 1.1
-      expect(tablesUpdatedCount).toBe(1); // From addTable
-      expect(globalExpressionsUpdatedCount).toBe(1); // From addNamedExpression
-      expect(cellsUpdateCount).toBe(3); // From addNamedExpression + setSheetContent + addTable
+      expect(updateCount).toBe(3); // From addTable, setSheetContent, addNamedExpression
 
       // Use bulk operations - should trigger multiple events
       const newTables = new Map([
-        ["Inventory", {
-          name: "Inventory",
-          sheetName,
-          start: { rowIndex: 0, colIndex: 0 },
-          headers: new Map([
-            ["Item", { name: "Item", index: 0 }],
-            ["Price", { name: "Price", index: 1 }],
-          ]),
-          endRow: { type: "number", value: 1 } as const,
-        }],
+        [
+          "Inventory",
+          {
+            name: "Inventory",
+            sheetName: sheetAddress.sheetName,
+            workbookName: sheetAddress.workbookName,
+            start: { rowIndex: 0, colIndex: 0 },
+            headers: new Map([
+              ["Item", { name: "Item", index: 0 }],
+              ["Price", { name: "Price", index: 1 }],
+            ]),
+            endRow: { type: "number", value: 1 } as const,
+          },
+        ],
       ]);
 
       const newGlobalExpressions = new Map([
         ["DISCOUNT", { name: "DISCOUNT", expression: "0.05" }],
       ]);
 
-      engine.setTables(newTables);
-      engine.setGlobalNamedExpressions(newGlobalExpressions);
+      engine.resetTables(new Map([[sheetAddress.workbookName, newTables]]));
+      engine.setNamedExpressions({
+        type: "global",
+        expressions: newGlobalExpressions,
+      });
 
-      expect(tablesUpdatedCount).toBe(2); // From setTables
-      expect(globalExpressionsUpdatedCount).toBe(2); // From setGlobalNamedExpressions  
-      expect(cellsUpdateCount).toBe(5); // 3 from setup + setTables + setGlobalNamedExpressions
+      expect(updateCount).toBe(5); // From setNamedExpressions, resetTables, addTable, setSheetContent, addNamedExpression
 
-      unsubscribeTables();
-      unsubscribeGlobal();
-      unsubscribeCells();
+      unsubscribeCount();
     });
   });
 
   describe("Open ended ranges", () => {
     test("SPILL on open ended ranges", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 3],
           ["A20", 4],
@@ -1362,5 +1585,54 @@ describe("FormulaEngine", () => {
       expect(cell("D10")).toBe(7);
       expect(cell("D20", true)).toBe(8);
     });
-  })
+  });
+
+  describe("Cycle Detection", () => {
+    test("should detect and mark all nodes in a simple cycle", () => {
+      // Create a simple cycle: A1 -> B1 -> A1
+      setCellContent("A1", "=B1");
+      setCellContent("B1", "=A1");
+
+      // Both cells should show cycle error
+      expect(cell("A1", true)).toBe("#CYCLE!: Cycle detected");
+      expect(cell("B1", true)).toBe("#CYCLE!: Cycle detected");
+    });
+
+    test("should detect and mark all nodes in a complex cycle", () => {
+      // Create a more complex cycle: A1 -> B1 -> C1 -> A1
+      setCellContent("A1", "=B1");
+      setCellContent("B1", "=C1");
+      setCellContent("C1", "=A1");
+
+      // All three cells should show cycle error
+      expect(cell("A1", true)).toBe("#CYCLE!: Cycle detected");
+      expect(cell("B1", true)).toBe("#CYCLE!: Cycle detected");
+      expect(cell("C1", true)).toBe("#CYCLE!: Cycle detected");
+    });
+
+    test("should detect cycles with non-cycle dependencies", () => {
+      // Create a cycle with additional dependencies: A1 -> B1 -> C1 -> B1, D1 -> A1
+      setCellContent("A1", "=B1");
+      setCellContent("B1", "=C1");
+      setCellContent("C1", "=B1"); // Creates cycle B1 -> C1 -> B1
+      setCellContent("D1", "=A1"); // Depends on A1 but not part of cycle
+
+      // Cycle participants should show cycle error
+      expect(cell("B1", true)).toBe("#CYCLE!: Cycle detected");
+      expect(cell("C1", true)).toBe("#CYCLE!: Cycle detected");
+
+      // A1 should also show cycle error since it depends on the cycle
+      expect(cell("A1", true)).toBe("#CYCLE!: Cycle detected");
+
+      // D1 should also show cycle error since it depends on A1 which has a cycle
+      expect(cell("D1", true)).toBe("#CYCLE!: Cycle detected");
+    });
+
+    test("should handle self-referencing cell", () => {
+      // Create a self-reference: A1 -> A1
+      setCellContent("A1", "=A1");
+
+      expect(cell("A1", true)).toBe("#CYCLE!: Cycle detected");
+    });
+  });
 });

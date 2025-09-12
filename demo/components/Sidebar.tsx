@@ -14,7 +14,9 @@ import {
   Search,
   Database,
   FileSpreadsheet,
-  Network
+  Network,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -232,9 +234,11 @@ function NavigationItemComponent({ item, level, currentPath, onItemClick }: Navi
 interface SidebarProps {
   isOpen?: boolean
   onClose?: () => void
+  isCollapsed?: boolean
+  onToggleCollapse?: () => void
 }
 
-export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
+export function Sidebar({ isOpen = true, onClose, isCollapsed = false, onToggleCollapse }: SidebarProps) {
   const router = useRouterState()
   const currentPath = router.location.pathname
 
@@ -250,10 +254,11 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
       
       {/* Sidebar */}
       <div className={`
-        w-72 bg-background border-r border-gray-200 h-full overflow-y-auto
+        bg-background border-r border-gray-200 h-full overflow-y-auto
         lg:relative lg:translate-x-0
-        fixed z-50 transition-transform duration-300 ease-in-out
+        fixed z-50 transition-all duration-300 ease-in-out
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+        ${isCollapsed ? 'lg:-translate-x-full lg:w-0' : 'lg:translate-x-0 w-72'}
       `}>
         <div className="p-4">
           <h2 className="text-lg font-semibold text-gray-800 mb-4">FormulaEngine</h2>
@@ -272,10 +277,22 @@ export function Sidebar({ isOpen = true, onClose }: SidebarProps) {
         </div>
         
         <div className="mt-auto p-4 border-t border-gray-200">
-          <div className="text-xs text-gray-500">
-            <div className="font-medium mb-1">FormulaEngine v1.0</div>
-            <div>TypeScript Formula Engine</div>
-            <div>with Excel Compatibility</div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-xs text-gray-500">
+              <div className="font-medium mb-1">FormulaEngine v1.0</div>
+              <div>TypeScript Formula Engine</div>
+              <div>with Excel Compatibility</div>
+            </div>
+            {onToggleCollapse && (
+              <button
+                onClick={onToggleCollapse}
+                className="hidden lg:block p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                data-testid="desktop-sidebar-toggle"
+              >
+                <PanelLeftClose className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -1,4 +1,4 @@
-export { SheetManager } from "./sheet-manager";
+export { WorkbookManager } from "./workbook-manager";
 export { NamedExpressionManager } from "./named-expression-manager";
 export { TableManager } from "./table-manager";
 export { EventManager } from "./event-manager";

@@ -7,6 +7,7 @@ import type {
   SerializedCellValue,
   SpreadsheetRange,
   FiniteSpreadsheetRange,
+  LocalCellAddress,
 } from "./types";
 import type { FillDirection } from "@ricsam/selection-manager";
 import { parseFormula } from "../parser/parser";
@@ -14,18 +15,18 @@ import { astToString } from "../parser/formatter";
 import { transformAST } from "./ast-traverser";
 import type { ReferenceNode, RangeNode } from "../parser/ast";
 import { getCellReference } from "./utils";
-import type { SheetManager } from "./managers/sheet-manager";
+import type { WorkbookManager } from "./managers/workbook-manager";
 
 export class AutoFill {
   constructor(
-    private sheetManager: SheetManager,
+    private workbookManager: WorkbookManager,
     private engine: {
       setCellContent: (
         address: CellAddress,
         content: SerializedCellValue
       ) => void;
       setSheetContent: (
-        sheetName: string,
+        opts: { sheetName: string; workbookName: string },
         content: Map<string, SerializedCellValue>
       ) => void;
     }
@@ -35,10 +36,13 @@ export class AutoFill {
    * Converts a SpreadsheetRange to FiniteSpreadsheetRange, throwing an error if infinite
    */
   private toFiniteRange(range: SpreadsheetRange): FiniteSpreadsheetRange {
-    if (range.end.col.type === "infinity" || range.end.row.type === "infinity") {
+    if (
+      range.end.col.type === "infinity" ||
+      range.end.row.type === "infinity"
+    ) {
       throw new Error("AutoFill with infinite ranges is not supported");
     }
-    
+
     return {
       start: range.start,
       end: {
@@ -49,12 +53,15 @@ export class AutoFill {
   }
 
   private getCellContent(address: CellAddress): SerializedCellValue {
-    const sheet = this.sheetManager.getSheets().get(address.sheetName);
-    return sheet?.content.get(getCellReference(address)) || undefined;
+    const sheet = this.workbookManager.getSheet(address);
+    if (!sheet) {
+      throw new Error("Sheet not found");
+    }
+    return sheet.content.get(getCellReference(address));
   }
 
   fill(
-    sheetName: string,
+    opts: { sheetName: string; workbookName: string },
     seedRange: SpreadsheetRange,
     fillRange: SpreadsheetRange,
     direction: FillDirection
@@ -64,7 +71,7 @@ export class AutoFill {
     const finiteFillRange = this.toFiniteRange(fillRange);
 
     // Get seed cells data
-    const seedCells = this.getSeedCells(sheetName, finiteSeedRange);
+    const seedCells = this.getSeedCells(opts, finiteSeedRange);
 
     // Collect all changes to apply in a single batch
     const changes = new Map<string, SerializedCellValue>();
@@ -75,7 +82,12 @@ export class AutoFill {
     if (isSingleCell) {
       const seedCell = seedCells[0];
       if (seedCell) {
-        this.collectSingleCellPattern(seedCell, finiteFillRange, direction, changes);
+        this.collectSingleCellPattern(
+          seedCell,
+          finiteFillRange,
+          direction,
+          changes
+        );
       }
     } else {
       this.collectMultiCellPattern(
@@ -88,7 +100,7 @@ export class AutoFill {
     }
 
     // Get current sheet content and merge with changes
-    const currentContent = this.sheetManager.getSheetSerialized(sheetName);
+    const currentContent = this.workbookManager.getSheetSerialized(opts);
     const newContent = new Map(currentContent);
 
     // Apply all changes
@@ -101,10 +113,13 @@ export class AutoFill {
     });
 
     // Update sheet content in a single operation
-    this.engine.setSheetContent(sheetName, newContent);
+    this.engine.setSheetContent(opts, newContent);
   }
 
-  private getSeedCells(sheetName: string, seedRange: FiniteSpreadsheetRange) {
+  private getSeedCells(
+    opts: { sheetName: string; workbookName: string },
+    seedRange: FiniteSpreadsheetRange
+  ) {
     const cells: Array<{
       address: CellAddress;
       content: SerializedCellValue;
@@ -120,7 +135,8 @@ export class AutoFill {
     for (let row = startRow; row <= endRow; row++) {
       for (let col = startCol; col <= endCol; col++) {
         const address: CellAddress = {
-          sheetName,
+          sheetName: opts.sheetName,
+          workbookName: opts.workbookName,
           colIndex: col,
           rowIndex: row,
         };
@@ -154,6 +170,7 @@ export class AutoFill {
       for (let col = startCol; col <= endCol; col++) {
         const targetAddress: CellAddress = {
           sheetName: seedCell.address.sheetName,
+          workbookName: seedCell.address.workbookName,
           colIndex: col,
           rowIndex: row,
         };
@@ -205,8 +222,7 @@ export class AutoFill {
 
     for (let row = startRow; row <= endRow; row++) {
       for (let col = startCol; col <= endCol; col++) {
-        const targetAddress: CellAddress = {
-          sheetName: seedCells[0]?.address.sheetName || "",
+        const targetAddress: LocalCellAddress = {
           colIndex: col,
           rowIndex: row,
         };
@@ -331,7 +347,7 @@ export class AutoFill {
       rowOffset: number;
       colOffset: number;
     }>,
-    targetAddress: CellAddress,
+    targetAddress: LocalCellAddress,
     seedRange: FiniteSpreadsheetRange,
     step: number,
     direction: FillDirection
@@ -415,8 +431,8 @@ export class AutoFill {
 
   private adjustFormulaReferences(
     formula: string,
-    sourceAddress: CellAddress,
-    targetAddress: CellAddress
+    sourceAddress: LocalCellAddress,
+    targetAddress: LocalCellAddress
   ): string {
     try {
       const ast = parseFormula(formula.slice(1)); // Remove the "=" sign

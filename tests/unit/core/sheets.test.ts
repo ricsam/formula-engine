@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { test, expect, describe, beforeEach } from "bun:test";
 import { FormulaEngine } from "../../../src/core/engine";
 import { parseCellReference } from "src/core/utils";
@@ -6,73 +5,87 @@ import { type SerializedCellValue } from "src/core/types";
 
 describe("Sheets", () => {
   let engine: FormulaEngine;
+  const workbookName = "TestWorkbook";
+  const sheetName = "TestSheet";
+  const sheetAddress = { workbookName, sheetName };
 
   const cell = (sheetName: string, ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      debug
+    );
 
-  const setCellContent = (sheetName: string, ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+  const setCellContent = (
+    sheetName: string,
+    ref: string,
+    content: SerializedCellValue
+  ) => {
+    engine.setCellContent(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      content
+    );
   };
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
+    engine.addWorkbook(workbookName);
   });
 
   test("should add new sheets", () => {
     // Add first sheet
-    const sheet1 = engine.addSheet("Sheet1");
+    const sheet1 = engine.addSheet({ workbookName, sheetName: "Sheet1" });
     expect(sheet1.name).toBe("Sheet1");
     expect(sheet1.index).toBe(0);
-    expect(engine.sheets.size).toBe(1);
+    expect(engine.getSheets(workbookName).size).toBe(1);
 
     // Add second sheet
-    const sheet2 = engine.addSheet("Sheet2");
+    const sheet2 = engine.addSheet({ workbookName, sheetName: "Sheet2" });
     expect(sheet2.name).toBe("Sheet2");
     expect(sheet2.index).toBe(1);
-    expect(engine.sheets.size).toBe(2);
+    expect(engine.getSheets(workbookName).size).toBe(2);
 
     // Verify sheets exist
-    expect(engine.sheets.has("Sheet1")).toBe(true);
-    expect(engine.sheets.has("Sheet2")).toBe(true);
+    expect(engine.getSheets(workbookName).has("Sheet1")).toBe(true);
+    expect(engine.getSheets(workbookName).has("Sheet2")).toBe(true);
   });
 
   test("should throw error when adding sheet with existing name", () => {
-    engine.addSheet("DuplicateSheet");
-    
+    engine.addSheet({ workbookName, sheetName: "DuplicateSheet" });
+
     expect(() => {
-      engine.addSheet("DuplicateSheet");
+      engine.addSheet({ workbookName, sheetName: "DuplicateSheet" });
     }).toThrow("Sheet already exists");
   });
 
   test("should remove sheets", () => {
     // Add multiple sheets
-    engine.addSheet("Sheet1");
-    engine.addSheet("Sheet2");
-    engine.addSheet("Sheet3");
-    expect(engine.sheets.size).toBe(3);
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    engine.addSheet({ workbookName, sheetName: "Sheet2" });
+    engine.addSheet({ workbookName, sheetName: "Sheet3" });
+    expect(engine.getSheets(workbookName).size).toBe(3);
 
     // Remove middle sheet
-    engine.removeSheet("Sheet2");
-    expect(engine.sheets.size).toBe(2);
-    expect(engine.sheets.has("Sheet1")).toBe(true);
-    expect(engine.sheets.has("Sheet2")).toBe(false);
-    expect(engine.sheets.has("Sheet3")).toBe(true);
+    engine.removeSheet({ workbookName, sheetName: "Sheet2" });
+    expect(engine.getSheets(workbookName).size).toBe(2);
+    expect(engine.getSheets(workbookName).has("Sheet1")).toBe(true);
+    expect(engine.getSheets(workbookName).has("Sheet2")).toBe(false);
+    expect(engine.getSheets(workbookName).has("Sheet3")).toBe(true);
   });
 
   test("should throw error when removing non-existent sheet", () => {
     expect(() => {
-      engine.removeSheet("NonExistent");
+      engine.removeSheet({ workbookName, sheetName: "NonExistent" });
     }).toThrow("Sheet not found");
   });
 
   test("should clean up related data when removing sheet", () => {
     const sheetName = "TestSheet";
-    engine.addSheet(sheetName);
+    engine.addSheet({ workbookName, sheetName });
 
     // Add some data to the sheet
     engine.setSheetContent(
-      sheetName,
-      new Map([
+      sheetAddress,
+      new Map<string, SerializedCellValue>([
         ["A1", "Test"],
         ["B1", 100],
       ])
@@ -83,53 +96,77 @@ describe("Sheets", () => {
       expressionName: "LOCAL_RATE",
       expression: "0.10",
       sheetName,
+      workbookName,
     });
 
     // Add table
     engine.addTable({
       tableName: "TestTable",
       sheetName,
+      workbookName,
       start: "A1",
       numRows: { type: "number", value: 1 },
       numCols: 2,
     });
 
     // Verify data exists
-    expect(engine.getNamedExpressionsSerialized(sheetName).size).toBe(1);
-    expect(engine.getTablesSerialized().size).toBe(1);
+    expect(
+      engine
+        .getState()
+        .namedExpressions.sheetExpressions.get(sheetAddress.workbookName)
+        ?.get(sheetAddress.sheetName)?.size
+    ).toBe(1);
+    expect(engine.getState().tables.get(sheetAddress.workbookName)?.size).toBe(
+      1
+    );
 
     // Remove sheet
-    engine.removeSheet(sheetName);
+    engine.removeSheet(sheetAddress);
 
     // Verify cleanup
-    expect(engine.sheets.has(sheetName)).toBe(false);
-    expect(engine.getNamedExpressionsSerialized(sheetName).size).toBe(0);
+    expect(engine.getSheets(workbookName).has(sheetName)).toBe(false);
+    expect(
+      engine
+        .getState()
+        .namedExpressions.sheetExpressions.get(sheetAddress.workbookName)
+        ?.get(sheetAddress.sheetName)?.size ?? 0
+    ).toBe(0);
     // Tables should be automatically removed when sheet is removed
-    expect(engine.getTablesSerialized().has("TestTable")).toBe(false);
+    expect(
+      engine.getState().tables.get(sheetAddress.workbookName)?.has("TestTable")
+    ).toBe(false);
   });
 
   test("should rename sheets", () => {
     const originalName = "OriginalSheet";
     const newName = "RenamedSheet";
-    
-    engine.addSheet(originalName);
-    
+
+    engine.addSheet({ workbookName, sheetName: originalName });
+
     // Add some content
     engine.setSheetContent(
-      originalName,
-      new Map([
+      { workbookName, sheetName: originalName },
+      new Map<string, SerializedCellValue>([
         ["A1", "Content"],
         ["B1", 42],
       ])
     );
 
     // Rename sheet
-    engine.renameSheet(originalName, newName);
+    engine.renameSheet({
+      workbookName,
+      sheetName: originalName,
+      newSheetName: newName,
+    });
 
     // Verify rename
-    expect(engine.sheets.has(originalName)).toBe(false);
-    expect(engine.sheets.has(newName)).toBe(true);
-    
+    expect(
+      engine._workbookManager.getSheets(workbookName).has(originalName)
+    ).toBe(false);
+    expect(engine._workbookManager.getSheets(workbookName).has(newName)).toBe(
+      true
+    );
+
     // Verify content is preserved
     expect(cell(newName, "A1")).toBe("Content");
     expect(cell(newName, "B1")).toBe(42);
@@ -137,26 +174,34 @@ describe("Sheets", () => {
 
   test("should throw error when renaming non-existent sheet", () => {
     expect(() => {
-      engine.renameSheet("NonExistent", "NewName");
+      engine.renameSheet({
+        workbookName,
+        sheetName: "NonExistent",
+        newSheetName: "NewName",
+      });
     }).toThrow("Sheet not found");
   });
 
   test("should throw error when renaming to existing sheet name", () => {
-    engine.addSheet("Sheet1");
-    engine.addSheet("Sheet2");
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    engine.addSheet({ workbookName, sheetName: "Sheet2" });
 
     expect(() => {
-      engine.renameSheet("Sheet1", "Sheet2");
+      engine.renameSheet({
+        workbookName,
+        sheetName: "Sheet1",
+        newSheetName: "Sheet2",
+      });
     }).toThrow("Sheet with new name already exists");
   });
 
   test("should update cross-sheet references when renaming sheet", () => {
-    engine.addSheet("Sheet1");
-    engine.addSheet("Sheet2");
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    engine.addSheet({ workbookName, sheetName: "Sheet2" });
 
     // Set up data on Sheet1
     engine.setSheetContent(
-      "Sheet1",
+      { workbookName, sheetName: "Sheet1" },
       new Map([
         ["A1", 100],
         ["B1", 200],
@@ -165,7 +210,7 @@ describe("Sheets", () => {
 
     // Set up formulas on Sheet2 that reference Sheet1
     engine.setSheetContent(
-      "Sheet2",
+      { workbookName, sheetName: "Sheet2" },
       new Map([
         ["A1", "=Sheet1!A1"],
         ["B1", "=SUM(Sheet1!A1:B1)"],
@@ -179,7 +224,11 @@ describe("Sheets", () => {
     expect(cell("Sheet2", "C1")).toBe(300);
 
     // Rename Sheet1 to DataSheet
-    engine.renameSheet("Sheet1", "DataSheet");
+    engine.renameSheet({
+      workbookName,
+      sheetName: "Sheet1",
+      newSheetName: "DataSheet",
+    });
 
     // Formulas should still work with new sheet name
     expect(cell("Sheet2", "A1")).toBe(100);
@@ -188,13 +237,14 @@ describe("Sheets", () => {
   });
 
   test("should update named expressions when renaming sheet", () => {
-    engine.addSheet("Sheet1");
-    
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+
     // Add sheet-scoped named expression
     engine.addNamedExpression({
       expressionName: "LOCAL_VALUE",
       expression: "0.15",
       sheetName: "Sheet1",
+      workbookName,
     });
 
     // Add global named expression that references the sheet
@@ -205,8 +255,8 @@ describe("Sheets", () => {
 
     // Set up data
     engine.setSheetContent(
-      "Sheet1",
-      new Map([
+      { workbookName, sheetName: "Sheet1" },
+      new Map<string, SerializedCellValue>([
         ["A1", 50],
         ["B1", "=LOCAL_VALUE * 100"], // Uses sheet-scoped expression
       ])
@@ -215,25 +265,46 @@ describe("Sheets", () => {
     expect(cell("Sheet1", "B1")).toBe(15); // 0.15 * 100
 
     // Rename sheet
-    engine.renameSheet("Sheet1", "NewSheet");
+    engine.renameSheet({
+      workbookName,
+      sheetName: "Sheet1",
+      newSheetName: "NewSheet",
+    });
 
     // Sheet-scoped named expression should still work
     expect(cell("NewSheet", "B1")).toBe(15);
 
     // Verify sheet-scoped named expression was moved
-    expect(engine.getNamedExpressionsSerialized("Sheet1").size).toBe(0);
-    expect(engine.getNamedExpressionsSerialized("NewSheet").size).toBe(1);
-    expect(engine.getNamedExpressionsSerialized("NewSheet").has("LOCAL_VALUE")).toBe(true);
+    expect(
+      engine._namedExpressionManager.sheetExpressions
+        .get(workbookName)
+        ?.get("Sheet1")?.size ?? 0
+    ).toBe(0);
+
+    expect(
+      engine._namedExpressionManager.sheetExpressions
+        .get(workbookName)
+        ?.get("NewSheet")?.size ?? 0
+    ).toBe(1);
+
+    expect(
+      engine._namedExpressionManager.sheetExpressions
+        .get(workbookName)
+        ?.get("NewSheet")
+        ?.has("LOCAL_VALUE")
+    ).toBe(true);
 
     // Note: Currently, global named expressions are not automatically updated when sheets are renamed
     // This might be a limitation that could be addressed in the future
-    const globalExpressions = engine.getGlobalNamedExpressionsSerialized();
-    expect(globalExpressions.get("GLOBAL_REF").expression).toBe("Sheet1!A1 * 2");
+    const globalExpressions = engine._namedExpressionManager.globalExpressions;
+    expect(globalExpressions.get("GLOBAL_REF")!.expression).toBe(
+      "Sheet1!A1 * 2"
+    );
   });
 
   test("should handle sheet content operations", () => {
     const sheetName = "ContentSheet";
-    engine.addSheet(sheetName);
+    engine.addSheet({ workbookName, sheetName });
 
     // Set sheet content in bulk
     const content = new Map<string, SerializedCellValue>([
@@ -244,7 +315,7 @@ describe("Sheets", () => {
       ["A3", "=A2+B2"],
     ]);
 
-    engine.setSheetContent(sheetName, content);
+    engine.setSheetContent({ workbookName, sheetName }, content);
 
     // Verify content was set
     expect(cell(sheetName, "A1")).toBe("Header1");
@@ -264,7 +335,10 @@ describe("Sheets", () => {
 
   test("should throw error when setting content on non-existent sheet", () => {
     expect(() => {
-      engine.setSheetContent("NonExistent", new Map([["A1", "test"]]));
+      engine.setSheetContent(
+        { workbookName, sheetName: "NonExistent" },
+        new Map<string, SerializedCellValue>([["A1", "test"]])
+      );
     }).toThrow("Sheet not found");
 
     expect(() => {
@@ -273,23 +347,21 @@ describe("Sheets", () => {
   });
 
   test("should handle sheet re-evaluation", () => {
-    engine.addSheet("Sheet1");
-    engine.addSheet("Sheet2");
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    engine.addSheet({ workbookName, sheetName: "Sheet2" });
 
     // Set up interdependent data
     engine.setSheetContent(
-      "Sheet1",
-      new Map([
+      { workbookName, sheetName: "Sheet1" },
+      new Map<string, SerializedCellValue>([
         ["A1", 10],
         ["B1", "=A1*2"],
       ])
     );
 
     engine.setSheetContent(
-      "Sheet2",
-      new Map([
-        ["A1", "=Sheet1!B1*3"],
-      ])
+      { workbookName, sheetName: "Sheet2" },
+      new Map<string, SerializedCellValue>([["A1", "=Sheet1!B1*3"]])
     );
 
     expect(cell("Sheet1", "B1")).toBe(20); // 10 * 2
@@ -299,7 +371,7 @@ describe("Sheets", () => {
     setCellContent("Sheet1", "A1", 20);
 
     // Re-evaluate specific sheet
-    engine.reevaluateSheet("Sheet1");
+    engine.reevaluateSheet({ workbookName, sheetName: "Sheet1" });
     expect(cell("Sheet1", "B1")).toBe(40); // 20 * 2
 
     // Re-evaluate all sheets
@@ -309,71 +381,52 @@ describe("Sheets", () => {
 
   test("should throw error when re-evaluating non-existent sheet", () => {
     expect(() => {
-      engine.reevaluateSheet("NonExistent");
+      engine.reevaluateSheet({ workbookName, sheetName: "NonExistent" });
     }).toThrow("Sheet not found");
   });
 
   test("should handle sheet events", () => {
-    let sheetAddedCount = 0;
-    let sheetRemovedCount = 0;
-    let sheetRenamedCount = 0;
-    let lastSheetAdded: string | null = null;
-    let lastSheetRemoved: string | null = null;
-    let lastSheetRenamed: { oldName: string; newName: string } | null = null;
+    let updateCount = 0;
 
     // Listen for sheet events
-    const unsubscribeAdded = engine.on("sheet-added", (event) => {
-      sheetAddedCount++;
-      lastSheetAdded = event.sheetName;
-    });
-
-    const unsubscribeRemoved = engine.on("sheet-removed", (event) => {
-      sheetRemovedCount++;
-      lastSheetRemoved = event.sheetName;
-    });
-
-    const unsubscribeRenamed = engine.on("sheet-renamed", (event) => {
-      sheetRenamedCount++;
-      lastSheetRenamed = { oldName: event.oldName, newName: event.newName };
+    const unsubscribeCount = engine._eventManager.onUpdate(() => {
+      updateCount++;
     });
 
     // Add sheet - should trigger event
-    engine.addSheet("EventSheet1");
-    expect(sheetAddedCount).toBe(1);
-    expect(lastSheetAdded).toBe("EventSheet1");
+    engine.addSheet({ workbookName, sheetName: "EventSheet1" });
+    expect(updateCount).toBe(1);
 
     // Add another sheet - should trigger event
-    engine.addSheet("EventSheet2");
-    expect(sheetAddedCount).toBe(2);
-    expect(lastSheetAdded).toBe("EventSheet2");
+    engine.addSheet({ workbookName, sheetName: "EventSheet2" });
+    expect(updateCount).toBe(2);
 
     // Rename sheet - should trigger event
-    engine.renameSheet("EventSheet1", "RenamedSheet");
-    expect(sheetRenamedCount).toBe(1);
-    expect(lastSheetRenamed.oldName).toBe("EventSheet1");
-    expect(lastSheetRenamed.newName).toBe("RenamedSheet");
+    engine.renameSheet({
+      workbookName,
+      sheetName: "EventSheet1",
+      newSheetName: "RenamedSheet",
+    });
+    expect(updateCount).toBe(3);
 
     // Remove sheet - should trigger event
-    engine.removeSheet("RenamedSheet");
-    expect(sheetRemovedCount).toBe(1);
-    expect(lastSheetRemoved).toBe("RenamedSheet");
+    engine.removeSheet({ workbookName, sheetName: "RenamedSheet" });
+    expect(updateCount).toBe(4);
 
     // Clean up
-    unsubscribeAdded();
-    unsubscribeRemoved();
-    unsubscribeRenamed();
+    unsubscribeCount();
   });
 
   test("should handle complex multi-sheet scenarios", () => {
     // Create multiple sheets with interdependencies
-    engine.addSheet("Data");
-    engine.addSheet("Calculations");
-    engine.addSheet("Summary");
+    engine.addSheet({ workbookName, sheetName: "Data" });
+    engine.addSheet({ workbookName, sheetName: "Calculations" });
+    engine.addSheet({ workbookName, sheetName: "Summary" });
 
     // Set up base data
     engine.setSheetContent(
-      "Data",
-      new Map([
+      { workbookName, sheetName: "Data" },
+      new Map<string, SerializedCellValue>([
         ["A1", "Product"],
         ["B1", "Price"],
         ["A2", "Widget"],
@@ -385,7 +438,7 @@ describe("Sheets", () => {
 
     // Set up calculations that reference data
     engine.setSheetContent(
-      "Calculations",
+      { workbookName, sheetName: "Calculations" },
       new Map([
         ["A1", "Tax"],
         ["B1", "Total"],
@@ -398,7 +451,7 @@ describe("Sheets", () => {
 
     // Set up summary that references calculations
     engine.setSheetContent(
-      "Summary",
+      { workbookName, sheetName: "Summary" },
       new Map([
         ["A1", "Grand Total"],
         ["B1", "=SUM(Calculations!B2:B3)"],
@@ -413,7 +466,11 @@ describe("Sheets", () => {
     expect(cell("Summary", "B1")).toBe(275); // 110 + 165
 
     // Rename Data sheet
-    engine.renameSheet("Data", "Products");
+    engine.renameSheet({
+      workbookName,
+      sheetName: "Data",
+      newSheetName: "Products",
+    });
 
     // All calculations should still work
     expect(cell("Calculations", "A2")).toBe(10);
@@ -422,7 +479,7 @@ describe("Sheets", () => {
 
     // Update data on renamed sheet
     setCellContent("Products", "B2", 200);
-    
+
     // Calculations should update
     expect(cell("Calculations", "A2")).toBe(20); // 200 * 0.1
     expect(cell("Calculations", "B2")).toBe(220); // 200 + 20
@@ -431,18 +488,19 @@ describe("Sheets", () => {
 
   test("should handle edge cases and error conditions", () => {
     const sheetName = "EdgeCaseSheet";
-    engine.addSheet(sheetName);
+    engine.addSheet({ workbookName, sheetName });
 
     // Test empty sheet content
-    engine.setSheetContent(sheetName, new Map());
-    expect(engine.sheets.get(sheetName).content.size).toBe(0);
+    engine.setSheetContent({ workbookName, sheetName }, new Map());
+    expect(
+      engine._workbookManager.getSheets(workbookName).get(sheetName)?.content
+        .size
+    ).toBe(0);
 
     // Test setting content with formulas that reference non-existent sheets
     engine.setSheetContent(
-      sheetName,
-      new Map([
-        ["A1", "=NonExistentSheet!A1"],
-      ])
+      { workbookName, sheetName },
+      new Map([["A1", "=NonExistentSheet!A1"]])
     );
 
     // Should result in error
@@ -451,25 +509,25 @@ describe("Sheets", () => {
 
     // Test renaming sheet to same name (should throw error)
     expect(() => {
-      engine.renameSheet(sheetName, sheetName);
+      engine.renameSheet({ workbookName, sheetName, newSheetName: sheetName });
     }).toThrow("Sheet with new name already exists");
   });
 
   test("should preserve sheet indices when adding and removing sheets", () => {
     // Add multiple sheets
-    const sheet1 = engine.addSheet("First");
-    const sheet2 = engine.addSheet("Second");
-    const sheet3 = engine.addSheet("Third");
+    const sheet1 = engine.addSheet({ workbookName, sheetName: "First" });
+    const sheet2 = engine.addSheet({ workbookName, sheetName: "Second" });
+    const sheet3 = engine.addSheet({ workbookName, sheetName: "Third" });
 
     expect(sheet1.index).toBe(0);
     expect(sheet2.index).toBe(1);
     expect(sheet3.index).toBe(2);
 
     // Remove middle sheet
-    engine.removeSheet("Second");
+    engine.removeSheet({ workbookName, sheetName: "Second" });
 
     // Add new sheet - should get next available index
-    const sheet4 = engine.addSheet("Fourth");
+    const sheet4 = engine.addSheet({ workbookName, sheetName: "Fourth" });
     expect(sheet4.index).toBe(2); // Should reuse the index from removed sheet
   });
 });

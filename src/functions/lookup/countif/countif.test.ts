@@ -5,26 +5,35 @@ import { parseCellReference } from "src/core/utils";
 
 describe("COUNTIF function", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      debug
+    );
 
   const setCellContent = (ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      content
+    );
   };
 
   const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   describe("basic functionality", () => {
     test("should count exact string matches", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["A2", "Banana"],
@@ -40,7 +49,7 @@ describe("COUNTIF function", () => {
 
     test("should count exact number matches", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["A2", 20],
@@ -56,7 +65,7 @@ describe("COUNTIF function", () => {
 
     test("should be case-sensitive for strings", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["A2", "apple"],
@@ -77,7 +86,7 @@ describe("COUNTIF function", () => {
 
     test("should return 0 when no matches found", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["A2", "Banana"],
@@ -93,7 +102,7 @@ describe("COUNTIF function", () => {
   describe("comparison operators", () => {
     test("should count values greater than criteria", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 5],
           ["A2", 15],
@@ -109,7 +118,7 @@ describe("COUNTIF function", () => {
 
     test("should count values less than criteria", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 5],
           ["A2", 15],
@@ -125,7 +134,7 @@ describe("COUNTIF function", () => {
 
     test("should count values greater than or equal to criteria", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 5],
           ["A2", 10],
@@ -141,7 +150,7 @@ describe("COUNTIF function", () => {
 
     test("should count values less than or equal to criteria", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 5],
           ["A2", 10],
@@ -157,7 +166,7 @@ describe("COUNTIF function", () => {
 
     test("should count values not equal to criteria", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 5],
           ["A2", 10],
@@ -173,7 +182,7 @@ describe("COUNTIF function", () => {
 
     test("should count non-empty cells using '<>'", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["A2", ""], // Empty string
@@ -189,7 +198,7 @@ describe("COUNTIF function", () => {
 
     test("should count non-zero values using string criteria", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 5],
           ["A2", 0],
@@ -197,7 +206,7 @@ describe("COUNTIF function", () => {
           ["A4", 0],
           ["A5", 10],
           ["B1", '=COUNTIF(A1:A5, "<>0")'], // String "0" vs numbers
-          ["B2", "=COUNTIF(A1:A5, 0)"],     // Number 0 for exact match
+          ["B2", "=COUNTIF(A1:A5, 0)"], // Number 0 for exact match
         ])
       );
 
@@ -207,7 +216,7 @@ describe("COUNTIF function", () => {
 
     test("should handle decimal comparisons", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 3.14],
           ["A2", 2.71],
@@ -224,7 +233,7 @@ describe("COUNTIF function", () => {
   describe("wildcard patterns", () => {
     test("should match asterisk wildcard", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["A2", "Application"],
@@ -239,7 +248,7 @@ describe("COUNTIF function", () => {
 
     test("should match question mark wildcard", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Cat"],
           ["A2", "Bat"],
@@ -254,7 +263,7 @@ describe("COUNTIF function", () => {
 
     test("should combine wildcards", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "test1.txt"],
           ["A2", "test2.doc"],
@@ -269,7 +278,7 @@ describe("COUNTIF function", () => {
 
     test("should handle wildcards with special regex characters", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "test[1]"],
           ["A2", "test(2)"],
@@ -286,11 +295,11 @@ describe("COUNTIF function", () => {
   describe("strict type checking (no coercion)", () => {
     test("should NOT compare string numbers with numeric criteria", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
-          ["A1", "5"],   // String, not number
-          ["A2", "15"],  // String, not number
-          ["A3", "25"],  // String, not number
+          ["A1", "5"], // String, not number
+          ["A2", "15"], // String, not number
+          ["A3", "25"], // String, not number
           ["B1", '=COUNTIF(A1:A3, ">10")'],
         ])
       );
@@ -300,11 +309,11 @@ describe("COUNTIF function", () => {
 
     test("should only count actual numbers in numeric comparisons", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
-          ["A1", 10],     // Number
-          ["A2", "20"],   // String
-          ["A3", 30],     // Number
+          ["A1", 10], // Number
+          ["A2", "20"], // String
+          ["A3", 30], // Number
           ["A4", "text"], // String
           ["B1", '=COUNTIF(A1:A4, ">15")'],
         ])
@@ -315,15 +324,15 @@ describe("COUNTIF function", () => {
 
     test("should handle mixed types with strict matching (no coercion)", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
-          ["A2", 10],     // Number 10
-          ["A3", "10"],   // String "10"
+          ["A2", 10], // Number 10
+          ["A3", "10"], // String "10"
           ["A4", "Apple"],
           ["B1", '=COUNTIF(A1:A4, "Apple")'], // String criteria matches strings only
-          ["B2", '=COUNTIF(A1:A4, "10")'],    // String criteria matches strings only
-          ["B3", "=COUNTIF(A1:A4, 10)"],      // Number criteria matches numbers only
+          ["B2", '=COUNTIF(A1:A4, "10")'], // String criteria matches strings only
+          ["B3", "=COUNTIF(A1:A4, 10)"], // Number criteria matches numbers only
         ])
       );
 
@@ -338,7 +347,7 @@ describe("COUNTIF function", () => {
       setCellContent("A1", "=COUNTIF()");
       expect(cell("A1")).toBe("#VALUE!");
 
-      setCellContent("A2", '=COUNTIF(A1:A3)');
+      setCellContent("A2", "=COUNTIF(A1:A3)");
       expect(cell("A2")).toBe("#VALUE!");
 
       setCellContent("A3", '=COUNTIF(A1:A3, "test", "extra")');
@@ -347,7 +356,7 @@ describe("COUNTIF function", () => {
 
     test("should handle INFINITY values in range", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["A2", "=1/0"], // Results in positive infinity
@@ -362,7 +371,7 @@ describe("COUNTIF function", () => {
 
     test("should handle INFINITY in criteria", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["A2", 20],
@@ -384,7 +393,7 @@ describe("COUNTIF function", () => {
 
     test("should handle criteria with leading/trailing spaces", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["A2", " Apple"],
@@ -398,7 +407,7 @@ describe("COUNTIF function", () => {
 
     test("should handle zero values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 0],
           ["A2", 5],
@@ -413,7 +422,7 @@ describe("COUNTIF function", () => {
 
     test("should handle negative numbers", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", -10],
           ["A2", 5],
@@ -428,12 +437,12 @@ describe("COUNTIF function", () => {
 
     test("should handle boolean values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
-          ["A1", true],   // Boolean true
-          ["A2", false],  // Boolean false  
-          ["A3", true],   // Boolean true
-          ["B1", '=COUNTIF(A1:A3, "TRUE")'],  // Criteria parses to boolean true
+          ["A1", true], // Boolean true
+          ["A2", false], // Boolean false
+          ["A3", true], // Boolean true
+          ["B1", '=COUNTIF(A1:A3, "TRUE")'], // Criteria parses to boolean true
           ["B2", '=COUNTIF(A1:A3, "FALSE")'], // Criteria parses to boolean false
         ])
       );
@@ -446,7 +455,7 @@ describe("COUNTIF function", () => {
   describe("empty cell counting", () => {
     test("should return INFINITY for empty cells in infinite ranges", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["A2", "Banana"],
@@ -459,7 +468,7 @@ describe("COUNTIF function", () => {
 
     test("should count empty cells in finite ranges", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["A2", ""], // Empty
@@ -475,11 +484,11 @@ describe("COUNTIF function", () => {
 
     test("should handle mixed empty and non-empty in finite range", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Test"],
-          ["A2", ""], 
-          ["A3", ""], 
+          ["A2", ""],
+          ["A3", ""],
           ["B1", '=COUNTIF(A1:A10, "=")'], // Larger finite range
         ])
       );
@@ -489,7 +498,7 @@ describe("COUNTIF function", () => {
 
     test("should work with row-based infinite ranges", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Test"],
           ["B1", "Data"],
@@ -504,7 +513,7 @@ describe("COUNTIF function", () => {
   describe("table references", () => {
     test("should work with table column references", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Fruit"],
           ["B1", "Count"],
@@ -516,14 +525,15 @@ describe("COUNTIF function", () => {
           ["B4", 3],
           ["A5", "Cherry"],
           ["B5", 7],
-          ["C1", "=COUNTIF(FruitTable[Fruit], \"Apple\")"],
+          ["C1", '=COUNTIF(FruitTable[Fruit], "Apple")'],
         ])
       );
 
       // Create table
       engine.addTable({
         tableName: "FruitTable",
-        sheetName: sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         start: "A1",
         numRows: { type: "number", value: 4 }, // Header + 4 data rows
         numCols: 2,

@@ -5,18 +5,21 @@ import { parseCellReference } from "src/core/utils";
 
 describe("Comparison Operators", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) }, debug);
 
   const setCellContent = (ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
   };
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   describe("equals operator (=)", () => {
@@ -46,7 +49,7 @@ describe("Comparison Operators", () => {
 
     test("should handle infinity comparisons", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=1/0"], // Positive infinity
           ["A2", "=1/0"], // Positive infinity
@@ -70,7 +73,7 @@ describe("Comparison Operators", () => {
 
     test("should handle cell references", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["B1", 10],
@@ -114,7 +117,7 @@ describe("Comparison Operators", () => {
 
     test("should handle infinity", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=1/0"],  // +∞
           ["A2", "=-1/0"], // -∞
@@ -217,7 +220,7 @@ describe("Comparison Operators", () => {
 
     test("should work with cell references", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello"],
           ["B1", " "],
@@ -233,7 +236,7 @@ describe("Comparison Operators", () => {
   describe("dynamic arrays with operators", () => {
     test("should handle spilled values in comparisons", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 5],
           ["A2", 10],
@@ -249,7 +252,7 @@ describe("Comparison Operators", () => {
 
     test("should handle spilled values in concatenation", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello"],
           ["A2", "Good"],
@@ -265,7 +268,7 @@ describe("Comparison Operators", () => {
 
     test("should handle multiple spilled arrays", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 5],
           ["A2", 10],

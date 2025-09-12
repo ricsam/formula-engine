@@ -1,48 +1,49 @@
-import { useState, useCallback, useMemo, useEffect } from "react";
+import type { GridChild, ViewportState } from "@anocca-pub/components";
+import { Grid } from "@anocca-pub/components";
+import {
+  AlertTriangle,
+  Calculator,
+  ChevronDown,
+  ChevronUp,
+  Edit2,
+  Plus,
+  Save,
+  Trash2,
+  X,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { FormulaEngine } from "../src/core/engine";
-import { useGlobalNamedExpressions, useSerializedSheet, useTables } from "../src/react/hooks";
+import { useEngine } from "../src/react/hooks";
+import { SpreadsheetWithFormulaBar } from "./components/SpreadsheetWithFormulaBar";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
-import { Plus, X, Edit2, Check, X as Cancel, Save, Upload, Calculator, ChevronDown, ChevronUp, Bug, AlertTriangle } from "lucide-react";
-import { SpreadsheetWithFormulaBar } from "./components/SpreadsheetWithFormulaBar";
-import { Spreadsheet } from "@anocca-pub/components";
-import type { SpreadsheetRangeEnd, TableDefinition } from "src/core/types";
 
-interface SheetTab {
+interface WorkbookGridItem {
   name: string;
-}
-
-type SerializedTableDefinition = {
-  name: string;
-  start: {
-    rowIndex: number;
-    colIndex: number;
-  };
-  headers: [string, { name: string; index: number }][];
-  endRow: SpreadsheetRangeEnd;
-  sheetName: string;
-}
-
-interface SavedSpreadsheetData {
-  sheets: Array<{
-    name: string;
-    cells: [string, any][];
-    namedExpressions: [string, { name: string; expression: string }][];
-  }>;
-  globalNamedExpressions: [string, { name: string; expression: string }][];
-  tables: [string, SerializedTableDefinition][];
+  x: number;
+  y: number;
+  width: number;
+  height: number;
   activeSheet: string;
+}
+
+interface SavedState {
+  workbookGridItems: WorkbookGridItem[];
+  serializedEngine: string;
+  viewport?: ViewportState;
 }
 
 const STORAGE_KEY = "formula-engine-excel-demo";
 
-const loadFromLocalStorage = (): SavedSpreadsheetData | null => {
+const loadFromLocalStorage = (): undefined | SavedState => {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (!saved) return undefined;
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : null;
+    const { serializedEngine, workbookGridItems, viewport } = JSON.parse(saved);
+    return { serializedEngine, workbookGridItems, viewport };
   } catch (error) {
     console.error("Failed to load from localStorage:", error);
-    return null;
+    return undefined;
   }
 };
 
@@ -50,465 +51,539 @@ const createEngine = () => {
   const engine = FormulaEngine.buildEmpty();
   const savedData = loadFromLocalStorage();
 
-  if (savedData && savedData.sheets.length > 0) {
-    // Load saved sheets
-    const loadedSheets: string[] = [];
-    for (const savedSheet of savedData.sheets) {
-      const sheet = engine.addSheet(savedSheet.name);
-      loadedSheets.push(sheet.name);
-
-      // Build the cell content map for faster loading
-      const cellContentMap = new Map<string, any>();
-      for (const [cellId, value] of savedSheet.cells) {
-        if (value !== undefined) {
-          cellContentMap.set(cellId, value);
-        }
-      }
-
-      // Set all cell content at once (faster than individual setCellContent calls)
-      engine.setSheetContent(sheet.name, cellContentMap);
-
-      // Load named expressions for this sheet
-      const namedExpressionsMap = new Map();
-      for (const [name, expr] of savedSheet.namedExpressions || []) {
-        namedExpressionsMap.set(name, expr);
-      }
-      if (namedExpressionsMap.size > 0) {
-        engine.setNamedExpressions(sheet.name, namedExpressionsMap);
-      }
-
-      // Tables are loaded globally after all sheets are processed
-    }
-
-    // Load global named expressions
-    if (savedData.globalNamedExpressions) {
-      const globalNamedExpressionsMap = new Map();
-      for (const [name, expr] of savedData.globalNamedExpressions) {
-        globalNamedExpressionsMap.set(name, expr);
-      }
-      if (globalNamedExpressionsMap.size > 0) {
-        engine.setGlobalNamedExpressions(globalNamedExpressionsMap);
-      }
-    }
-
-    // Load global tables
-    if (savedData.tables) {
-      const tablesMap = new Map<string, TableDefinition>();
-      for (const [name, serializedTable] of savedData.tables) {
-        // Convert serialized headers array back to Map
-        const headersMap = new Map<string, { name: string; index: number }>();
-        for (const [headerName, headerData] of serializedTable.headers) {
-          headersMap.set(headerName, headerData);
-        }
-        
-        const table: TableDefinition = {
-          ...serializedTable,
-          headers: headersMap,
-        };
-        
-        tablesMap.set(name, table);
-      }
-      if (tablesMap.size > 0) {
-        engine.setTables(tablesMap);
-      }
-    }
+  if (savedData) {
+    engine.resetToSerializedEngine(savedData.serializedEngine);
 
     return {
       engine,
-      sheetName: savedData.activeSheet || loadedSheets[0]!,
-      savedSheets: loadedSheets,
+      workbookGridItems: savedData.workbookGridItems,
+      viewport: savedData.viewport,
     };
   } else {
-    // Create first sheet with sample data
-    const sheetName = engine.addSheet("Sheet1").name;
-    return { engine, sheetName, savedSheets: [sheetName] };
+    // Create first workbook and sheet with sample data
+    const workbookName = "Workbook1";
+    engine.addWorkbook(workbookName);
+    const sheetName = engine.addSheet({
+      workbookName,
+      sheetName: "Sheet1",
+    }).name;
+
+    const defaultWorkbookItem: WorkbookGridItem = {
+      name: workbookName,
+      x: 100,
+      y: 100,
+      width: 800,
+      height: 600,
+      activeSheet: sheetName,
+    };
+
+    return {
+      engine,
+      workbookGridItems: [defaultWorkbookItem],
+      viewport: undefined,
+    };
   }
 };
 
+const {
+  engine,
+  workbookGridItems: initialWorkbookGridItems,
+  viewport: initialViewport,
+} = createEngine();
 export function ExcelDemo() {
-  const {
-    engine,
-    sheetName: initialSheetName,
-    savedSheets,
-  } = useMemo(() => createEngine(), []);
-
-  const [sheets, setSheets] = useState<SheetTab[]>(
-    savedSheets.map((name) => ({ name }))
-  );
-
-  const [activeSheet, setActiveSheet] = useState(initialSheetName);
-  const [editingSheet, setEditingSheet] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState("");
+  const [workbookGridItems, setWorkbookGridItems] = useState<
+    WorkbookGridItem[]
+  >(initialWorkbookGridItems);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
   const [verboseErrors, setVerboseErrors] = useState(false);
-  
+  const [viewport, _setViewport] = useState<ViewportState | undefined>(
+    initialViewport
+  );
+
+  const setViewport: typeof _setViewport = useCallback(
+    (viewport) => {
+      _setViewport(viewport);
+      setHasUnsavedChanges(true);
+    },
+    [_setViewport]
+  );
+
   // Named expressions UI state
   const [showNamedExpressions, setShowNamedExpressions] = useState(false);
   const [newExpressionName, setNewExpressionName] = useState("");
   const [newExpressionFormula, setNewExpressionFormula] = useState("");
-  const [newExpressionScope, setNewExpressionScope] = useState<"global" | "sheet">("global");
-  
-  // Editing states for named expressions
-  const [editingExpression, setEditingExpression] = useState<{name: string, isGlobal: boolean} | null>(null);
-  const [editingExpressionName, setEditingExpressionName] = useState("");
-  const [editingExpressionFormula, setEditingExpressionFormula] = useState("");
-  
-  // Table management UI state
-  const [editingTable, setEditingTable] = useState<string | null>(null);
-  const [editingTableName, setEditingTableName] = useState("");
+  const [newExpressionScope, setNewExpressionScope] = useState<
+    "global" | "workbook" | "sheet"
+  >("global");
 
-  // Get named expressions and tables using hooks
-  const globalNamedExpressions = useGlobalNamedExpressions(engine);
-  const serializedSheet = useSerializedSheet(engine, activeSheet);
-  const sheetNamedExpressions = serializedSheet.namedExpressions;
-  const tables = useTables(engine);
+  // Sheet management state
+  const [renamingSheet, setRenamingSheet] = useState<{
+    workbookName: string;
+    sheetName: string;
+  } | null>(null);
+  const [newSheetName, setNewSheetName] = useState("");
+
+  const engineState = useEngine(engine);
 
   // Save to localStorage
-  const saveToLocalStorage = useCallback(() => {
+  const saveToLocalStorage = () => {
     try {
-      const sheetsData = Array.from(engine.sheets.entries()).map(
-        ([name, sheet]) => ({
-          name,
-          cells: Array.from(sheet.content.entries()),
-          namedExpressions: Array.from(engine.getNamedExpressionsSerialized(name).entries()),
-        })
-      );
-
-      // Serialize tables with headers converted from Map to array
-      const serializedTables: [string, SerializedTableDefinition][] = [];
-      for (const [tableName, table] of engine.getTablesSerialized()) {
-        serializedTables.push([tableName, {
-          ...table,
-          headers: Array.from(table.headers.entries()),
-        }]);
-      }
-
-      const dataToSave: SavedSpreadsheetData = {
-        sheets: sheetsData,
-        globalNamedExpressions: Array.from(engine.getGlobalNamedExpressionsSerialized().entries()),
-        tables: serializedTables,
-        activeSheet,
+      const dataToSave: SavedState = {
+        workbookGridItems,
+        serializedEngine: engine.serializeEngine(),
+        viewport,
       };
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
       setHasUnsavedChanges(false);
       console.log("Spreadsheet saved to localStorage");
+      console.log(
+        "Viewport data saved:",
+        workbookGridItems.map((item) => ({
+          name: item.name,
+          position: { x: item.x, y: item.y },
+          size: { width: item.width, height: item.height },
+        }))
+      );
     } catch (error) {
       console.error("Failed to save to localStorage:", error);
     }
-  }, [engine, activeSheet]);
+  };
 
   // Mark as having unsaved changes when sheets change
   const markUnsavedChanges = useCallback(() => {
     setHasUnsavedChanges(true);
   }, []);
 
-  // Auto-save when engine changes (optional)
+  // Track changes
   useEffect(() => {
-    const unsubscribe = engine.onCellsUpdate(activeSheet, markUnsavedChanges);
-    return unsubscribe;
-  }, [engine, activeSheet, markUnsavedChanges]);
-
-  // Track global named expression changes
-  useEffect(() => {
-    const unsubscribe = engine.on("global-named-expressions-updated", markUnsavedChanges);
+    const unsubscribe = engine.onUpdate(markUnsavedChanges);
     return unsubscribe;
   }, [engine, markUnsavedChanges]);
 
-  // Track table changes
-  useEffect(() => {
-    const unsubscribe = engine.on("tables-updated", markUnsavedChanges);
-    return unsubscribe;
-  }, [engine, markUnsavedChanges]);
+  // Add new workbook
+  const addWorkbook = useCallback(() => {
+    const newWorkbookCount = workbookGridItems.length + 1;
+    const newWorkbookName = `Workbook${newWorkbookCount}`;
+    const newSheetName = "Sheet1";
+
+    // Add to engine
+    engine.addWorkbook(newWorkbookName);
+    engine.addSheet({
+      workbookName: newWorkbookName,
+      sheetName: newSheetName,
+    });
+
+    // Add to grid
+    const newGridItem: WorkbookGridItem = {
+      name: newWorkbookName,
+      x: 100 + (newWorkbookCount - 1) * 50, // Offset new workbooks
+      y: 100 + (newWorkbookCount - 1) * 50,
+      width: 800,
+      height: 600,
+      activeSheet: newSheetName,
+    };
+
+    setWorkbookGridItems((prev) => [...prev, newGridItem]);
+    markUnsavedChanges();
+  }, [workbookGridItems.length, engine, markUnsavedChanges]);
+
+  // Update active sheet for a workbook
+  const updateWorkbookActiveSheet = useCallback(
+    (workbookName: string, sheetName: string) => {
+      setWorkbookGridItems((prev) =>
+        prev.map((item) =>
+          item.name === workbookName
+            ? { ...item, activeSheet: sheetName }
+            : item
+        )
+      );
+      markUnsavedChanges();
+    },
+    [markUnsavedChanges]
+  );
 
   // Add named expression
   const addNamedExpression = useCallback(() => {
     if (newExpressionName.trim() && newExpressionFormula.trim()) {
+      // Use the first workbook as the active workbook for scoped expressions
+      const workbookName = workbookGridItems[0]?.name;
+      const activeSheet = workbookGridItems[0]?.activeSheet;
+
       engine.addNamedExpression({
         expressionName: newExpressionName.trim(),
         expression: newExpressionFormula.trim(),
         sheetName: newExpressionScope === "sheet" ? activeSheet : undefined,
+        workbookName:
+          newExpressionScope === "workbook" || newExpressionScope === "sheet"
+            ? workbookName
+            : undefined,
       });
-      
+
       setNewExpressionName("");
       setNewExpressionFormula("");
       markUnsavedChanges();
     }
-  }, [newExpressionName, newExpressionFormula, newExpressionScope, activeSheet, engine, markUnsavedChanges]);
+  }, [
+    newExpressionName,
+    newExpressionFormula,
+    newExpressionScope,
+    workbookGridItems,
+    engine,
+    markUnsavedChanges,
+  ]);
 
   // Delete named expression
-  const deleteNamedExpression = useCallback((name: string, isGlobal: boolean) => {
-    try {
-      const success = engine.removeNamedExpression({
-        expressionName: name,
-        sheetName: isGlobal ? undefined : activeSheet,
-      });
-      
-      if (success) {
+  const deleteNamedExpression = useCallback(
+    (name: string, isGlobal: boolean, workbookName?: string) => {
+      try {
+        const targetWorkbook = workbookName || workbookGridItems[0]?.name;
+        const activeSheet = workbookGridItems.find(
+          (w) => w.name === targetWorkbook
+        )?.activeSheet;
+
+        const success = engine.removeNamedExpression({
+          expressionName: name,
+          sheetName: isGlobal ? undefined : activeSheet,
+          workbookName: isGlobal ? undefined : targetWorkbook,
+        });
+
+        if (success) {
+          markUnsavedChanges();
+        }
+      } catch (error) {
+        console.error("Failed to delete named expression:", error);
+      }
+    },
+    [engine, workbookGridItems, markUnsavedChanges]
+  );
+
+  // Rename sheet
+  const renameSheet = useCallback(
+    (workbookName: string, oldSheetName: string, newSheetName: string) => {
+      try {
+        engine.renameSheet({
+          workbookName,
+          sheetName: oldSheetName,
+          newSheetName: newSheetName.trim(),
+        });
+
+        // Update active sheet if it was the renamed one
+        updateWorkbookActiveSheet(workbookName, newSheetName.trim());
         markUnsavedChanges();
+        setRenamingSheet(null);
+        setNewSheetName("");
+      } catch (error) {
+        console.error("Failed to rename sheet:", error);
       }
-    } catch (error) {
-      console.error("Failed to delete named expression:", error);
-    }
-  }, [engine, activeSheet, markUnsavedChanges]);
-
-  // Start editing named expression
-  const startEditingExpression = useCallback((name: string, expression: string, isGlobal: boolean) => {
-    setEditingExpression({ name, isGlobal });
-    setEditingExpressionName(name);
-    setEditingExpressionFormula(expression);
-  }, []);
-
-  // Save named expression changes
-  const saveExpressionChanges = useCallback(() => {
-    if (!editingExpression || !editingExpressionName.trim() || !editingExpressionFormula.trim()) {
-      return;
-    }
-
-    try {
-      const { name: oldName, isGlobal } = editingExpression;
-      const sheetName = isGlobal ? undefined : activeSheet;
-      
-      // If name changed, rename the expression
-      if (oldName !== editingExpressionName.trim()) {
-        engine.renameNamedExpression({
-          expressionName: oldName,
-          sheetName,
-          newName: editingExpressionName.trim(),
-        });
-      }
-      
-      // Update the expression formula
-      engine.updateNamedExpression({
-        expressionName: editingExpressionName.trim(),
-        expression: editingExpressionFormula.trim(),
-        sheetName,
-      });
-      
-      markUnsavedChanges();
-      setEditingExpression(null);
-      setEditingExpressionName("");
-      setEditingExpressionFormula("");
-    } catch (error) {
-      console.error("Failed to update named expression:", error);
-    }
-  }, [editingExpression, editingExpressionName, editingExpressionFormula, activeSheet, engine, markUnsavedChanges]);
-
-  // Cancel editing named expression
-  const cancelEditingExpression = useCallback(() => {
-    setEditingExpression(null);
-    setEditingExpressionName("");
-    setEditingExpressionFormula("");
-  }, []);
-
-  // Table management functions
-  const deleteTable = useCallback((tableName: string) => {
-    try {
-      engine.removeTable({ tableName });
-      markUnsavedChanges();
-    } catch (error) {
-      console.error("Failed to delete table:", error);
-    }
-  }, [engine, markUnsavedChanges]);
-
-  // Start editing table name
-  const startEditingTable = useCallback((tableName: string) => {
-    setEditingTable(tableName);
-    setEditingTableName(tableName);
-  }, []);
-
-  // Save table name changes
-  const saveTableChanges = useCallback(() => {
-    if (!editingTable || !editingTableName.trim()) {
-      return;
-    }
-
-    try {
-      if (editingTable !== editingTableName.trim()) {
-        engine.renameTable({
-          oldName: editingTable,
-          newName: editingTableName.trim(),
-        });
-      }
-      
-      markUnsavedChanges();
-      setEditingTable(null);
-      setEditingTableName("");
-    } catch (error) {
-      console.error("Failed to rename table:", error);
-    }
-  }, [editingTable, editingTableName, engine, markUnsavedChanges]);
-
-  // Cancel editing table
-  const cancelEditingTable = useCallback(() => {
-    setEditingTable(null);
-    setEditingTableName("");
-  }, []);
-
-  // Add new sheet
-  const addSheet = useCallback(() => {
-    const newSheetCount = sheets.length + 1;
-    const newSheetName = `Sheet${newSheetCount}`;
-    const addedSheetName = engine.addSheet(newSheetName).name;
-
-    const newSheet: SheetTab = {
-      name: addedSheetName,
-    };
-
-    setSheets((prev) => [...prev, newSheet]);
-    setActiveSheet(addedSheetName);
-    markUnsavedChanges();
-  }, [sheets.length, engine, markUnsavedChanges]);
+    },
+    [engine, updateWorkbookActiveSheet, markUnsavedChanges]
+  );
 
   // Delete sheet
   const deleteSheet = useCallback(
-    (sheetName: string) => {
-      if (sheets.length <= 1) return; // Don't delete the last sheet
-
+    (workbookName: string, sheetName: string) => {
       try {
-        engine.removeSheet(sheetName);
-        
-        setSheets((prev) => {
-          const newSheets = prev.filter((sheet) => sheet.name !== sheetName);
+        const sheets = engine.getSheets(workbookName);
+        if (sheets.size <= 1) {
+          alert("Cannot delete the last sheet in a workbook");
+          return;
+        }
 
-          // If we deleted the active sheet, switch to the first remaining sheet
-          if (sheetName === activeSheet && newSheets.length > 0) {
-            setActiveSheet(newSheets[0]!.name);
+        engine.removeSheet({ workbookName, sheetName });
+
+        // If we deleted the active sheet, switch to the first available sheet
+        const workbookItem = workbookGridItems.find(
+          (item) => item.name === workbookName
+        );
+        if (workbookItem?.activeSheet === sheetName) {
+          const remainingSheets = engine.getSheets(workbookName);
+          const firstSheet = Array.from(remainingSheets.keys())[0];
+          if (firstSheet) {
+            updateWorkbookActiveSheet(workbookName, firstSheet);
           }
+        }
 
-          return newSheets;
-        });
         markUnsavedChanges();
       } catch (error) {
         console.error("Failed to delete sheet:", error);
       }
     },
-    [sheets.length, activeSheet, engine, markUnsavedChanges]
+    [engine, workbookGridItems, updateWorkbookActiveSheet, markUnsavedChanges]
   );
 
-  // Start editing sheet name
-  const startEditingSheet = useCallback(
-    (sheetName: string, currentName: string) => {
-      setEditingSheet(sheetName);
-      setEditingName(currentName);
+  // Start renaming sheet
+  const startRenaming = useCallback(
+    (workbookName: string, sheetName: string) => {
+      setRenamingSheet({ workbookName, sheetName });
+      setNewSheetName(sheetName);
     },
     []
   );
 
-  // Save sheet name
-  const saveSheetName = useCallback(() => {
-    if (editingSheet !== null && editingName.trim()) {
-      try {
-        engine.renameSheet(editingSheet, editingName.trim());
-
-        setSheets((prev) =>
-          prev.map((sheet) =>
-            sheet.name === editingSheet
-              ? { ...sheet, name: editingName.trim() }
-              : sheet
-          )
-        );
-
-        // Update active sheet name if we renamed the active sheet
-        if (editingSheet === activeSheet) {
-          setActiveSheet(editingName.trim());
-        }
-
-        markUnsavedChanges();
-      } catch (error) {
-        console.error("Failed to rename sheet:", error);
-      }
-    }
-
-    setEditingSheet(null);
-    setEditingName("");
-  }, [editingSheet, editingName, activeSheet, engine, markUnsavedChanges]);
-
-  // Cancel editing
-  const cancelEditing = useCallback(() => {
-    setEditingSheet(null);
-    setEditingName("");
+  // Cancel renaming
+  const cancelRenaming = useCallback(() => {
+    setRenamingSheet(null);
+    setNewSheetName("");
   }, []);
 
-  // Handle key press in name input
-  const handleKeyPress = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter") {
-        saveSheetName();
-      } else if (e.key === "Escape") {
-        cancelEditing();
-      }
+  // Create WorkbookComponent for grid
+  const WorkbookComponent = useCallback(
+    ({ workbookName }: { workbookName: string }) => {
+      const workbookItem = workbookGridItems.find(
+        (item) => item.name === workbookName
+      );
+      if (!workbookItem) return null;
+
+      // Get all sheets for this workbook
+      const sheets = engine.getSheets(workbookName);
+      const sheetNames = Array.from(sheets.keys());
+
+      // Add new sheet handler
+      const addSheet = () => {
+        const newSheetCount = sheetNames.length + 1;
+        const newSheetName = `Sheet${newSheetCount}`;
+
+        try {
+          const result = engine.addSheet({
+            workbookName,
+            sheetName: newSheetName,
+          });
+
+          // Switch to the new sheet
+          updateWorkbookActiveSheet(workbookName, result.name);
+          markUnsavedChanges();
+        } catch (error) {
+          console.error("Failed to add sheet:", error);
+        }
+      };
+
+      return (
+        <div className="w-full h-full border border-gray-300 overflow-hidden bg-white flex flex-col">
+          {/* Workbook Header */}
+          <div className="h-8 bg-gray-100 border-b border-gray-300 px-3 flex items-center justify-between flex-shrink-0">
+            <span className="text-sm font-medium text-gray-700">
+              {workbookName}
+            </span>
+            <span
+              className="text-xs text-gray-500"
+              data-testid={`sheet-count-${workbookName}`}
+            >
+              Sheets: {sheetNames.length}
+            </span>
+          </div>
+
+          {/* Spreadsheet Content */}
+          <div className="flex-1 overflow-hidden">
+            <SpreadsheetWithFormulaBar
+              key={`${workbookName}-${workbookItem.activeSheet}`}
+              sheetName={workbookItem.activeSheet}
+              workbookName={workbookName}
+              engine={engine}
+              verboseErrors={verboseErrors}
+            />
+          </div>
+
+          {/* Sheet Tabs at Bottom (Excel-style) */}
+          <div className="h-8 bg-gray-50 border-t border-gray-200 flex items-center px-2 flex-shrink-0">
+            <div className="flex items-center gap-1">
+              {sheetNames.map((sheetName) => {
+                const isRenaming =
+                  renamingSheet?.workbookName === workbookName &&
+                  renamingSheet?.sheetName === sheetName;
+
+                return (
+                  <div key={sheetName} className="flex items-center group">
+                    {isRenaming ? (
+                      <div className="flex items-center gap-1 bg-white border border-blue-500 rounded px-2 py-1">
+                        <input
+                          type="text"
+                          value={newSheetName}
+                          onChange={(e) => setNewSheetName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              renameSheet(
+                                workbookName,
+                                sheetName,
+                                newSheetName
+                              );
+                            } else if (e.key === "Escape") {
+                              cancelRenaming();
+                            }
+                          }}
+                          onBlur={() => {
+                            if (
+                              newSheetName.trim() &&
+                              newSheetName.trim() !== sheetName
+                            ) {
+                              renameSheet(
+                                workbookName,
+                                sheetName,
+                                newSheetName
+                              );
+                            } else {
+                              cancelRenaming();
+                            }
+                          }}
+                          className="text-xs w-20 outline-none bg-transparent"
+                          autoFocus
+                          data-testid={`rename-sheet-input-${sheetName}`}
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        className={`
+                          px-3 py-1 text-xs font-medium rounded-t border-b-2 whitespace-nowrap relative flex items-center gap-1 group cursor-pointer
+                          ${
+                            workbookItem.activeSheet === sheetName
+                              ? "bg-white text-blue-600 border-blue-500 -mb-px"
+                              : "bg-transparent text-gray-600 border-transparent hover:bg-gray-100"
+                          }
+                        `}
+                        onClick={() =>
+                          updateWorkbookActiveSheet(workbookName, sheetName)
+                        }
+                        onDoubleClick={() =>
+                          startRenaming(workbookName, sheetName)
+                        }
+                        data-testid={`sheet-tab-${sheetName}`}
+                      >
+                        <span>{sheetName}</span>
+
+                        {/* Sheet actions (visible on hover, inside tab) */}
+                        <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 ml-1">
+                          <div
+                            className="h-4 w-4 p-0 text-gray-500 hover:text-blue-600 flex items-center justify-center cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              startRenaming(workbookName, sheetName);
+                            }}
+                            title="Rename Sheet"
+                            data-testid={`rename-sheet-${sheetName}`}
+                          >
+                            <Edit2 className="h-3 w-3" />
+                          </div>
+                          {sheetNames.length > 1 && (
+                            <div
+                              className="h-4 w-4 p-0 text-gray-500 hover:text-red-600 flex items-center justify-center cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (
+                                  confirm(
+                                    `Are you sure you want to delete sheet "${sheetName}"?`
+                                  )
+                                ) {
+                                  deleteSheet(workbookName, sheetName);
+                                }
+                              }}
+                              title="Delete Sheet"
+                              data-testid={`delete-sheet-${sheetName}`}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Add Sheet Button (Excel-style, to the right) */}
+            <div className="flex items-center ml-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 w-6 p-0 text-gray-600 hover:text-gray-800 border border-gray-300 rounded"
+                onClick={addSheet}
+                title="Add Sheet"
+                data-testid={`add-sheet-${workbookName}`}
+              >
+                <Plus className="h-3 w-3" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      );
     },
-    [saveSheetName, cancelEditing]
+    [
+      workbookGridItems,
+      engine,
+      verboseErrors,
+      updateWorkbookActiveSheet,
+      markUnsavedChanges,
+      renamingSheet,
+      newSheetName,
+      renameSheet,
+      cancelRenaming,
+      startRenaming,
+      deleteSheet,
+    ]
   );
 
-  // Generate serialized debug data
-  const getSerializedDebugData = useCallback(() => {
-    const debugData = {
-      activeSheet,
-      sheets: [] as [string, any][],
-      globalNamedExpressions: Array.from(engine.getGlobalNamedExpressionsSerialized().entries()),
-      tables: [] as [string, any][],
-    };
+  // Create grid children from workbook items
+  const gridChildren: GridChild[] = useMemo(() => {
+    return workbookGridItems.map((item) => ({
+      id: item.name,
+      title: item.name,
+      x: item.x,
+      y: item.y,
+      width: item.width,
+      height: item.height,
+      component: "WorkbookComponent",
+    }));
+  }, [workbookGridItems]);
 
-    // Serialize all sheets
-    for (const [sheetName, sheet] of engine.sheets.entries()) {
-      debugData.sheets.push([sheetName, {
-        cells: Array.from(sheet.content.entries()),
-        namedExpressions: Array.from(engine.getNamedExpressionsSerialized(sheetName).entries()),
-      }]);
-    }
+  // Grid components map
+  const gridComponents = useMemo(
+    () => ({
+      WorkbookComponent: (gridChild: GridChild) => (
+        <WorkbookComponent workbookName={gridChild.id} />
+      ),
+    }),
+    [WorkbookComponent]
+  );
 
-    // Serialize tables
-    for (const [tableName, table] of engine.getTablesSerialized()) {
-      debugData.tables.push([tableName, {
-        ...table,
-        headers: Array.from(table.headers.entries()),
-      }]);
-    }
-
-    return JSON.stringify(debugData, null, 2);
-  }, [engine, activeSheet]);
-
-  // Helper function to check if a string is a number
-  const isNumber = (value: string): { isNumber: true; value: number } | { isNumber: false } => {
-    if (value === "") {
-      return { isNumber: false };
-    }
-
-    const normalizedValue = value.replace(/,/g, "");
-    const parsed = parseFloat(normalizedValue);
-
-    if (
-      !isNaN(parsed) &&
-      isFinite(parsed) &&
-      normalizedValue === String(parsed)
-    ) {
-      return { isNumber: true, value: parsed };
-    }
-
-    return { isNumber: false };
-  };
+  const numTables = engineState.tables
+    .values()
+    .reduce((sum, wb) => sum + wb.size, 0);
 
   return (
     <div className="h-full flex flex-col">
-      {/* Excel-style header */}
+      {/* Grid-based header */}
       <div className="border-b border-gray-200 bg-gray-50">
         <div className="p-3 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-semibold text-gray-800">
-              FormulaEngine Excel Demo
+              FormulaEngine Multi-Workbook Demo
             </h1>
             <div className="flex items-center gap-4 text-sm text-gray-600">
-              <span data-testid="active-sheet-display">
-                Active Sheet:{" "}
-                <strong>
-                  {sheets.find((s) => s.name === activeSheet)?.name}
-                </strong>
+              <span data-testid="total-workbooks-count">
+                Workbooks: {workbookGridItems.length}
               </span>
-              <span data-testid="total-sheets-count">Total Sheets: {sheets.length}</span>
+              {workbookGridItems.length > 0 && (
+                <span className="text-blue-600 font-medium">
+                  Active:{" "}
+                  {workbookGridItems.find((w) => w.name === "Workbook1")
+                    ?.name || workbookGridItems[0]?.name}{" "}
+                  →{" "}
+                  {workbookGridItems.find((w) => w.name === "Workbook1")
+                    ?.activeSheet || workbookGridItems[0]?.activeSheet}
+                </span>
+              )}
               <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-gray-300 text-gray-700"
+                  onClick={addWorkbook}
+                  data-testid="add-workbook-button"
+                >
+                  <Plus className="h-4 w-4 mr-1" />
+                  Add Workbook
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"
@@ -523,22 +598,6 @@ export function ExcelDemo() {
                   ) : (
                     <ChevronDown className="h-3 w-3 ml-1" />
                   )}
-                </Button>
-                <Button
-                  size="sm"
-                  variant={debugMode ? "default" : "outline"}
-                  className={`
-                    ${
-                      debugMode
-                        ? "bg-orange-600 hover:bg-orange-700 text-white"
-                        : "border-gray-300 text-gray-700"
-                    }
-                  `}
-                  onClick={() => setDebugMode(!debugMode)}
-                  data-testid="debug-mode-toggle"
-                >
-                  <Bug className="h-4 w-4 mr-1" />
-                  Debug View
                 </Button>
                 <Button
                   size="sm"
@@ -573,7 +632,10 @@ export function ExcelDemo() {
                   {hasUnsavedChanges ? "Save Changes" : "Saved"}
                 </Button>
                 {hasUnsavedChanges && (
-                  <span className="text-xs text-orange-600 font-medium" data-testid="unsaved-changes-indicator">
+                  <span
+                    className="text-xs text-orange-600 font-medium"
+                    data-testid="unsaved-changes-indicator"
+                  >
                     Unsaved changes
                   </span>
                 )}
@@ -585,16 +647,23 @@ export function ExcelDemo() {
 
       {/* Named Expressions & Tables Panel */}
       {showNamedExpressions && (
-        <div className="border-b border-gray-200 bg-gray-50 p-4" data-testid="expressions-tables-panel">
+        <div
+          className="border-b border-gray-200 bg-gray-50 p-4"
+          data-testid="expressions-tables-panel"
+        >
           <div className="space-y-4">
             {/* Add New Named Expression - Unified Form */}
             <div className="bg-white p-3 rounded border border-gray-200">
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">Add Named Expression</h3>
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">
+                Add Named Expression
+              </h3>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Name</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Name
+                  </label>
                   <Input
-                    placeholder={newExpressionScope === "sheet" ? "e.g., COMMISSION" : "e.g., TAX_RATE"}
+                    placeholder={"e.g., COMMISSION"}
                     value={newExpressionName}
                     onChange={(e) => setNewExpressionName(e.target.value)}
                     className="text-sm"
@@ -602,9 +671,11 @@ export function ExcelDemo() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Formula</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Formula
+                  </label>
                   <Input
-                    placeholder={newExpressionScope === "sheet" ? "e.g., 0.05" : "e.g., 0.08"}
+                    placeholder={"e.g., 0.05"}
                     value={newExpressionFormula}
                     onChange={(e) => setNewExpressionFormula(e.target.value)}
                     className="text-sm"
@@ -612,22 +683,36 @@ export function ExcelDemo() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Scope</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Scope
+                  </label>
                   <select
                     value={newExpressionScope}
-                    onChange={(e) => setNewExpressionScope(e.target.value as "global" | "sheet")}
+                    onChange={(e) =>
+                      setNewExpressionScope(
+                        e.target.value as "global" | "workbook" | "sheet"
+                      )
+                    }
                     className="w-full p-2 text-sm border border-gray-300 rounded-md"
                     data-testid="expression-scope-select"
                   >
                     <option value="global">Global</option>
-                    <option value="sheet">Current Sheet</option>
+                    <option value="workbook">
+                      Workbook ({workbookGridItems[0]?.name || "None"})
+                    </option>
+                    <option value="sheet">
+                      Sheet ({workbookGridItems[0]?.name || "None"} →{" "}
+                      {workbookGridItems[0]?.activeSheet || "None"})
+                    </option>
                   </select>
                 </div>
                 <div className="flex items-end">
                   <Button
                     size="sm"
                     onClick={addNamedExpression}
-                    disabled={!newExpressionName.trim() || !newExpressionFormula.trim()}
+                    disabled={
+                      !newExpressionName.trim() || !newExpressionFormula.trim()
+                    }
                     className="w-full"
                     data-testid="add-expression-button"
                   >
@@ -638,400 +723,299 @@ export function ExcelDemo() {
               </div>
             </div>
 
-
-
             {/* Existing Named Expressions and Tables */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Global Named Expressions */}
-              <div className="bg-white p-3 rounded border border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-800 mb-3">
-                  Global Named Expressions ({globalNamedExpressions.size})
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* All Named Expressions - Consolidated */}
+              <div
+                className="bg-white p-3 rounded border border-gray-200"
+                data-testid="named-expressions-section"
+              >
+                <h3
+                  className="text-sm font-semibold text-gray-800 mb-3"
+                  data-testid="named-expressions-title"
+                >
+                  Named Expressions (
+                  {engineState.namedExpressions.globalExpressions.size +
+                    Array.from(
+                      engineState.namedExpressions.workbookExpressions.values()
+                    ).reduce((sum, wb) => sum + wb.size, 0) +
+                    Array.from(
+                      engineState.namedExpressions.sheetExpressions.values()
+                    ).reduce(
+                      (sum, wb) =>
+                        sum +
+                        Array.from(wb.values()).reduce(
+                          (sheetSum, sheet) => sheetSum + sheet.size,
+                          0
+                        ),
+                      0
+                    )}
+                  )
                 </h3>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {globalNamedExpressions.size === 0 ? (
-                    <p className="text-xs text-gray-500 italic">No global named expressions</p>
-                  ) : (
-                    Array.from(globalNamedExpressions.entries()).map(([name, expr]) => (
-                      <div key={name} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                        {editingExpression?.name === name && editingExpression?.isGlobal ? (
-                          <div className="flex-1 flex items-center gap-2">
-                            <div className="flex-1 space-y-1">
-                              <Input
-                                value={editingExpressionName}
-                                onChange={(e) => setEditingExpressionName(e.target.value)}
-                                className="h-6 text-xs"
-                                placeholder="Name"
-                              />
-                              <Input
-                                value={editingExpressionFormula}
-                                onChange={(e) => setEditingExpressionFormula(e.target.value)}
-                                className="h-6 text-xs"
-                                placeholder="Formula"
-                              />
-                            </div>
-                            <div className="flex flex-col gap-1">
-                              <Button
-                                size="sm"
-                                variant="default"
-                                className="h-6 px-2 text-xs text-white bg-green-600 hover:bg-green-700"
-                                onClick={saveExpressionChanges}
-                              >
-                                Update
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 text-gray-500 hover:text-gray-700"
-                                onClick={cancelEditingExpression}
-                              >
-                                <Cancel className="h-3 w-3" />
-                              </Button>
-                            </div>
+                <div
+                  className="space-y-2 max-h-40 overflow-y-auto"
+                  data-testid="named-expressions-list"
+                >
+                  {/* Global expressions */}
+                  {Array.from(
+                    engineState.namedExpressions.globalExpressions.entries()
+                  ).map(([name, expr]) => (
+                    <div
+                      key={`global-${name}`}
+                      className="flex items-center justify-between bg-gray-50 p-2 rounded"
+                      data-testid={`named-expression-${name}`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <div
+                            className="font-medium text-xs text-gray-800 truncate"
+                            data-testid={`expression-name-${name}`}
+                          >
+                            {name}
                           </div>
-                        ) : (
-                          <>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium text-xs text-gray-800 truncate">{name}</div>
-                              <div className="text-xs text-gray-600 truncate">{expr.expression}</div>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 text-blue-500 hover:text-blue-700"
-                                onClick={() => startEditingExpression(name, expr.expression, true)}
-                                data-testid={`edit-global-named-expression-${name}`}
-                                title="Edit"
-                              >
-                                <Edit2 className="h-3 w-3" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
-                                onClick={() => deleteNamedExpression(name, true)}
-                                data-testid={`delete-global-named-expression-${name}`}
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </>
-                        )}
+                          <span
+                            className="px-1.5 py-0.5 text-xs bg-gray-200 text-gray-700 rounded"
+                            data-testid={`expression-scope-${name}`}
+                          >
+                            Global
+                          </span>
+                        </div>
+                        <div
+                          className="text-xs text-gray-600 truncate"
+                          data-testid={`expression-formula-${name}`}
+                        >
+                          {expr.expression}
+                        </div>
                       </div>
-                    ))
-                  )}
-                </div>
-              </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                          onClick={() => deleteNamedExpression(name, true)}
+                          data-testid={`delete-global-named-expression-${name}`}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
 
-              {/* Sheet Named Expressions */}
-              <div className="bg-white p-3 rounded border border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-800 mb-3">
-                  Sheet Named Expressions ({sheetNamedExpressions.size})
-                </h3>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {sheetNamedExpressions.size === 0 ? (
-                    <p className="text-xs text-gray-500 italic">No sheet named expressions</p>
-                  ) : (
-                    Array.from(sheetNamedExpressions.entries()).map(([name, expr]) => (
-                      <div key={name} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                        {editingExpression?.name === name && !editingExpression?.isGlobal ? (
-                          <div className="flex-1 flex items-center gap-2">
-                            <div className="flex-1 space-y-1">
-                              <Input
-                                value={editingExpressionName}
-                                onChange={(e) => setEditingExpressionName(e.target.value)}
-                                className="h-6 text-xs"
-                                placeholder="Name"
-                              />
-                              <Input
-                                value={editingExpressionFormula}
-                                onChange={(e) => setEditingExpressionFormula(e.target.value)}
-                                className="h-6 text-xs"
-                                placeholder="Formula"
-                              />
+                  {/* Workbook-scoped expressions */}
+                  {Array.from(
+                    engineState.namedExpressions.workbookExpressions.entries()
+                  ).flatMap(([workbookName, expressions]) =>
+                    Array.from(expressions.entries()).map(([name, expr]) => (
+                      <div
+                        key={`workbook-${workbookName}-${name}`}
+                        className="flex items-center justify-between bg-blue-50 p-2 rounded"
+                        data-testid={`named-expression-${name}`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <div
+                              className="font-medium text-xs text-gray-800 truncate"
+                              data-testid={`expression-name-${name}`}
+                            >
+                              {name}
                             </div>
-                            <div className="flex flex-col gap-1">
-                              <Button
-                                size="sm"
-                                variant="default"
-                                className="h-6 px-2 text-xs text-white bg-green-600 hover:bg-green-700"
-                                onClick={saveExpressionChanges}
-                              >
-                                Update
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 text-gray-500 hover:text-gray-700"
-                                onClick={cancelEditingExpression}
-                              >
-                                <Cancel className="h-3 w-3" />
-                              </Button>
-                            </div>
+                            <span
+                              className="px-1.5 py-0.5 text-xs bg-blue-200 text-blue-800 rounded"
+                              data-testid={`expression-scope-${name}`}
+                            >
+                              {workbookName}
+                            </span>
                           </div>
-                        ) : (
-                          <>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium text-xs text-gray-800 truncate">{name}</div>
-                              <div className="text-xs text-gray-600 truncate">{expr.expression}</div>
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 text-blue-500 hover:text-blue-700"
-                                onClick={() => startEditingExpression(name, expr.expression, false)}
-                                data-testid={`edit-sheet-named-expression-${name}`}
-                              >
-                                <Edit2 className="h-3 w-3" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
-                                onClick={() => deleteNamedExpression(name, false)}
-                                data-testid={`delete-sheet-named-expression-${name}`}
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </>
-                        )}
+                          <div
+                            className="text-xs text-blue-600 truncate"
+                            data-testid={`expression-formula-${name}`}
+                          >
+                            {expr.expression}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                            onClick={() =>
+                              deleteNamedExpression(name, false, workbookName)
+                            }
+                            data-testid={`delete-workbook-named-expression-${name}`}
+                          >
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
                       </div>
                     ))
                   )}
+
+                  {/* Sheet-scoped expressions */}
+                  {Array.from(
+                    engineState.namedExpressions.sheetExpressions.entries()
+                  ).flatMap(([workbookName, workbookSheets]) =>
+                    Array.from(workbookSheets.entries()).flatMap(
+                      ([sheetName, expressions]) =>
+                        Array.from(expressions.entries()).map(
+                          ([name, expr]) => (
+                            <div
+                              key={`sheet-${workbookName}-${sheetName}-${name}`}
+                              className="flex items-center justify-between bg-green-50 p-2 rounded"
+                              data-testid={`named-expression-${name}`}
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <div
+                                    className="font-medium text-xs text-gray-800 truncate"
+                                    data-testid={`expression-name-${name}`}
+                                  >
+                                    {name}
+                                  </div>
+                                  <span
+                                    className="px-1.5 py-0.5 text-xs bg-green-200 text-green-800 rounded"
+                                    data-testid={`expression-scope-${name}`}
+                                  >
+                                    {workbookName} → {sheetName}
+                                  </span>
+                                </div>
+                                <div
+                                  className="text-xs text-green-600 truncate"
+                                  data-testid={`expression-formula-${name}`}
+                                >
+                                  {expr.expression}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                  onClick={() =>
+                                    deleteNamedExpression(
+                                      name,
+                                      false,
+                                      workbookName
+                                    )
+                                  }
+                                  data-testid={`delete-sheet-named-expression-${name}`}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            </div>
+                          )
+                        )
+                    )
+                  )}
+
+                  {/* Show message if no expressions */}
+                  {engineState.namedExpressions.globalExpressions.size === 0 &&
+                    engineState.namedExpressions.workbookExpressions.size ===
+                      0 &&
+                    engineState.namedExpressions.sheetExpressions.size ===
+                      0 && (
+                      <p className="text-xs text-gray-500 italic">
+                        No named expressions
+                      </p>
+                    )}
                 </div>
               </div>
 
               {/* Tables */}
-              <div className="bg-white p-3 rounded border border-gray-200">
-                <h3 className="text-sm font-semibold text-gray-800 mb-3">
-                  Tables ({tables.size})
+              <div
+                className="bg-white p-3 rounded border border-gray-200"
+                data-testid="tables-section"
+              >
+                <h3
+                  className="text-sm font-semibold text-gray-800 mb-3"
+                  data-testid="tables-title"
+                >
+                  Tables ({numTables})
                 </h3>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {tables.size === 0 ? (
+                <div
+                  className="space-y-2 max-h-40 overflow-y-auto"
+                  data-testid="tables-list"
+                >
+                  {numTables === 0 ? (
                     <p className="text-xs text-gray-500 italic">No tables</p>
                   ) : (
-                    Array.from(tables.entries()).map(([name, table]) => (
-                      <div key={name} className="flex items-center justify-between bg-gray-50 p-2 rounded">
-                        {editingTable === name ? (
-                          <div className="flex-1 flex items-center gap-2">
-                            <Input
-                              value={editingTableName}
-                              onChange={(e) => setEditingTableName(e.target.value)}
-                              className="h-6 text-xs flex-1"
-                              placeholder="Table name"
-                            />
-                            <div className="flex items-center gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 text-green-600 hover:text-green-700"
-                                onClick={saveTableChanges}
-                              >
-                                <Check className="h-3 w-3" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 text-gray-500 hover:text-gray-700"
-                                onClick={cancelEditingTable}
-                              >
-                                <Cancel className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium text-xs text-gray-800 truncate">{name}</div>
-                              <div className="text-xs text-gray-600 truncate">
-                                {table.sheetName} • {table.start.rowIndex + 1}:{String.fromCharCode(65 + table.start.colIndex)}
+                    Array.from(engineState.tables).flatMap(
+                      ([workbookName, workbook]) =>
+                        Array.from(workbook.entries()).map(
+                          ([tableName, table]) => (
+                            <div
+                              key={tableName + "|" + workbookName}
+                              className="flex items-center justify-between bg-gray-50 p-2 rounded"
+                              data-testid={`table-${tableName}`}
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div
+                                  className="font-medium text-xs text-gray-800 truncate"
+                                  data-testid={`table-name-${tableName}`}
+                                >
+                                  {tableName}
+                                </div>
+                                <div className="text-xs text-gray-600 truncate">
+                                  {table.sheetName} • {workbookName}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  Range:{" "}
+                                  {String.fromCharCode(
+                                    65 + table.start.colIndex
+                                  )}
+                                  {table.start.rowIndex + 1}:
+                                  {String.fromCharCode(
+                                    65 +
+                                      table.start.colIndex +
+                                      table.headers.size
+                                  )}
+                                  {table.endRow.type === "number"
+                                    ? table.endRow.value + 1
+                                    : "∞"}
+                                </div>
                               </div>
                             </div>
-                            <div className="flex items-center gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 text-blue-500 hover:text-blue-700"
-                                onClick={() => startEditingTable(name)}
-                                data-testid={`edit-table-${name}`}
-                              >
-                                <Edit2 className="h-3 w-3" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
-                                onClick={() => deleteTable(name)}
-                                data-testid={`delete-table-${name}`}
-                              >
-                                <X className="h-3 w-3" />
-                              </Button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ))
+                          )
+                        )
+                    )
                   )}
                 </div>
               </div>
             </div>
-
-
           </div>
         </div>
       )}
 
-      {/* Main spreadsheet area with formula bar or debug view */}
+      {/* Main infinite grid area */}
       <div className="flex-1 overflow-hidden">
-        {debugMode ? (
-          <div className="h-full flex flex-col p-4 overflow-auto">
-            {/* Serialized data display */}
-            <div className="mb-4">
-              <h2 className="text-lg font-semibold text-gray-800 mb-2">
-                Engine Serialized Data
-              </h2>
-              <pre className="bg-gray-100 p-4 rounded-lg text-xs overflow-auto max-h-64 border">
-                {getSerializedDebugData()}
-              </pre>
-            </div>
-            
-            {/* Plain readonly spreadsheet without custom cell renderer */}
-            <div className="flex-1 border border-gray-300 rounded-lg overflow-hidden">
-              <Spreadsheet
-                key={activeSheet}
-                style={{ height: "100%", width: "100%" }}
-                cellData={serializedSheet.sheet as Map<string, string | number>}
-                onCellDataChange={() => {
-                  // Readonly - no changes allowed
-                }}
-                selection={{
-                  effects: () => {
-                    // No selection effects in debug mode
-                  },
-                }}
-              />
-            </div>
-          </div>
-        ) : (
-          <SpreadsheetWithFormulaBar
-            key={activeSheet} // Re-mount component when sheet changes
-            sheetName={activeSheet}
-            engine={engine}
-            tables={tables}
-            globalNamedExpressions={globalNamedExpressions}
-            verboseErrors={verboseErrors}
-          />
-        )}
-      </div>
-
-      {/* Excel-style sheet tabs at bottom */}
-      <div className="border-t border-gray-200 bg-gray-50 p-1 flex items-center gap-1">
-        {/* Sheet tabs */}
-        <div className="flex items-center gap-1 flex-1 overflow-x-auto">
-          {sheets.map((sheet) => (
-            <div
-              key={sheet.name}
-              className={`
-                group relative flex items-center gap-1 px-3 py-1 border border-gray-300 rounded-t-md cursor-pointer
-                ${
-                  sheet.name === activeSheet
-                    ? "bg-white border-b-white -mb-px z-10"
-                    : "bg-gray-100 hover:bg-gray-200"
-                }
-              `}
-              onClick={() => setActiveSheet(sheet.name)}
-              data-testid={`sheet-tab-${sheet.name}`}
-            >
-              {editingSheet === sheet.name ? (
-                <div className="flex items-center gap-1">
-                  <Input
-                    value={editingName}
-                    onChange={(e) => setEditingName(e.target.value)}
-                    onKeyDown={handleKeyPress}
-                    onBlur={saveSheetName}
-                    className="h-6 px-1 text-xs w-20 min-w-0"
-                  />
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-4 w-4 p-0"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      saveSheetName();
-                    }}
-                  >
-                    <Check className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-4 w-4 p-0"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      cancelEditing();
-                    }}
-                  >
-                    <Cancel className="h-3 w-3" />
-                  </Button>
-                </div>
-              ) : (
-                <>
-                  <span className="text-xs font-medium text-gray-700 select-none">
-                    {sheet.name}
-                  </span>
-
-                  {/* Edit button - only show on hover */}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      startEditingSheet(sheet.name, sheet.name);
-                    }}
-                    data-testid={`edit-sheet-${sheet.name}`}
-                  >
-                    <Edit2 className="h-3 w-3" />
-                  </Button>
-
-                  {/* Delete button - only show on hover and if not last sheet */}
-                  {sheets.length > 1 && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-4 w-4 p-0 opacity-0 group-hover:opacity-100 transition-opacity text-red-500 hover:text-red-700"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteSheet(sheet.name);
-                      }}
-                      data-testid={`delete-sheet-${sheet.name}`}
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  )}
-                </>
-              )}
-            </div>
-          ))}
-
-          {/* Add sheet button */}
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-7 w-7 p-0 border border-gray-300 rounded-t-md bg-gray-100 hover:bg-gray-200"
-            onClick={addSheet}
-            data-testid="add-sheet-button"
-          >
-            <Plus className="h-4 w-4" />
-          </Button>
-        </div>
-
-        {/* Sheet scroll buttons (placeholder for future enhancement) */}
-        <div className="flex items-center gap-1 text-xs text-gray-500">
-          {sheets.length} sheet{sheets.length !== 1 ? "s" : ""}
-        </div>
+        <Grid
+          children={gridChildren}
+          components={gridComponents}
+          viewport={viewport}
+          onViewportChange={setViewport}
+          gridSize={20}
+          style={{ width: "100%", height: "100%" }}
+          onChildrenChange={(newChildren) => {
+            // Update workbook grid items when children change (move/resize)
+            const updatedItems = workbookGridItems.map((item) => {
+              const updatedChild = newChildren.find(
+                (child) => child.id === item.name
+              );
+              if (updatedChild) {
+                return {
+                  ...item,
+                  x: updatedChild.x,
+                  y: updatedChild.y,
+                  width: updatedChild.width,
+                  height: updatedChild.height,
+                };
+              }
+              return item;
+            });
+            setWorkbookGridItems(updatedItems);
+            markUnsavedChanges();
+          }}
+        />
       </div>
     </div>
   );

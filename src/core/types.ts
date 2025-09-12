@@ -10,6 +10,7 @@ import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 // Cell addressing types
 export interface CellAddress {
   sheetName: string;
+  workbookName: string;
   colIndex: number;
   rowIndex: number;
 }
@@ -81,7 +82,6 @@ export type SerializedCellValue = string | number | boolean | undefined;
 export interface NamedExpression {
   name: string;
   expression: string;
-  sheetName?: string;
 }
 
 export interface TableDefinition {
@@ -93,6 +93,7 @@ export interface TableDefinition {
   headers: Map<string, { name: string; index: number }>;
   endRow: SpreadsheetRangeEnd;
   sheetName: string;
+  workbookName: string;
 }
 
 // Formula errors
@@ -115,68 +116,25 @@ export interface Sheet {
   content: Map<string, SerializedCellValue>;
 }
 
-// Event types
-export interface FormulaEngineEvents {
-  "sheet-added": {
-    sheetName: string;
-  };
-  "sheet-removed": {
-    sheetName: string;
-  };
-  "sheet-renamed": {
-    oldName: string;
-    newName: string;
-  };
-  "global-named-expressions-updated": Map<string, NamedExpression>;
-  "tables-updated": Map<string, TableDefinition>;
+export interface Workbook {
+  name: string;
+  sheets: Map<string, Sheet>;
 }
 
 /**
  * All dependency nodes are evaluated in the context of the current cell, so therefore it will always have a sheetName
  */
-export type DependencyNode =
-  | {
-      type: "cell";
-      address: LocalCellAddress;
-      sheetName: string;
-    }
-  | {
-      type: "range";
-      range: SpreadsheetRange;
-      sheetName: string;
-    }
-  | {
-      type: "multi-spreadsheet-range";
-      ranges: SpreadsheetRange;
-      sheetNames:
-        | { type: "list"; list: string[] }
-        | {
-            type: "range";
-            startSpreadsheetName: string;
-            endSpreadsheetName: string;
-          };
-    }
-  | {
-      type: "named-expression";
-      name: string;
-      sheetName: string;
-    }
-  | {
-      type: "table";
-      tableName: string;
-      sheetName: string;
-      area:
-        | { kind: "Headers" | "All" | "AllData" }
-        | { kind: "Data"; columns: string[]; isCurrentRow: boolean };
-    };
+export type DependencyNode = {
+  address: LocalCellAddress;
+  sheetName: string;
+  workbookName: string;
+};
 
 /**
  * Evaluation context containing necessary information
  */
 export interface EvaluationContext {
-  currentSheet: string;
   currentCell: CellAddress;
-  evaluationStack: Set<string>; // For cycle detection
   dependencies: Set<string>;
   /**
    * candidates for frontier dependencies that are in the intersection of the spilled range and the target range
@@ -194,11 +152,12 @@ export type EvaluatedDependencyNode = {
    */
   deps?: Set<string>;
   /**
-   * frontierDependencies is the set of dependency node keys that are frontier dependencies
+   * frontierDependencies is the set of dependency node keys that could spill values onto the target range (if evaluationResult is spilled-values)
    */
   frontierDependencies?: Set<string>;
   /**
-   * discardedFrontierDependencies is the set of dependency node keys that were discarded as frontier dependencies
+   * discardedFrontierDependencies is the set of dependency node keys that were discarded as frontier dependencies because
+   * they they do not produce spilled values that spill onto the target range
    */
   discardedFrontierDependencies?: Set<string>;
   /**

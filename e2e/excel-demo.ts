@@ -4,36 +4,32 @@ test.describe('Excel Demo', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/excel');
     // Wait for the page to fully load
-    await expect(page.locator('h1')).toContainText('FormulaEngine Excel Demo');
+    await expect(page.locator('h1')).toContainText('FormulaEngine Multi-Workbook Demo');
   });
 
   test('should display initial state correctly', async ({ page }) => {
     // Check main title
-    await expect(page.locator('h1')).toContainText('FormulaEngine Excel Demo');
+    await expect(page.locator('h1')).toContainText('FormulaEngine Multi-Workbook Demo');
     
-    // Check that we have one initial sheet
-    await expect(page.locator('text=Total Sheets: 1')).toBeVisible();
+    // Check that we have one initial workbook
+    await expect(page.locator('[data-testid="total-workbooks-count"]')).toContainText('Workbooks: 1');
     
     // Check save button is in "Saved" state initially
     await expect(page.locator('button:has-text("Saved")')).toBeVisible();
     
-    // Check sheet tab is present
-    await expect(page.locator('.group:has-text("Sheet1")')).toBeVisible();
+    // Check sheet tab is present in the workbook
+    await expect(page.locator('[data-testid="sheet-tab-Sheet1"]')).toBeVisible();
   });
 
   test('should add new sheets', async ({ page }) => {
-    // Click the add sheet button using data-testid
-    await page.locator('[data-testid="add-sheet-button"]').click();
+    // Click the add sheet button for Workbook1 using data-testid
+    await page.locator('[data-testid="add-sheet-Workbook1"]').click();
     
     // Wait a moment for the UI to update
     await page.waitForTimeout(100);
     
-    // Check that we now have 2 sheets
-    await expect(page.locator('[data-testid="total-sheets-count"]')).toContainText('Total Sheets: 2');
-    
     // Check that Sheet2 tab is present and active
     await expect(page.locator('[data-testid="sheet-tab-Sheet2"]')).toBeVisible();
-    await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: Sheet2');
     
     // Check that save button shows unsaved changes
     await expect(page.locator('[data-testid="save-button"]')).toContainText('Save Changes');
@@ -44,20 +40,19 @@ test.describe('Excel Demo', () => {
     await page.locator('[data-testid="sheet-tab-Sheet1"]').hover();
     
     // Click the edit button
-    await page.locator('[data-testid="edit-sheet-Sheet1"]').click();
+    await page.locator('[data-testid="rename-sheet-Sheet1"]').click();
     
     // Wait for edit mode to activate
     await page.waitForTimeout(100);
     
     // Type new name in the input field that appears
-    await page.locator('[data-testid="sheet-tab-Sheet1"] input').fill('My Sheet');
+    await page.locator('[data-testid="rename-sheet-input-Sheet1"]').fill('My Sheet');
     
     // Press Enter to confirm
-    await page.locator('[data-testid="sheet-tab-Sheet1"] input').press('Enter');
+    await page.locator('[data-testid="rename-sheet-input-Sheet1"]').press('Enter');
     
     // Check that sheet was renamed
     await expect(page.locator('[data-testid="sheet-tab-My Sheet"]')).toBeVisible();
-    await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: My Sheet');
     
     // Check that save button shows unsaved changes
     await expect(page.locator('[data-testid="save-button"]')).toContainText('Save Changes');
@@ -70,8 +65,7 @@ test.describe('Excel Demo', () => {
     await page.keyboard.press('Enter');
     
     // Add a second sheet
-    await page.locator('[data-testid="add-sheet-button"]').click();
-    await expect(page.locator('[data-testid="total-sheets-count"]')).toContainText('Total Sheets: 2');
+    await page.locator('[data-testid="add-sheet-Workbook1"]').click();
     
     // On Sheet2, create a formula that references Sheet1
     await page.locator('[data-testid="spreadsheet-cell-B1"]').dblclick();
@@ -84,15 +78,14 @@ test.describe('Excel Demo', () => {
     // Hover over Sheet1 to reveal delete button
     await page.locator('[data-testid="sheet-tab-Sheet1"]').hover();
     
+    // Handle the confirmation dialog
+    page.on('dialog', dialog => dialog.accept());
+    
     // Click delete button
     await page.locator('[data-testid="delete-sheet-Sheet1"]').click();
     
-    // Check that we're back to 1 sheet
-    await expect(page.locator('[data-testid="total-sheets-count"]')).toContainText('Total Sheets: 1');
-    
     // Check that only Sheet2 remains and is active
     await expect(page.locator('[data-testid="sheet-tab-Sheet2"]')).toBeVisible();
-    await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: Sheet2');
     
     // Verify that formulas referencing deleted sheet show error
     await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('#REF!');
@@ -124,14 +117,17 @@ test.describe('Excel Demo', () => {
     await page.locator('[data-testid="named-expressions-toggle"]').click();
     
     // Verify table appears in the Expressions & Tables panel list (be specific)
-    await expect(page.locator('[data-testid="expressions-tables-panel"]').locator('text=Table1').first()).toBeVisible();
+    await expect(page.locator('[data-testid="table-Table1"]')).toBeVisible();
     
     // Add a second sheet
-    await page.locator('[data-testid="add-sheet-button"]').click();
-    await expect(page.locator('[data-testid="total-sheets-count"]')).toContainText('Total Sheets: 2');
+    await page.locator('[data-testid="add-sheet-Workbook1"]').click();
     
     // Delete Sheet1 (which contains the table)
     await page.locator('[data-testid="sheet-tab-Sheet1"]').hover();
+    
+    // Handle the confirmation dialog
+    page.on('dialog', dialog => dialog.accept());
+    
     await page.locator('[data-testid="delete-sheet-Sheet1"]').click();
     
     // Wait a moment for the deletion to process and UI to update
@@ -140,10 +136,10 @@ test.describe('Excel Demo', () => {
 
     
     // Verify table is removed from the UI list in the Expressions & Tables panel
-    await expect(page.locator('[data-testid="expressions-tables-panel"]').locator('text=Table1')).not.toBeVisible();
+    await expect(page.locator('[data-testid="table-Table1"]')).not.toBeVisible();
     
     // Verify no tables are shown in the panel
-    await expect(page.locator('[data-testid="expressions-tables-panel"]').locator('text=No tables')).toBeVisible();
+    await expect(page.locator('[data-testid="tables-list"]').locator('text=No tables')).toBeVisible();
   });
 
   test('should open and close Named Expressions panel', async ({ page }) => {
@@ -152,8 +148,8 @@ test.describe('Excel Demo', () => {
     
     // Check that the panel is visible
     await expect(page.locator('text=Add Named Expression')).toBeVisible();
-    await expect(page.locator('text=Global Named Expressions').first()).toBeVisible();
-    await expect(page.locator('text=Sheet Named Expressions').first()).toBeVisible();
+    await expect(page.locator('[data-testid="named-expressions-section"]')).toBeVisible();
+    await expect(page.locator('[data-testid="tables-section"]')).toBeVisible();
     
     // Click again to close
     await page.locator('[data-testid="named-expressions-toggle"]').click();
@@ -174,10 +170,10 @@ test.describe('Excel Demo', () => {
     // Click Add button
     await page.locator('[data-testid="add-expression-button"]').click();
     
-    // Check that the named expression appears in the global list
-    await expect(page.locator('text=TAX_RATE')).toBeVisible();
-    await expect(page.locator('text=0.08')).toBeVisible();
-    await expect(page.locator('text=Global Named Expressions (1)')).toBeVisible();
+    // Check that the named expression appears in the list with Global badge
+    await expect(page.locator('[data-testid="expression-name-TAX_RATE"]')).toBeVisible();
+    await expect(page.locator('[data-testid="expression-formula-TAX_RATE"]')).toContainText('0.08');
+    await expect(page.locator('[data-testid="expression-scope-TAX_RATE"]')).toContainText('Global');
     
     // Check that save button shows unsaved changes
     await expect(page.locator('button:has-text("Save Changes")')).toBeVisible();
@@ -185,20 +181,20 @@ test.describe('Excel Demo', () => {
 
   test('should add sheet-scoped named expressions', async ({ page }) => {
     // Open Named Expressions panel
-    await page.locator('button:has-text("Expressions & Tables")').click();
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
     
     // Fill in the form for sheet-scoped expression
-    await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('LOCAL_RATE');
-    await page.locator('input[placeholder="e.g., 0.08"]').fill('0.05');
-    await page.locator('select').selectOption('sheet');
+    await page.locator('[data-testid="expression-name-input"]').fill('LOCAL_RATE');
+    await page.locator('[data-testid="expression-formula-input"]').fill('0.05');
+    await page.locator('[data-testid="expression-scope-select"]').selectOption('sheet');
     
     // Click Add button
-    await page.locator('button:has-text("Add")').click();
+    await page.locator('[data-testid="add-expression-button"]').click();
     
-    // Check that the named expression appears in the sheet list
-    await expect(page.locator('text=LOCAL_RATE')).toBeVisible();
-    await expect(page.locator('text=0.05')).toBeVisible();
-    await expect(page.locator('text=Sheet Named Expressions (1)')).toBeVisible();
+    // Check that the named expression appears in the list with sheet scope badge
+    await expect(page.locator('[data-testid="expression-name-LOCAL_RATE"]')).toBeVisible();
+    await expect(page.locator('[data-testid="expression-formula-LOCAL_RATE"]')).toContainText('0.05');
+    await expect(page.locator('[data-testid="expression-scope-LOCAL_RATE"]')).toContainText('Workbook1 → Sheet1');
     
     // Check that save button shows unsaved changes
     await expect(page.locator('button:has-text("Save Changes")')).toBeVisible();
@@ -206,32 +202,31 @@ test.describe('Excel Demo', () => {
 
   test('should delete named expressions', async ({ page }) => {
     // First add a global named expression
-    await page.locator('button:has-text("Expressions & Tables")').click();
-    await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('TEST_RATE');
-    await page.locator('input[placeholder="e.g., 0.08"]').fill('0.1');
-    await page.locator('select').selectOption('global');
-    await page.locator('button:has-text("Add")').click();
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    await page.locator('[data-testid="expression-name-input"]').fill('TEST_RATE');
+    await page.locator('[data-testid="expression-formula-input"]').fill('0.1');
+    await page.locator('[data-testid="expression-scope-select"]').selectOption('global');
+    await page.locator('[data-testid="add-expression-button"]').click();
     
     // Verify it was added
-    await expect(page.locator('text=TEST_RATE')).toBeVisible();
+    await expect(page.locator('[data-testid="expression-name-TEST_RATE"]')).toBeVisible();
     
     // Click the delete button for the TEST_RATE named expression
     await page.locator('[data-testid="delete-global-named-expression-TEST_RATE"]').click();
     
     // Verify it was deleted
-    await expect(page.locator('text=TEST_RATE')).not.toBeVisible();
-    await expect(page.locator('text=Global Named Expressions (0)')).toBeVisible();
+    await expect(page.locator('[data-testid="expression-name-TEST_RATE"]')).not.toBeVisible();
   });
 
   test('should save and maintain state', async ({ page }) => {
     // Add a sheet
-    await page.locator('[data-testid="add-sheet-button"]').click();
+    await page.locator('[data-testid="add-sheet-Workbook1"]').click();
     
     // Add a named expression
     await page.locator('[data-testid="named-expressions-toggle"]').click();
-    await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('SAVE_TEST');
-    await page.locator('input[placeholder="e.g., 0.08"]').fill('42');
-    await page.locator('button:has-text("Add")').click();
+    await page.locator('[data-testid="expression-name-input"]').fill('SAVE_TEST');
+    await page.locator('[data-testid="expression-formula-input"]').fill('42');
+    await page.locator('[data-testid="add-expression-button"]').click();
     
     // Save changes
     await page.locator('[data-testid="save-button"]').click();
@@ -241,15 +236,15 @@ test.describe('Excel Demo', () => {
     
     // Reload the page
     await page.reload();
-    await expect(page.locator('h1')).toContainText('FormulaEngine Excel Demo');
+    await expect(page.locator('h1')).toContainText('FormulaEngine Multi-Workbook Demo');
     
-    // Check that state was preserved
-    await expect(page.locator('[data-testid="total-sheets-count"]')).toContainText('Total Sheets: 2');
+    // Check that state was preserved - should have 2 sheets in Workbook1
+    await expect(page.locator('[data-testid="sheet-count-Workbook1"]')).toContainText('Sheets: 2');
     
     // Check named expression was preserved
     await page.locator('[data-testid="named-expressions-toggle"]').click();
-    await expect(page.locator('text=SAVE_TEST')).toBeVisible();
-    await expect(page.locator('text=42')).toBeVisible();
+    await expect(page.locator('[data-testid="expression-name-SAVE_TEST"]')).toBeVisible();
+    await expect(page.locator('[data-testid="expression-formula-SAVE_TEST"]')).toContainText('42');
   });
 
   test('should show unsaved changes indicator', async ({ page }) => {
@@ -258,7 +253,7 @@ test.describe('Excel Demo', () => {
     await expect(page.locator('[data-testid="unsaved-changes-indicator"]')).not.toBeVisible();
     
     // Make a change (add sheet)
-    await page.locator('[data-testid="add-sheet-button"]').click();
+    await page.locator('[data-testid="add-sheet-Workbook1"]').click();
     
     // Should now show unsaved changes
     await expect(page.locator('[data-testid="save-button"]')).toContainText('Save Changes');
@@ -273,14 +268,14 @@ test.describe('Excel Demo', () => {
   });
 
   test('should prevent deleting the last sheet', async ({ page }) => {
-    // Verify we start with 1 sheet and no delete button is visible (since it's the last sheet)
-    await expect(page.locator('text=Total Sheets: 1')).toBeVisible();
+    // Verify we start with 1 sheet in Workbook1
+    await expect(page.locator('[data-testid="sheet-count-Workbook1"]')).toContainText('Sheets: 1');
     
     // Hover over the sheet tab
-    await page.locator('.group:has-text("Sheet1")').hover();
+    await page.locator('[data-testid="sheet-tab-Sheet1"]').hover();
     
     // The delete button should not be present for the last sheet
-    await expect(page.locator('.group:has-text("Sheet1") button').nth(1)).not.toBeVisible();
+    await expect(page.locator('[data-testid="delete-sheet-Sheet1"]')).not.toBeVisible();
   });
 
   test('should switch between sheets', async ({ page }) => {
@@ -290,8 +285,7 @@ test.describe('Excel Demo', () => {
     await page.keyboard.press('Enter');
     
     // Add a second sheet
-    await page.locator('[data-testid="add-sheet-button"]').click();
-    await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: Sheet2');
+    await page.locator('[data-testid="add-sheet-Workbook1"]').click();
     
     // Set up different content on Sheet2
     await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
@@ -307,19 +301,13 @@ test.describe('Excel Demo', () => {
     // Wait a moment for the UI to update
     await page.waitForTimeout(100);
     
-    // Debug: Check what the active sheet shows after clicking
-    const activeSheetText = await page.locator('[data-testid="active-sheet-display"]').textContent();
-    console.log('🔍 [DEBUG] Active sheet after clicking Sheet1:', activeSheetText);
-    
     // Should switch to Sheet1 and show Sheet1 content
-    await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: Sheet1');
     await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('Sheet1 Data');
     
     // Click on Sheet2 tab text specifically to avoid nested buttons
     await page.locator('[data-testid="sheet-tab-Sheet2"] span').click();
     
     // Should switch back to Sheet2 and show Sheet2 content
-    await expect(page.locator('[data-testid="active-sheet-display"]')).toContainText('Active Sheet: Sheet2');
     await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('Sheet2 Data');
   });
 
@@ -378,9 +366,9 @@ test.describe('Excel Demo', () => {
   test('should use named expressions in formulas', async ({ page }) => {
     // Add a named expression
     await page.locator('[data-testid="named-expressions-toggle"]').click();
-    await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('DISCOUNT');
-    await page.locator('input[placeholder="e.g., 0.08"]').fill('0.1');
-    await page.locator('button:has-text("Add")').click();
+    await page.locator('[data-testid="expression-name-input"]').fill('DISCOUNT');
+    await page.locator('[data-testid="expression-formula-input"]').fill('0.1');
+    await page.locator('[data-testid="add-expression-button"]').click();
     
     // Close the named expressions panel
     await page.locator('[data-testid="named-expressions-toggle"]').click();
@@ -409,13 +397,13 @@ test.describe('Excel Demo', () => {
     await page.locator('[data-testid="named-expressions-toggle"]').click();
     
     // Add a global named expression
-    await page.locator('input[placeholder="e.g., TAX_RATE"]').fill('TAX_RATE');
-    await page.locator('input[placeholder="e.g., 0.08"]').fill('0.08');
-    await page.locator('button:has-text("Add")').click();
+    await page.locator('[data-testid="expression-name-input"]').fill('TAX_RATE');
+    await page.locator('[data-testid="expression-formula-input"]').fill('0.08');
+    await page.locator('[data-testid="add-expression-button"]').click();
     
     // Verify it appears in the global section
-    await expect(page.locator('text=TAX_RATE')).toBeVisible();
-    await expect(page.locator('text=0.08')).toBeVisible();
+    await expect(page.locator('[data-testid="expression-name-TAX_RATE"]')).toBeVisible();
+    await expect(page.locator('[data-testid="expression-formula-TAX_RATE"]')).toContainText('0.08');
     
     // Close panel and use the named expression in a formula
     await page.locator('[data-testid="named-expressions-toggle"]').click();
@@ -430,28 +418,12 @@ test.describe('Excel Demo', () => {
     // Should calculate tax (1000 * 0.08 = 80)
     await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('80');
     
-    // Now edit the named expression
-    await page.locator('[data-testid="named-expressions-toggle"]').click();
-    
-    // Find and edit the TAX_RATE expression (change to 0.10)
-    await page.locator('[data-testid="edit-global-named-expression-TAX_RATE"]').click();
-    
-    // Update the value
-    await page.locator('input[value="0.08"]').fill('0.10');
-    await page.locator('button:has-text("Update")').click();
-    
-    // Close panel and verify formula updated
-    await page.locator('[data-testid="named-expressions-toggle"]').click();
-    
-    // Formula should now calculate with new value (1000 * 0.10 = 100)
-    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('100');
-    
     // Now delete the named expression
     await page.locator('[data-testid="named-expressions-toggle"]').click();
     await page.locator('[data-testid="delete-global-named-expression-TAX_RATE"]').click();
     
     // Verify it's removed
-    await expect(page.locator('text=TAX_RATE')).not.toBeVisible();
+    await expect(page.locator('[data-testid="expression-name-TAX_RATE"]')).not.toBeVisible();
     
     // Close panel and verify formula shows error
     await page.locator('[data-testid="named-expressions-toggle"]').click();
@@ -490,7 +462,7 @@ test.describe('Excel Demo', () => {
     await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('100');
     
     // Add a second sheet to test sheet-scoped behavior
-    await page.locator('[data-testid="add-sheet-button"]').click();
+    await page.locator('[data-testid="add-sheet-Workbook1"]').click();
     
     // On Sheet2, the sheet-scoped COMMISSION from Sheet1 should not be available
     await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
@@ -543,7 +515,7 @@ test.describe('Excel Demo', () => {
     await expect(page.locator('[data-testid="spreadsheet-cell-C1"]')).toContainText('50');  // 1000 * 0.05
     
     // Add a second sheet
-    await page.locator('[data-testid="add-sheet-button"]').click();
+    await page.locator('[data-testid="add-sheet-Workbook1"]').click();
     
     // On Sheet2, global should work but local should not
     await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
@@ -560,8 +532,8 @@ test.describe('Excel Demo', () => {
     
     // Rename Sheet1 and verify formulas still work
     await page.locator('[data-testid="sheet-tab-Sheet1"]').hover();
-    await page.locator('[data-testid="edit-sheet-Sheet1"]').click();
-    await page.locator('[data-testid="sheet-tab-Sheet1"] input').fill('Data Sheet');
+    await page.locator('[data-testid="rename-sheet-Sheet1"]').click();
+    await page.locator('[data-testid="rename-sheet-input-Sheet1"]').fill('Data Sheet');
     await page.keyboard.press('Enter');
     
     // Switch to renamed sheet
@@ -719,7 +691,7 @@ test.describe('Excel Demo', () => {
     await page.locator('[data-testid="create-table-button"]').click();
     
     // Add second sheet
-    await page.locator('[data-testid="add-sheet-button"]').click();
+    await page.locator('[data-testid="add-sheet-Workbook1"]').click();
     
     // On Sheet2, reference the table from Sheet1
     await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
@@ -731,8 +703,8 @@ test.describe('Excel Demo', () => {
     
     // Go back to Sheet1 and rename it
     await page.locator('[data-testid="sheet-tab-Sheet1"]').hover();
-    await page.locator('[data-testid="edit-sheet-Sheet1"]').click();
-    await page.locator('[data-testid="sheet-tab-Sheet1"] input').fill('Sales');
+    await page.locator('[data-testid="rename-sheet-Sheet1"]').click();
+    await page.locator('[data-testid="rename-sheet-input-Sheet1"]').fill('Sales');
     await page.keyboard.press('Enter');
     
     // Switch back to Sheet2
@@ -753,7 +725,7 @@ test.describe('Excel Demo', () => {
     await page.keyboard.press('Enter');
     
     // Add second sheet
-    await page.locator('[data-testid="add-sheet-button"]').click();
+    await page.locator('[data-testid="add-sheet-Workbook1"]').click();
     
     // On Sheet2, create formulas that reference Sheet1
     await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
@@ -770,8 +742,8 @@ test.describe('Excel Demo', () => {
     
     // Rename Sheet1
     await page.locator('[data-testid="sheet-tab-Sheet1"]').hover();
-    await page.locator('[data-testid="edit-sheet-Sheet1"]').click();
-    await page.locator('[data-testid="sheet-tab-Sheet1"] input').fill('Data');
+    await page.locator('[data-testid="rename-sheet-Sheet1"]').click();
+    await page.locator('[data-testid="rename-sheet-input-Sheet1"]').fill('Data');
     await page.keyboard.press('Enter');
     
     // Switch back to Sheet2
@@ -794,10 +766,15 @@ test.describe('Excel Demo', () => {
     
     // Delete the Data sheet (this should cause formulas to error)
     await page.locator('[data-testid="sheet-tab-Data"]').hover();
+    
+    // Handle the confirmation dialog
+    page.on('dialog', dialog => dialog.accept());
+    
     await page.locator('[data-testid="delete-sheet-Data"]').click();
     
     // Formulas should now show errors since referenced sheet is gone
     await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('#REF!');
     await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('#REF!');
   });
+
 });

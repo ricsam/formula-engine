@@ -53,6 +53,194 @@ export class Parser {
   }
 
   /**
+   * Look ahead to determine if this is a workbook reference [Workbook]Sheet
+   */
+  private lookAheadForWorkbookReference(): { isWorkbookReference: boolean } {
+    let pos = 1; // Start after the opening [
+    
+    // Skip through the workbook name (could be multiple tokens)
+    while (pos < 10) { // Reasonable lookahead limit
+      const token = this.tokens.peekAhead(pos);
+      if (!token || token.type === "EOF") {
+        return { isWorkbookReference: false };
+      }
+      
+      if (token.type === "RBRACKET") {
+        // Found closing bracket, check if next token is an identifier (sheet name)
+        const nextToken = this.tokens.peekAhead(pos + 1);
+        if (nextToken && nextToken.type === "IDENTIFIER") {
+          // Look ahead further to find an exclamation mark or end of tokens
+          // This handles both simple sheet references and 3D ranges
+          let lookPos = pos + 2;
+          while (lookPos < pos + 10) { // Reasonable limit
+            const lookToken = this.tokens.peekAhead(lookPos);
+            if (!lookToken || lookToken.type === "EOF") {
+              // End of tokens - this is a sheet alias
+              return { isWorkbookReference: true };
+            }
+            if (lookToken.type === "EXCLAMATION") {
+              // Found exclamation mark - this is a workbook reference
+              return { isWorkbookReference: true };
+            }
+            // Continue looking for exclamation mark
+            lookPos++;
+          }
+        }
+        return { isWorkbookReference: false };
+      }
+      
+      // Continue if it's part of the workbook name
+      if (token.type === "IDENTIFIER" || token.type === "FUNCTION" || token.type === "NUMBER" || 
+          (token.type === "OPERATOR" && (token.value === "-" || token.value === "=" || token.value === "%")) ||
+          token.type === "LPAREN" || token.type === "RPAREN") {
+        pos++;
+        continue;
+      }
+      
+      // If we hit something unexpected, it's not a workbook reference
+      return { isWorkbookReference: false };
+    }
+    
+    return { isWorkbookReference: false };
+  }
+
+  /**
+   * Parse workbook reference like [Workbook]Sheet or [Workbook]Sheet!A1
+   */
+  private parseWorkbookReference(): ASTNode {
+    const start = this.tokens.peek().position.start;
+    this.tokens.consume(); // [
+
+    // Parse workbook name (similar to parseColumnName but for workbook)
+    const workbookStartPos = this.tokens.peek().position.start;
+    let workbookEndPos = workbookStartPos;
+    
+    // Consume tokens until we hit the closing bracket
+    while (!this.tokens.match("RBRACKET")) {
+      if (this.tokens.isAtEnd()) {
+        throw new ParseError(
+          "Expected ] to close workbook reference",
+          this.tokens.peek().position
+        );
+      }
+      
+      // Make sure we're consuming valid workbook name tokens
+      const token = this.tokens.peek();
+      if (token.type === "IDENTIFIER" || token.type === "FUNCTION" || token.type === "NUMBER" || 
+          (token.type === "OPERATOR" && (token.value === "-" || token.value === "=" || token.value === "%")) ||
+          token.type === "LPAREN" || token.type === "RPAREN") {
+        const consumedToken = this.tokens.consume();
+        workbookEndPos = consumedToken.position.end;
+      } else {
+        throw new ParseError(
+          `Invalid character in workbook name: ${token.value}`,
+          token.position
+        );
+      }
+    }
+    
+    // Extract workbook name from input
+    const workbookName = this.input.substring(workbookStartPos, workbookEndPos);
+    
+    this.tokens.consume(); // ]
+    
+    // Parse sheet name - could be start of 3D range
+    if (!this.tokens.match("IDENTIFIER")) {
+      throw new ParseError(
+        "Expected sheet name after workbook reference",
+        this.tokens.peek().position
+      );
+    }
+    
+    const sheetToken = this.tokens.consume();
+    let sheetName = sheetToken.value;
+    
+    // Handle quoted sheet names
+    if (sheetName.startsWith("'") && sheetName.endsWith("'")) {
+      sheetName = sheetName.slice(1, -1).replace(/''/g, "'");
+    }
+    
+    // Check if this is a 3D range (Sheet1:Sheet3!)
+    if (this.tokens.match("COLON")) {
+      const nextToken = this.tokens.peekAhead(1);
+      const tokenAfterNext = this.tokens.peekAhead(2);
+      
+      if (
+        nextToken?.type === "IDENTIFIER" &&
+        tokenAfterNext?.type === "EXCLAMATION"
+      ) {
+        // This is a 3D range
+        this.tokens.consume(); // :
+        const endSheetToken = this.tokens.consume(); // end sheet name
+        let endSheetName = endSheetToken.value;
+        
+        // Handle quoted end sheet names
+        if (endSheetName.startsWith("'") && endSheetName.endsWith("'")) {
+          endSheetName = endSheetName.slice(1, -1).replace(/''/g, "'");
+        }
+        
+        this.tokens.consume(); // !
+        
+        // Parse the reference after the 3D range
+        const ref = this.parseCellOrRangeAfterSheets();
+        
+        return createThreeDRangeNode(
+          sheetName,
+          endSheetName,
+          ref,
+          {
+            start,
+            end: this.tokens.peek().position?.end ?? 0,
+          },
+          workbookName
+        );
+      }
+    }
+    
+    // Check if there's an exclamation mark (explicit cell/range reference)
+    if (this.tokens.match("EXCLAMATION")) {
+      this.tokens.consume(); // !
+      
+      // Parse the cell/range reference after the !
+      const cellRef = this.parseCellOrRangeWithWorkbookAndSheet(workbookName, sheetName, start);
+      return cellRef;
+    } else {
+      // This is a sheet alias: [Workbook]Sheet = [Workbook]Sheet!A1:INFINITY
+      // Create an infinite range starting from A1
+      const range: SpreadsheetRange = {
+        start: {
+          col: 0, // Column A
+          row: 0, // Row 1 (0-based)
+        },
+        end: {
+          col: {
+            type: "infinity",
+            sign: "positive",
+          },
+          row: {
+            type: "infinity",
+            sign: "positive",
+          },
+        },
+      };
+
+      return createRangeNode({
+        workbookName,
+        sheetName,
+        range,
+        isAbsolute: {
+          start: { col: false, row: false },
+          end: { col: false, row: false },
+        },
+        position: {
+          start,
+          end: this.tokens.peek().position?.start ?? 0,
+        },
+      });
+    }
+  }
+
+  /**
    * Parse bare column reference like [Column] or [Column1:Column2]
    */
   private parseBareColumnReference(): ASTNode {
@@ -421,13 +609,21 @@ export class Parser {
         return this.parseArrayLiteral();
 
       case "LBRACKET":
-        // Could be [@Column], [Column], or [#Selector] syntax
+        // Could be [@Column], [Column], [#Selector], or [Workbook]Sheet syntax
         if (this.tokens.peekAhead(1)?.type === "AT") {
           return this.parseCurrentRowReference();
         } else if (
           this.tokens.peekAhead(1)?.type === "IDENTIFIER" ||
+          this.tokens.peekAhead(1)?.type === "FUNCTION" ||
+          this.tokens.peekAhead(1)?.type === "NUMBER" ||
           this.tokens.peekAhead(1)?.type === "HASH"
         ) {
+          // Check if this is a workbook reference [Workbook]Sheet
+          // Look ahead to see if there's a closing bracket followed by an identifier (sheet name)
+          const lookahead = this.lookAheadForWorkbookReference();
+          if (lookahead.isWorkbookReference) {
+            return this.parseWorkbookReference();
+          }
           // Bare column reference like [result] or [#Data]
           return this.parseBareColumnReference();
         }
@@ -1629,6 +1825,7 @@ export class Parser {
 
     return createStructuredReferenceNode({
       tableName,
+      sheetName,
       cols,
       selector,
       isCurrentRow,
@@ -1879,6 +2076,37 @@ export class Parser {
       "Table selector must be part of a table reference",
       hashToken.position
     );
+  }
+
+  /**
+   * Parse a range reference with workbook name
+   */
+  private parseRangeWithWorkbook(
+    startRef: string,
+    endRef: string,
+    workbookName: string,
+    startPos: number,
+    endPos: number
+  ): RangeNode {
+    const rangeNode = this.parseRange(startRef, endRef, startPos, endPos);
+    rangeNode.workbookName = workbookName;
+    return rangeNode;
+  }
+
+  /**
+   * Parse table reference with workbook and sheet name
+   */
+  private parseTableReferenceWithWorkbookAndSheet(
+    tableName: string,
+    workbookName: string,
+    sheetName: string,
+    startPos: number
+  ): ASTNode {
+    const tableRef = this.parseTableReferenceWithSheet(tableName, sheetName, startPos);
+    if (tableRef.type === "structured-reference") {
+      tableRef.workbookName = workbookName;
+    }
+    return tableRef;
   }
 
   /**
@@ -2249,6 +2477,128 @@ export class Parser {
         start: startPos,
         end: endPos,
       },
+    });
+  }
+
+  /**
+   * Parse a cell or range reference with a known workbook and sheet name
+   */
+  private parseCellOrRangeWithWorkbookAndSheet(
+    workbookName: string,
+    sheetName: string,
+    startPos: number
+  ): ASTNode {
+    // Build the full reference string for parsing
+    let ref = sheetName.includes(" ") ? `'${sheetName}'!` : sheetName + "!";
+
+    // Check for $ before column
+    if (this.tokens.match("DOLLAR")) {
+      ref += this.tokens.consume().value;
+    }
+
+    // Get the cell reference part
+    if (this.tokens.match("IDENTIFIER")) {
+      const identifier = this.tokens.consume();
+      ref += identifier.value;
+
+      // Check if this is a table reference ([Workbook]Sheet!Table1[...])
+      if (this.tokens.match("LBRACKET")) {
+        // This is a table reference with workbook and sheet name
+        return this.parseTableReferenceWithWorkbookAndSheet(
+          identifier.value,
+          workbookName,
+          sheetName,
+          startPos
+        );
+      }
+
+      // Check if this is an infinite column range ([Workbook]Sheet!A:A)
+      if (this.tokens.match("COLON")) {
+        this.tokens.consume();
+        const endRef = this.parseRangeEnd();
+        return this.parseRangeWithWorkbook(
+          ref,
+          endRef,
+          workbookName,
+          startPos,
+          this.tokens.peek().position.start
+        );
+      }
+
+      // Check for $ before row or just row number
+      if (this.tokens.match("DOLLAR")) {
+        ref += this.tokens.consume().value;
+      }
+
+      if (this.tokens.match("NUMBER")) {
+        ref += this.tokens.consume().value;
+      }
+    } else if (this.tokens.match("NUMBER")) {
+      // Handle infinite row range ([Workbook]Sheet!5:5)
+      const number = this.tokens.consume();
+      ref += number.value;
+
+      // Check for range
+      if (this.tokens.match("COLON")) {
+        this.tokens.consume();
+        const endRef = this.parseRangeEnd();
+        return this.parseRangeWithWorkbook(
+          ref,
+          endRef,
+          workbookName,
+          startPos,
+          this.tokens.peek().position.start
+        );
+      }
+    } else {
+      throw new ParseError(
+        `Expected cell reference after [${workbookName}]${sheetName}!`,
+        this.tokens.peek().position
+      );
+    }
+
+    // Check for range (normal cell range like [Workbook]Sheet!A1:B2)
+    if (this.tokens.match("COLON")) {
+      this.tokens.consume();
+      const endRef = this.parseRangeEnd();
+      return this.parseRangeWithWorkbook(
+        ref,
+        endRef,
+        workbookName,
+        startPos,
+        this.tokens.peek().position.start
+      );
+    }
+
+    // Parse as single cell reference
+    const cellRef = this.parseCellReferenceString(ref);
+    if (cellRef) {
+      cellRef.workbookName = workbookName;
+      return cellRef;
+    }
+
+    // If it's not a cell reference, check if it's a named expression
+    const sheetPrefix = sheetName.includes(" ")
+      ? `'${sheetName}'!`
+      : `${sheetName}!`;
+    const identifier = ref.substring(sheetPrefix.length);
+
+    // Validate it's a valid identifier for a named expression
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
+      return createNamedExpressionNode(
+        identifier,
+        {
+          start: startPos,
+          end: this.tokens.peek().position.start,
+        },
+        sheetName,
+        workbookName
+      );
+    }
+
+    throw new ParseError(`Invalid cell reference: ${ref}`, {
+      start: startPos,
+      end: this.tokens.peek().position.start,
     });
   }
 

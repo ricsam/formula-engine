@@ -5,20 +5,29 @@ import { parseCellReference } from "src/core/utils";
 
 describe("MATCH function", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      debug
+    );
 
   const setCellContent = (ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      content
+    );
   };
 
   const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   describe("basic functionality", () => {
@@ -34,7 +43,7 @@ describe("MATCH function", () => {
     test("should find exact match for numbers", () => {
       // Use SerializedCellValue to set numeric values properly
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map([
           ["A1", 10],
           ["A2", 20],
@@ -144,7 +153,7 @@ describe("MATCH function", () => {
     test("should handle mixed string and number types (strict checking)", () => {
       // Set up mixed array with proper types
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["A2", 10],
@@ -159,7 +168,7 @@ describe("MATCH function", () => {
   describe("can use table column as lookup_array", () => {
     test("should find exact match with match_type 0", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Fruit"],
           ["A2", "Stock"],
@@ -207,11 +216,11 @@ describe("MATCH function", () => {
     test("should work with table column references across sheets", () => {
       // Create a separate sheet for the ORDERinput table
       const inputSheetName = "InputSheet";
-      engine.addSheet(inputSheetName);
+      engine.addSheet({ workbookName, sheetName: inputSheetName });
 
       // Set up data on the input sheet FIRST
       engine.setSheetContent(
-        inputSheetName,
+        { workbookName, sheetName: inputSheetName },
         new Map<string, SerializedCellValue>([
           ["A1", "OrderID"],
           ["B1", "Amount"],
@@ -230,7 +239,7 @@ describe("MATCH function", () => {
 
       // Set up data on the main sheet FIRST (only CurrentTable data)
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           // CurrentTable data - expand to 3 columns to include the formula column
           ["D7", "OrderID"],
@@ -253,6 +262,7 @@ describe("MATCH function", () => {
       engine.addTable({
         tableName: "ORDERinput",
         sheetName: inputSheetName,
+        workbookName: sheetAddress.workbookName,
         start: "A1",
         numRows: { type: "infinity", sign: "positive" }, // Infinite rows
         numCols: 2, // OrderID and Amount columns
@@ -261,7 +271,8 @@ describe("MATCH function", () => {
       // Create another table on the main sheet for the current row reference with infinite rows
       engine.addTable({
         tableName: "CurrentTable",
-        sheetName: sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         start: "D7",
         numRows: { type: "infinity", sign: "positive" }, // Infinite rows
         numCols: 3, // OrderID, Status, and MatchResult columns
@@ -273,7 +284,7 @@ describe("MATCH function", () => {
 
     test("should handle empty table columns gracefully", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "OrderID"],
           ["B1", `=MATCH("TEST", EmptyTable[OrderID], 0)`],
@@ -283,7 +294,8 @@ describe("MATCH function", () => {
       // Create an empty table
       engine.addTable({
         tableName: "EmptyTable",
-        sheetName: sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         start: "A1",
         numRows: { type: "number", value: 0 }, // No data rows, just header
         numCols: 1,

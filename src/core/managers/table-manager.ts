@@ -1,58 +1,59 @@
-import type {
-  FormulaEngineEvents,
-  SerializedCellValue,
-  SpreadsheetRangeEnd,
-  TableDefinition,
-} from "../types";
-import { getCellReference, parseCellReference } from "../utils";
 import { renameTableInFormula } from "../table-renamer";
+import type { SpreadsheetRangeEnd, TableDefinition } from "../types";
+import { getCellReference, parseCellReference } from "../utils";
+import type { EventManager } from "./event-manager";
+import type { WorkbookManager } from "./workbook-manager";
 
 export class TableManager {
-  private tables: Map<string, TableDefinition> = new Map();
-  private eventEmitter?: {
-    emit<K extends keyof FormulaEngineEvents>(
-      event: K,
-      data: FormulaEngineEvents[K]
-    ): void;
-  };
+  tables: Map<
+    /**
+     * workbook name -> table name -> table definition
+     */
+    string,
+    Map<string, TableDefinition>
+  > = new Map();
+  private workbookManager: WorkbookManager;
 
-  constructor(eventEmitter?: {
-    emit<K extends keyof FormulaEngineEvents>(
-      event: K,
-      data: FormulaEngineEvents[K]
-    ): void;
-  }) {
-    this.eventEmitter = eventEmitter;
+  constructor(workbookManager: WorkbookManager) {
+    this.workbookManager = workbookManager;
   }
 
-  getTables(): Map<string, TableDefinition> {
-    return this.tables;
+  getTables(workbookName: string): Map<string, TableDefinition> {
+    return this.tables.get(workbookName) ?? new Map();
   }
 
-  getTable(name: string): TableDefinition | undefined {
-    return this.tables.get(name);
+  getTable(opts: {
+    workbookName: string;
+    name: string;
+  }): TableDefinition | undefined {
+    return this.tables.get(opts.workbookName)?.get(opts.name);
   }
 
   makeTable({
     tableName,
     sheetName,
+    workbookName,
     start,
     numRows,
     numCols,
-    getSheetContent,
   }: {
     tableName: string;
     sheetName: string;
     start: string;
     numRows: SpreadsheetRangeEnd;
     numCols: number;
-    getSheetContent: (sheetName: string) => Map<string, any> | undefined;
+    workbookName: string;
   }): TableDefinition {
     const { rowIndex, colIndex } = parseCellReference(start);
-    const sheetContent = getSheetContent(sheetName);
-    if (!sheetContent) {
+
+    const sheet = this.workbookManager.getSheet({
+      workbookName,
+      sheetName,
+    });
+    if (!sheet) {
       throw new Error("Sheet not found");
     }
+    const sheetContent = sheet.content;
 
     const headers = new Map<string, { name: string; index: number }>();
     for (let i = 0; i < numCols; i++) {
@@ -75,6 +76,7 @@ export class TableManager {
     const table: TableDefinition = {
       name: tableName,
       sheetName,
+      workbookName,
       start: {
         rowIndex,
         colIndex,
@@ -92,37 +94,37 @@ export class TableManager {
     start: string;
     numRows: SpreadsheetRangeEnd;
     numCols: number;
-    getSheetContent: (sheetName: string) => Map<string, any> | undefined;
+    workbookName: string;
   }): TableDefinition {
     const tableName = props.tableName;
     const table = this.makeTable(props);
 
-    this.tables.set(tableName, table);
-    this.eventEmitter?.emit("tables-updated", this.tables);
+    let wb = this.tables.get(props.workbookName);
+    if (!wb) {
+      wb = new Map();
+      this.tables.set(props.workbookName, wb);
+    }
+
+    wb.set(tableName, table);
 
     return table;
   }
 
-  renameTable(names: { oldName: string; newName: string }): void {
-    const table = this.tables.get(names.oldName);
+  renameTable(
+    workbookName: string,
+    names: { oldName: string; newName: string }
+  ): void {
+    const wb = this.tables.get(workbookName);
+    if (!wb) {
+      throw new Error("Workbook not found");
+    }
+    const table = wb.get(names.oldName);
     if (!table) {
       throw new Error("Table not found");
     }
     table.name = names.newName;
-    this.tables.set(names.newName, table);
-    this.tables.delete(names.oldName);
-
-    this.eventEmitter?.emit("tables-updated", this.tables);
-  }
-
-  updateFormulasForTableRename(
-    oldName: string,
-    newName: string,
-    updateCallback: (formula: string) => string = (formula) =>
-      renameTableInFormula(formula, oldName, newName)
-  ): void {
-    // This method will be called by the engine to update formulas
-    // The actual formula updating logic will be handled by the engine
+    wb.set(names.newName, table);
+    wb.delete(names.oldName);
   }
 
   updateTable({
@@ -131,16 +133,21 @@ export class TableManager {
     start,
     numRows,
     numCols,
-    getSheetContent,
+    workbookName,
   }: {
     tableName: string;
     sheetName?: string;
     start?: string;
     numRows?: SpreadsheetRangeEnd;
+    workbookName: string;
     numCols?: number;
-    getSheetContent: (sheetName: string) => Map<string, SerializedCellValue> | undefined;
   }): void {
-    const table = this.tables.get(tableName);
+    const wb = this.tables.get(workbookName);
+    if (!wb) {
+      throw new Error("Workbook not found");
+    }
+
+    const table = wb.get(tableName);
     if (!table) {
       throw new Error("Table not found");
     }
@@ -164,72 +171,93 @@ export class TableManager {
     const newTable = this.makeTable({
       tableName,
       sheetName: sheetName ?? table.sheetName,
+      workbookName: workbookName ?? table.workbookName,
       start: getCellReference(newStart),
       numRows: newNumRows,
       numCols: numCols ?? table.headers.size,
-      getSheetContent,
     });
 
-    this.tables.set(tableName, newTable);
-    this.eventEmitter?.emit("tables-updated", this.tables);
+    wb.set(tableName, newTable);
   }
 
-  removeTable({ tableName }: { tableName: string }): boolean {
-    const found = this.tables.delete(tableName);
-
-    if (found) {
-      this.eventEmitter?.emit("tables-updated", this.tables);
+  removeTable({
+    tableName,
+    workbookName,
+  }: {
+    tableName: string;
+    workbookName: string;
+  }): boolean {
+    const wb = this.tables.get(workbookName);
+    if (!wb) {
+      return false;
     }
+    const found = wb.delete(tableName);
 
     return found;
   }
 
-  getTablesSerialized(): Map<string, TableDefinition> {
-    return this.tables;
-  }
-
-
-
-  updateTablesForSheetRename(oldName: string, newName: string): void {
+  updateTablesForSheetRename(options: {
+    sheetName: string;
+    newSheetName: string;
+    workbookName: string;
+  }): void {
     // Update tables that belong to the renamed sheet
-    this.tables.forEach((table, tableName) => {
-      if (table.sheetName === oldName) {
-        table.sheetName = newName;
-      }
+    this.tables.forEach((wb, workbookName) => {
+      wb.forEach((table, tableName) => {
+        if (
+          table.sheetName === options.sheetName &&
+          table.workbookName === options.workbookName
+        ) {
+          table.sheetName = options.newSheetName;
+        }
+      });
     });
   }
 
-  removeTablesForSheet(sheetName: string): void {
-    // Remove tables that belong to the removed sheet
-    const tablesToRemove: string[] = [];
-    this.tables.forEach((table, tableName) => {
-      if (table.sheetName === sheetName) {
-        tablesToRemove.push(tableName);
-      }
+  resetTables(newTables: Map<string, Map<string, TableDefinition>>): void {
+    // Clear existing tables without breaking the Map reference
+    this.tables.clear();
+
+    // Repopulate with new tables
+    newTables.forEach((table, workbookName) => {
+      table.forEach((table, tableName) => {
+        let wb = this.tables.get(workbookName);
+        if (!wb) {
+          wb = new Map();
+          this.tables.set(workbookName, wb);
+        }
+        wb.set(tableName, table);
+      });
     });
-    
-    tablesToRemove.forEach(tableName => {
-      this.tables.delete(tableName);
-    });
-    
-    if (tablesToRemove.length > 0) {
-      this.eventEmitter?.emit("tables-updated", this.tables);
-    }
   }
 
   /**
-   * Replace all tables with new ones (safely, without breaking references)
-   * This method clears the existing Map and repopulates it rather than replacing the Map reference
+   * When adding a workbook, we need to initialize the new maps
    */
-  setTables(newTables: Map<string, TableDefinition>): void {
-    // Clear existing tables without breaking the Map reference
-    this.tables.clear();
-    
-    // Repopulate with new tables
-    newTables.forEach((table, tableName) => {
-      this.tables.set(tableName, table);
+  addWorkbook(workbookName: string) {
+    this.tables.set(workbookName, new Map());
+  }
+
+  /**
+   * When removing a workbook, we need to remove the maps
+   */
+  removeWorkbook(workbookName: string) {
+    this.tables.delete(workbookName);
+  }
+
+  /**
+   * When removing a sheet, we need to remove the tables that belong to the sheet
+   */
+  removeSheet(opts: { sheetName: string; workbookName: string }): void {
+    // Remove tables that belong to the removed sheet
+    const wb = this.tables.get(opts.workbookName);
+    if (!wb) {
+      throw new Error("Workbook not found");
+    }
+    wb.forEach((table, tableName) => {
+      if (table.sheetName === opts.sheetName) {
+        wb.delete(tableName);
+      }
     });
-    
-    this.eventEmitter?.emit("tables-updated", this.tables);
   }
 }

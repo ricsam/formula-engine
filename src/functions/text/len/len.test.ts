@@ -5,18 +5,21 @@ import { parseCellReference } from "src/core/utils";
 
 describe("LEN function", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) }, debug);
 
   const setCellContent = (ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
   };
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   describe("basic functionality", () => {
@@ -81,7 +84,7 @@ describe("LEN function", () => {
   describe("dynamic arrays (spilled values)", () => {
     test("should handle spilled text values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "apple"],
           ["A2", "banana"],
@@ -97,7 +100,7 @@ describe("LEN function", () => {
 
     test("should handle spilled values with varying lengths", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hi"],
           ["A2", "Hello World"],
@@ -115,7 +118,7 @@ describe("LEN function", () => {
 
     test("should handle spilled values with special characters", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello, World!"],
           ["A2", "Test@123"],
@@ -148,7 +151,7 @@ describe("LEN function", () => {
 
     test("should handle spilled arrays with text values only", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Text1"],
           ["A2", "Text2"],
@@ -167,7 +170,7 @@ describe("LEN function", () => {
     test("should handle very long strings", () => {
       const longString = "A".repeat(1000);
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", longString],
           ["B1", '=LEN(A1)'],

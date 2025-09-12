@@ -1,53 +1,44 @@
 import {
-  Spreadsheet,
   getCellReference,
   parseCellReference,
+  Spreadsheet,
 } from "@anocca-pub/components";
 import type { SelectionManager, SMArea } from "@ricsam/selection-manager";
-import React, {
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-  useEffect,
-} from "react";
-import { useSerializedSheet } from "src/react/hooks";
-import { FormulaEngine } from "../../src/core/engine";
-import { Input } from "../components/ui/input";
-import { Button } from "../components/ui/button";
-import { Card } from "../components/ui/card";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import type {
   CellAddress,
-  NamedExpression,
   SerializedCellValue,
   SpreadsheetRange,
   SpreadsheetRangeEnd,
-  TableDefinition,
 } from "src/core/types";
 import { indexToColumn } from "src/core/utils";
+import { useEngine } from "src/react/hooks";
+import { FormulaEngine } from "../../src/core/engine";
+import { Button } from "../components/ui/button";
+import { Card } from "../components/ui/card";
+import { Input } from "../components/ui/input";
 
 interface SpreadsheetWithFormulaBarProps {
   sheetName: string;
+  workbookName: string;
   engine: FormulaEngine;
-  tables: Map<string, TableDefinition>;
-  globalNamedExpressions: Map<string, NamedExpression>;
   verboseErrors?: boolean;
 }
 
 export function SpreadsheetWithFormulaBar({
   sheetName,
+  workbookName,
   engine,
-  tables,
-  globalNamedExpressions,
   verboseErrors = false,
 }: SpreadsheetWithFormulaBarProps) {
   const [selectedCell, setSelectedCell] = useState<string | null>(null);
   const [selectedArea, setSelectedArea] = useState<SMArea | null>(null);
   const [newTableName, setNewTableName] = useState<string>("");
-  const [tableCreationCounter, setTableCreationCounter] = useState(0);
   const formulaInputRef = useRef<HTMLInputElement>(null);
 
-  const { sheet, namedExpressions } = useSerializedSheet(engine, sheetName);
+  const state = useEngine(engine);
+
+  const sheet = state.workbooks.get(workbookName)?.sheets.get(sheetName);
 
   const currentSelectedTable = useMemo(() => {
     if (!selectedCell) {
@@ -56,20 +47,19 @@ export function SpreadsheetWithFormulaBar({
     const parsed = parseCellReference(selectedCell);
     return engine.isCellInTable({
       sheetName,
+      workbookName,
       colIndex: parsed.columnIndex,
       rowIndex: parsed.rowIndex,
     });
-  }, [selectedCell, sheetName, engine, sheet]);
+  }, [selectedCell, sheetName, engine, workbookName, state]);
 
   // Get existing table names to avoid duplicates
-  const existingTableNames = useMemo(() => {
-    return Array.from(tables.keys());
-  }, [tables]);
+  const existingTableNames = Array.from(
+    state.tables.get(workbookName)?.keys() || []
+  );
 
   // Get table count directly from engine for more immediate updates
-  const engineTableCount = useMemo(() => {
-    return engine.getTablesSerialized().size;
-  }, [engine, tables, tableCreationCounter]); // Include counter to force updates
+  const engineTableCount = state.tables.get(workbookName)?.size || 0;
 
   // Calculate the default table name based on current state
   const defaultTableName = useMemo(() => {
@@ -80,26 +70,19 @@ export function SpreadsheetWithFormulaBar({
       const nextNumber = engineTableCount + 1;
       return `Table${nextNumber}`;
     }
-  }, [currentSelectedTable, engineTableCount]);
+  }, [currentSelectedTable, engineTableCount, state]);
 
   // Use a key to reset the input when the context changes
   const tableInputKey = useMemo(() => {
     return currentSelectedTable
       ? `table-${currentSelectedTable.name}`
       : `new-table-${defaultTableName}`;
-  }, [currentSelectedTable, defaultTableName]);
+  }, [currentSelectedTable, defaultTableName, state]);
 
   const tableColumnNames = useMemo(() => {
     if (!currentSelectedTable) return [];
     return Array.from(currentSelectedTable.headers.keys());
-  }, [currentSelectedTable]);
-
-  // Get tables for the current sheet
-  const currentSheetTables = useMemo(() => {
-    return Array.from(tables.entries()).filter(
-      ([_, table]) => table.sheetName === sheetName
-    );
-  }, [tables, sheetName]);
+  }, [currentSelectedTable, state]);
 
   const addTableFromSelection = useCallback(() => {
     const effectiveTableName = (newTableName || defaultTableName).trim();
@@ -122,6 +105,7 @@ export function SpreadsheetWithFormulaBar({
       engine.addTable({
         tableName: trimmedName,
         sheetName,
+        workbookName,
         start: getCellReference({
           rowIndex: selectedArea.start.row,
           colIndex: selectedArea.start.col,
@@ -137,14 +121,13 @@ export function SpreadsheetWithFormulaBar({
       });
       // Clear the input so it falls back to the calculated defaultTableName
       setNewTableName("");
-      // Force recalculation of table count
-      setTableCreationCounter((prev) => prev + 1);
     } catch (error) {
       console.error("Error creating table:", error);
     }
   }, [
     selectedArea,
     sheetName,
+    workbookName,
     engine,
     newTableName,
     defaultTableName,
@@ -155,9 +138,9 @@ export function SpreadsheetWithFormulaBar({
     if (!selectedCell) {
       return;
     }
-    const cellFormula = sheet.get(selectedCell);
+    const cellFormula = sheet?.content.get(selectedCell);
     return cellFormula;
-  }, [sheetName, selectedCell, sheet]);
+  }, [sheetName, selectedCell, sheet, state]);
 
   // Handle cell data changes from the spreadsheet
   const onCellDataChange = useCallback(
@@ -177,9 +160,9 @@ export function SpreadsheetWithFormulaBar({
           }
         }
       });
-      engine.setSheetContent(sheetName, data);
+      engine.setSheetContent({ sheetName, workbookName }, data);
     },
-    [sheetName, engine]
+    [sheetName, engine, workbookName]
   );
 
   // Handle formula submission from formula bar
@@ -190,6 +173,7 @@ export function SpreadsheetWithFormulaBar({
           const { columnIndex, rowIndex } = parseCellReference(selectedCell);
           const address: CellAddress = {
             sheetName,
+            workbookName,
             colIndex: columnIndex,
             rowIndex: rowIndex,
           };
@@ -244,14 +228,14 @@ export function SpreadsheetWithFormulaBar({
           };
           if (ev.type === "extend") {
             engine.autoFill(
-              sheetName,
+              { sheetName, workbookName },
               convertSmAreaToSpreadsheetRange(ev.seedRange),
               convertSmAreaToSpreadsheetRange(ev.fillRange),
               ev.direction
             );
           } else {
             engine.clearSpreadsheetRange(
-              sheetName,
+              { sheetName, workbookName },
               convertSmAreaToSpreadsheetRange(ev.rangeToClear)
             );
           }
@@ -428,7 +412,7 @@ export function SpreadsheetWithFormulaBar({
                       newTableName.trim() !== currentSelectedTable.name
                     ) {
                       try {
-                        engine.renameTable({
+                        engine.renameTable(workbookName, {
                           oldName: currentSelectedTable.name,
                           newName: newTableName.trim(),
                         });
@@ -455,6 +439,7 @@ export function SpreadsheetWithFormulaBar({
                       try {
                         engine.removeTable({
                           tableName: currentSelectedTable.name,
+                          workbookName,
                         });
                       } catch (error) {
                         console.error("Error removing table:", error);
@@ -553,16 +538,22 @@ export function SpreadsheetWithFormulaBar({
       <div className="flex-1 overflow-hidden">
         <Spreadsheet
           style={{ height: "100%", width: "100%" }}
-          cellData={sheet as Map<string, string | number>}
+          cellData={sheet?.content as Map<string, string | number>}
           onCellDataChange={onCellDataChange}
           selection={{
             effects: selectionManagerEffects,
           }}
+          containerProps={
+            {
+              "data-grid-no-interaction": "true",
+            } as React.HTMLAttributes<HTMLDivElement>
+          }
           customCellStyle={(cell) => {
             const tableInfo = engine.isCellInTable({
               sheetName,
               colIndex: cell.colIndex,
               rowIndex: cell.rowIndex,
+              workbookName,
             });
 
             if (!tableInfo) {
@@ -623,6 +614,7 @@ export function SpreadsheetWithFormulaBar({
             const value = engine.getCellValue(
               {
                 sheetName,
+                workbookName,
                 colIndex: cell.colIndex,
                 rowIndex: cell.rowIndex,
               },

@@ -5,18 +5,21 @@ import { type SerializedCellValue } from "../../../../src/core/types";
 
 describe("Spreadsheet Visualizer", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   describe("basic functionality", () => {
     test("should create simple visualization without headers or row numbers", () => {
       // Set up some test data
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Name"],
           ["B1", "Age"],
@@ -33,7 +36,8 @@ describe("Spreadsheet Visualizer", () => {
       const result = visualizeSpreadsheet(engine, {
         numRows: 3,
         numCols: 3,
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         showColumnHeaders: false,
         showRowNumbers: false,
       });
@@ -48,7 +52,7 @@ describe("Spreadsheet Visualizer", () => {
 
     test("should create formatted table with headers and row numbers", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Name"],
           ["B1", "Age"],
@@ -62,7 +66,8 @@ describe("Spreadsheet Visualizer", () => {
       const result = visualizeSpreadsheet(engine, {
         numRows: 3,
         numCols: 2,
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
       });
 
       expect(result).toMatchInlineSnapshot(`
@@ -77,7 +82,7 @@ describe("Spreadsheet Visualizer", () => {
 
     test("should handle empty cells with default character", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Data"],
           ["C1", "More"],
@@ -88,7 +93,8 @@ describe("Spreadsheet Visualizer", () => {
       const result = visualizeSpreadsheet(engine, {
         numRows: 2,
         numCols: 3,
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         showColumnHeaders: false,
         showRowNumbers: false,
       });
@@ -101,7 +107,7 @@ describe("Spreadsheet Visualizer", () => {
 
     test("should handle custom empty cell character", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Data"],
           ["C1", "More"],
@@ -111,7 +117,8 @@ describe("Spreadsheet Visualizer", () => {
       const result = visualizeSpreadsheet(engine, {
         numRows: 1,
         numCols: 3,
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         emptyCellChar: "-",
         showColumnHeaders: false,
         showRowNumbers: false,
@@ -124,7 +131,7 @@ describe("Spreadsheet Visualizer", () => {
 
     test("should handle custom start position", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Skip"],
           ["B1", "Skip"],
@@ -140,7 +147,8 @@ describe("Spreadsheet Visualizer", () => {
         numCols: 2,
         startRow: 1,
         startCol: 2, // Start from column C
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         showColumnHeaders: false,
         showRowNumbers: false,
       });
@@ -156,7 +164,7 @@ describe("Spreadsheet Visualizer", () => {
   describe("formatting options", () => {
     test("should handle long cell values with truncation", () => {
       engine.setSheetContent(
-        sheetName,
+          sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "This is a very long cell value that should be truncated"],
           ["B1", "Short"],
@@ -167,7 +175,8 @@ describe("Spreadsheet Visualizer", () => {
         numRows: 1,
         numCols: 2,
         maxColWidth: 10,
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
       });
 
       expect(result).toContain("...");
@@ -176,7 +185,7 @@ describe("Spreadsheet Visualizer", () => {
 
     test("should respect minimum column width", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "A"],
           ["B1", "B"],
@@ -187,7 +196,8 @@ describe("Spreadsheet Visualizer", () => {
         numRows: 1,
         numCols: 2,
         minColWidth: 5,
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
       });
 
       // Each column should be at least 5 characters wide
@@ -201,7 +211,7 @@ describe("Spreadsheet Visualizer", () => {
 
     test("should work without column headers", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Data1"],
           ["B1", "Data2"],
@@ -212,7 +222,8 @@ describe("Spreadsheet Visualizer", () => {
         numRows: 1,
         numCols: 2,
         showColumnHeaders: false,
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
       });
 
       expect(result).not.toContain("A");
@@ -224,7 +235,7 @@ describe("Spreadsheet Visualizer", () => {
 
     test("should work without row numbers", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Data1"],
           ["B1", "Data2"],
@@ -235,7 +246,8 @@ describe("Spreadsheet Visualizer", () => {
         numRows: 1,
         numCols: 2,
         showRowNumbers: false,
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
       });
 
       expect(result).toContain("Data1");
@@ -248,7 +260,7 @@ describe("Spreadsheet Visualizer", () => {
 
     test("should handle different start positions", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Skip"],
           ["B1", "Skip"],
@@ -264,7 +276,8 @@ describe("Spreadsheet Visualizer", () => {
         numCols: 2,
         startRow: 2,
         startCol: 2, // Start from column C
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
       });
 
       expect(result).toContain("Start");
@@ -278,7 +291,7 @@ describe("Spreadsheet Visualizer", () => {
   describe("advanced features", () => {
     test("should work with formulas and calculated values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["B1", 20],
@@ -289,7 +302,8 @@ describe("Spreadsheet Visualizer", () => {
       const result = visualizeSpreadsheet(engine, {
         numRows: 1,
         numCols: 3,
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
       });
 
       expect(result).toContain("10");
@@ -299,28 +313,30 @@ describe("Spreadsheet Visualizer", () => {
 
     test("should handle multiple sheets", () => {
       const sheet2 = "Sheet2";
-      engine.addSheet(sheet2);
+      engine.addSheet({ workbookName, sheetName: sheet2 });
       
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([["A1", "Sheet1Data"]])
       );
       
       engine.setSheetContent(
-        sheet2,
+        { workbookName, sheetName: sheet2 },
         new Map<string, SerializedCellValue>([["A1", "Sheet2Data"]])
       );
 
       const result1 = visualizeSpreadsheet(engine, {
         numRows: 1,
         numCols: 1,
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
       });
 
       const result2 = visualizeSpreadsheet(engine, {
         numRows: 1,
         numCols: 1,
         sheetName: sheet2,
+        workbookName: workbookName,
       });
 
       expect(result1).toContain("Sheet1Data");
@@ -330,7 +346,7 @@ describe("Spreadsheet Visualizer", () => {
     test("should handle sparse data with varying column widths", () => {
       // Set up sparse data with different content lengths
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           // Row 1: Headers with different lengths
           ["A1", "ID"],
@@ -365,7 +381,8 @@ describe("Spreadsheet Visualizer", () => {
       const result = visualizeSpreadsheet(engine, {
         numRows: 6,
         numCols: 5,
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         maxColWidth: 25, // Allow longer columns
       });
 
@@ -385,7 +402,7 @@ describe("Spreadsheet Visualizer", () => {
     test("should handle very sparse data with mostly empty cells", () => {
       // Set up very sparse data
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Corner"],
           ["E1", "Far"],
@@ -398,7 +415,8 @@ describe("Spreadsheet Visualizer", () => {
       const result = visualizeSpreadsheet(engine, {
         numRows: 5,
         numCols: 5,
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         showColumnHeaders: false,
         showRowNumbers: false,
       });
@@ -424,7 +442,7 @@ describe("Spreadsheet Visualizer", () => {
     test("should ensure all rows have exactly the same character width", () => {
       // Set up data with varying content lengths to test consistent row width
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Short"],
           ["B1", "Very Long Header Name"],
@@ -441,7 +459,8 @@ describe("Spreadsheet Visualizer", () => {
       const result = visualizeSpreadsheet(engine, {
         numRows: 3,
         numCols: 3,
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
       });
 
       // Split into lines and check that all lines have the same length
@@ -462,10 +481,12 @@ describe("Spreadsheet Visualizer", () => {
   describe("edge cases", () => {
     test("should handle empty engine", () => {
       const emptyEngine = FormulaEngine.buildEmpty();
+      emptyEngine.addWorkbook(workbookName);
       
       const result = visualizeSpreadsheet(emptyEngine, {
         numRows: 2,
         numCols: 2,
+        workbookName: workbookName,
         showColumnHeaders: false,
         showRowNumbers: false,
       });
@@ -477,7 +498,8 @@ describe("Spreadsheet Visualizer", () => {
       const result = visualizeSpreadsheet(engine, {
         numRows: 0,
         numCols: 2,
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         showColumnHeaders: false,
         showRowNumbers: false,
       });
@@ -487,14 +509,15 @@ describe("Spreadsheet Visualizer", () => {
 
     test("should handle single cell", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([["A1", "Single"]])
       );
 
       const result = visualizeSpreadsheet(engine, {
         numRows: 1,
         numCols: 1,
-        sheetName,
+        sheetName: sheetAddress.sheetName,
+        workbookName: sheetAddress.workbookName,
         showColumnHeaders: false,
         showRowNumbers: false,
       });

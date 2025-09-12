@@ -9,11 +9,12 @@ import { Button } from "@/components/ui/button";
 import { FormulaEngine } from "../src/core/engine";
 import type { SelectionManager } from "@ricsam/selection-manager";
 import { createEngineWithMultiSheetData } from "./lib/multisheet-data";
-import { useSerializedSheet } from "src/react/hooks";
+import { useEngine } from "src/react/hooks";
 import type { CellAddress } from "src/core/types";
 
 interface SheetComponentProps {
   sheetName: "Dashboard" | "Sales" | "Products";
+  workbookName: string;
   spreadsheetData: Map<string, any>;
   engine: FormulaEngine;
   activeSheet: string;
@@ -24,6 +25,7 @@ interface SheetComponentProps {
 
 function SheetComponent({
   sheetName,
+  workbookName,
   spreadsheetData,
   engine,
   activeSheet,
@@ -80,13 +82,20 @@ function SheetComponent({
           style={{ width: "100%", height: "100%" }}
           cellData={spreadsheetData}
           onCellDataChange={(updatedSpreadsheet) => {
-            engine.setSheetContent(sheetName, updatedSpreadsheet);
+            engine.setSheetContent(
+              {
+                sheetName,
+                workbookName: "MultiSheetDemo",
+              },
+              updatedSpreadsheet
+            );
           }}
           customCellRenderer={(cell) => {
             const value = engine.getCellValue({
               sheetName,
               colIndex: cell.colIndex,
               rowIndex: cell.rowIndex,
+              workbookName,
             });
             return <div>{value}</div>;
           }}
@@ -102,18 +111,21 @@ function SheetComponent({
 export function MultiSheetDemo() {
   const { engine, sheets } = useMemo(createEngineWithMultiSheetData, []);
   const [selectedCell, setSelectedCell] = useState<string | null>(null);
-  const [activeSheet, setActiveSheet] = useState<"Dashboard" | "Sales" | "Products">("Dashboard");
+  const [activeSheet, setActiveSheet] = useState<
+    "Dashboard" | "Sales" | "Products"
+  >("Dashboard");
+  const engineState = useEngine(engine);
   const spreadsheets = {
-    Dashboard: useSerializedSheet(engine, sheets.dashboard.name),
-    Sales: useSerializedSheet(engine, sheets.sales.name),
-    Products: useSerializedSheet(engine, sheets.products.name),
+    Dashboard: engineState.workbooks.get("MultiSheetDemo")?.sheets.get(sheets.dashboard.name)!,
+    Sales: engineState.workbooks.get("MultiSheetDemo")?.sheets.get(sheets.sales.name)!,
+    Products: engineState.workbooks.get("MultiSheetDemo")?.sheets.get(sheets.products.name)!,
   };
 
   const cellSerialized = useMemo(() => {
     if (!selectedCell) {
       return;
     }
-    const cellFormula = spreadsheets[activeSheet].sheet.get(selectedCell);
+    const cellFormula = spreadsheets[activeSheet].content.get(selectedCell);
     return cellFormula;
   }, [activeSheet, selectedCell, spreadsheets]);
 
@@ -126,6 +138,7 @@ export function MultiSheetDemo() {
             sheetName: activeSheet,
             colIndex: columnIndex,
             rowIndex: rowIndex,
+            workbookName: "MultiSheetDemo",
           };
 
           engine.setCellContent(address, e.currentTarget.value);
@@ -138,7 +151,7 @@ export function MultiSheetDemo() {
   );
 
   const addNewSale = useCallback(() => {
-    const salesData = engine.getSheetSerialized(sheets.sales.name);
+    const salesData = engine.getSheetSerialized({ workbookName: "MultiSheetDemo", sheetName: sheets.sales.name });
     const salesKeys = Array.from(salesData.keys()).filter(
       (key) => key.startsWith("A") && key !== "A1"
     );
@@ -167,7 +180,12 @@ export function MultiSheetDemo() {
     newSaleData.forEach((value, key) => {
       const { columnIndex, rowIndex } = parseCellReference(key);
       engine.setCellContent(
-        { sheetName: sheets.sales.name, colIndex: columnIndex, rowIndex: rowIndex },
+        {
+          sheetName: sheets.sales.name,
+          colIndex: columnIndex,
+          rowIndex: rowIndex,
+          workbookName: "MultiSheetDemo",
+        },
         value
       );
     });
@@ -206,30 +224,33 @@ export function MultiSheetDemo() {
         <div className="grid grid-cols-3 gap-4 h-full">
           <SheetComponent
             sheetName="Products"
-            spreadsheetData={spreadsheets.Products?.sheet ?? new Map()}
+            spreadsheetData={spreadsheets.Products?.content ?? new Map()}
             engine={engine}
             activeSheet={activeSheet}
             selectedCell={selectedCell}
             onSheetActivate={setActiveSheet}
             onCellSelect={setSelectedCell}
+            workbookName="MultiSheetDemo"
           />
           <SheetComponent
             sheetName="Sales"
-            spreadsheetData={spreadsheets.Sales?.sheet ?? new Map()}
+            spreadsheetData={spreadsheets.Sales?.content ?? new Map()}
             engine={engine}
             activeSheet={activeSheet}
             selectedCell={selectedCell}
             onSheetActivate={setActiveSheet}
             onCellSelect={setSelectedCell}
+            workbookName="MultiSheetDemo"
           />
           <SheetComponent
             sheetName="Dashboard"
-            spreadsheetData={spreadsheets.Dashboard?.sheet ?? new Map()}
+            spreadsheetData={spreadsheets.Dashboard?.content ?? new Map()}
             engine={engine}
             activeSheet={activeSheet}
             selectedCell={selectedCell}
             onSheetActivate={setActiveSheet}
             onCellSelect={setSelectedCell}
+            workbookName="MultiSheetDemo"
           />
         </div>
       </div>
@@ -249,16 +270,16 @@ export function MultiSheetDemo() {
         <strong>Live Summary:</strong>
         <div className="grid grid-cols-3 gap-4 mt-1">
           <div>
-            Products: {spreadsheets.Dashboard?.sheet.get("B5")} items, Avg Price: $
-            {spreadsheets.Dashboard?.sheet.get("B6")}
+            Products: {spreadsheets.Dashboard?.content.get("B5")} items, Avg
+            Price: ${spreadsheets.Dashboard?.content.get("B6")}
           </div>
           <div>
-            Sales: ${spreadsheets.Dashboard?.sheet.get("B13")} revenue from{" "}
-            {spreadsheets.Dashboard?.sheet.get("B14")} units
+            Sales: ${spreadsheets.Dashboard?.content.get("B13")} revenue from{" "}
+            {spreadsheets.Dashboard?.content.get("B14")} units
           </div>
           <div>
-            Best Category: {spreadsheets.Dashboard?.sheet.get("E31")} leading with{" "}
-            {spreadsheets.Dashboard?.sheet.get("B32")} market share
+            Best Category: {spreadsheets.Dashboard?.content.get("E31")} leading
+            with {spreadsheets.Dashboard?.content.get("B32")} market share
           </div>
         </div>
       </div>
