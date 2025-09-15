@@ -272,7 +272,11 @@ export class FormulaEngine {
     numRows: SpreadsheetRangeEnd;
     numCols: number;
   }) {
-    const table = this.tableManager.addTable(props);
+    const table = this.tableManager.addTable({
+      ...props,
+      getCellValue: (cellAddress: CellAddress) =>
+        this.getCellValue(cellAddress),
+    });
 
     // Re-evaluate all sheets since structured references might depend on this table
     this.reevaluate();
@@ -310,7 +314,11 @@ export class FormulaEngine {
     numCols?: number;
     workbookName: string;
   }) {
-    this.tableManager.updateTable(opts);
+    this.tableManager.updateTable({
+      ...opts,
+      getCellValue: (cellAddress: CellAddress) =>
+        this.getCellValue(cellAddress),
+    });
 
     // Re-evaluate all sheets since structured references might depend on this table
     this.reevaluate();

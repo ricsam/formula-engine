@@ -39,6 +39,7 @@ export class TableManager {
     start,
     numRows,
     numCols,
+    getCellValue,
   }: {
     tableName: string;
     sheetName: string;
@@ -46,23 +47,18 @@ export class TableManager {
     numRows: SpreadsheetRangeEnd;
     numCols: number;
     workbookName: string;
+    getCellValue: (cellAddress: CellAddress) => SerializedCellValue;
   }): TableDefinition {
     const { rowIndex, colIndex } = parseCellReference(start);
 
-    const sheet = this.workbookManager.getSheet({
-      workbookName,
-      sheetName,
-    });
-    if (!sheet) {
-      throw new Error("Sheet not found");
-    }
-    const sheetContent = sheet.content;
-
     const headers = new Map<string, { name: string; index: number }>();
     for (let i = 0; i < numCols; i++) {
-      const header = sheetContent.get(
-        getCellReference({ rowIndex, colIndex: colIndex + i })
-      );
+      const header = getCellValue({
+        rowIndex,
+        colIndex: colIndex + i,
+        sheetName,
+        workbookName,
+      });
 
       if (header) {
         headers.set(String(header), { name: String(header), index: i });
@@ -98,6 +94,7 @@ export class TableManager {
     numRows: SpreadsheetRangeEnd;
     numCols: number;
     workbookName: string;
+    getCellValue: (cellAddress: CellAddress) => SerializedCellValue;
   }): TableDefinition {
     const tableName = props.tableName;
     const table = this.makeTable(props);
@@ -137,6 +134,7 @@ export class TableManager {
     numRows,
     numCols,
     workbookName,
+    getCellValue,
   }: {
     tableName: string;
     sheetName?: string;
@@ -144,6 +142,7 @@ export class TableManager {
     numRows?: SpreadsheetRangeEnd;
     workbookName: string;
     numCols?: number;
+    getCellValue: (cellAddress: CellAddress) => SerializedCellValue;
   }): void {
     const wb = this.tables.get(workbookName);
     if (!wb) {
@@ -178,6 +177,7 @@ export class TableManager {
       start: getCellReference(newStart),
       numRows: newNumRows,
       numCols: numCols ?? table.headers.size,
+      getCellValue,
     });
 
     wb.set(tableName, newTable);
