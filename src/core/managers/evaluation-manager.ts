@@ -80,66 +80,6 @@ export class EvaluationManager {
     return deps;
   }
 
-  /**
-   * Discovers dependencies for a node without fully evaluating it.
-   * This is used for cycle detection before evaluation.
-   */
-  private discoverNodeDeps(nodeKey: string): Set<string> {
-    const node = keyToDependencyNode(nodeKey);
-    const deps = new Set<string>();
-    const cellAddress: CellAddress = {
-      workbookName: node.workbookName,
-      sheetName: node.sheetName,
-      colIndex: node.address.colIndex,
-      rowIndex: node.address.rowIndex,
-    };
-
-    const sheet = this.workbookManager.getSheet(cellAddress);
-    if (!sheet) {
-      return deps;
-    }
-
-    const cellId = getCellReference({
-      rowIndex: node.address.rowIndex,
-      colIndex: node.address.colIndex,
-    });
-
-    let content: SerializedCellValue;
-    try {
-      content = normalizeSerializedCellValue(sheet.content.get(cellId));
-    } catch (err) {
-      return deps;
-    }
-
-    if (typeof content === "string" && content.startsWith("=")) {
-      // Parse the formula to discover dependencies without evaluating
-      const dependenciesDiscoveredInEvaluation: Set<string> = new Set();
-      const frontierDependenciesDiscoveredInEvaluation: Set<string> = new Set();
-      const discardedFrontierDependenciesDiscoveredInEvaluation: Set<string> =
-        new Set();
-
-      const evaluationContext: EvaluationContext = {
-        currentCell: cellAddress,
-        dependencies: dependenciesDiscoveredInEvaluation,
-        frontierDependencies: frontierDependenciesDiscoveredInEvaluation,
-        discardedFrontierDependencies:
-          discardedFrontierDependenciesDiscoveredInEvaluation,
-      };
-
-      this.formulaEvaluator.evaluateFormula(
-        content.slice(1),
-        evaluationContext
-      );
-
-      dependenciesDiscoveredInEvaluation.forEach((dep) => deps.add(dep));
-      frontierDependenciesDiscoveredInEvaluation.forEach((dep) =>
-        deps.add(dep)
-      );
-    }
-
-    return deps;
-  }
-
   getTransitiveDeps(
     /**
      * nodeKey is the dependency node key, from dependencyNodeToKey
@@ -149,10 +89,17 @@ export class EvaluationManager {
     const visited = new Set<string>();
     const queue = [nodeKey];
 
+    let selfReferenced = false;
+
     while (queue.length > 0) {
       const current = queue.shift()!;
 
-      if (visited.has(current)) continue;
+      if (visited.has(current)) {
+        if (current === nodeKey) {
+          selfReferenced = true;
+        }
+        continue;
+      }
       visited.add(current);
 
       const deps = this.getNodeDeps(current);
@@ -161,33 +108,9 @@ export class EvaluationManager {
         queue.push(dep);
       }
     }
-
-    visited.delete(nodeKey); // Don't include the starting node
-    return visited;
-  }
-
-  /**
-   * Discovers transitive dependencies without full evaluation.
-   * This is used for cycle detection before evaluation.
-   */
-  private discoverTransitiveDeps(nodeKey: string): Set<string> {
-    const visited = new Set<string>();
-    const queue = [nodeKey];
-
-    while (queue.length > 0) {
-      const current = queue.shift()!;
-
-      if (visited.has(current)) continue;
-      visited.add(current);
-
-      const deps = this.discoverNodeDeps(current);
-
-      for (const dep of deps) {
-        queue.push(dep);
-      }
+    if (!selfReferenced) {
+      visited.delete(nodeKey); // Don't include the starting node in the result
     }
-
-    visited.delete(nodeKey); // Don't include the starting node
     return visited;
   }
 
@@ -243,57 +166,6 @@ export class EvaluationManager {
     }
 
     return result;
-  }
-
-  /**
-   * Finds all nodes that participate in dependency cycles within the given set of nodes.
-   * Uses DFS to detect strongly connected components with more than one node or self-loops.
-   */
-  private findCycleParticipants(nodeKeys: Set<string>): Set<string> {
-    const visited = new Set<string>();
-    const recursionStack = new Set<string>();
-    const cycleParticipants = new Set<string>();
-
-    const dfs = (node: string): boolean => {
-      if (recursionStack.has(node)) {
-        // Found a back edge - this indicates a cycle
-        // Mark all nodes in the current recursion stack as cycle participants
-        cycleParticipants.add(node);
-        return true;
-      }
-
-      if (visited.has(node)) {
-        return false;
-      }
-
-      visited.add(node);
-      recursionStack.add(node);
-
-      const deps = this.discoverNodeDeps(node);
-      let foundCycle = false;
-
-      for (const dep of deps) {
-        if (nodeKeys.has(dep)) {
-          // Only consider dependencies within our node set
-          if (dfs(dep)) {
-            cycleParticipants.add(node);
-            foundCycle = true;
-          }
-        }
-      }
-
-      recursionStack.delete(node);
-      return foundCycle;
-    };
-
-    // Run DFS from each unvisited node
-    for (const node of nodeKeys) {
-      if (!visited.has(node)) {
-        dfs(node);
-      }
-    }
-
-    return cycleParticipants;
   }
 
   evaluateSpilled(
@@ -504,7 +376,7 @@ export class EvaluationManager {
     return requiresReRun;
   }
 
-  evaluateCell(cellAddress: CellAddress): void {
+  evaluateCell(cellAddress: CellAddress, cycleCheck: boolean = false): void {
     if (this.isEvaluating) {
       throw new Error("Evaluation in progress");
     }
@@ -552,78 +424,31 @@ export class EvaluationManager {
         break;
       }
 
-      // First, discover dependencies without full evaluation to detect cycles
-      const discoveredDeps = this.discoverTransitiveDeps(nodeKey);
-      discoveredDeps.add(nodeKey); // Include the starting node for cycle detection
+      const allDeps = this.getTransitiveDeps(nodeKey);
+      const sortResult = this.topologicalSort(allDeps);
 
-      // Check for cycles using the discovered dependencies
-      const cycleParticipants = this.findCycleParticipants(discoveredDeps);
-
-      if (cycleParticipants.size > 0) {
-        // cycle detected - mark all cycle participants and nodes that depend on them
-
-        // Find all nodes that should be marked with cycle error
-        // This includes cycle participants and any nodes that depend on them
-        const nodesToMarkAsCycle = new Set(cycleParticipants);
-
-        // Add any nodes that transitively depend on cycle participants
-        for (const depNode of discoveredDeps) {
-          if (!cycleParticipants.has(depNode)) {
-            // Check if this node depends on any cycle participant
-            const nodeDeps = this.discoverNodeDeps(depNode);
-            for (const dep of nodeDeps) {
-              if (cycleParticipants.has(dep)) {
-                nodesToMarkAsCycle.add(depNode);
-                break;
-              }
-            }
-          }
-        }
-
-        // Also check if the original node should be marked
-        if (!nodesToMarkAsCycle.has(nodeKey)) {
-          // Check if the original node depends on any cycle participant
-          const originalNodeDeps = this.discoverNodeDeps(nodeKey);
-          for (const dep of originalNodeDeps) {
-            if (cycleParticipants.has(dep)) {
-              nodesToMarkAsCycle.add(nodeKey);
-              break;
-            }
-          }
-        }
-
-        // Mark all nodes that should have cycle error
-        for (const cycleNodeKey of nodesToMarkAsCycle) {
-          this.storeManager.evaluatedNodes.set(cycleNodeKey, {
-            deps:
-              this.storeManager.evaluatedNodes.get(cycleNodeKey)?.deps ??
-              new Set(),
-            frontierDependencies:
-              this.storeManager.evaluatedNodes.get(cycleNodeKey)
-                ?.frontierDependencies ?? new Set(),
-            discardedFrontierDependencies:
-              this.storeManager.evaluatedNodes.get(cycleNodeKey)
-                ?.discardedFrontierDependencies ?? new Set(),
-            evaluationResult: {
-              type: "error",
-              err: FormulaError.CYCLE,
-              message: "Cycle detected",
-            },
-          });
-        }
-
+      if (sortResult === null) {
+        // cycle detected
+        this.storeManager.evaluatedNodes.set(nodeKey, {
+          deps:
+            this.storeManager.evaluatedNodes.get(nodeKey)?.deps ?? new Set(),
+          frontierDependencies:
+            this.storeManager.evaluatedNodes.get(nodeKey)
+              ?.frontierDependencies ?? new Set(),
+          discardedFrontierDependencies:
+            this.storeManager.evaluatedNodes.get(nodeKey)
+              ?.discardedFrontierDependencies ?? new Set(),
+          evaluationResult: {
+            type: "error",
+            err: FormulaError.CYCLE,
+            message: "Cycle detected",
+          },
+        });
         this.isEvaluating = false;
         return;
       }
 
-      // No cycles detected, proceed with normal evaluation
-      const allDeps = this.getTransitiveDeps(nodeKey);
-      const sorted = this.topologicalSort(allDeps)?.reverse();
-
-      if (!sorted) {
-        throw new Error("Unexpected topological sort failure");
-      }
-
+      const sorted = sortResult.reverse();
       sorted.forEach((nodeKey) =>
         this.evaluateDependencyNode(nodeKey, cellAddress)
       );
@@ -637,6 +462,12 @@ export class EvaluationManager {
         !allDeps.isSubsetOf(transitiveDeps2)
       ) {
         requiresReRun = true;
+      } else {
+        // check for cycles once we have finished
+        if (!cycleCheck) {
+          this.isEvaluating = false;
+          this.evaluateCell(cellAddress, true);
+        }
       }
     }
     this.isEvaluating = false;

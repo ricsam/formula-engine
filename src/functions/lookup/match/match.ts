@@ -49,58 +49,40 @@ function matchOperation(
     };
   }
 
-  const values: CellValue[] = [];
-
+  let i = 0;
   for (const value of lookupArray) {
     if (value.type === "value") {
-      values.push(value.result);
+      if (matchType === 0) {
+        // Exact match
+        const arrayValue = value.result;
+        if (
+          arrayValue.type === lookupValue.type &&
+          arrayValue.value === lookupValue.value
+        ) {
+          return { type: "value", result: { type: "number", value: i + 1 } }; // 1-based index
+        }
+      } else {
+        // Approximate match (1 or -1) - requires sorted array
+        // For now, throw an error until we add sorting validation
+        // TODO: Add proper approximate match logic with sorted array validation
+        throw new Error("MATCH: approximate match not fully implemented");
+      }
+      i++;
     }
   }
 
-  if (values.length === 0) {
+  if (i === 0) {
     return {
       type: "error",
       err: FormulaError.VALUE,
       message: "MATCH lookup_array cannot be empty",
     };
   }
-
-  if (matchType === 0) {
-    // Exact match
-    for (let i = 0; i < values.length; i++) {
-      const arrayValue = values[i]!;
-      if (
-        arrayValue.type === lookupValue.type &&
-        arrayValue.value === lookupValue.value
-      ) {
-        return { type: "value", result: { type: "number", value: i + 1 } }; // 1-based index
-      }
-    }
-    return {
-      type: "error",
-      err: FormulaError.NA,
-      message: "MATCH: lookup_value not found in lookup_array",
-    };
-  } else {
-    // Approximate match (1 or -1) - requires sorted array
-    // For now, implement exact match behavior until we add sorting validation
-    // TODO: Add proper approximate match logic with sorted array validation
-    for (let i = 0; i < values.length; i++) {
-      const arrayValue = values[i]!;
-      if (
-        arrayValue.type === lookupValue.type &&
-        arrayValue.value === lookupValue.value
-      ) {
-        return { type: "value", result: { type: "number", value: i + 1 } }; // 1-based index
-      }
-    }
-    return {
-      type: "error",
-      err: FormulaError.NA,
-      message:
-        "MATCH: lookup_value not found in lookup_array (approximate match not fully implemented)",
-    };
-  }
+  return {
+    type: "error",
+    err: FormulaError.NA,
+    message: "MATCH: lookup_value not found in lookup_array",
+  };
 }
 
 export const MATCH: FunctionDefinition = {
