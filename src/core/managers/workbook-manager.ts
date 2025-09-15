@@ -50,6 +50,7 @@ export class WorkbookManager {
     }
     this.workbooks.set(opts.newWorkbookName, workbook);
     this.workbooks.delete(opts.workbookName);
+    workbook.name = opts.newWorkbookName;
   }
 
   resetWorkbooks(workbooks: Map<string, Workbook>): void {
@@ -212,7 +213,7 @@ export class WorkbookManager {
     const sheet = this.getSheet(opts);
 
     if (!sheet) {
-      throw new Error("Sheet not found");
+      throw new Error(`Sheet not found for [${opts.workbookName}]!${opts.sheetName}`);
     }
 
     for (const key of sheet.content.keys()) {

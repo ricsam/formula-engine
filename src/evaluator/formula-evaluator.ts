@@ -274,7 +274,7 @@ export class FormulaEvaluator {
         return {
           type: "error",
           err: FormulaError.REF,
-          message: `Column ${node.cols.startCol} or ${node.cols.endCol} not found in table ${node.tableName}`,
+          message: `Column ${node.cols.startCol} or ${node.cols.endCol} not found in table ${table.name}`,
         };
       }
       const startColIndex = tableStart.colIndex + startCol.index;
@@ -422,7 +422,8 @@ export class FormulaEvaluator {
       source: `range`,
       evaluate: (spillOffset, context) => {
         const originSheetName = node.sheetName ?? context.currentCell.sheetName;
-        const originWorkbookName = node.workbookName ?? context.currentCell.workbookName;
+        const originWorkbookName =
+          node.workbookName ?? context.currentCell.workbookName;
         const colIndex = node.range.start.col + spillOffset.x;
         const rowIndex = node.range.start.row + spillOffset.y;
         const result = this.storeManager.evalTimeSafeEvaluateCell(

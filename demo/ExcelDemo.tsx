@@ -124,6 +124,10 @@ export function ExcelDemo() {
   } | null>(null);
   const [newSheetName, setNewSheetName] = useState("");
 
+  // Workbook management state
+  const [renamingWorkbook, setRenamingWorkbook] = useState<string | null>(null);
+  const [newWorkbookName, setNewWorkbookName] = useState("");
+
   const engineState = useEngine(engine);
 
   // Save to localStorage
@@ -328,6 +332,46 @@ export function ExcelDemo() {
     setNewSheetName("");
   }, []);
 
+  // Rename workbook
+  const renameWorkbook = useCallback(
+    (oldWorkbookName: string, newWorkbookName: string) => {
+      try {
+        engine.renameWorkbook({
+          workbookName: oldWorkbookName,
+          newWorkbookName: newWorkbookName.trim(),
+        });
+
+        // Update workbook grid items
+        setWorkbookGridItems((prev) =>
+          prev.map((item) =>
+            item.name === oldWorkbookName
+              ? { ...item, name: newWorkbookName.trim() }
+              : item
+          )
+        );
+
+        markUnsavedChanges();
+        setRenamingWorkbook(null);
+        setNewWorkbookName("");
+      } catch (error) {
+        console.error("Failed to rename workbook:", error);
+      }
+    },
+    [engine, markUnsavedChanges]
+  );
+
+  // Start renaming workbook
+  const startRenamingWorkbook = useCallback((workbookName: string) => {
+    setRenamingWorkbook(workbookName);
+    setNewWorkbookName(workbookName);
+  }, []);
+
+  // Cancel workbook renaming
+  const cancelWorkbookRenaming = useCallback(() => {
+    setRenamingWorkbook(null);
+    setNewWorkbookName("");
+  }, []);
+
   // Create WorkbookComponent for grid
   const WorkbookComponent = useCallback(
     ({ workbookName }: { workbookName: string }) => {
@@ -362,10 +406,56 @@ export function ExcelDemo() {
       return (
         <div className="w-full h-full border border-gray-300 overflow-hidden bg-white flex flex-col">
           {/* Workbook Header */}
-          <div className="h-8 bg-gray-100 border-b border-gray-300 px-3 flex items-center justify-between flex-shrink-0">
-            <span className="text-sm font-medium text-gray-700">
-              {workbookName}
-            </span>
+          <div className="h-8 bg-gray-100 border-b border-gray-300 px-3 flex items-center justify-between flex-shrink-0 group">
+            {renamingWorkbook === workbookName ? (
+              <div className="flex items-center gap-2 flex-1">
+                <input
+                  type="text"
+                  value={newWorkbookName}
+                  onChange={(e) => setNewWorkbookName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      renameWorkbook(workbookName, newWorkbookName);
+                    } else if (e.key === "Escape") {
+                      cancelWorkbookRenaming();
+                    }
+                  }}
+                  onBlur={() => {
+                    if (
+                      newWorkbookName.trim() &&
+                      newWorkbookName.trim() !== workbookName
+                    ) {
+                      renameWorkbook(workbookName, newWorkbookName);
+                    } else {
+                      cancelWorkbookRenaming();
+                    }
+                  }}
+                  className="text-sm font-medium bg-white border border-blue-500 rounded px-2 py-1 outline-none flex-1"
+                  autoFocus
+                  data-testid={`rename-workbook-input-${workbookName}`}
+                />
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 flex-1">
+                <span 
+                  className="text-sm font-medium text-gray-700 cursor-pointer hover:text-gray-900"
+                  onDoubleClick={() => startRenamingWorkbook(workbookName)}
+                  data-testid={`workbook-name-${workbookName}`}
+                >
+                  {workbookName}
+                </span>
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div
+                    className="h-4 w-4 p-0 text-gray-500 hover:text-blue-600 flex items-center justify-center cursor-pointer"
+                    onClick={() => startRenamingWorkbook(workbookName)}
+                    title="Rename Workbook"
+                    data-testid={`rename-workbook-${workbookName}`}
+                  >
+                    <Edit2 className="h-3 w-3" />
+                  </div>
+                </div>
+              </div>
+            )}
             <span
               className="text-xs text-gray-500"
               data-testid={`sheet-count-${workbookName}`}
@@ -520,6 +610,11 @@ export function ExcelDemo() {
       cancelRenaming,
       startRenaming,
       deleteSheet,
+      renamingWorkbook,
+      newWorkbookName,
+      renameWorkbook,
+      startRenamingWorkbook,
+      cancelWorkbookRenaming,
     ]
   );
 

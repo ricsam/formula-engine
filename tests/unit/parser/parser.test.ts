@@ -682,6 +682,36 @@ describe("Parser - Structured References", () => {
     expect(ast.isCurrentRow).toBe(true);
   });
 
+  test("should parse column names with trailing spaces", () => {
+    const ast = parseFormula("[@[Cars needed (M) ]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBeUndefined();
+    expect(ast.cols).toEqual({
+      startCol: "Cars needed (M) ",
+      endCol: "Cars needed (M) ",
+    });
+    expect(ast.isCurrentRow).toBe(true);
+  });
+
+  test("should parse formula with column names containing trailing spaces", () => {
+    const formula = "[@[Cars needed (M) ]]+[@[Cars needed (M) ]]*20/100";
+    const ast = parseFormula(formula);
+    expect(ast.type).toBe("binary-op");
+    expect(ast.operator).toBe("+");
+    
+    // Left side: [@[Cars needed (M) ]]
+    expect(ast.left.type).toBe("structured-reference");
+    expect(ast.left.cols?.startCol).toBe("Cars needed (M) ");
+    
+    // Right side: [@[Cars needed (M) ]]*20/100 - due to operator precedence, this is ([@[Cars needed (M) ]]*20)/100
+    expect(ast.right.type).toBe("binary-op");
+    expect(ast.right.operator).toBe("/");
+    expect(ast.right.left.type).toBe("binary-op");
+    expect(ast.right.left.operator).toBe("*");
+    expect(ast.right.left.left.type).toBe("structured-reference");
+    expect(ast.right.left.left.cols?.startCol).toBe("Cars needed (M) ");
+  });
+
   test("should parse current row reference with column names containing dashes", () => {
     const ast = parseFormula("[@CUSTOMER-ID]");
     expect(ast.type).toBe("structured-reference");

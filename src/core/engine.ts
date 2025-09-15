@@ -7,6 +7,7 @@ import {
   type CellAddress,
   type EvaluatedDependencyNode,
   type EvaluationContext,
+  type LocalCellAddress,
   type NamedExpression,
   type SerializedCellValue,
   type SingleEvaluationResult,
@@ -27,7 +28,7 @@ import { renameNamedExpressionInFormula } from "./named-expression-renamer";
 import { renameTableInFormula } from "./table-renamer";
 import { type FunctionEvaluationResult } from "./types";
 import type { FillDirection } from "@ricsam/selection-manager";
-import { getCellReference } from "./utils";
+import { getCellReference, parseCellReference } from "./utils";
 import { AutoFill } from "./autofill-utils";
 import { WorkbookManager } from "./managers/workbook-manager";
 import { renameSheetInFormula } from "./sheet-renamer";
@@ -129,12 +130,6 @@ export class FormulaEngine {
     throw new Error("Not implemented");
   }
 
-  setCellContent(address: CellAddress, content: SerializedCellValue) {
-    this.workbookManager.setCellContent(address, content);
-    // Re-evaluate all sheets to ensure all dependencies are resolved correctly
-    this.reevaluate();
-    this.eventManager.emitUpdate();
-  }
   //#endregion
 
   //#region Named Expressions
@@ -269,17 +264,6 @@ export class FormulaEngine {
   //#endregion
 
   //#region Tables
-  makeTable(props: {
-    tableName: string;
-    sheetName: string;
-    workbookName: string;
-    start: string;
-    numRows: SpreadsheetRangeEnd;
-    numCols: number;
-  }) {
-    return this.tableManager.makeTable(props);
-  }
-
   addTable(props: {
     tableName: string;
     sheetName: string;
@@ -434,23 +418,6 @@ export class FormulaEngine {
     return this.workbookManager.getSheetSerialized(opts);
   }
 
-  /**
-   * Overrides the content of a sheet.
-   * @param sheetName - The name of the sheet to set the content of
-   * @param content - A map of cell addresses to their serialized values
-   * @remarks This method is used to set the content of a sheet. It will re-evaluate all sheets to ensure all dependencies are resolved correctly.
-   */
-  public setSheetContent(
-    opts: { sheetName: string; workbookName: string },
-    content: Map<string, SerializedCellValue>
-  ) {
-    this.workbookManager.setSheetContent(opts, content);
-
-    // Re-evaluate all sheets to ensure all dependencies are resolved correctly
-    this.reevaluate();
-    this.eventManager.emitUpdate();
-  }
-
   //#endregion
 
   //#region Workbook
@@ -475,6 +442,12 @@ export class FormulaEngine {
   renameWorkbook(opts: { workbookName: string; newWorkbookName: string }) {
     this.workbookManager.renameWorkbook(opts);
 
+    // Update scoped named expressions
+    this.namedExpressionManager.renameWorkbook(opts);
+
+    // Update tables that belong to the renamed sheet
+    this.tableManager.updateTablesForWorkbookRename(opts);
+
     // Update all formulas that reference this workbook
     this.workbookManager.updateAllFormulas((formula) =>
       renameWorkbookInFormula({
@@ -490,6 +463,33 @@ export class FormulaEngine {
 
   getWorkbooks() {
     return this.workbookManager.getWorkbooks();
+  }
+  //#endregion
+
+  //#region CRUD Operations
+  /**
+   * Overrides the content of a sheet.
+   * @param sheetName - The name of the sheet to set the content of
+   * @param content - A map of cell addresses to their serialized values
+   * @remarks This method is used to set the content of a sheet. It will re-evaluate all sheets to ensure all dependencies are resolved correctly.
+   */
+  setSheetContent(
+    opts: { sheetName: string; workbookName: string },
+    content: Map<string, SerializedCellValue>
+  ) {
+    this.workbookManager.setSheetContent(opts, content);
+
+    // Re-evaluate all sheets to ensure all dependencies are resolved correctly
+    this.reevaluate();
+    this.eventManager.emitUpdate();
+  }
+
+  setCellContent(address: CellAddress, content: SerializedCellValue) {
+    this.workbookManager.setCellContent(address, content);
+
+    // Re-evaluate all sheets to ensure all dependencies are resolved correctly
+    this.reevaluate();
+    this.eventManager.emitUpdate();
   }
   //#endregion
 

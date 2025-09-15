@@ -512,4 +512,20 @@ export class NamedExpressionManager {
     wbLevel.set(options.newSheetName, sheetLevel);
     wbLevel.delete(options.sheetName);
   }
+
+  renameWorkbook(opts: { workbookName: string; newWorkbookName: string }) {
+    const wbLevel = this.sheetExpressions.get(opts.workbookName);
+    if (!wbLevel) {
+      throw new Error("Workbook not found");
+    }
+    this.sheetExpressions.set(opts.newWorkbookName, wbLevel);
+    this.sheetExpressions.delete(opts.workbookName);
+
+    const wbScopedExpressions = this.workbookExpressions.get(opts.workbookName);
+    if (!wbScopedExpressions) {
+      throw new Error("Workbook not found");
+    }
+    this.workbookExpressions.set(opts.newWorkbookName, wbScopedExpressions);
+    this.workbookExpressions.delete(opts.workbookName);
+  }
 }

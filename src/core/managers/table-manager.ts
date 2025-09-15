@@ -1,7 +1,10 @@
-import { renameTableInFormula } from "../table-renamer";
-import type { SpreadsheetRangeEnd, TableDefinition } from "../types";
+import type {
+  CellAddress,
+  SerializedCellValue,
+  SpreadsheetRangeEnd,
+  TableDefinition,
+} from "../types";
 import { getCellReference, parseCellReference } from "../utils";
-import type { EventManager } from "./event-manager";
 import type { WorkbookManager } from "./workbook-manager";
 
 export class TableManager {
@@ -202,15 +205,33 @@ export class TableManager {
     workbookName: string;
   }): void {
     // Update tables that belong to the renamed sheet
-    this.tables.forEach((wb, workbookName) => {
-      wb.forEach((table, tableName) => {
-        if (
-          table.sheetName === options.sheetName &&
-          table.workbookName === options.workbookName
-        ) {
-          table.sheetName = options.newSheetName;
-        }
-      });
+    const wb = this.tables.get(options.workbookName);
+    if (!wb) {
+      throw new Error("Workbook not found");
+    }
+
+    wb.forEach((table) => {
+      if (table.sheetName === options.sheetName) {
+        table.sheetName = options.newSheetName;
+      }
+    });
+  }
+
+  updateTablesForWorkbookRename(options: {
+    workbookName: string;
+    newWorkbookName: string;
+  }): void {
+    const wb = this.tables.get(options.workbookName);
+    if (!wb) {
+      throw new Error("Workbook not found");
+    }
+    this.tables.set(options.newWorkbookName, wb);
+    this.tables.delete(options.workbookName);
+    // Update tables that belong to the renamed sheet
+    wb.forEach((table, tableName) => {
+      if (table.workbookName === options.workbookName) {
+        table.workbookName = options.newWorkbookName;
+      }
     });
   }
 

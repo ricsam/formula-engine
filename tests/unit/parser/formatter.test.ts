@@ -829,5 +829,53 @@ describe("Formula Formatter", () => {
           expect(() => parseFormula(formatted)).not.toThrow();
         });
       });
+
+      test("should handle column names with trailing spaces", () => {
+        const testCases = [
+          "[@[Cars needed (M) ]]",
+          "Table1[Column with space ]",
+          "[@[Trailing space column ]]",
+          "Table1[Multiple trailing spaces  ]"
+        ];
+
+        testCases.forEach(formula => {
+          expect(() => parseFormula(formula)).not.toThrow();
+          const formatted = formatFormula(formula);
+          expect(() => parseFormula(formatted)).not.toThrow();
+          
+          // Verify that trailing spaces are preserved
+          const ast = parseFormula(formula);
+          const formattedAst = parseFormula(formatted);
+          if (ast.type === "structured-reference" && formattedAst.type === "structured-reference" &&
+              ast.cols?.startCol && formattedAst.cols?.startCol) {
+            expect(ast.cols.startCol).toBe(formattedAst.cols.startCol);
+          }
+        });
+      });
+
+      test("should parse and format complex formula with trailing spaces", () => {
+        const formula = "[@[Cars needed (M) ]]+[@[Cars needed (M) ]]*20/100";
+        
+        // First, let's see if we can parse it
+        expect(() => parseFormula(formula)).not.toThrow();
+        
+        // Then format it
+        const formatted = formatFormula(formula);
+        expect(formatted).toBeDefined();
+        
+        // And ensure it round-trips
+        const reparsed = parseFormula(formatted);
+        const reformatted = astToString(reparsed);
+        expect(reformatted).toBe(formatted);
+        
+        // Verify trailing spaces are preserved
+        const originalAst = parseFormula(formula);
+        const formattedAst = parseFormula(formatted);
+        if (originalAst.type === "binary-op" && formattedAst.type === "binary-op" &&
+            originalAst.left.type === "structured-reference" && formattedAst.left.type === "structured-reference") {
+          expect(originalAst.left.cols?.startCol).toBe("Cars needed (M) ");
+          expect(formattedAst.left.cols?.startCol).toBe("Cars needed (M) ");
+        }
+      });
     });
   });

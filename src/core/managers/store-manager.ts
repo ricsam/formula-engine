@@ -6,7 +6,10 @@ import {
   type SpilledValue,
 } from "../types";
 import { isCellInRange } from "../utils";
-import { dependencyNodeToKey } from "../utils/dependency-node-key";
+import {
+  dependencyNodeToKey,
+  keyToDependencyNode,
+} from "../utils/dependency-node-key";
 import type { NamedExpressionManager } from "./named-expression-manager";
 
 export class StoreManager {

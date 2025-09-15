@@ -395,10 +395,18 @@ export class Parser {
 
     // Get the end position from the last consumed token
     const currentPos = this.tokens.getPosition();
-    const endPos =
+    let endPos =
       currentPos > 0
         ? this.tokens.getTokens()[currentPos - 1]?.position?.end || startPos
         : startPos;
+
+    // For structured references, we need to include trailing spaces before the closing bracket
+    // Look ahead to see if we're about to hit a closing bracket, and if so, include any trailing spaces
+    if (this.tokens.match("RBRACKET")) {
+      const nextTokenPos = this.tokens.peek().position.start;
+      // Include any whitespace between the last token and the closing bracket
+      endPos = nextTokenPos;
+    }
 
     // Extract the original column name from the input, preserving all spacing and case
     const columnName = this.input.substring(startPos, endPos);
