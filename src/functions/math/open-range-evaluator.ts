@@ -71,9 +71,8 @@ export class OpenRangeEvaluator {
     }
 
     // Get frontier candidates that might spill into the range
-    const frontierCandidates = this.getFrontierCandidates(
+    const frontierCandidates = this.workbookManager.getFrontierCandidates(
       options.origin.range,
-      rawContent,
       options.origin
     );
 
@@ -110,9 +109,7 @@ export class OpenRangeEvaluator {
       const result =
         this.storeManager.evaluatedNodes.get(key)?.evaluationResult;
 
-      if (!result) {
-        context.frontierDependencies.add(key);
-      }
+      context.frontierDependencies.add(key);
 
       if (result) {
         if (result.type === "spilled-values") {
@@ -232,200 +229,22 @@ export class OpenRangeEvaluator {
       return;
     }
 
+    // When a spilled range intersects with our target range, we need to evaluate
+    // only the cells that fall within the intersection area.
+    //
+    // Example: If cell A10 contains a spilled range that covers A10:B11,
+    // and our target range is B10:INFINITY, then we only want to evaluate
+    // the intersection B10:B11 from the spilled range.
+    //
+    // The evaluateAllCells method expects the intersection to be passed
+    // so it can limit evaluation to only the relevant cells.
+
     return yield* options.spillResult.evaluateAllCells.call(this.evaluator, {
       context: options.context,
       evaluate: options.spillResult.evaluate,
       intersection: options.targetRange,
       origin: options.candidate,
     });
-  }
-
-  /**
-   * Get frontier candidates that might spill into the range
-   */
-  private getFrontierCandidates(
-    range: SpreadsheetRange,
-    sheetContent: Map<string, any>,
-    opts: {
-      sheetName: string;
-      workbookName: string;
-    }
-  ): CellAddress[] {
-    const candidates = new Set<string>();
-    const formulaCells = new Map<string, LocalCellAddress>();
-    const nonEmptyCells = new Map<string, LocalCellAddress>();
-
-    // Identify all formula and non-empty cells
-    for (const [key, value] of sheetContent) {
-      const addr = parseCellReference(key);
-      nonEmptyCells.set(key, addr);
-
-      if (typeof value === "string" && value.startsWith("=")) {
-        formulaCells.set(key, addr);
-      }
-    }
-
-    // Top frontier (for downward spills)
-    const colsToCheck = this.getColumnsInRange(range, sheetContent);
-    for (const col of colsToCheck) {
-      const nearestAbove = this.findNearestAbove(
-        col,
-        range.start.row,
-        nonEmptyCells,
-        formulaCells
-      );
-      if (nearestAbove) {
-        candidates.add(this.cellAddressToKey(nearestAbove));
-      }
-    }
-
-    // Left frontier (for rightward spills)
-    const rowsToCheck = this.getRowsInRange(range, sheetContent);
-    for (const row of rowsToCheck) {
-      const nearestLeft = this.findNearestLeft(
-        row,
-        range.start.col,
-        nonEmptyCells,
-        formulaCells
-      );
-      if (nearestLeft) {
-        candidates.add(this.cellAddressToKey(nearestLeft));
-      }
-    }
-
-    return Array.from(candidates).map((key) => ({
-      ...parseCellReference(key),
-      sheetName: opts.sheetName,
-      workbookName: opts.workbookName,
-    }));
-  }
-
-  /**
-   * Get columns that intersect with the range
-   */
-  private getColumnsInRange(
-    range: SpreadsheetRange,
-    sheetContent: Map<string, any>
-  ): number[] {
-    const cols = new Set<number>();
-
-    // Always include the starting column
-    cols.add(range.start.col);
-
-    // Add all columns from sheet content that are >= start col
-    for (const [key] of sheetContent) {
-      const { colIndex } = parseCellReference(key);
-      if (colIndex >= range.start.col) {
-        if (
-          range.end.col.type === "number" &&
-          colIndex <= range.end.col.value
-        ) {
-          cols.add(colIndex);
-        } else if (range.end.col.type === "infinity") {
-          cols.add(colIndex);
-        }
-      }
-    }
-
-    return Array.from(cols).sort((a, b) => a - b);
-  }
-
-  /**
-   * Get rows that intersect with the range
-   */
-  private getRowsInRange(
-    range: SpreadsheetRange,
-    sheetContent: Map<string, any>
-  ): number[] {
-    const rows = new Set<number>();
-
-    // Always include the starting row
-    rows.add(range.start.row);
-
-    // Add all rows from sheet content that are >= start row
-    for (const [key] of sheetContent) {
-      const { rowIndex } = parseCellReference(key);
-      if (rowIndex >= range.start.row) {
-        if (
-          range.end.row.type === "number" &&
-          rowIndex <= range.end.row.value
-        ) {
-          rows.add(rowIndex);
-        } else if (range.end.row.type === "infinity") {
-          rows.add(rowIndex);
-        }
-      }
-    }
-
-    return Array.from(rows).sort((a, b) => a - b);
-  }
-
-  /**
-   * Find the nearest non-empty cell above the given row in the specified column
-   */
-  private findNearestAbove(
-    col: number,
-    beforeRow: number,
-    nonEmptyCells: Map<string, LocalCellAddress>,
-    formulaCells: Map<string, LocalCellAddress>
-  ): LocalCellAddress | null {
-    let nearestRow = -1;
-    let nearestAddr: LocalCellAddress | null = null;
-
-    for (const [key, addr] of nonEmptyCells) {
-      if (
-        addr.colIndex === col &&
-        addr.rowIndex < beforeRow &&
-        addr.rowIndex > nearestRow
-      ) {
-        nearestRow = addr.rowIndex;
-        nearestAddr = addr;
-      }
-    }
-
-    // Only return if it's a formula cell
-    if (nearestAddr) {
-      const key = this.cellAddressToKey(nearestAddr);
-      if (formulaCells.has(key)) {
-        return nearestAddr;
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Find the nearest non-empty cell to the left of the given column in the specified row
-   */
-  private findNearestLeft(
-    row: number,
-    beforeCol: number,
-    nonEmptyCells: Map<string, LocalCellAddress>,
-    formulaCells: Map<string, LocalCellAddress>
-  ): LocalCellAddress | null {
-    let nearestCol = -1;
-    let nearestAddr: LocalCellAddress | null = null;
-
-    for (const [key, addr] of nonEmptyCells) {
-      if (
-        addr.rowIndex === row &&
-        addr.colIndex < beforeCol &&
-        addr.colIndex > nearestCol
-      ) {
-        nearestCol = addr.colIndex;
-        nearestAddr = addr;
-      }
-    }
-
-    // Only return if it's a formula cell
-    if (nearestAddr) {
-      const key = this.cellAddressToKey(nearestAddr);
-      if (formulaCells.has(key)) {
-        return nearestAddr;
-      }
-    }
-
-    return null;
   }
 
   /**

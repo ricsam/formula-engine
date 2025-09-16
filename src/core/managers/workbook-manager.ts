@@ -40,6 +40,10 @@ export class WorkbookManager {
     this.workbooks.delete(workbookName);
   }
 
+  isContentEmpty(content: SerializedCellValue): boolean {
+    return content === "" || content === undefined;
+  }
+
   renameWorkbook(opts: {
     workbookName: string;
     newWorkbookName: string;
@@ -57,6 +61,25 @@ export class WorkbookManager {
     this.workbooks.clear();
     workbooks.forEach((workbook, workbookName) => {
       this.workbooks.set(workbookName, workbook);
+      workbook.sheets.forEach((sheet) => {
+        sheet.rows = [];
+        sheet.cols = [];
+        sheet.content.forEach((value, key) => {
+          this.setCellContent(
+            {
+              workbookName,
+              sheetName: sheet.name,
+              colIndex: parseCellReference(key).colIndex,
+              rowIndex: parseCellReference(key).rowIndex,
+            },
+            value,
+            {
+              sheet,
+              buildingFromScratch: true,
+            }
+          );
+        });
+      });
     });
   }
 
@@ -87,6 +110,8 @@ export class WorkbookManager {
       name: sheetName,
       index: workbook.sheets.size,
       content: new Map(),
+      rows: [],
+      cols: [],
     };
 
     if (workbook.sheets.has(sheet.name)) {
@@ -193,36 +218,78 @@ export class WorkbookManager {
     return sheet.content;
   }
 
-  setCellContent(address: CellAddress, content: SerializedCellValue): void {
-    const sheet = this.getSheet({
-      sheetName: address.sheetName,
-      workbookName: address.workbookName,
-    });
+  /**
+   * Inserts an item into a sorted array by number, maintaining sort order.
+   * If an item with the same number and key already exists, it won't be added again.
+   */
+  private insertSorted(
+    array: { number: number; key: string }[],
+    item: { number: number; key: string }
+  ): void {
+    // Check if item already exists (same number and key)
+    const existingIndex = array.findIndex(
+      (existing) => existing.number === item.number && existing.key === item.key
+    );
+
+    if (existingIndex !== -1) {
+      // Item already exists, no need to add it again
+      return;
+    }
+
+    // Find the insertion point using binary search for efficiency
+    let left = 0;
+    let right = array.length;
+
+    while (left < right) {
+      const mid = Math.floor((left + right) / 2);
+      if (array[mid]!.number < item.number) {
+        left = mid + 1;
+      } else {
+        right = mid;
+      }
+    }
+
+    // Insert at the found position
+    array.splice(left, 0, item);
+  }
+
+  setCellContent(
+    address: CellAddress,
+    content: SerializedCellValue,
+    options?: {
+      /**
+       * for extra performance, if the sheet is already known, it can be passed in
+       */
+      sheet?: Sheet;
+      /**
+       * if the sheet is being built from scratch, we can skip some checks
+       */
+      buildingFromScratch?: boolean;
+    }
+  ): void {
+    const sheet =
+      options?.sheet ||
+      this.getSheet({
+        sheetName: address.sheetName,
+        workbookName: address.workbookName,
+      });
 
     if (!sheet) {
       throw new Error("Sheet not found");
     }
 
-    sheet.content.set(getCellReference(address), content);
-  }
-
-  reevaluateSheet(
-    opts: { sheetName: string; workbookName: string },
-    evaluateCallback: (address: CellAddress) => void
-  ): void {
-    const sheet = this.getSheet(opts);
-
-    if (!sheet) {
-      throw new Error(`Sheet not found for [${opts.workbookName}]!${opts.sheetName}`);
-    }
-
-    for (const key of sheet.content.keys()) {
-      const address = parseCellReference(key);
-      evaluateCallback({
-        ...address,
-        sheetName: opts.sheetName,
-        workbookName: opts.workbookName,
-      });
+    const adr = getCellReference(address);
+    if (this.isContentEmpty(content)) {
+      if (!options?.buildingFromScratch) {
+        sheet.content.delete(adr);
+        // Remove from rows and cols arrays when content is deleted
+        sheet.rows = sheet.rows.filter((row) => row.key !== adr);
+        sheet.cols = sheet.cols.filter((col) => col.key !== adr);
+      }
+    } else {
+      sheet.content.set(adr, content);
+      this.insertSorted(sheet.rows, { number: address.rowIndex, key: adr });
+      this.insertSorted(sheet.cols, { number: address.colIndex, key: adr });
     }
   }
 
@@ -244,7 +311,19 @@ export class WorkbookManager {
 
     // Repopulate with new content
     newContent.forEach((value, key) => {
-      sheet.content.set(key, value);
+      this.setCellContent(
+        {
+          workbookName: opts.workbookName,
+          sheetName: opts.sheetName,
+          colIndex: parseCellReference(key).colIndex,
+          rowIndex: parseCellReference(key).rowIndex,
+        },
+        value,
+        {
+          sheet,
+          buildingFromScratch: true,
+        }
+      );
     });
   }
 
@@ -273,8 +352,7 @@ export class WorkbookManager {
    */
   clearSpreadsheetRange(
     opts: { sheetName: string; workbookName: string },
-    range: SpreadsheetRange,
-    setSheetContent: (content: Map<string, SerializedCellValue>) => void
+    range: SpreadsheetRange
   ) {
     // Check if range has infinite ends - not supported for now
     if (
@@ -312,7 +390,263 @@ export class WorkbookManager {
       }
     }
 
-    // Update sheet content in a single operation
-    setSheetContent(newContent);
+    this.setSheetContent(opts, newContent);
+  }
+
+  /**
+   * Get all cells in specific columns within the sheet
+   */
+  private getCellsInColumns(
+    sheet: Sheet,
+    columns: number[]
+  ): { col: number; cells: { row: number; key: string }[] }[] {
+    const result: { col: number; cells: { row: number; key: string }[] }[] = [];
+
+    for (const col of columns) {
+      const cells: { row: number; key: string }[] = [];
+
+      // Use binary search to find the range of cells in this column
+      const startIdx = this.findFirstInList(sheet.cols, col);
+      if (startIdx !== -1) {
+        let idx = startIdx;
+        while (idx < sheet.cols.length && sheet.cols[idx]!.number === col) {
+          const cellRef = sheet.cols[idx]!.key;
+          const { rowIndex } = parseCellReference(cellRef);
+          cells.push({ row: rowIndex, key: cellRef });
+          idx++;
+        }
+      }
+
+      if (cells.length > 0) {
+        // Sort cells by row number
+        cells.sort((a, b) => a.row - b.row);
+        result.push({ col, cells });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Get all cells in specific rows within the sheet
+   */
+  private getCellsInRows(
+    sheet: Sheet,
+    rows: number[]
+  ): { row: number; cells: { col: number; key: string }[] }[] {
+    const result: { row: number; cells: { col: number; key: string }[] }[] = [];
+
+    for (const row of rows) {
+      const cells: { col: number; key: string }[] = [];
+
+      // Use binary search to find the range of cells in this row
+      const startIdx = this.findFirstInList(sheet.rows, row);
+      if (startIdx !== -1) {
+        let idx = startIdx;
+        while (idx < sheet.rows.length && sheet.rows[idx]!.number === row) {
+          const cellRef = sheet.rows[idx]!.key;
+          const { colIndex } = parseCellReference(cellRef);
+          cells.push({ col: colIndex, key: cellRef });
+          idx++;
+        }
+      }
+
+      if (cells.length > 0) {
+        // Sort cells by column number
+        cells.sort((a, b) => a.col - b.col);
+        result.push({ row, cells });
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Binary search to find the first cell in a specific row (or column)
+   */
+  private findFirstInList(
+    list: { number: number; key: string }[],
+    targetNum: number
+  ): number {
+    let left = 0;
+    let right = list.length - 1;
+    let result = -1;
+
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2);
+      if (list[mid]!.number === targetNum) {
+        result = mid;
+        // Continue searching to the left to find the first occurrence
+        right = mid - 1;
+      } else if (list[mid]!.number < targetNum) {
+        left = mid + 1;
+      } else {
+        right = mid - 1;
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Get frontier candidates that might spill into the range
+   * A frontier candidate is a formula cell located above or to the left of the range
+   * with no blocking cells between it and the range
+   */
+  getFrontierCandidates(
+    range: SpreadsheetRange,
+    opts: {
+      sheetName: string;
+      workbookName: string;
+    }
+  ): CellAddress[] {
+    const candidates = new Set<string>();
+
+    const sheet = this.getSheet({
+      sheetName: opts.sheetName,
+      workbookName: opts.workbookName,
+    });
+
+    if (!sheet) {
+      return [];
+    }
+
+    // Get columns that intersect with the range
+    const colsToCheck = this.getColumnsInRange(range, sheet);
+
+    // For each column, find the nearest formula cell above the range
+    for (const col of colsToCheck) {
+      const cellsInCol = this.getCellsInColumns(sheet, [col])[0];
+      if (cellsInCol) {
+        const nearestAbove = this.findNearestFormulaAbove(
+          cellsInCol.cells,
+          range.start.row,
+          sheet
+        );
+        if (nearestAbove) {
+          candidates.add(nearestAbove);
+        }
+      }
+    }
+
+    // Get rows that intersect with the range
+    const rowsToCheck = this.getRowsInRange(range, sheet);
+
+    // For each row, find the nearest formula cell to the left of the range
+    for (const row of rowsToCheck) {
+      const cellsInRow = this.getCellsInRows(sheet, [row])[0];
+      if (cellsInRow) {
+        const nearestLeft = this.findNearestFormulaLeft(
+          cellsInRow.cells,
+          range.start.col,
+          sheet
+        );
+        if (nearestLeft) {
+          candidates.add(nearestLeft);
+        }
+      }
+    }
+
+    return Array.from(candidates).map((key) => ({
+      ...parseCellReference(key),
+      sheetName: opts.sheetName,
+      workbookName: opts.workbookName,
+    }));
+  }
+
+  /**
+   * Find the nearest formula cell above the given row in a column
+   */
+  private findNearestFormulaAbove(
+    cellsInCol: { row: number; key: string }[],
+    beforeRow: number,
+    sheet: Sheet
+  ): string | null {
+    // Search from bottom to top (reverse order since cells are sorted by row)
+    for (let i = cellsInCol.length - 1; i >= 0; i--) {
+      const cell = cellsInCol[i];
+      if (!cell || cell.row >= beforeRow) continue;
+
+      const content = sheet.content.get(cell.key);
+      if (typeof content === "string" && content.startsWith("=")) {
+        return cell.key;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Find the nearest formula cell to the left of the given column in a row
+   */
+  private findNearestFormulaLeft(
+    cellsInRow: { col: number; key: string }[],
+    beforeCol: number,
+    sheet: Sheet
+  ): string | null {
+    // Search from right to left (reverse order since cells are sorted by col)
+    for (let i = cellsInRow.length - 1; i >= 0; i--) {
+      const cell = cellsInRow[i];
+      if (!cell || cell.col >= beforeCol) continue;
+
+      const content = sheet.content.get(cell.key);
+      if (typeof content === "string" && content.startsWith("=")) {
+        return cell.key;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Get columns that intersect with the range
+   */
+  private getColumnsInRange(range: SpreadsheetRange, sheet: Sheet): number[] {
+    const cols = new Set<number>();
+
+    // Always include the starting column
+    cols.add(range.start.col);
+
+    // Find all unique columns in the sheet that are within the range
+    for (const { number: colIndex } of sheet.cols) {
+      if (colIndex >= range.start.col) {
+        if (
+          range.end.col.type === "number" &&
+          colIndex <= range.end.col.value
+        ) {
+          cols.add(colIndex);
+        } else if (range.end.col.type === "infinity") {
+          cols.add(colIndex);
+        }
+      }
+    }
+
+    return Array.from(cols).sort((a, b) => a - b);
+  }
+
+  /**
+   * Get rows that intersect with the range
+   */
+  private getRowsInRange(range: SpreadsheetRange, sheet: Sheet): number[] {
+    const rows = new Set<number>();
+
+    // Always include the starting row
+    rows.add(range.start.row);
+
+    // Find all unique rows in the sheet that are within the range
+    for (const { number: rowIndex } of sheet.rows) {
+      if (rowIndex >= range.start.row) {
+        if (
+          range.end.row.type === "number" &&
+          rowIndex <= range.end.row.value
+        ) {
+          rows.add(rowIndex);
+        } else if (range.end.row.type === "infinity") {
+          rows.add(rowIndex);
+        }
+      }
+    }
+
+    return Array.from(rows).sort((a, b) => a - b);
   }
 }

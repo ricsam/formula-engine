@@ -262,9 +262,9 @@ describe("SUM function", () => {
       workbookName: sheetAddress.workbookName,
     });
 
-    // expect(cell("C1")).toBe(60); // 10 + 20 + 30
+    expect(cell("C1")).toBe(60); // 10 + 20 + 30
     expect(cell("C2", true)).toBe(80); // 10 + 20 + 30 + 5 + 15
-    // expect(cell("C3")).toBe(35); // 25 + 10
+    expect(cell("C3")).toBe(35); // 25 + 10
   });
 
   test("with cross-sheet references", () => {
@@ -358,7 +358,7 @@ describe("SUM function", () => {
       sheetAddress,
       new Map<string, SerializedCellValue>([
         ["A1", "=SEQUENCE(3, 2, 10, 5)"], // Creates 2x3 array starting at 10, step 5
-        // ["D1", "=SUM(A1:B3)"], // Sum the entire spilled array
+        ["D1", "=SUM(A1:B3)"], // Sum the entire spilled array
         ["D2", "=SUM(A1:A3)"], // Sum first column of spilled array
       ])
     );
@@ -368,7 +368,7 @@ describe("SUM function", () => {
     // A2: 20, B2: 25
     // A3: 30, B3: 35
     // Total: 10 + 15 + 20 + 25 + 30 + 35 = 135
-    // expect(cell("D1")).toBe(135);
+    expect(cell("D1")).toBe(135);
     expect(cell("D2", true)).toBe(60); // 10 + 20 + 30
   });
 

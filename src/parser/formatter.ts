@@ -444,7 +444,7 @@ export function formatFormula(formula: string): string {
 export function normalizeSerializedCellValue(
   value: SerializedCellValue
 ): SerializedCellValue {
-  if (value === undefined || value === "") return undefined;
+  if (value === undefined || value === "") return "";
 
   if (typeof value === "string" && value.startsWith("=")) {
     return `=${formatFormula(value.slice(1))}`;

@@ -371,18 +371,11 @@ describe("Sheets", () => {
     setCellContent("Sheet1", "A1", 20);
 
     // Re-evaluate specific sheet
-    engine.reevaluateSheet({ workbookName, sheetName: "Sheet1" });
     expect(cell("Sheet1", "B1")).toBe(40); // 20 * 2
 
     // Re-evaluate all sheets
     engine.reevaluate();
     expect(cell("Sheet2", "A1")).toBe(120); // 40 * 3
-  });
-
-  test("should throw error when re-evaluating non-existent sheet", () => {
-    expect(() => {
-      engine.reevaluateSheet({ workbookName, sheetName: "NonExistent" });
-    }).toThrow("Sheet not found");
   });
 
   test("should handle sheet events", () => {

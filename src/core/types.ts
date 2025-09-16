@@ -76,6 +76,12 @@ export type CellBoolean = {
 
 // Cell value types
 export type CellValue = CellNumber | CellString | CellBoolean | CellInfinity;
+/**
+ * undefined and "" are considered empty values
+ * undefineds are converted to "" in the engine
+ *
+ * any empty values are deleted from the sheet content
+ */
 export type SerializedCellValue = string | number | boolean | undefined;
 
 // Named expressions
@@ -114,6 +120,16 @@ export interface Sheet {
   name: string;
   index: number; // 0-based index of the sheet
   content: Map<string, SerializedCellValue>;
+  /**
+   * rows is a sorted array of rows in the sheet
+   * can be used to find the cells in a row
+   */
+  rows: { number: number; key: string }[];
+  /**
+   * cols is a sorted array of columns in the sheet
+   * can be used to find the cells in a column
+   */
+  cols: { number: number; key: string }[];
 }
 
 export interface Workbook {
@@ -201,7 +217,8 @@ export type SpilledValuesEvaluationResult = {
    * column D should be evaluated and cells producing spilled values that spill onto D:D.
    *
    * In order to evaluate spilled cells in D:D the range evaluateAllCells need to get all cells in the
-   * the intersection of the spilled range and D:D, for that reason evaluateAllCells gets an intersection parameter.
+   * the intersection of the spilled range and D:D, for that reason evaluateAllCells gets an intersection parameter,
+   * where the intersection is relative to the origin.
    *
    * #### Producers:
    * In e.g. SEQUENCE and evaluateRange we have logic for which cells in a spilled range we should evaluate,
@@ -223,9 +240,16 @@ export type SpilledValuesEvaluationResult = {
   evaluateAllCells: (
     this: FormulaEvaluator,
     options: {
+      /**
+       * an intersection relative to the origin
+       */
       intersection?: SpreadsheetRange;
       evaluate: SpilledValuesEvaluator;
       context: EvaluationContext;
+      /**
+       * origin is the cell address that the spilled range is spilled from
+       * e.g. in A3=B2:B4 the origin is A3
+       */
       origin: CellAddress;
     }
   ) => IterableIterator<

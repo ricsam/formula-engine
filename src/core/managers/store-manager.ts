@@ -6,10 +6,7 @@ import {
   type SpilledValue,
 } from "../types";
 import { isCellInRange } from "../utils";
-import {
-  dependencyNodeToKey,
-  keyToDependencyNode,
-} from "../utils/dependency-node-key";
+import { dependencyNodeToKey } from "../utils/dependency-node-key";
 import type { NamedExpressionManager } from "./named-expression-manager";
 
 export class StoreManager {
@@ -31,7 +28,7 @@ export class StoreManager {
 
   constructor(private namedExpressionManager: NamedExpressionManager) {}
 
-  isSpilled(cellAddress: CellAddress): SpilledValue | undefined {
+  getSpillValue(cellAddress: CellAddress): SpilledValue | undefined {
     for (const spilledValue of this.spilledValues.values()) {
       if (spilledValue.origin.sheetName !== cellAddress.sheetName) {
         continue;
@@ -56,7 +53,7 @@ export class StoreManager {
      */
     passedSpilledValue?: SpilledValue
   ): { address: CellAddress; spillOffset: { x: number; y: number } } {
-    const spilledValue = passedSpilledValue ?? this.isSpilled(cellAddress);
+    const spilledValue = passedSpilledValue ?? this.getSpillValue(cellAddress);
     if (!spilledValue) {
       throw new Error("Cell is not spilled");
     }
@@ -88,7 +85,7 @@ export class StoreManager {
     cellAddress: CellAddress,
     context: EvaluationContext
   ): FunctionEvaluationResult | undefined {
-    const spilled = this.isSpilled(cellAddress);
+    const spilled = this.getSpillValue(cellAddress);
     if (spilled) {
       const spillSource = this.getSpilledAddress(cellAddress, spilled);
       const spillOrigin = this.evalTimeSafeEvaluateCell(

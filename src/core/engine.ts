@@ -109,7 +109,7 @@ export class FormulaEngine {
   getCellValue(cellAddress: CellAddress, debug?: boolean): SerializedCellValue {
     const result = this.getCellEvaluationResult(cellAddress);
     if (!result) {
-      return undefined;
+      return "";
     }
 
     return this.evaluationManager.evaluationResultToSerializedValue(
@@ -502,25 +502,14 @@ export class FormulaEngine {
   //#endregion
 
   //#region Evaluation
-  reevaluateSheet(opts: { sheetName: string; workbookName: string }) {
-    this.workbookManager.reevaluateSheet(opts, (address) => {
-      this.evaluationManager.evaluateCell(address);
-    });
-  }
 
   /**
    * Re-evaluates all sheets to ensure all dependencies are resolved correctly
+   * 
+   * but just clears the evaluation cache
    */
   reevaluate() {
     this.evaluationManager.clearEvaluationCache();
-    for (const workbook of this.workbookManager.getWorkbooks().values()) {
-      for (const sheet of workbook.sheets.values()) {
-        this.reevaluateSheet({
-          sheetName: sheet.name,
-          workbookName: workbook.name,
-        });
-      }
-    }
   }
   //#endregion
 
@@ -553,9 +542,11 @@ export class FormulaEngine {
     opts: { sheetName: string; workbookName: string },
     range: SpreadsheetRange
   ) {
-    this.workbookManager.clearSpreadsheetRange(opts, range, (content) =>
-      this.setSheetContent(opts, content)
-    );
+    this.workbookManager.clearSpreadsheetRange(opts, range);
+
+    // Re-evaluate all sheets to ensure all dependencies are resolved correctly
+    this.reevaluate();
+    this.eventManager.emitUpdate();
   }
   //#endregion
 

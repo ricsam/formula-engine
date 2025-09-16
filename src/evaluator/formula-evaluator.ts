@@ -444,12 +444,51 @@ export class FormulaEvaluator {
           return result;
         }
       },
-      evaluateAllCells: function* ({ evaluate, intersection, context }) {
+      evaluateAllCells: function* ({
+        evaluate,
+        intersection,
+        context,
+        origin,
+      }) {
         let range = node.range;
         if (intersection) {
+          // When we have an intersection, it's defined relative to where the spilled range
+          // will appear (the origin). However, we need to evaluate cells from the source
+          // range (node.range). So we must translate the intersection coordinates back
+          // to the source range's coordinate system.
+          //
+          // Example: If source range A1:C3 spills to D5:F7, and we want intersection E6:F7,
+          // we need to translate E6:F7 (relative to D5) to B2:C3 (relative to A1).
+
+          // Calculate the offset of the intersection from the spill origin
+          const intersectionDx = intersection.start.col - origin.colIndex;
+          const intersectionDy = intersection.start.row - origin.rowIndex;
+          // next we need to calculate the intersection relative to the source range
+          const projectedIntersection: SpreadsheetRange = {
+            start: {
+              col: node.range.start.col + intersectionDx,
+              row: node.range.start.row + intersectionDy,
+            },
+            end: {
+              col:
+                intersection.end.col.type === "number"
+                  ? {
+                      type: "number",
+                      value: intersection.end.col.value + intersectionDx,
+                    }
+                  : intersection.end.col,
+              row:
+                intersection.end.row.type === "number"
+                  ? {
+                      type: "number",
+                      value: intersection.end.row.value + intersectionDy,
+                    }
+                  : intersection.end.row,
+            },
+          };
           const calculateIntersection = getRangeIntersection(
             node.range,
-            intersection
+            projectedIntersection
           );
           if (calculateIntersection) {
             range = calculateIntersection;
