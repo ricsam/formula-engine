@@ -372,6 +372,21 @@ export function ExcelDemo() {
     setNewWorkbookName("");
   }, []);
 
+  // Delete table
+  const deleteTable = useCallback(
+    (tableName: string, workbookName: string) => {
+      try {
+        const success = engine.removeTable({ tableName, workbookName });
+        if (success) {
+          markUnsavedChanges();
+        }
+      } catch (error) {
+        console.error("Failed to delete table:", error);
+      }
+    },
+    [engine, markUnsavedChanges]
+  );
+
   // Create WorkbookComponent for grid
   const WorkbookComponent = useCallback(
     ({ workbookName }: { workbookName: string }) => {
@@ -1068,6 +1083,26 @@ export function ExcelDemo() {
                                     ? table.endRow.value + 1
                                     : "∞"}
                                 </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                  onClick={() => {
+                                    if (
+                                      confirm(
+                                        `Are you sure you want to delete table "${tableName}"?`
+                                      )
+                                    ) {
+                                      deleteTable(tableName, workbookName);
+                                    }
+                                  }}
+                                  title="Delete Table"
+                                  data-testid={`delete-table-${tableName}`}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </Button>
                               </div>
                             </div>
                           )
