@@ -120,16 +120,6 @@ export interface Sheet {
   name: string;
   index: number; // 0-based index of the sheet
   content: Map<string, SerializedCellValue>;
-  /**
-   * rows is a sorted array of rows in the sheet
-   * can be used to find the cells in a row
-   */
-  rows: { number: number; key: string }[];
-  /**
-   * cols is a sorted array of columns in the sheet
-   * can be used to find the cells in a column
-   */
-  cols: { number: number; key: string }[];
 }
 
 export interface Workbook {

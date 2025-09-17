@@ -258,7 +258,7 @@ describe("FormulaEngine", () => {
       { workbookName, sheetName: "Sheet1" },
       new Map([["C1", "=D1+E1"]])
     );
-    engine._storeManager.evaluatedNodes.set(
+    engine._storeManager.setEvaluatedNode(
       dependencyNodeToKey({
         address: { colIndex: 0, rowIndex: 0 },
         sheetName: sheet.name,
@@ -279,7 +279,7 @@ describe("FormulaEngine", () => {
         ]),
       }
     );
-    engine._storeManager.evaluatedNodes.set(
+    engine._storeManager.setEvaluatedNode(
       dependencyNodeToKey({
         address: { colIndex: 1, rowIndex: 0 },
         sheetName: sheet.name,
@@ -300,7 +300,7 @@ describe("FormulaEngine", () => {
         ]),
       }
     );
-    engine._storeManager.evaluatedNodes.set(
+    engine._storeManager.setEvaluatedNode(
       dependencyNodeToKey({
         address: { colIndex: 2, rowIndex: 0 },
         sheetName: sheet.name,

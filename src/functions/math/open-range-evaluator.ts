@@ -107,7 +107,7 @@ export class OpenRangeEvaluator {
       }
 
       const result =
-        this.storeManager.evaluatedNodes.get(key)?.evaluationResult;
+        this.storeManager.getEvaluatedNode(key)?.evaluationResult;
 
       context.frontierDependencies.add(key);
 

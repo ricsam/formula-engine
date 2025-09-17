@@ -8,8 +8,56 @@ import type {
 } from "../types";
 import { getCellReference, parseCellReference } from "../utils";
 
+interface IndexEntry {
+  number: number;
+  key: string;
+}
+
+interface SheetIndexes {
+  // lookup maps - cells grouped by row/column
+  rowGroups: Map<number, IndexEntry[]>; // row number -> cells in that row (sorted by col)
+  colGroups: Map<number, IndexEntry[]>; // col number -> cells in that col (sorted by row)
+
+  // Sorted flat indexes - for finding cells before a given row/col
+  cellsSortedByRow: IndexEntry[];
+  cellsSortedByCol: IndexEntry[];
+}
+
 export class WorkbookManager {
   private workbooks: Map<string, Workbook> = new Map();
+
+  // Map from "workbookName|sheetName" to indexes
+  private sheetIndexes: Map<string, SheetIndexes> = new Map();
+
+  /**
+   * Generate a key for the sheet indexes map
+   */
+  private getSheetIndexKey(workbookName: string, sheetName: string): string {
+    return `${workbookName}|${sheetName}`;
+  }
+
+  /**
+   * Get or create indexes for a sheet
+   */
+  private getSheetIndexes(
+    workbookName: string,
+    sheetName: string
+  ): SheetIndexes {
+    const key = this.getSheetIndexKey(workbookName, sheetName);
+    let indexes = this.sheetIndexes.get(key);
+
+    if (!indexes) {
+      indexes = {
+        rowGroups: new Map(),
+        colGroups: new Map(),
+        cellsSortedByRow: [],
+        cellsSortedByCol: [],
+      };
+      this.sheetIndexes.set(key, indexes);
+    }
+
+    return indexes;
+  }
 
   getSheets(workbookName: string): Map<string, Sheet> {
     const workbook = this.workbooks.get(workbookName);
@@ -34,9 +82,17 @@ export class WorkbookManager {
   }
 
   removeWorkbook(workbookName: string): void {
-    if (!this.workbooks.has(workbookName)) {
+    const workbook = this.workbooks.get(workbookName);
+    if (!workbook) {
       throw new Error("Workbook not found");
     }
+
+    // Clean up indexes for all sheets in this workbook
+    for (const sheetName of workbook.sheets.keys()) {
+      const key = this.getSheetIndexKey(workbookName, sheetName);
+      this.sheetIndexes.delete(key);
+    }
+
     this.workbooks.delete(workbookName);
   }
 
@@ -52,6 +108,18 @@ export class WorkbookManager {
     if (!workbook) {
       throw new Error("Workbook not found");
     }
+
+    // Update indexes for all sheets in this workbook
+    for (const sheetName of workbook.sheets.keys()) {
+      const oldKey = this.getSheetIndexKey(opts.workbookName, sheetName);
+      const newKey = this.getSheetIndexKey(opts.newWorkbookName, sheetName);
+      const indexes = this.sheetIndexes.get(oldKey);
+      if (indexes) {
+        this.sheetIndexes.set(newKey, indexes);
+        this.sheetIndexes.delete(oldKey);
+      }
+    }
+
     this.workbooks.set(opts.newWorkbookName, workbook);
     this.workbooks.delete(opts.workbookName);
     workbook.name = opts.newWorkbookName;
@@ -59,11 +127,18 @@ export class WorkbookManager {
 
   resetWorkbooks(workbooks: Map<string, Workbook>): void {
     this.workbooks.clear();
+    this.sheetIndexes.clear();
+
     workbooks.forEach((workbook, workbookName) => {
       this.workbooks.set(workbookName, workbook);
       workbook.sheets.forEach((sheet) => {
-        sheet.rows = [];
-        sheet.cols = [];
+        // Initialize indexes for this sheet
+        const indexes = this.getSheetIndexes(workbookName, sheet.name);
+        indexes.rowGroups.clear();
+        indexes.colGroups.clear();
+        indexes.cellsSortedByRow = [];
+        indexes.cellsSortedByCol = [];
+
         sheet.content.forEach((value, key) => {
           this.setCellContent(
             {
@@ -110,8 +185,6 @@ export class WorkbookManager {
       name: sheetName,
       index: workbook.sheets.size,
       content: new Map(),
-      rows: [],
-      cols: [],
     };
 
     if (workbook.sheets.has(sheet.name)) {
@@ -119,6 +192,9 @@ export class WorkbookManager {
     }
 
     workbook.sheets.set(sheetName, sheet);
+
+    // Initialize empty indexes for this sheet
+    this.getSheetIndexes(workbookName, sheetName);
 
     return sheet;
   }
@@ -141,6 +217,10 @@ export class WorkbookManager {
 
     // Remove the sheet
     workbook.sheets.delete(sheetName);
+
+    // Clean up indexes for this sheet
+    const key = this.getSheetIndexKey(workbookName, sheetName);
+    this.sheetIndexes.delete(key);
 
     return sheet;
   }
@@ -173,6 +253,15 @@ export class WorkbookManager {
     // Update sheets map
     workbook.sheets.set(newSheetName, sheet);
     workbook.sheets.delete(sheetName);
+
+    // Move indexes to new key
+    const oldKey = this.getSheetIndexKey(workbookName, sheetName);
+    const newKey = this.getSheetIndexKey(workbookName, newSheetName);
+    const indexes = this.sheetIndexes.get(oldKey);
+    if (indexes) {
+      this.sheetIndexes.set(newKey, indexes);
+      this.sheetIndexes.delete(oldKey);
+    }
 
     return sheet;
   }
@@ -216,6 +305,100 @@ export class WorkbookManager {
     }
 
     return sheet.content;
+  }
+
+  /**
+   * Add a cell to the grouped indexes
+   */
+  private addCellToGroups(
+    indexes: SheetIndexes,
+    rowIndex: number,
+    colIndex: number,
+    key: string
+  ): void {
+    // Add to row group (cells in this row, sorted by column)
+    let rowGroup = indexes.rowGroups.get(rowIndex);
+    if (!rowGroup) {
+      rowGroup = [];
+      indexes.rowGroups.set(rowIndex, rowGroup);
+    }
+    const colEntry: IndexEntry = { number: colIndex, key };
+    const colInsertIdx = this.findInsertIndex(rowGroup, colIndex);
+    rowGroup.splice(colInsertIdx, 0, colEntry);
+
+    // Add to column group (cells in this column, sorted by row)
+    let colGroup = indexes.colGroups.get(colIndex);
+    if (!colGroup) {
+      colGroup = [];
+      indexes.colGroups.set(colIndex, colGroup);
+    }
+    const rowEntry: IndexEntry = { number: rowIndex, key };
+    const rowInsertIdx = this.findInsertIndex(colGroup, rowIndex);
+    colGroup.splice(rowInsertIdx, 0, rowEntry);
+
+    // Add to sorted flat indexes
+    this.insertSorted(indexes.cellsSortedByRow, { number: rowIndex, key });
+    this.insertSorted(indexes.cellsSortedByCol, { number: colIndex, key });
+  }
+
+  /**
+   * Remove a cell from the grouped indexes
+   */
+  private removeCellFromGroups(
+    indexes: SheetIndexes,
+    rowIndex: number,
+    colIndex: number,
+    key: string
+  ): void {
+    // Remove from row group
+    const rowGroup = indexes.rowGroups.get(rowIndex);
+    if (rowGroup) {
+      const filteredGroup = rowGroup.filter((e) => e.key !== key);
+      if (filteredGroup.length === 0) {
+        indexes.rowGroups.delete(rowIndex);
+      } else {
+        indexes.rowGroups.set(rowIndex, filteredGroup);
+      }
+    }
+
+    // Remove from column group
+    const colGroup = indexes.colGroups.get(colIndex);
+    if (colGroup) {
+      const filteredGroup = colGroup.filter((e) => e.key !== key);
+      if (filteredGroup.length === 0) {
+        indexes.colGroups.delete(colIndex);
+      } else {
+        indexes.colGroups.set(colIndex, filteredGroup);
+      }
+    }
+
+    // Remove from sorted flat indexes
+    indexes.cellsSortedByRow = indexes.cellsSortedByRow.filter(
+      (item) => item.key !== key
+    );
+    indexes.cellsSortedByCol = indexes.cellsSortedByCol.filter(
+      (item) => item.key !== key
+    );
+  }
+
+
+  /**
+   * Find insertion index in sorted array
+   */
+  private findInsertIndex(entries: IndexEntry[], n: number): number {
+    let left = 0;
+    let right = entries.length;
+
+    while (left < right) {
+      const mid = Math.floor((left + right) / 2);
+      if (entries[mid]!.number < n) {
+        left = mid + 1;
+      } else {
+        right = mid;
+      }
+    }
+
+    return left;
   }
 
   /**
@@ -278,18 +461,27 @@ export class WorkbookManager {
       throw new Error("Sheet not found");
     }
 
+    const indexes = this.getSheetIndexes(
+      address.workbookName,
+      address.sheetName
+    );
     const adr = getCellReference(address);
+
     if (this.isContentEmpty(content)) {
       if (!options?.buildingFromScratch) {
         sheet.content.delete(adr);
-        // Remove from rows and cols arrays when content is deleted
-        sheet.rows = sheet.rows.filter((row) => row.key !== adr);
-        sheet.cols = sheet.cols.filter((col) => col.key !== adr);
+        // Remove from all indexes
+        this.removeCellFromGroups(
+          indexes,
+          address.rowIndex,
+          address.colIndex,
+          adr
+        );
       }
     } else {
       sheet.content.set(adr, content);
-      this.insertSorted(sheet.rows, { number: address.rowIndex, key: adr });
-      this.insertSorted(sheet.cols, { number: address.colIndex, key: adr });
+      // Add to all indexes
+      this.addCellToGroups(indexes, address.rowIndex, address.colIndex, adr);
     }
   }
 
@@ -394,98 +586,29 @@ export class WorkbookManager {
   }
 
   /**
-   * Get all cells in specific columns within the sheet
+   * Get all cells in a specific row (pre-computed from grouped index)
    */
-  private getCellsInColumns(
-    sheet: Sheet,
-    columns: number[]
-  ): { col: number; cells: { row: number; key: string }[] }[] {
-    const result: { col: number; cells: { row: number; key: string }[] }[] = [];
-
-    for (const col of columns) {
-      const cells: { row: number; key: string }[] = [];
-
-      // Use binary search to find the range of cells in this column
-      const startIdx = this.findFirstInList(sheet.cols, col);
-      if (startIdx !== -1) {
-        let idx = startIdx;
-        while (idx < sheet.cols.length && sheet.cols[idx]!.number === col) {
-          const cellRef = sheet.cols[idx]!.key;
-          const { rowIndex } = parseCellReference(cellRef);
-          cells.push({ row: rowIndex, key: cellRef });
-          idx++;
-        }
-      }
-
-      if (cells.length > 0) {
-        // Sort cells by row number
-        cells.sort((a, b) => a.row - b.row);
-        result.push({ col, cells });
-      }
-    }
-
-    return result;
+  private getCellsInRow(
+    workbookName: string,
+    sheetName: string,
+    row: number
+  ): IndexEntry[] {
+    const indexes = this.getSheetIndexes(workbookName, sheetName);
+    // Direct O(1) lookup from Map
+    return indexes.rowGroups.get(row) ?? [];
   }
 
   /**
-   * Get all cells in specific rows within the sheet
+   * Get all cells in a specific column (pre-computed from grouped index)
    */
-  private getCellsInRows(
-    sheet: Sheet,
-    rows: number[]
-  ): { row: number; cells: { col: number; key: string }[] }[] {
-    const result: { row: number; cells: { col: number; key: string }[] }[] = [];
-
-    for (const row of rows) {
-      const cells: { col: number; key: string }[] = [];
-
-      // Use binary search to find the range of cells in this row
-      const startIdx = this.findFirstInList(sheet.rows, row);
-      if (startIdx !== -1) {
-        let idx = startIdx;
-        while (idx < sheet.rows.length && sheet.rows[idx]!.number === row) {
-          const cellRef = sheet.rows[idx]!.key;
-          const { colIndex } = parseCellReference(cellRef);
-          cells.push({ col: colIndex, key: cellRef });
-          idx++;
-        }
-      }
-
-      if (cells.length > 0) {
-        // Sort cells by column number
-        cells.sort((a, b) => a.col - b.col);
-        result.push({ row, cells });
-      }
-    }
-
-    return result;
-  }
-
-  /**
-   * Binary search to find the first cell in a specific row (or column)
-   */
-  private findFirstInList(
-    list: { number: number; key: string }[],
-    targetNum: number
-  ): number {
-    let left = 0;
-    let right = list.length - 1;
-    let result = -1;
-
-    while (left <= right) {
-      const mid = Math.floor((left + right) / 2);
-      if (list[mid]!.number === targetNum) {
-        result = mid;
-        // Continue searching to the left to find the first occurrence
-        right = mid - 1;
-      } else if (list[mid]!.number < targetNum) {
-        left = mid + 1;
-      } else {
-        right = mid - 1;
-      }
-    }
-
-    return result;
+  private getCellsInColumn(
+    workbookName: string,
+    sheetName: string,
+    column: number
+  ): IndexEntry[] {
+    const indexes = this.getSheetIndexes(workbookName, sheetName);
+    // Direct O(1) lookup from Map
+    return indexes.colGroups.get(column) ?? [];
   }
 
   /**
@@ -512,38 +635,50 @@ export class WorkbookManager {
     }
 
     // Get columns that intersect with the range
-    const colsToCheck = this.getColumnsInRange(range, sheet);
+    const colsToCheck = this.getColumnsInRange(
+      range,
+      opts.workbookName,
+      opts.sheetName
+    );
 
     // For each column, find the nearest formula cell above the range
     for (const col of colsToCheck) {
-      const cellsInCol = this.getCellsInColumns(sheet, [col])[0];
-      if (cellsInCol) {
-        const nearestAbove = this.findNearestFormulaAbove(
-          cellsInCol.cells,
-          range.start.row,
-          sheet
-        );
-        if (nearestAbove) {
-          candidates.add(nearestAbove);
-        }
+      const cellsInCol = this.getCellsInColumn(
+        opts.workbookName,
+        opts.sheetName,
+        col
+      );
+      const nearestAbove = this.findNearestFormulaAbove(
+        cellsInCol,
+        range.start.row,
+        sheet
+      );
+      if (nearestAbove) {
+        candidates.add(nearestAbove);
       }
     }
 
     // Get rows that intersect with the range
-    const rowsToCheck = this.getRowsInRange(range, sheet);
+    const rowsToCheck = this.getRowsInRange(
+      range,
+      opts.workbookName,
+      opts.sheetName
+    );
 
     // For each row, find the nearest formula cell to the left of the range
     for (const row of rowsToCheck) {
-      const cellsInRow = this.getCellsInRows(sheet, [row])[0];
-      if (cellsInRow) {
-        const nearestLeft = this.findNearestFormulaLeft(
-          cellsInRow.cells,
-          range.start.col,
-          sheet
-        );
-        if (nearestLeft) {
-          candidates.add(nearestLeft);
-        }
+      const cellsInRow = this.getCellsInRow(
+        opts.workbookName,
+        opts.sheetName,
+        row
+      );
+      const nearestLeft = this.findNearestFormulaLeft(
+        cellsInRow,
+        range.start.col,
+        sheet
+      );
+      if (nearestLeft) {
+        candidates.add(nearestLeft);
       }
     }
 
@@ -558,14 +693,14 @@ export class WorkbookManager {
    * Find the nearest formula cell above the given row in a column
    */
   private findNearestFormulaAbove(
-    cellsInCol: { row: number; key: string }[],
+    cellsInCol: IndexEntry[],
     beforeRow: number,
     sheet: Sheet
   ): string | null {
-    // Search from bottom to top (reverse order since cells are sorted by row)
+    // Search from end to beginning (cells are sorted by row)
     for (let i = cellsInCol.length - 1; i >= 0; i--) {
       const cell = cellsInCol[i];
-      if (!cell || cell.row >= beforeRow) continue;
+      if (!cell || cell.number >= beforeRow) continue;
 
       const content = sheet.content.get(cell.key);
       if (typeof content === "string" && content.startsWith("=")) {
@@ -580,14 +715,14 @@ export class WorkbookManager {
    * Find the nearest formula cell to the left of the given column in a row
    */
   private findNearestFormulaLeft(
-    cellsInRow: { col: number; key: string }[],
+    cellsInRow: IndexEntry[],
     beforeCol: number,
     sheet: Sheet
   ): string | null {
-    // Search from right to left (reverse order since cells are sorted by col)
+    // Search from end to beginning (cells are sorted by column)
     for (let i = cellsInRow.length - 1; i >= 0; i--) {
       const cell = cellsInRow[i];
-      if (!cell || cell.col >= beforeCol) continue;
+      if (!cell || cell.number >= beforeCol) continue;
 
       const content = sheet.content.get(cell.key);
       if (typeof content === "string" && content.startsWith("=")) {
@@ -599,54 +734,92 @@ export class WorkbookManager {
   }
 
   /**
-   * Get columns that intersect with the range
+   * Get unique numbers (rows or columns) that intersect with a range dimension
    */
-  private getColumnsInRange(range: SpreadsheetRange, sheet: Sheet): number[] {
-    const cols = new Set<number>();
+  private getNumbersInRangeDimension(
+    list: { number: number; key: string }[],
+    startNum: number,
+    endDimension: { type: "number"; value: number } | { type: "infinity" }
+  ): number[] {
+    const numbers = new Set<number>();
 
-    // Always include the starting column
-    cols.add(range.start.col);
+    // Always include the starting number
+    numbers.add(startNum);
 
-    // Find all unique columns in the sheet that are within the range
-    for (const { number: colIndex } of sheet.cols) {
-      if (colIndex >= range.start.col) {
-        if (
-          range.end.col.type === "number" &&
-          colIndex <= range.end.col.value
-        ) {
-          cols.add(colIndex);
-        } else if (range.end.col.type === "infinity") {
-          cols.add(colIndex);
-        }
+    // Since the list is sorted, we can use binary search to find the start position
+    const startIdx = this.findFirstGreaterOrEqual(list, startNum);
+    if (startIdx === -1) return [startNum];
+
+    // Iterate from the start position
+    for (let i = startIdx; i < list.length; i++) {
+      const num = list[i]!.number;
+
+      // Check if we've gone past the end of a finite range
+      if (endDimension.type === "number" && num > endDimension.value) {
+        break;
+      }
+
+      numbers.add(num);
+    }
+
+    return Array.from(numbers);
+  }
+
+  /**
+   * Binary search to find the first element >= target
+   */
+  private findFirstGreaterOrEqual(
+    list: { number: number; key: string }[],
+    target: number
+  ): number {
+    if (list.length === 0) return -1;
+
+    let left = 0;
+    let right = list.length - 1;
+    let result = -1;
+
+    while (left <= right) {
+      const mid = Math.floor((left + right) / 2);
+      if (list[mid]!.number >= target) {
+        result = mid;
+        right = mid - 1;
+      } else {
+        left = mid + 1;
       }
     }
 
-    return Array.from(cols).sort((a, b) => a - b);
+    return result;
+  }
+
+  /**
+   * Get columns that intersect with the range
+   */
+  private getColumnsInRange(
+    range: SpreadsheetRange,
+    workbookName: string,
+    sheetName: string
+  ): number[] {
+    const indexes = this.getSheetIndexes(workbookName, sheetName);
+    return this.getNumbersInRangeDimension(
+      indexes.cellsSortedByCol,
+      range.start.col,
+      range.end.col
+    );
   }
 
   /**
    * Get rows that intersect with the range
    */
-  private getRowsInRange(range: SpreadsheetRange, sheet: Sheet): number[] {
-    const rows = new Set<number>();
-
-    // Always include the starting row
-    rows.add(range.start.row);
-
-    // Find all unique rows in the sheet that are within the range
-    for (const { number: rowIndex } of sheet.rows) {
-      if (rowIndex >= range.start.row) {
-        if (
-          range.end.row.type === "number" &&
-          rowIndex <= range.end.row.value
-        ) {
-          rows.add(rowIndex);
-        } else if (range.end.row.type === "infinity") {
-          rows.add(rowIndex);
-        }
-      }
-    }
-
-    return Array.from(rows).sort((a, b) => a - b);
+  private getRowsInRange(
+    range: SpreadsheetRange,
+    workbookName: string,
+    sheetName: string
+  ): number[] {
+    const indexes = this.getSheetIndexes(workbookName, sheetName);
+    return this.getNumbersInRangeDimension(
+      indexes.cellsSortedByRow,
+      range.start.row,
+      range.end.row
+    );
   }
 }
