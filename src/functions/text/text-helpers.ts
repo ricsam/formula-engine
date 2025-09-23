@@ -155,7 +155,7 @@ export function createMidSpilledResult(
     evaluate: (
       spilledCell,
       evalContext
-    ): SingleEvaluationResult | undefined => {
+    ): SingleEvaluationResult => {
       // Evaluate all arguments at this spilled position
       const spillTextResult = hasSpilledText
         ? textResult.evaluate(spilledCell, evalContext)

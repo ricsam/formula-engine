@@ -1,4 +1,5 @@
 import type { DependencyManager, EvaluationManager } from "src/core/managers";
+import type { StoreManager } from "src/core/managers/store-manager";
 import type {
   CellAddress,
   EvaluatedDependencyNode,
@@ -7,6 +8,7 @@ import type {
   SpreadsheetRange,
 } from "src/core/types";
 import { getCellReference, getRangeKey, indexToColumn } from "src/core/utils";
+import { dependencyNodeToKey } from "src/core/utils/dependency-node-key";
 
 export class EvaluationContext {
   private _currentCell: CellAddress;
@@ -24,6 +26,7 @@ export class EvaluationContext {
 
   constructor(
     private dependencyManager: DependencyManager,
+    private storeManager: StoreManager,
     currentCell: CellAddress,
     currentDepNode?: EvaluatedDependencyNode
   ) {
@@ -82,7 +85,9 @@ export class EvaluationContext {
     if (this.isFrontierDependencyDiscarded(dependency, range)) {
       return;
     }
-    if (this.getTransitiveDependenciesResolved(new Set([dependency]))) {
+    // Only discard if the frontier dependency itself is resolved
+    const depNode = this.storeManager.getEvaluatedNode(dependency);
+    if (depNode?.resolved) {
       this.discardFrontierDependency(dependency, range);
     }
   }
@@ -91,7 +96,9 @@ export class EvaluationContext {
     if (this.isFrontierDependencyDiscarded(dependency, range)) {
       return;
     }
-    if (this.getTransitiveDependenciesResolved(new Set([dependency]))) {
+    // Only upgrade if the frontier dependency itself is resolved
+    const depNode = this.storeManager.getEvaluatedNode(dependency);
+    if (depNode?.resolved) {
       this.addDependency(dependency);
     }
   }
@@ -117,28 +124,85 @@ export class EvaluationContext {
   }
 
   getTransitiveDependenciesResolved(deps: Set<string>) {
-    for (const dependency of this.dependencyManager.iterateOverTransitiveDependencies(
-      deps
-    )) {
-      if (dependency.updatedDirectDeps) {
-        return false;
+    // Get the current cell's dependency key to exclude self-references
+    const currentCellKey = dependencyNodeToKey({
+      address: this._currentCell,
+      sheetName: this._currentCell.sheetName,
+      workbookName: this._currentCell.workbookName,
+    });
+
+    // Track visited nodes to avoid infinite loops in circular dependencies
+    const visited = new Set<string>();
+    visited.add(currentCellKey); // Don't revisit the current cell
+
+    const checkResolved = (nodeKeys: Set<string>): boolean => {
+      for (const nodeKey of nodeKeys) {
+        if (visited.has(nodeKey)) {
+          continue; // Skip already visited nodes (circular references)
+        }
+        visited.add(nodeKey);
+
+        const node = this.storeManager.getEvaluatedNode(nodeKey);
+        if (!node) {
+          return false; // Node doesn't exist yet, not resolved
+        }
+
+        if (node.didUpdate) {
+          return false; // Node itself is not update
+        }
+
+        // Check the node's direct dependencies
+        const directDeps = this.dependencyManager.getNodeDeps(nodeKey);
+        if (!checkResolved(directDeps)) {
+          return false;
+        }
+
+        const frontierDeps =
+          this.dependencyManager.getNodeFrontierDependencies(nodeKey);
+        if (!checkResolved(frontierDeps)) {
+          return false;
+        }
       }
-    }
-    return true;
+      return true;
+    };
+
+    return checkResolved(deps);
   }
 
   getEvaluatedDependencyNode(
     evaluationResult: FunctionEvaluationResult,
     originSpillResult?: SingleEvaluationResult
   ): EvaluatedDependencyNode {
+    // A node is resolved when:
+    // 1. This context didn't update any dependencies during evaluation
+    // 2. AND all its transitive dependencies (including frontier) are also resolved
+    const thisNodeDidNotUpdateDeps = !this.getDependenciesDidUpdate();
+    const depsToCheck = new Set(this.dependencies);
+    const discardedFrontierDepsToCheck = new Set<string>();
+    for (const discardedFrontierDep of this.discardedFrontierDependencies.values()) {
+      for (const dep of discardedFrontierDep) {
+        discardedFrontierDepsToCheck.add(dep);
+      }
+    }
+    for (const frontierDep of this.frontierDependencies.values()) {
+      for (const dep of frontierDep) {
+        if (discardedFrontierDepsToCheck.has(dep)) {
+          continue;
+        }
+        depsToCheck.add(dep);
+      }
+    }
+    const allTransitiveDepsResolved =
+      this.getTransitiveDependenciesResolved(depsToCheck);
+
     return {
       deps: this.dependencies,
       frontierDependencies: this.frontierDependencies,
       discardedFrontierDependencies: this.discardedFrontierDependencies,
       evaluationResult,
       originSpillResult,
-      resolved: this.getTransitiveDependenciesResolved(this.dependencies),
-      updatedDirectDeps: this.getDependenciesDidUpdate(),
+      didUpdate: !thisNodeDidNotUpdateDeps,
+      resolved: thisNodeDidNotUpdateDeps && allTransitiveDepsResolved,
     };
   }
 

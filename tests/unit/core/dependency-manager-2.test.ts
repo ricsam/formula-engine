@@ -101,7 +101,6 @@ describe("DependencyManager", () => {
         for (const cell of evalOrder("C1")) {
           evalCell(cell);
         }
-        evalCell("C1");
       };
 
       // Setup: Reproduce the exact scenario from the spec
@@ -163,7 +162,7 @@ describe("DependencyManager", () => {
             ],
           },
           "key": "C1",
-          "resolved": true,
+          "resolved": false,
         }
       `);
 
@@ -207,7 +206,7 @@ describe("DependencyManager", () => {
                 },
               ],
               "key": "B1",
-              "resolved": true,
+              "resolved": false,
             },
             {
               "key": "A1",
@@ -224,7 +223,7 @@ describe("DependencyManager", () => {
                   },
                 ],
                 "key": "A2",
-                "resolved": true,
+                "resolved": false,
               },
             ],
           },
@@ -301,7 +300,7 @@ describe("DependencyManager", () => {
                     ],
                   },
                   "key": "D11",
-                  "resolved": true,
+                  "resolved": false,
                 },
               ],
               "key": "B1",
@@ -322,20 +321,6 @@ describe("DependencyManager", () => {
               "resolved": true,
             },
           ],
-          "frontierDependencies": {
-            "B1:B3": [
-              {
-                "deps": [
-                  {
-                    "key": "F1",
-                    "resolved": true,
-                  },
-                ],
-                "key": "A2",
-                "resolved": true,
-              },
-            ],
-          },
           "key": "C1",
           "resolved": false,
         }
@@ -422,7 +407,7 @@ describe("DependencyManager", () => {
                         },
                       ],
                       "key": "D10",
-                      "resolved": true,
+                      "resolved": false,
                     },
                     {
                       "deps": [
@@ -437,36 +422,6 @@ describe("DependencyManager", () => {
                   ],
                   "frontierDependencies": {
                     "D11:D11": [
-                      {
-                        "deps": [
-                          {
-                            "deps": [
-                              {
-                                "key": "F1",
-                                "resolved": true,
-                              },
-                            ],
-                            "key": "A2",
-                            "resolved": true,
-                          },
-                          {
-                            "key": "A1",
-                            "resolved": true,
-                          },
-                        ],
-                        "key": "D10",
-                        "resolved": true,
-                      },
-                      {
-                        "deps": [
-                          {
-                            "key": "F1",
-                            "resolved": true,
-                          },
-                        ],
-                        "key": "A2",
-                        "resolved": true,
-                      },
                       {
                         "key": "C1",
                         "resolved": false,
@@ -495,7 +450,7 @@ describe("DependencyManager", () => {
                     },
                   ],
                   "key": "D10",
-                  "resolved": true,
+                  "resolved": false,
                 },
                 {
                   "deps": [
@@ -534,20 +489,6 @@ describe("DependencyManager", () => {
               "resolved": false,
             },
           ],
-          "frontierDependencies": {
-            "B1:B3": [
-              {
-                "deps": [
-                  {
-                    "key": "F1",
-                    "resolved": true,
-                  },
-                ],
-                "key": "A2",
-                "resolved": true,
-              },
-            ],
-          },
           "key": "C1",
           "resolved": false,
         }
@@ -575,6 +516,151 @@ describe("DependencyManager", () => {
         "A3",
         "C1",
       ]);
+
+      evaluate();
+
+      // C1 is now resolved
+      expect(dependencyTree("C1")).toMatchInlineSnapshot(`
+        {
+          "_debug": {
+            "activeFrontierDependencies": {
+              "B1:B3": [
+                "A2",
+              ],
+            },
+            "discardedFrontierDependencies": undefined,
+            "rawFrontierDependencies": {
+              "B1:B3": [
+                "A2",
+              ],
+            },
+          },
+          "deps": [
+            {
+              "deps": [
+                {
+                  "_debug": {
+                    "activeFrontierDependencies": {
+                      "D11:D11": [
+                        "D10",
+                        "A2",
+                        "C1",
+                      ],
+                    },
+                    "discardedFrontierDependencies": undefined,
+                    "rawFrontierDependencies": {
+                      "D11:D11": [
+                        "D10",
+                        "A2",
+                        "C1",
+                      ],
+                    },
+                  },
+                  "deps": [
+                    {
+                      "deps": [
+                        {
+                          "deps": [
+                            {
+                              "key": "F1",
+                              "resolved": true,
+                            },
+                          ],
+                          "key": "A2",
+                          "resolved": true,
+                        },
+                        {
+                          "key": "A1",
+                          "resolved": true,
+                        },
+                      ],
+                      "key": "D10",
+                      "resolved": true,
+                    },
+                    {
+                      "deps": [
+                        {
+                          "key": "F1",
+                          "resolved": true,
+                        },
+                      ],
+                      "key": "A2",
+                      "resolved": true,
+                    },
+                  ],
+                  "frontierDependencies": {
+                    "D11:D11": [
+                      {
+                        "key": "C1",
+                        "resolved": true,
+                        "self": true,
+                      },
+                    ],
+                  },
+                  "key": "D11",
+                  "resolved": true,
+                },
+                {
+                  "deps": [
+                    {
+                      "deps": [
+                        {
+                          "key": "F1",
+                          "resolved": true,
+                        },
+                      ],
+                      "key": "A2",
+                      "resolved": true,
+                    },
+                    {
+                      "key": "A1",
+                      "resolved": true,
+                    },
+                  ],
+                  "key": "D10",
+                  "resolved": true,
+                },
+                {
+                  "deps": [
+                    {
+                      "key": "F1",
+                      "resolved": true,
+                    },
+                  ],
+                  "key": "A2",
+                  "resolved": true,
+                },
+              ],
+              "key": "B1",
+              "resolved": true,
+            },
+            {
+              "key": "A1",
+              "resolved": true,
+            },
+            {
+              "deps": [
+                {
+                  "key": "F1",
+                  "resolved": true,
+                },
+              ],
+              "key": "A2",
+              "resolved": true,
+            },
+            {
+              "key": "B3",
+              "resolved": true,
+            },
+            {
+              "key": "A3",
+              "resolved": true,
+            },
+          ],
+          "key": "C1",
+          "resolved": true,
+        }
+      `);
     });
   });
 });

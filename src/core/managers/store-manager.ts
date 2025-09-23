@@ -119,6 +119,15 @@ export class StoreManager {
   }
 
   setEvaluatedNode(nodeKey: string, node: EvaluatedDependencyNode): void {
+    if (
+      node.evaluationResult &&
+      node.evaluationResult.type === "spilled-values" &&
+      !node.originSpillResult
+    ) {
+      throw new Error(
+        "Evaluation result is spilled-values but origin spill result is not set"
+      );
+    }
     this.evaluatedNodes.set(nodeKey, node);
   }
 

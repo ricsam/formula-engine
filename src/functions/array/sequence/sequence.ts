@@ -8,7 +8,7 @@ import {
   type PositiveInfinity,
   type ErrorEvaluationResult,
 } from "src/core/types";
-import { getCellReference } from "src/core/utils";
+import { getCellReference, isRangeOneCell } from "src/core/utils";
 import {
   getRangeIntersection,
   OpenRangeEvaluator,
@@ -259,6 +259,13 @@ export const SEQUENCE: FunctionDefinition = {
       value: start,
     };
 
+    if (isRangeOneCell(spillArea(context.currentCell))) {
+      return {
+        type: "value",
+        result: originResult,
+      };
+    }
+
     return {
       type: "spilled-values",
       spillArea,
@@ -278,7 +285,11 @@ export const SEQUENCE: FunctionDefinition = {
             (!isColumnsInfinite && x >= columns) ||
             (!isRowsInfinite && y >= rows)
           ) {
-            return undefined;
+            return {
+              type: "error",
+              err: FormulaError.ERROR,
+              message: "Error evaluating SEQUENCE",
+            };
           }
 
           // Calculate the sequential value for origin cell
@@ -303,7 +314,11 @@ export const SEQUENCE: FunctionDefinition = {
             (!isColumnsInfinite && x >= columns) ||
             (!isRowsInfinite && y >= rows)
           ) {
-            return undefined;
+            return {
+              type: "error",
+              err: FormulaError.ERROR,
+              message: "Error evaluating SEQUENCE",
+            };
           }
 
           // Calculate the sequential value

@@ -47,6 +47,7 @@ export class DependencyManager {
 
     const frontierDepsMap = node.frontierDependencies ?? new Map();
     const discardedDepsMap = node.discardedFrontierDependencies ?? new Map();
+    const deps = node.deps ?? new Set();
 
     const allFrontierDeps = new Set<string>();
     const allDiscardedDeps = new Set<string>();
@@ -54,6 +55,9 @@ export class DependencyManager {
     // Collect all frontier dependencies across all ranges
     for (const rangeDeps of frontierDepsMap.values()) {
       for (const dep of rangeDeps) {
+        if (deps.has(dep)) {
+          continue;
+        }
         allFrontierDeps.add(dep);
       }
     }
@@ -338,7 +342,6 @@ export class DependencyManager {
    */
   *iterateOverTransitiveDependencies(dependencies: Set<string>): Generator<{
     nodeKey: string;
-    updatedDirectDeps: boolean;
     resolved: boolean;
   }> {
     const visited = new Set<string>();
@@ -355,7 +358,6 @@ export class DependencyManager {
       // Yield information about this dependency
       yield {
         nodeKey: current,
-        updatedDirectDeps: node.updatedDirectDeps ?? false,
         resolved: node.resolved ?? false,
       };
 
@@ -462,7 +464,10 @@ export class DependencyManager {
             rawFrontierDepsMap.get(range) ?? new Set();
           const discardedRangeDeps: Set<string> =
             discardedFrontierDepsMap.get(range) ?? new Set();
-          const activeRangeDeps = rangeDeps.difference(discardedRangeDeps);
+          // Exclude frontier dependencies that are already regular dependencies
+          const activeRangeDeps = rangeDeps
+            .difference(discardedRangeDeps)
+            .difference(regularDeps);
 
           if (activeRangeDeps.size > 0) {
             frontierDependencies[range] = [];

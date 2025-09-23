@@ -93,15 +93,17 @@ export class EvaluationManager {
 
     const currentDepNode = this.storeManager.getEvaluatedNode(nodeKey);
 
-    if (currentDepNode?.resolved && !currentDepNode.updatedDirectDeps) {
-      const result = currentDepNode.originSpillResult ?? currentDepNode.evaluationResult;
-      if (result && result.type !== "spilled-values" && result.type !== "error") {
+    // Enable caching for resolved nodes
+    if (currentDepNode?.resolved) {
+      const result = currentDepNode.evaluationResult;
+      if (result && result.type === "value") {
         return result;
       }
     }
 
     const ctx = new EvaluationContext(
       this.dependencyManager,
+      this.storeManager,
       nodeAddress,
       currentDepNode
     );
@@ -205,7 +207,7 @@ export class EvaluationManager {
           ctx.addFrontierDependency(key, emptyCellRange);
 
           // upgrade or downgrade frontier dependency
-          if (node?.resolved && result) {
+          if (result) {
             if (result.type === "spilled-values") {
               const spillArea = result.spillArea(candidate);
               const intersects = isCellInRange(nodeAddress, spillArea);
@@ -250,6 +252,8 @@ export class EvaluationManager {
             message: "Can't spill",
           };
         }
+      } else {
+        throw new Error("We should not be able to spill a single cell");
       }
     }
 
@@ -260,7 +264,7 @@ export class EvaluationManager {
         returnResult = evaluation;
       } else {
         // for the spilled origin we need to evaluate the origin and return the result
-        const originSpillResult = evaluation.evaluate({ x: 0, y: 0 }, ctx);
+        originSpillResult = evaluation.evaluate({ x: 0, y: 0 }, ctx);
         if (originSpillResult) {
           returnResult = originSpillResult;
         }
@@ -382,8 +386,13 @@ export class EvaluationManager {
       }
 
       // Evaluate all dependencies in order
-      evaluationPlan.evaluationOrder.forEach((nodeKey) =>
-        this.evaluateDependencyNode(nodeKey)
+      evaluationPlan.evaluationOrder.forEach((dependency) =>
+        {
+          if (dependency === nodeKey) {
+            return;
+          }
+          return this.evaluateDependencyNode(dependency);
+        }
       );
       const cellResult = this.evaluateDependencyNode(nodeKey);
 
@@ -507,7 +516,13 @@ export class EvaluationManager {
 
     let value = getEvaluatedNode();
 
-    if (!value) {
+    if (
+      !value ||
+      (value &&
+        value.evaluationResult &&
+        value.evaluationResult.type === "spilled-values" &&
+        !value.originSpillResult)
+    ) {
       this.evaluateCell(cellAddress);
       value = getEvaluatedNode();
     }
@@ -519,17 +534,7 @@ export class EvaluationManager {
 
     const result = value.originSpillResult ?? value.evaluationResult;
     if (result.type === "spilled-values") {
-      // the spill origin. Let's evaluate it
-      // the origin should have been evaluated before and thus be
-      // part of the dependency graph,
-      // so we can just evaluate it here with a dummy context
-      const dummyContext = new EvaluationContext(
-        this.dependencyManager,
-        cellAddress
-      );
-      const originSpillResult = result.evaluate({ x: 0, y: 0 }, dummyContext);
-      value.originSpillResult = originSpillResult;
-      return originSpillResult;
+      throw new Error("Spilled values should have been evaluated before");
     }
     return result;
   }

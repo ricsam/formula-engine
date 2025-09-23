@@ -148,13 +148,14 @@ export type DependencyNode = {
 
 export type EvaluatedDependencyNode = {
   /**
-   * resolved is true if no additional transitive dependencies or frontier dependencies were found during the evaluation
+   * resolved is true if all transitive dependencies are resolved.
+   * A dependency is resolved if it had no updates to its dependencies during the evaluation.
+   * 
+   * The dependencies considered include regular dependencies, frontier dependencies and discarded frontier dependencies.
+   * 
    */
   resolved?: boolean;
-  /**
-   * updatedDirectDeps is true if any of the direct dependencies (or frontier dependencies or discarded frontier dependencies) were updated during the evaluation
-   */
-  updatedDirectDeps?: boolean;
+  didUpdate?: boolean;
   /**
    * deps is the set of dependency node keys
    */
@@ -201,7 +202,7 @@ export type SingleEvaluationResult =
 export type SpilledValuesEvaluator = (
   spillOffset: { x: number; y: number },
   context: EvaluationContext
-) => SingleEvaluationResult | undefined;
+) => SingleEvaluationResult;
 
 export type SpilledValuesEvaluationResult = {
   type: "spilled-values";

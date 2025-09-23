@@ -63,9 +63,6 @@ export function evaluateScalarOperator(
       source: `evaulate left spilled range onto right value in scalar operator ${name}`,
       evaluate: (spilled, context) => {
         const evaledLeft = left.evaluate(spilled, context);
-        if (!evaledLeft) {
-          return;
-        }
         if (evaledLeft.type === "error") {
           return evaledLeft;
         }
@@ -100,9 +97,6 @@ export function evaluateScalarOperator(
       source: `evaluate right spilled range onto left value in scalar operator ${name}`,
       evaluate: (spilled, context) => {
         const evaledRight = right.evaluate(spilled, context);
-        if (!evaledRight) {
-          return;
-        }
         if (evaledRight.type === "error") {
           return evaledRight;
         }
@@ -140,16 +134,10 @@ export function evaluateScalarOperator(
       source: `evaluate spilled ranges in scalar operator ${name}`,
       evaluate: (spilled, context) => {
         const evaledLeft = left.evaluate(spilled, context);
-        if (!evaledLeft) {
-          return;
-        }
         if (evaledLeft.type === "error") {
           return evaledLeft;
         }
         const evaledRight = right.evaluate(spilled, context);
-        if (!evaledRight) {
-          return;
-        }
         if (evaledRight.type === "error") {
           return evaledRight;
         }

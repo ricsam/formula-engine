@@ -451,6 +451,14 @@ export class FormulaEvaluator {
           }
           return result;
         }
+        return {
+          type: "error",
+          err: FormulaError.REF,
+          message: `Error evaluating cell ${getCellReference({
+            rowIndex,
+            colIndex,
+          })}`,
+        };
       },
       evaluateAllCells: function* ({
         evaluate,
@@ -459,11 +467,6 @@ export class FormulaEvaluator {
         origin,
       }) {
         let range = node.range;
-        const origDebugRange = getRangeKey(node.range);
-        const intersectionDebug = intersection
-          ? getRangeKey(intersection)
-          : "none";
-
         if (intersection) {
           // When we have an intersection, it's defined relative to where the spilled range
           // will appear (the origin). However, we need to evaluate cells from the source
@@ -475,24 +478,19 @@ export class FormulaEvaluator {
 
           // Calculate the offset of the intersection from the spill origin
           const relativeRange = getRelativeRange(intersection, origin);
-          const relativeRangeDebug = getRelativeRangeKey(relativeRange);
           const start: LocalCellAddress = {
             colIndex: node.range.start.col,
             rowIndex: node.range.start.row,
           };
           const projectedIntersection = getAbsoluteRange(relativeRange, start);
-          const projectedIntersectionDebug = getRangeKey(projectedIntersection);
           const calculateIntersection = getRangeIntersection(
             node.range,
             projectedIntersection
           );
           if (calculateIntersection) {
-            const calculateIntersectionDebug = getRangeKey(calculateIntersection);
             range = calculateIntersection;
           }
         }
-
-        const debugRange = getRangeKey(range);
 
         return yield* this.openRangeEvaluator.evaluateCellsInRange({
           evaluate,
