@@ -30,6 +30,107 @@ describe("MATCH function", () => {
     engine.addSheet({ workbookName, sheetName });
   });
 
+  test("structured reference position bug", () => {
+    // Create a table starting at B19 with headers
+    engine.setSheetContent(
+      sheetAddress,
+      new Map<string, SerializedCellValue>([
+        // Table headers at row 19
+        ["B19", "Name"],
+        ["C19", "Type"],
+        ["D19", "Identifier"], // Column we'll search in
+        // Table data starting at row 20
+        ["B20", "Car 1-A"],
+        ["C20", "Vehicle"],
+        ["D20", "Car 1-A"],
+        ["B21", "Car 1-B"],
+        ["C21", "Vehicle"],
+        ["D21", "Car 1-B"],
+        // ... more rows ...
+        // Fill in more data rows to reach row 28
+        ["B22", "Car 1-C"],
+        ["C22", "Vehicle"],
+        ["D22", "Car 1-C"],
+        ["B23", "Car 1-D"],
+        ["C23", "Vehicle"],
+        ["D23", "Car 1-D"],
+        ["B24", "Car 1-E"],
+        ["C24", "Vehicle"],
+        ["D24", "Car 1-E"],
+        ["B25", "Car 1-F"],
+        ["C25", "Vehicle"],
+        ["D25", "Car 1-F"],
+        ["B26", "Car 1-G"],
+        ["C26", "Vehicle"],
+        ["D26", "Car 1-G"],
+        ["B27", "Car 1-H"],
+        ["C27", "Vehicle"],
+        ["D27", "Car 1-H"],
+        ["B28", "Car 2-A"], // This is the row we're looking for
+        ["C28", "Vehicle"],
+        ["D28", "Car 2-A"], // This cell should match
+        // Test formula
+        ["F1", "=MATCH(\"Car 2-A\", INPUT_LAYOUT[Identifier], 0)"],
+      ])
+    );
+
+    // Define the table
+    engine.addTable({
+      tableName: "INPUT_LAYOUT",
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
+      start: "B19",
+      numRows: { type: "number", value: 10 }, // 10 data rows (plus 1 header)
+      numCols: 3, // 3 columns: Name, Type, Identifier
+    });
+
+    // The match should return 9 (relative to table start: D28 is 9th row in Identifier column)
+    // NOT 29 (absolute sheet position)
+    // D19 = header (position 0), D20 = data row 1, ..., D28 = data row 9
+    expect(cell("F1", true)).toBe(9);
+  });
+
+  test("structured reference vs absolute position bug reproduction", () => {
+    // This test specifically reproduces the bug where MATCH returns 29 instead of 9
+    // Create a scenario with sparse data to see if the issue occurs
+    
+    engine.setSheetContent(
+      sheetAddress,
+      new Map<string, SerializedCellValue>([
+        // Table headers at row 19
+        ["B19", "Name"],
+        ["C19", "Type"],
+        ["D19", "Identifier"], // Column we'll search in
+        // Only put data in a few specific rows, including the target row
+        ["D20", "Car 1-A"], // Row 1 of data
+        ["D21", "Car 1-B"], // Row 2 of data
+        ["D28", "Car 2-A"], // Row 9 of data (but only 3rd actual data cell)
+        // Test formula
+        ["F1", "=MATCH(\"Car 2-A\", INPUT_LAYOUT[Identifier], 0)"],
+      ])
+    );
+
+    // Define the table with full range but sparse data
+    engine.addTable({
+      tableName: "INPUT_LAYOUT",
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
+      start: "B19",
+      numRows: { type: "number", value: 10 }, // 10 data rows (plus 1 header)
+      numCols: 3, // 3 columns: Name, Type, Identifier
+    });
+
+    // If the bug exists, this might return 3 (position in sparse data) 
+    // instead of 9 (actual row position relative to table start)
+    const result = cell("F1", true);
+    
+    // The correct behavior should be to return the position relative to the table data start
+    // D28 is at absolute row 28, table data starts at row 20 (row 19 is header)
+    // So D28 should be position 9 in the table data (28 - 19 = 9)
+    // With the fix, it should now return 9 (actual position) instead of 3 (sparse position)
+    expect(result).toBe(9); // Fixed: should return actual position within range
+  });
+
   describe("basic functionality", () => {
     test("should find exact match with match_type 0", () => {
       setCellContent("A1", "Apple");

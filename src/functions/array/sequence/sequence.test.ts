@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { FormulaEngine } from "src/core/engine";
 import { FormulaError, type SerializedCellValue } from "src/core/types";
 import { parseCellReference } from "src/core/utils";
+import { visualizeSpreadsheet } from "src/core/utils/spreadsheet-visualizer";
 
 describe("SEQUENCE function", () => {
   const sheetName = "TestSheet";
@@ -10,10 +11,16 @@ describe("SEQUENCE function", () => {
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      debug
+    );
 
   const setCellContent = (ref: string, content: string) => {
-    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
+    engine.setCellContent(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      content
+    );
   };
 
   const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
@@ -140,7 +147,10 @@ describe("SEQUENCE function", () => {
     );
 
     const cell = (ref: string, debug?: boolean) =>
-      engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) }, debug);
+      engine.getCellValue(
+        { sheetName, workbookName, ...parseCellReference(ref) },
+        debug
+      );
 
     // SEQUENCE(3) produces {1; 2; 3}
     // SEQUENCE(SEQUENCE(3)) uses origin value 1, so it's SEQUENCE(1) which is {1}
@@ -159,7 +169,11 @@ describe("SEQUENCE function", () => {
     );
 
     const cell = (ref: string) =>
-      engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) });
+      engine.getCellValue({
+        sheetName,
+        workbookName,
+        ...parseCellReference(ref),
+      });
 
     // SEQUENCE(5) produces {1; 2; 3; 4; 5}
     // SEQUENCE(SEQUENCE(5), 1, 10) uses origin value 1, so it's SEQUENCE(1, 1, 10) which is {10}
@@ -247,5 +261,61 @@ describe("SEQUENCE function", () => {
     expect(cell("B2", true)).toBe(
       "#REF!: Can not evaluate all cells over an infinite range"
     );
+  });
+
+  test("SEQUENCE with intersection", () => {
+    engine.setSheetContent(
+      sheetAddress,
+      new Map<string, SerializedCellValue>([
+        ["A1", "=SUM(C3:D4)"],
+        ["B2", "=I12:K14"],
+        ["H10", "=SEQUENCE(10, 10)"],
+      ])
+    );
+
+    expect(cell("A1", true)).toBe(154);
+  });
+
+  test("SEQUENCE with crazy spill areas", () => {
+    engine.setSheetContent(
+      sheetAddress,
+      new Map<string, SerializedCellValue>([
+        ["A4", "=SUM(A17:E21)"],
+        ["B15", "=H18:J26"],
+        ["G8", "=Z12:AD40"],
+        ["P13", "=Q27:AC39"],
+        ["P26", "=SEQUENCE(15,15)"],
+      ])
+    );
+
+    expect(cell("A4", true)).toBe(1056);
+  });
+
+  test("Two spill into the same cell", () => {
+    engine.setSheetContent(
+      sheetAddress,
+      new Map<string, SerializedCellValue>([
+        ["A3", "=SEQUENCE(1,3,5)"],
+        ["C1", "=SEQUENCE(3)"],
+      ])
+    );
+    expect(cell("C1")).toBe(1);
+    expect(cell("C3")).toBe(3);
+    expect(cell("A3")).toBe(FormulaError.SPILL);
+    expect(cell("B3")).toBe("");
+
+
+    // reverse the order
+    engine.setSheetContent(
+      sheetAddress,
+      new Map<string, SerializedCellValue>([
+        ["A3", "=SEQUENCE(1,3,5)"],
+        ["C1", "=SEQUENCE(3)"],
+      ])
+    );
+    expect(cell("A3")).toBe(5);
+    expect(cell("C3")).toBe(7);
+    expect(cell("C1")).toBe(FormulaError.SPILL);
+    expect(cell("C2")).toBe("");
   });
 });

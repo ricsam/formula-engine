@@ -3,7 +3,6 @@ import {
   type CellString,
   type FunctionEvaluationResult,
   type ValueEvaluationResult,
-  type EvaluationContext,
   type CellAddress,
   type SpreadsheetRange,
   type ErrorEvaluationResult,
@@ -11,6 +10,7 @@ import {
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 /**
  * Strictly extracts string value without type coercion

@@ -5,7 +5,6 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
   type ValueEvaluationResult,
-  type EvaluationContext,
   type CellAddress,
   type SpreadsheetRange,
   type SpilledValuesEvaluationResult,
@@ -13,8 +12,8 @@ import {
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
-import { OpenRangeEvaluator } from "../../math/open-range-evaluator";
-import { parseCriteria, matchesParsedCriteria } from "../criteria-parser";
+import { OpenRangeEvaluator } from "../../../evaluator/open-range-evaluator";
+import { parseCriteria, matchesParsedCriteria } from "../../criteria-parser";
 
 /**
  * COUNTIF function - Counts cells in a range that meet a criteria
@@ -147,12 +146,12 @@ export const COUNTIF: FunctionDefinition = {
       });
 
       for (const cellResult of values) {
-        if (cellResult.type === "error") {
+        if (cellResult.result.type === "error") {
           // Skip error cells (like Excel does)
           continue;
         }
-        if (cellResult.type === "value") {
-          if (matchesParsedCriteria(cellResult.result, parsedCriteria)) {
+        if (cellResult.result.type === "value") {
+          if (matchesParsedCriteria(cellResult.result.result, parsedCriteria)) {
             count++;
           }
         }

@@ -9,7 +9,7 @@ import {
 } from "src/core/types";
 import { parseCellReference } from "src/core/utils";
 import { dependencyNodeToKey } from "src/core/utils/dependency-node-key";
-import { OpenRangeEvaluator } from "../open-range-evaluator";
+import { OpenRangeEvaluator } from "../../../evaluator/open-range-evaluator";
 
 /**
  * SUM function - Adds all numbers in the arguments
@@ -55,7 +55,7 @@ export const SUM: FunctionDefinition = {
             evaluate: value.evaluate,
           });
           for (const cellValue of values) {
-            const parsed = parseResult(cellValue);
+            const parsed = parseResult(cellValue.result);
             if (parsed) {
               return parsed;
             }

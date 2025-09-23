@@ -6,6 +6,7 @@
 import type { ASTNode, FunctionNode } from "src/parser/ast";
 import type { FormulaEngine } from "./engine";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 // Cell addressing types
 export interface CellAddress {
@@ -51,6 +52,15 @@ export type SpreadsheetRange = {
     col: SpreadsheetRangeEnd;
     row: SpreadsheetRangeEnd;
   };
+};
+
+export type RelativeRange = {
+  start: {
+    col: number;
+    row: number;
+  };
+  width: SpreadsheetRangeEnd;
+  height: SpreadsheetRangeEnd;
 };
 
 export type FiniteSpreadsheetRange = {
@@ -136,40 +146,41 @@ export type DependencyNode = {
   workbookName: string;
 };
 
-/**
- * Evaluation context containing necessary information
- */
-export interface EvaluationContext {
-  currentCell: CellAddress;
-  dependencies: Set<string>;
-  /**
-   * candidates for frontier dependencies that are in the intersection of the spilled range and the target range
-   */
-  frontierDependencies: Set<string>;
-  /**
-   * Frontier dependency candidates that were discarded because they are not in the intersection of the spilled range and the target range
-   */
-  discardedFrontierDependencies: Set<string>;
-}
-
 export type EvaluatedDependencyNode = {
+  /**
+   * resolved is true if no additional transitive dependencies or frontier dependencies were found during the evaluation
+   */
+  resolved?: boolean;
+  /**
+   * updatedDirectDeps is true if any of the direct dependencies (or frontier dependencies or discarded frontier dependencies) were updated during the evaluation
+   */
+  updatedDirectDeps?: boolean;
   /**
    * deps is the set of dependency node keys
    */
   deps?: Set<string>;
   /**
    * frontierDependencies is the set of dependency node keys that could spill values onto the target range (if evaluationResult is spilled-values)
+   *
+   * Map is keyed by the range key, e.g. A4:D8
    */
-  frontierDependencies?: Set<string>;
+  frontierDependencies?: Map<string, Set<string>>;
   /**
    * discardedFrontierDependencies is the set of dependency node keys that were discarded as frontier dependencies because
    * they they do not produce spilled values that spill onto the target range
+   *
+   * Map is keyed by the range key, e.g. A4:D8
    */
-  discardedFrontierDependencies?: Set<string>;
+  discardedFrontierDependencies?: Map<string, Set<string>>;
   /**
    * evaluationResult is the evaluation result
    */
   evaluationResult?: FunctionEvaluationResult;
+
+  /**
+   * originSpillResult is the evaluation result of the spilled origin
+   */
+  originSpillResult?: SingleEvaluationResult;
 };
 
 export type ValueEvaluationResult = {
@@ -243,10 +254,15 @@ export type SpilledValuesEvaluationResult = {
       origin: CellAddress;
     }
   ) => IterableIterator<
-    SingleEvaluationResult,
+    EvaluateAllCellsResult,
     undefined | void,
-    SingleEvaluationResult | undefined
+    EvaluateAllCellsResult | undefined
   >;
+};
+
+export type EvaluateAllCellsResult = {
+  result: SingleEvaluationResult;
+  relativePos: { x: number; y: number };
 };
 
 export type FunctionEvaluationResult =
@@ -275,6 +291,7 @@ export interface FunctionDefinition {
     node: FunctionNode,
     context: EvaluationContext
   ) => FunctionEvaluationResult;
+  aliases?: string[];
 }
 
 /**

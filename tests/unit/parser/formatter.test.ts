@@ -830,6 +830,38 @@ describe("Formula Formatter", () => {
         });
       });
 
+      test("should handle column names with forward slashes", () => {
+        const testCases = [
+          "Table1[FTE Concentration (M/ml)]",
+          "[@[Volume (ml/min)]]",
+          "Table1[Rate (units/hour)]",
+          "[@[Ratio (A/B)]]",
+          "SUM(Table1[Price ($/unit)])"
+        ];
+
+        testCases.forEach(formula => {
+          expect(() => parseFormula(formula)).not.toThrow();
+          const formatted = formatFormula(formula);
+          expect(() => parseFormula(formatted)).not.toThrow();
+        });
+      });
+
+      test("should parse and format complex formula with forward slash in column name", () => {
+        const formula = "IFERROR(AVERAGEIF(cTADCount[Car ID],[@[Car factory ID]],eTADCount[FTE Concentration (M/ml)]),\"\")";
+        
+        // First, let's see if we can parse it
+        expect(() => parseFormula(formula)).not.toThrow();
+        
+        // Then format it
+        const formatted = formatFormula(formula);
+        expect(formatted).toBeDefined();
+        
+        // And ensure it round-trips
+        const reparsed = parseFormula(formatted);
+        const reformatted = astToString(reparsed);
+        expect(reformatted).toBe(formatted);
+      });
+
       test("should handle column names with trailing spaces", () => {
         const testCases = [
           "[@[Cars needed (M) ]]",

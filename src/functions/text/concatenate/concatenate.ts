@@ -7,11 +7,11 @@ import {
   type SpreadsheetRange,
   type SpilledValuesEvaluationResult,
   type ErrorEvaluationResult,
-  type EvaluationContext,
   type SingleEvaluationResult,
 } from "src/core/types";
 import { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 import type { FunctionNode } from "src/parser/ast";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 /**
  * CONCATENATE function - Joins several text strings into one text string
@@ -214,4 +214,5 @@ export const CONCATENATE: FunctionDefinition = {
     // Perform concatenation
     return concatenateOperation(textResults);
   },
+  aliases: ["CONCAT"]
 };

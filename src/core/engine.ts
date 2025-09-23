@@ -5,38 +5,31 @@
 
 import {
   type CellAddress,
-  type EvaluatedDependencyNode,
-  type EvaluationContext,
-  type LocalCellAddress,
   type NamedExpression,
   type SerializedCellValue,
   type SingleEvaluationResult,
-  type SpilledValue,
   type SpreadsheetRange,
   type SpreadsheetRangeEnd,
   type TableDefinition,
-  type Workbook,
 } from "./types";
 
+import type { FillDirection } from "@ricsam/selection-manager";
+import { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import { AutoFill } from "./autofill-utils";
 import {
+  DependencyManager,
   EvaluationManager,
   EventManager,
   NamedExpressionManager,
   TableManager,
 } from "./managers";
-import { renameNamedExpressionInFormula } from "./named-expression-renamer";
-import { renameTableInFormula } from "./table-renamer";
-import { type FunctionEvaluationResult } from "./types";
-import type { FillDirection } from "@ricsam/selection-manager";
-import { getCellReference, parseCellReference } from "./utils";
-import { AutoFill } from "./autofill-utils";
-import { WorkbookManager } from "./managers/workbook-manager";
-import { renameSheetInFormula } from "./sheet-renamer";
-import { renameWorkbookInFormula } from "./workbook-renamer";
-import { FormulaEvaluator } from "src/evaluator/formula-evaluator";
-import { OpenRangeEvaluator } from "src/functions/math/open-range-evaluator";
 import { StoreManager } from "./managers/store-manager";
+import { WorkbookManager } from "./managers/workbook-manager";
 import { deserialize, serialize } from "./map-serializer";
+import { renameNamedExpressionInFormula } from "./named-expression-renamer";
+import { renameSheetInFormula } from "./sheet-renamer";
+import { renameTableInFormula } from "./table-renamer";
+import { renameWorkbookInFormula } from "./workbook-renamer";
 
 /**
  * Main FormulaEngine class
@@ -49,6 +42,7 @@ export class FormulaEngine {
   private evaluationManager: EvaluationManager;
   private autoFillManager: AutoFill;
   private storeManager: StoreManager;
+  private dependencyManager: DependencyManager;
 
   /**
    * Public access to the store manager for testing
@@ -60,13 +54,18 @@ export class FormulaEngine {
   public _evaluationManager: EvaluationManager;
   public _autoFillManager: AutoFill;
   public _storeManager: StoreManager;
+  public _dependencyManager: DependencyManager;
 
   constructor() {
     this.eventManager = new EventManager();
     this.workbookManager = new WorkbookManager();
     this.namedExpressionManager = new NamedExpressionManager();
     this.tableManager = new TableManager(this.workbookManager);
-    this.storeManager = new StoreManager(this.namedExpressionManager);
+    this.storeManager = new StoreManager();
+    this.dependencyManager = new DependencyManager(
+      this.storeManager,
+      this.workbookManager
+    );
 
     const formulaEvaluator = new FormulaEvaluator(
       this.tableManager,
@@ -78,7 +77,8 @@ export class FormulaEngine {
     this.evaluationManager = new EvaluationManager(
       this.workbookManager,
       formulaEvaluator,
-      this.storeManager
+      this.storeManager,
+      this.dependencyManager
     );
 
     this.autoFillManager = new AutoFill(this.workbookManager, this);
@@ -90,6 +90,7 @@ export class FormulaEngine {
     this._evaluationManager = this.evaluationManager;
     this._autoFillManager = this.autoFillManager;
     this._storeManager = this.storeManager;
+    this._dependencyManager = this.dependencyManager;
   }
 
   /**
@@ -505,7 +506,7 @@ export class FormulaEngine {
 
   /**
    * Re-evaluates all sheets to ensure all dependencies are resolved correctly
-   * 
+   *
    * but just clears the evaluation cache
    */
   reevaluate() {

@@ -4,12 +4,12 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
   type ValueEvaluationResult,
-  type EvaluationContext,
   type CellAddress,
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
 import { convertToString, extractNumericValue } from "../text-helpers";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 // Helper function for FIND operation - returns the result or null if error
 function findOperation(

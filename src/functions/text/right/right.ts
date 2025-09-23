@@ -7,7 +7,6 @@ import {
   type SpreadsheetRange,
   type SpilledValuesEvaluationResult,
   type ErrorEvaluationResult,
-  type EvaluationContext,
   type SingleEvaluationResult,
 } from "src/core/types";
 import { FormulaEvaluator } from "src/evaluator/formula-evaluator";
@@ -17,6 +16,7 @@ import {
   convertToString,
   extractNumericValue,
 } from "../text-helpers";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 /**
  * RIGHT function - Returns the rightmost characters from a text string

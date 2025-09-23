@@ -2,7 +2,8 @@ import type { WorkbookManager } from "src/core/managers";
 import {
   type CellAddress,
   type ErrorEvaluationResult,
-  type EvaluationContext,
+  type RelativeRange,
+  type EvaluateAllCellsResult,
   type FunctionEvaluationResult,
   type LocalCellAddress,
   type SpilledValuesEvaluationResult,
@@ -13,12 +14,16 @@ import {
 } from "src/core/types";
 import {
   getCellReference,
+  getRangeKey,
+  getRelativeRange,
+  getRelativeRangeKey,
   isCellInRange,
   parseCellReference,
 } from "src/core/utils";
 import { dependencyNodeToKey } from "src/core/utils/dependency-node-key";
 import type { StoreManager } from "src/core/managers/store-manager";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import type { EvaluationContext } from "./evaluation-context";
 
 /**
  * Utility class for evaluating cells within open-ended ranges
@@ -45,8 +50,7 @@ export class OpenRangeEvaluator {
     };
     context: EvaluationContext;
     evaluate: SpilledValuesEvaluator;
-  }): Iterable<ValueEvaluationResult | ErrorEvaluationResult> {
-    const rawContent = this.workbookManager.getSheet(options.origin)?.content;
+  }): Iterable<EvaluateAllCellsResult> {
     const { evaluate, context } = options;
 
     if (
@@ -54,62 +58,61 @@ export class OpenRangeEvaluator {
       isCellInRange(context.currentCell, options.origin.range)
     ) {
       yield {
-        type: "error",
-        err: FormulaError.CYCLE,
-        message: "Cycle detected",
+        result: {
+          type: "error",
+          err: FormulaError.CYCLE,
+          message: "Cycle detected",
+        },
+        relativePos: {
+          x: context.currentCell.colIndex - options.origin.range.start.col,
+          y: context.currentCell.rowIndex - options.origin.range.start.row,
+        },
       };
       return;
     }
 
-    if (!rawContent) {
+    // Check if the sheet exists
+    const sheet = this.workbookManager.getSheet(options.origin);
+    if (!sheet) {
       yield {
-        type: "error",
-        err: FormulaError.REF,
-        message: `Sheet ${options.origin.sheetName} not found`,
+        result: {
+          type: "error",
+          err: FormulaError.REF,
+          message: `Sheet ${options.origin.sheetName} not found`,
+        },
+        relativePos: {
+          x: context.currentCell.colIndex - options.origin.range.start.col,
+          y: context.currentCell.rowIndex - options.origin.range.start.row,
+        },
       };
       return;
     }
 
-    // Get frontier candidates that might spill into the range
-    const frontierCandidates = this.workbookManager.getFrontierCandidates(
+    // todo change to using the iterator
+    // const frontierCandidates = this.workbookManager.getFrontierCandidates(
+    //   options.origin.range,
+    //   options.origin
+    // );
+    const frontierCandidates = this.workbookManager.iterateFrontierCandidates(
       options.origin.range,
       options.origin
     );
 
-    // Keep track of cells we've already processed to avoid double-counting
-    const processedCells = new Set<string>();
-
-    // Evaluate frontier candidates first
+    // Evaluate frontier candidates first using the iterator
     for (const candidate of frontierCandidates) {
-      if (
-        candidate.sheetName === context.currentCell.sheetName &&
-        candidate.rowIndex === context.currentCell.rowIndex &&
-        candidate.colIndex === context.currentCell.colIndex
-      ) {
-        continue;
-      }
-
-      const candidateKey = this.cellAddressToKey({
-        rowIndex: candidate.rowIndex,
-        colIndex: candidate.colIndex,
-      });
-
-      processedCells.add(candidateKey);
-
       const key = dependencyNodeToKey({
         address: candidate,
         sheetName: candidate.sheetName,
         workbookName: candidate.workbookName,
       });
 
-      if (context.discardedFrontierDependencies.has(key)) {
+      if (context.isFrontierDependencyDiscarded(key, options.origin.range)) {
         continue;
       }
 
-      const result =
-        this.storeManager.getEvaluatedNode(key)?.evaluationResult;
+      const result = this.storeManager.getEvaluatedNode(key)?.evaluationResult;
 
-      context.frontierDependencies.add(key);
+      context.addFrontierDependency(key, options.origin.range);
 
       if (result) {
         if (result.type === "spilled-values") {
@@ -119,7 +122,7 @@ export class OpenRangeEvaluator {
             options.origin.range
           );
           if (intersects) {
-            context.dependencies.add(key);
+            context.maybeUpgradeFrontierDependency(key, options.origin.range); // upgraded!
             yield* this.handleSpilledValues({
               spillResult: result,
               targetRange: options.origin.range,
@@ -127,28 +130,27 @@ export class OpenRangeEvaluator {
               context,
             });
           } else {
-            context.discardedFrontierDependencies.add(key);
+            context.maybeDiscardFrontierDependency(key, options.origin.range); // downgraded!
           }
         } else {
-          context.discardedFrontierDependencies.add(key);
+          context.maybeDiscardFrontierDependency(key, options.origin.range); // downgraded!
         }
       }
     }
 
-    // Iterate over all defined cells in the sheet
-    for (const address of this.iterateCellsInOpenRange(
-      options.origin.range,
-      rawContent
-    )) {
-      const cellKey = this.cellAddressToKey(address);
+    // todo change to using the iterator
+    // const cellsInRange = this.workbookManager.getCellsInRange(
+    //   options.origin,
+    //   options.origin.range
+    // );
+    const cellsInRange = this.workbookManager.iterateCellsInRange(
+      options.origin,
+      options.origin.range
+    );
 
-      // Skip if we already processed this cell as a frontier candidate
-      if (processedCells.has(cellKey)) {
-        continue;
-      }
-
-      // const offsetLeft = address.colIndex - range.start.col;
-      // const offsetTop = address.rowIndex - range.start.row;
+    // Iterate over all defined cells in the sheet using optimized index-based iterator
+    for (const address of cellsInRange) {
+      const cellKey = getCellReference(address);
 
       const result = this.storeManager.evalTimeSafeEvaluateCell(
         {
@@ -160,49 +162,34 @@ export class OpenRangeEvaluator {
       );
 
       if (result?.type === "spilled-values") {
+        const candidate: CellAddress = {
+          ...address,
+          sheetName: options.origin.sheetName,
+          workbookName: options.origin.workbookName,
+        };
         const spillHandleResult = this.handleSpilledValues({
           spillResult: result,
           targetRange: options.origin.range,
           context,
-          candidate: {
-            ...address,
-            sheetName: options.origin.sheetName,
-            workbookName: options.origin.workbookName,
-          },
+          candidate,
         });
         yield* spillHandleResult;
       } else {
-        yield result ?? {
-          type: "error",
-          err: FormulaError.REF,
-          message: `Error evaluating cell ${cellKey} #2`,
+        const relativePos = {
+          x: address.colIndex - options.origin.range.start.col,
+          y: address.rowIndex - options.origin.range.start.row,
         };
+        yield result
+          ? { result: result, relativePos }
+          : {
+              result: {
+                type: "error",
+                err: FormulaError.REF,
+                message: `Error evaluating cell ${cellKey} #2`,
+              },
+              relativePos,
+            };
       }
-    }
-  }
-
-  /**
-   * Iterator for cells within an open range
-   */
-  private *iterateCellsInOpenRange(
-    range: SpreadsheetRange,
-    rawContent: Map<string, any>
-  ): Generator<LocalCellAddress> {
-    for (const [key, value] of rawContent) {
-      const { rowIndex, colIndex } = parseCellReference(key);
-
-      // Check if cell is within range bounds
-      if (rowIndex < range.start.row || colIndex < range.start.col) continue;
-
-      if (range.end.row.type === "number" && rowIndex > range.end.row.value)
-        continue;
-      if (range.end.col.type === "number" && colIndex > range.end.col.value)
-        continue;
-
-      yield {
-        rowIndex,
-        colIndex,
-      };
     }
   }
 
@@ -214,21 +201,7 @@ export class OpenRangeEvaluator {
     targetRange: SpreadsheetRange;
     candidate: CellAddress;
     context: EvaluationContext;
-  }): Iterable<ValueEvaluationResult | ErrorEvaluationResult> {
-    const spillArea = options.spillResult.spillArea(options.candidate);
-
-    // Calculate intersection first
-    const intersection = getRangeIntersection(spillArea, options.targetRange);
-
-    if (!intersection) {
-      yield {
-        type: "error",
-        err: FormulaError.REF,
-        message: "Intersection is not valid #3",
-      };
-      return;
-    }
-
+  }): Iterable<EvaluateAllCellsResult> {
     // When a spilled range intersects with our target range, we need to evaluate
     // only the cells that fall within the intersection area.
     //
@@ -245,13 +218,6 @@ export class OpenRangeEvaluator {
       intersection: options.targetRange,
       origin: options.candidate,
     });
-  }
-
-  /**
-   * Convert a cell address to a string key
-   */
-  private cellAddressToKey(addr: LocalCellAddress): string {
-    return getCellReference(addr);
   }
 }
 

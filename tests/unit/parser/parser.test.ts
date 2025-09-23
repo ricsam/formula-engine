@@ -649,6 +649,26 @@ describe("Parser - Structured References", () => {
     expect(ast.isCurrentRow).toBe(true);
   });
 
+  test("should parse column names with forward slashes", () => {
+    const ast = parseFormula("Table1[FTE Concentration (M/ml)]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({
+      startCol: "FTE Concentration (M/ml)",
+      endCol: "FTE Concentration (M/ml)",
+    });
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse complex formula with forward slash in column name", () => {
+    const formula = "IFERROR(AVERAGEIF(cTADCount[Car ID],[@[Car factory ID]],eTADCount[FTE Concentration (M/ml)]),\"\")";
+    expect(() => parseFormula(formula)).not.toThrow();
+    
+    const ast = parseFormula(formula);
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("IFERROR");
+  });
+
   test("should parse column names with Unicode symbols", () => {
     const testCases = [
       { formula: "[@[Final Stock Concentration (µM)]]", expected: "Final Stock Concentration (µM)" },

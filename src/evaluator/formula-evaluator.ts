@@ -1,5 +1,5 @@
 import { parseFormula } from "src/parser/parser";
-import type { SingleEvaluationResult } from "../core/types";
+import type { LocalCellAddress, SingleEvaluationResult } from "../core/types";
 import {
   FormulaError,
   type CellAddress,
@@ -9,8 +9,6 @@ import {
   type SpreadsheetRangeEnd,
   type TableDefinition,
 } from "../core/types";
-
-import { type EvaluationContext } from "../core/types";
 
 import type { StoreManager } from "src/core/managers/store-manager";
 import type { TableManager } from "src/core/managers/table-manager";
@@ -23,7 +21,7 @@ import { functions } from "src/functions";
 import {
   getRangeIntersection,
   OpenRangeEvaluator,
-} from "src/functions/math/open-range-evaluator";
+} from "src/evaluator/open-range-evaluator";
 import type {
   ArrayNode,
   ASTNode,
@@ -37,7 +35,14 @@ import type {
   UnaryOpNode,
   ValueNode,
 } from "src/parser/ast";
-import { getCellReference, isRangeOneCell } from "../core/utils";
+import {
+  getAbsoluteRange,
+  getCellReference,
+  getRangeKey,
+  getRelativeRange,
+  getRelativeRangeKey,
+  isRangeOneCell,
+} from "../core/utils";
 import { add } from "./arithmetic/add/add";
 import { divide } from "./arithmetic/divide/divide";
 import { multiply } from "./arithmetic/multiply/multiply";
@@ -51,6 +56,7 @@ import { lessThanOrEqual } from "./comparison/less-than-or-equal";
 import { notEquals } from "./comparison/not-equals";
 import { concatenate } from "./concatenation/concatenate";
 import type { NamedExpressionManager } from "src/core/managers/named-expression-manager";
+import type { EvaluationContext } from "./evaluation-context";
 
 function isFormulaError(value: string): value is FormulaError {
   if (typeof value !== "string") return false;
@@ -416,10 +422,12 @@ export class FormulaEvaluator {
       );
     }
 
+    const debugRange = getRangeKey(node.range);
+
     return {
       type: "spilled-values",
       spillArea: (origin) => this.projectRange(node.range, origin),
-      source: `range`,
+      source: `range ${debugRange}`,
       evaluate: (spillOffset, context) => {
         const originSheetName = node.sheetName ?? context.currentCell.sheetName;
         const originWorkbookName =
@@ -451,6 +459,11 @@ export class FormulaEvaluator {
         origin,
       }) {
         let range = node.range;
+        const origDebugRange = getRangeKey(node.range);
+        const intersectionDebug = intersection
+          ? getRangeKey(intersection)
+          : "none";
+
         if (intersection) {
           // When we have an intersection, it's defined relative to where the spilled range
           // will appear (the origin). However, we need to evaluate cells from the source
@@ -461,39 +474,25 @@ export class FormulaEvaluator {
           // we need to translate E6:F7 (relative to D5) to B2:C3 (relative to A1).
 
           // Calculate the offset of the intersection from the spill origin
-          const intersectionDx = intersection.start.col - origin.colIndex;
-          const intersectionDy = intersection.start.row - origin.rowIndex;
-          // next we need to calculate the intersection relative to the source range
-          const projectedIntersection: SpreadsheetRange = {
-            start: {
-              col: node.range.start.col + intersectionDx,
-              row: node.range.start.row + intersectionDy,
-            },
-            end: {
-              col:
-                intersection.end.col.type === "number"
-                  ? {
-                      type: "number",
-                      value: intersection.end.col.value + intersectionDx,
-                    }
-                  : intersection.end.col,
-              row:
-                intersection.end.row.type === "number"
-                  ? {
-                      type: "number",
-                      value: intersection.end.row.value + intersectionDy,
-                    }
-                  : intersection.end.row,
-            },
+          const relativeRange = getRelativeRange(intersection, origin);
+          const relativeRangeDebug = getRelativeRangeKey(relativeRange);
+          const start: LocalCellAddress = {
+            colIndex: node.range.start.col,
+            rowIndex: node.range.start.row,
           };
+          const projectedIntersection = getAbsoluteRange(relativeRange, start);
+          const projectedIntersectionDebug = getRangeKey(projectedIntersection);
           const calculateIntersection = getRangeIntersection(
             node.range,
             projectedIntersection
           );
           if (calculateIntersection) {
+            const calculateIntersectionDebug = getRangeKey(calculateIntersection);
             range = calculateIntersection;
           }
         }
+
+        const debugRange = getRangeKey(range);
 
         return yield* this.openRangeEvaluator.evaluateCellsInRange({
           evaluate,
@@ -570,7 +569,11 @@ export class FormulaEvaluator {
         }
         const result = this.evaluateNode(cell, context);
         if (result.type === "spilled-values") {
-          throw new Error("Arrays cannot contain spilled values");
+          return {
+            type: "error",
+            err: FormulaError.VALUE,
+            message: "Arrays cannot contain spilled values",
+          };
         }
         return result;
       },
@@ -617,10 +620,16 @@ export class FormulaEvaluator {
             this,
             options
           )) {
-            if (cellValue.type === "error") {
+            if (cellValue.result.type === "error") {
               yield cellValue;
             } else {
-              yield this.evaluateUnaryScalar(node.operator, cellValue.result);
+              yield {
+                result: this.evaluateUnaryScalar(
+                  node.operator,
+                  cellValue.result.result
+                ),
+                relativePos: cellValue.relativePos,
+              };
             }
           }
         },
@@ -802,7 +811,11 @@ export class FormulaEvaluator {
       case ">=":
         return this.greaterThanOrEqualOp(left, right, context);
       default:
-        throw new Error(FormulaError.ERROR);
+        return {
+          type: "error",
+          err: FormulaError.ERROR,
+          message: `Unknown binary operator: ${operator}`,
+        };
     }
   }
 
@@ -812,7 +825,11 @@ export class FormulaEvaluator {
   ): FunctionEvaluationResult {
     const func = functions[node.name];
     if (!func) {
-      throw new Error(FormulaError.NAME);
+      return {
+        type: "error",
+        err: FormulaError.NAME,
+        message: `Function ${node.name} not found`,
+      };
     }
     return func.evaluate.call(this, node, context);
   }

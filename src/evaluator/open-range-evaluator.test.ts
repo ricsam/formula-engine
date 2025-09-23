@@ -230,8 +230,8 @@ describe("OpenRangeEvaluator", () => {
       // SUM(B10:D) should evaluate both candidates
       const result = cell("A1", true);
       // C10 from top spill (value 3) + B10:C10 from left spill (values 2,3)
-      // Note: C10 appears in both, so we need to handle deduplication
-      expect(result).toBe(8);
+      expect(result).toBe(3);
+      expect(cell("A10")).toBe(FormulaError.SPILL);
     });
   });
 

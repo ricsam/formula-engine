@@ -6,7 +6,6 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
   type ValueEvaluationResult,
-  type EvaluationContext,
   type CellAddress,
   type SpreadsheetRange,
   type SpilledValuesEvaluationResult,
@@ -14,6 +13,7 @@ import {
   type ErrorEvaluationResult,
 } from "src/core/types";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 /**
  * CEILING function - Rounds a number up to the nearest multiple of significance

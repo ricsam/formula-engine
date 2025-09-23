@@ -328,67 +328,40 @@ export class Parser {
     // Consume the first token
     this.tokens.consume();
 
+    // Use a blacklist approach: consume all tokens until we hit a token that definitely ends a column name
+    // These are tokens that have special meaning in structured references and should not be part of column names
+    const endTokens = new Set([
+      "RBRACKET",  // ] - ends the column reference
+      "COLON",     // : - indicates column range
+      "COMMA",     // , - separates elements in complex structured references
+      "EOF"        // End of input
+    ]);
+
     // Continue consuming tokens that are part of the column name
-    while (
-      this.tokens.match("IDENTIFIER") ||
-      this.tokens.match("FUNCTION") ||
-      this.tokens.match("NUMBER") ||
-      (this.tokens.match("OPERATOR") &&
-        (this.tokens.peek().value === "-" ||
-          this.tokens.peek().value === "=" ||
-          this.tokens.peek().value === "%")) ||
-      this.tokens.match("LPAREN") ||
-      this.tokens.match("RPAREN")
-    ) {
-      if (
-        this.tokens.match("IDENTIFIER") ||
-        this.tokens.match("FUNCTION") ||
-        this.tokens.match("NUMBER")
-      ) {
-        this.tokens.consume();
-      } else if (
-        this.tokens.match("OPERATOR") &&
-        this.tokens.peek().value === "-"
-      ) {
-        this.tokens.consume(); // dash
-        // After a dash, we expect another identifier, function, or number
-        if (
-          this.tokens.match("IDENTIFIER") ||
-          this.tokens.match("FUNCTION") ||
-          this.tokens.match("NUMBER")
-        ) {
-          this.tokens.consume();
+    while (!endTokens.has(this.tokens.peek().type)) {
+      // Handle special cases where we need to validate token sequences
+      if (this.tokens.match("OPERATOR")) {
+        const operatorValue = this.tokens.peek().value;
+        
+        // For operators that typically need to be followed by something, validate the sequence
+        if (operatorValue === "-" || operatorValue === "=" || operatorValue === "/") {
+          this.tokens.consume(); // consume the operator
+          
+          // After these operators, we expect another token that's part of the column name
+          // If the next token is an end token, that's an error
+          if (endTokens.has(this.tokens.peek().type)) {
+            throw new ParseError(
+              `Expected identifier after ${operatorValue} in column name`,
+              this.tokens.peek().position
+            );
+          }
         } else {
-          throw new ParseError(
-            "Expected identifier after dash in column name",
-            this.tokens.peek().position
-          );
-        }
-      } else if (
-        this.tokens.match("OPERATOR") &&
-        this.tokens.peek().value === "="
-      ) {
-        this.tokens.consume(); // equals sign
-        // After an equals sign, we expect another identifier, function, or number
-        if (
-          this.tokens.match("IDENTIFIER") ||
-          this.tokens.match("FUNCTION") ||
-          this.tokens.match("NUMBER")
-        ) {
+          // For other operators (%, +, *, ^, &, etc.), just consume them
           this.tokens.consume();
-        } else {
-          throw new ParseError(
-            "Expected identifier after equals sign in column name",
-            this.tokens.peek().position
-          );
         }
-      } else if (
-        this.tokens.match("OPERATOR") &&
-        this.tokens.peek().value === "%"
-      ) {
-        this.tokens.consume(); // percent sign
-        // % can be followed by a space and more text, or it can end the token sequence
-      } else if (this.tokens.match("LPAREN") || this.tokens.match("RPAREN")) {
+      } else {
+        // For all other token types (IDENTIFIER, FUNCTION, NUMBER, LPAREN, RPAREN, etc.)
+        // just consume them as part of the column name
         this.tokens.consume();
       }
     }

@@ -5,12 +5,12 @@ import {
   type FunctionEvaluationResult,
   type ValueEvaluationResult,
   type SpilledValuesEvaluationResult,
-  type EvaluationContext,
   type CellAddress,
   type SpreadsheetRange,
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 /**
  * INDEX function - Returns a value from a table or array
@@ -140,7 +140,6 @@ export const INDEX: FunctionDefinition = {
       rowNumResult.type === "spilled-values" ||
       (colNumResult && colNumResult.type === "spilled-values")
     ) {
-      // TODO: Implement comprehensive spilled array support like FIND function
       return {
         type: "error",
         err: FormulaError.VALUE,
@@ -175,24 +174,20 @@ export const INDEX: FunctionDefinition = {
       };
     }
 
+    const colNumValue = colNumResult?.result;
+
     // Strict type checking for column_num if provided
-    if (colNumResult && colNumResult.result.type !== "number") {
+    if (colNumValue && colNumValue.type !== "number") {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        message: `INDEX column_num must be number, got ${colNumResult.result.type}`,
+        message: `INDEX column_num must be number, got ${colNumValue.type}`,
       };
     }
 
     // Extract row and column numbers (convert to integers)
-    const rowNum = Math.floor(
-      (rowNumResult.result as { type: "number"; value: number }).value
-    );
-    const colNum = colNumResult
-      ? Math.floor(
-          (colNumResult.result as { type: "number"; value: number }).value
-        )
-      : 1;
+    const rowNum = Math.floor(rowNumResult.result.value);
+    const colNum = colNumValue ? Math.floor(colNumValue.value) : 1;
 
     // Validate that indices are positive
     if (rowNum < 1) {

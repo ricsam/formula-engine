@@ -6,7 +6,7 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
 } from "src/core/types";
-import { OpenRangeEvaluator } from "../open-range-evaluator";
+import { OpenRangeEvaluator } from "../../../evaluator/open-range-evaluator";
 
 /**
  * MAX function - Returns the largest number in the arguments
@@ -47,7 +47,7 @@ export const MAX: FunctionDefinition = {
       });
 
       for (const cellValue of cellValues) {
-        const parsed = parseResult(cellValue);
+        const parsed = parseResult(cellValue.result);
         if (parsed.type === "error") {
           return parsed;
         }

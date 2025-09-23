@@ -106,7 +106,7 @@ describe("SUM function", () => {
       expect(cell("C2")).toBe(6);
     });
 
-    test.skip("SEQUENCE with INFINITY creates infinite spills", () => {
+    test("SEQUENCE with INFINITY creates infinite spills", () => {
       engine.setSheetContent(
         sheetAddress,
         new Map<string, SerializedCellValue>([
@@ -421,7 +421,6 @@ describe("SUM function", () => {
       ])
     );
 
-    // ENGINE ISSUE: Division by zero (1/0) might not produce Infinity
     expect(cell("A1")).toBe("INFINITY");
     expect(cell("A2")).toBe("-INFINITY");
 

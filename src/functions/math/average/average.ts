@@ -9,7 +9,7 @@ import {
   type SpilledValuesEvaluationResult,
   type ValueEvaluationResult,
 } from "src/core/types";
-import { OpenRangeEvaluator } from "../open-range-evaluator";
+import { OpenRangeEvaluator } from "../../../evaluator/open-range-evaluator";
 
 /**
  * AVERAGE function - Calculates the arithmetic mean of all numbers in the arguments
@@ -53,7 +53,7 @@ export const AVERAGE: FunctionDefinition = {
       let subTotal = 0;
       let count = 0;
       for (const cellValue of cellValues) {
-        const parsed = parseResult(cellValue);
+        const parsed = parseResult(cellValue.result);
         if (parsed.type === "error") {
           return parsed;
         }

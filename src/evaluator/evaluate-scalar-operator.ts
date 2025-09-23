@@ -4,10 +4,11 @@ import {
   type ArethmeticEvaluator,
   type CellAddress,
   type CellValue,
-  type EvaluationContext,
+  type EvaluateAllCellsResult,
   type FunctionEvaluationResult,
   type SingleEvaluationResult,
 } from "../core/types";
+import type { EvaluationContext } from "./evaluation-context";
 
 export type EvaluateScalarOperatorOptions = {
   evaluateScalar: ArethmeticEvaluator;
@@ -76,14 +77,17 @@ export function evaluateScalarOperator(
       },
       evaluateAllCells: function* (options) {
         for (const cellValue of left.evaluateAllCells.call(this, options)) {
-          if (cellValue.type === "error") {
+          if (cellValue.result.type === "error") {
             yield cellValue;
           } else {
-            yield evaluateSingleScalarOperator(
-              cellValue.result,
-              right.result,
-              evaluateScalar
-            );
+            yield {
+              result: evaluateSingleScalarOperator(
+                cellValue.result.result,
+                right.result,
+                evaluateScalar
+              ),
+              relativePos: cellValue.relativePos,
+            };
           }
         }
       },
@@ -110,14 +114,18 @@ export function evaluateScalarOperator(
       },
       evaluateAllCells: function* (options) {
         for (const cellValue of right.evaluateAllCells.call(this, options)) {
-          if (cellValue.type === "error") {
+          if (cellValue.result.type === "error") {
             yield cellValue;
           } else {
-            yield evaluateSingleScalarOperator(
+            const result = evaluateSingleScalarOperator(
               left.result,
-              cellValue.result,
+              cellValue.result.result,
               evaluateScalar
             );
+            yield {
+              result: result,
+              relativePos: cellValue.relativePos,
+            };
           }
         }
       },
@@ -154,34 +162,50 @@ export function evaluateScalarOperator(
       evaluateAllCells: function* (options) {
         const leftResults = left.evaluateAllCells.call(this, options);
         const rightResults = right.evaluateAllCells.call(this, options);
-        let rightResult: SingleEvaluationResult | undefined | void;
-        let leftResult: SingleEvaluationResult | undefined | void;
+        let rightResult: EvaluateAllCellsResult | undefined | void;
+        let leftResult: EvaluateAllCellsResult | undefined | void;
         do {
           rightResult = rightResults.next().value;
           leftResult = leftResults.next().value;
 
-          if (!leftResult) {
+          if (!leftResult && rightResult) {
             yield {
-              type: "error",
-              err: FormulaError.REF,
-              message: "Left result is not found",
+              result: {
+                type: "error",
+                err: FormulaError.REF,
+                message: "Left result is not found",
+              },
+              relativePos: rightResult.relativePos,
             };
-          } else if (!rightResult) {
+          } else if (!rightResult && leftResult) {
             yield {
-              type: "error",
-              err: FormulaError.REF,
-              message: "Right result is not found",
+              result: {
+                type: "error",
+                err: FormulaError.REF,
+                message: "Right result is not found",
+              },
+              relativePos: leftResult.relativePos,
             };
-          } else if (leftResult.type === "error") {
+          } else if (leftResult && leftResult.result.type === "error") {
             yield leftResult;
-          } else if (rightResult.type === "error") {
+          } else if (rightResult && rightResult.result.type === "error") {
             yield rightResult;
+          } else if (
+            leftResult &&
+            rightResult &&
+            leftResult.result.type === "value" &&
+            rightResult.result.type === "value"
+          ) {
+            yield {
+              result: evaluateSingleScalarOperator(
+                leftResult.result.result,
+                rightResult.result.result,
+                evaluateScalar
+              ),
+              relativePos: leftResult.relativePos,
+            };
           } else {
-            yield evaluateSingleScalarOperator(
-              leftResult.result,
-              rightResult.result,
-              evaluateScalar
-            );
+            break;
           }
         } while (leftResult || rightResult);
       },

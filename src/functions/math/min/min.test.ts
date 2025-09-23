@@ -270,7 +270,6 @@ describe("MIN function", () => {
       ])
     );
 
-    // ENGINE ISSUE: Division by zero (1/0) might not produce Infinity
     expect(cell("A1")).toBe("INFINITY");
     expect(cell("A2")).toBe("-INFINITY");
 

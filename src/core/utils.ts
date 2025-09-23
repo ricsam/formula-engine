@@ -1,4 +1,9 @@
-import type { CellAddress, LocalCellAddress, SpreadsheetRange } from "./types";
+import type {
+  CellAddress,
+  LocalCellAddress,
+  RelativeRange,
+  SpreadsheetRange,
+} from "./types";
 
 // Column utilities
 export const columnToIndex = (col: string): number => {
@@ -128,4 +133,118 @@ export function isCellInRange(
     );
   }
   return false;
+}
+
+export function getRangeKey(range: SpreadsheetRange) {
+  let rangeKey = "";
+  rangeKey += getCellReference({
+    rowIndex: range.start.row,
+    colIndex: range.start.col,
+  });
+  rangeKey += ":";
+  if (range.end.col.type === "number" && range.end.row.type === "number") {
+    rangeKey += getCellReference({
+      rowIndex: range.end.row.value,
+      colIndex: range.end.col.value,
+    });
+  } else if (
+    range.end.col.type === "infinity" &&
+    range.end.row.type === "number"
+  ) {
+    rangeKey += `${getRowNumber(range.end.row.value)}`;
+  } else if (
+    range.end.col.type === "number" &&
+    range.end.row.type === "infinity"
+  ) {
+    rangeKey += indexToColumn(range.end.col.value);
+  } else if (
+    range.end.col.type === "infinity" &&
+    range.end.row.type === "infinity"
+  ) {
+    rangeKey += "INFINITY";
+  }
+  return rangeKey;
+}
+
+export function getRelativeRangeKey(range: RelativeRange): string {
+  let rangeKey = "";
+  rangeKey += getCellReference({
+    rowIndex: range.start.row,
+    colIndex: range.start.col,
+  });
+  rangeKey += ":";
+
+  if (range.width.type === "number") {
+    rangeKey += range.width.value;
+  } else {
+    rangeKey += "INFINITY";
+  }
+
+  rangeKey += "x";
+
+  if (range.height.type === "number") {
+    rangeKey += range.height.value;
+  } else {
+    rangeKey += "INFINITY";
+  }
+
+  return rangeKey;
+}
+
+export function getRelativeRange(
+  range: SpreadsheetRange,
+  relativeTo: LocalCellAddress
+): RelativeRange {
+  const dx = range.start.col - relativeTo.colIndex;
+  const dy = range.start.row - relativeTo.rowIndex;
+  const relativeRange: RelativeRange = {
+    start: {
+      col: dx,
+      row: dy,
+    },
+    width:
+      range.end.col.type === "number"
+        ? {
+            type: "number",
+            value: range.end.col.value - range.start.col + 1,
+          }
+        : range.end.col,
+    height:
+      range.end.row.type === "number"
+        ? {
+            type: "number",
+            value: range.end.row.value - range.start.row + 1,
+          }
+        : range.end.row,
+  };
+
+  return relativeRange;
+}
+
+export function getAbsoluteRange(
+  range: RelativeRange,
+  relativeTo: LocalCellAddress
+): SpreadsheetRange {
+  return {
+    start: {
+      col: range.start.col + relativeTo.colIndex,
+      row: range.start.row + relativeTo.rowIndex,
+    },
+    end: {
+      col:
+        range.width.type === "number"
+          ? {
+              type: "number",
+              value: range.start.col + range.width.value - 1 + relativeTo.colIndex,
+            }
+          : range.width,
+      row:
+        range.height.type === "number"
+          ? {
+              type: "number",
+              value: range.start.row + range.height.value - 1 + relativeTo.rowIndex,
+            }
+          : range.height,
+    },
+  };
 }

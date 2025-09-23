@@ -5,28 +5,28 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
   type ValueEvaluationResult,
-  type EvaluationContext,
   type CellAddress,
   type SpreadsheetRange,
   type SpilledValuesEvaluationResult,
   type SingleEvaluationResult,
   type ErrorEvaluationResult,
 } from "src/core/types";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 
 /**
  * IFERROR function - Returns a value you specify if a formula evaluates to an error
- * 
+ *
  * Usage: IFERROR(value, value_if_error)
- * 
+ *
  * value: The expression to check for errors (required)
  * value_if_error: The value to return if the expression is an error (required)
- * 
+ *
  * Examples:
  *   IFERROR(A1/B1, "Division error") - returns "Division error" if B1 is 0
  *   IFERROR(VLOOKUP(A1, table, 2), "Not found") - returns "Not found" if lookup fails
  *   IFERROR(1/0, 0) - returns 0 instead of #DIV/0! error
- * 
+ *
  * Note:
  * - If value is not an error, returns the value unchanged
  * - If value is an error, returns value_if_error
@@ -69,7 +69,10 @@ function createIfErrorSpilledResult(
           );
         }
         return spillArea;
-      } else if (hasSpilledError && valueIfErrorResult.type === "spilled-values") {
+      } else if (
+        hasSpilledError &&
+        valueIfErrorResult.type === "spilled-values"
+      ) {
         return valueIfErrorResult.spillArea(origin);
       } else {
         throw new Error("No spilled values found");
@@ -131,7 +134,7 @@ export const IFERROR: FunctionDefinition = {
 
     // Evaluate the value argument (the expression to check for errors)
     const valueResult = this.evaluateNode(node.args[0]!, context);
-    
+
     // Evaluate the value_if_error argument
     const valueIfErrorResult = this.evaluateNode(node.args[1]!, context);
     if (valueIfErrorResult.type === "error") {
@@ -139,7 +142,7 @@ export const IFERROR: FunctionDefinition = {
     }
 
     // Handle spilled values
-    const hasSpilledValues = 
+    const hasSpilledValues =
       valueResult.type === "spilled-values" ||
       valueIfErrorResult.type === "spilled-values";
 
