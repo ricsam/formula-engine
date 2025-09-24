@@ -137,53 +137,6 @@ export interface Workbook {
   sheets: Map<string, Sheet>;
 }
 
-/**
- * All dependency nodes are evaluated in the context of the current cell, so therefore it will always have a sheetName
- */
-export type DependencyNode = {
-  address: LocalCellAddress;
-  sheetName: string;
-  workbookName: string;
-};
-
-export type EvaluatedDependencyNode = {
-  /**
-   * resolved is true if all transitive dependencies are resolved.
-   * A dependency is resolved if it had no updates to its dependencies during the evaluation.
-   * 
-   * The dependencies considered include regular dependencies, frontier dependencies and discarded frontier dependencies.
-   * 
-   */
-  resolved?: boolean;
-  didUpdate?: boolean;
-  /**
-   * deps is the set of dependency node keys
-   */
-  deps?: Set<string>;
-  /**
-   * frontierDependencies is the set of dependency node keys that could spill values onto the target range (if evaluationResult is spilled-values)
-   *
-   * Map is keyed by the range key, e.g. A4:D8
-   */
-  frontierDependencies?: Map<string, Set<string>>;
-  /**
-   * discardedFrontierDependencies is the set of dependency node keys that were discarded as frontier dependencies because
-   * they they do not produce spilled values that spill onto the target range
-   *
-   * Map is keyed by the range key, e.g. A4:D8
-   */
-  discardedFrontierDependencies?: Map<string, Set<string>>;
-  /**
-   * evaluationResult is the evaluation result
-   */
-  evaluationResult?: FunctionEvaluationResult;
-
-  /**
-   * originSpillResult is the evaluation result of the spilled origin
-   */
-  originSpillResult?: SingleEvaluationResult;
-};
-
 export type ValueEvaluationResult = {
   type: "value";
   result: CellValue;

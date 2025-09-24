@@ -235,16 +235,72 @@ export function getAbsoluteRange(
         range.width.type === "number"
           ? {
               type: "number",
-              value: range.start.col + range.width.value - 1 + relativeTo.colIndex,
+              value:
+                range.start.col + range.width.value - 1 + relativeTo.colIndex,
             }
           : range.width,
       row:
         range.height.type === "number"
           ? {
               type: "number",
-              value: range.start.row + range.height.value - 1 + relativeTo.rowIndex,
+              value:
+                range.start.row + range.height.value - 1 + relativeTo.rowIndex,
             }
           : range.height,
     },
   };
+}
+
+export function keyToCellAddress(key: string): CellAddress {
+  const parts = key.split(":");
+
+  if (parts.length < 2) {
+    throw new Error(`Invalid dependency key format: ${key}`);
+  }
+
+  if (parts.length !== 4) {
+    throw new Error(`Invalid cell key format: ${key}`);
+  }
+  const workbookName = parts[1];
+  const sheetName = parts[2];
+  const cellRef = parts[3];
+
+  if (
+    workbookName === undefined ||
+    sheetName === undefined ||
+    cellRef === undefined
+  ) {
+    throw new Error(`Invalid cell key format: ${key}`);
+  }
+
+  const { rowIndex, colIndex } = parseCellReference(cellRef);
+
+  if (
+    rowIndex === undefined ||
+    colIndex === undefined ||
+    Number.isNaN(rowIndex) ||
+    Number.isNaN(colIndex)
+  ) {
+    throw new Error(`Invalid cell reference: ${cellRef}`);
+  }
+
+  return {
+    workbookName,
+    sheetName,
+    colIndex,
+    rowIndex,
+  };
+}
+
+export function cellAddressToKey(cellAddress: CellAddress): string {
+  if (
+    cellAddress.rowIndex === undefined ||
+    cellAddress.colIndex === undefined
+  ) {
+    throw new Error(
+      `Invalid cell address: rowIndex and colIndex must be defined (got rowIndex=${cellAddress.rowIndex}, colIndex=${cellAddress.colIndex})`
+    );
+  }
+  const cellRef = `${indexToColumn(cellAddress.colIndex)}${getRowNumber(cellAddress.rowIndex)}`;
+  return `cell:${cellAddress.workbookName}:${cellAddress.sheetName}:${cellRef}`;
 }

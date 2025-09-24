@@ -59,7 +59,7 @@ describe("Comparison Operators", () => {
         ])
       );
 
-      expect(cell("B1")).toBe(true);  // Same infinity
+      expect(cell("B1", true)).toBe(true);  // Same infinity
       expect(cell("B2")).toBe(false); // Different infinities
     });
 

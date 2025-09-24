@@ -1,12 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { FormulaEngine } from "src/core/engine";
-import {
-  FormulaError,
-  type DependencyNode,
-  type SerializedCellValue,
-} from "src/core/types";
+import { type SerializedCellValue } from "src/core/types";
 import { parseCellReference } from "src/core/utils";
-import { dependencyNodeToKey } from "src/core/utils/dependency-node-key";
 
 describe("DependencyManager", () => {
   const sheetName = "TestSheet";

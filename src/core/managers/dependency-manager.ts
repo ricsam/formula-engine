@@ -1,8 +1,5 @@
-import type { EvaluatedDependencyNode, DependencyNode } from "../types";
 import type { StoreManager } from "./store-manager";
 import type { WorkbookManager } from "./workbook-manager";
-import { keyToDependencyNode } from "../utils/dependency-node-key";
-import { FormulaError } from "../types";
 
 interface TopologicalSortResult {
   type: "success" | "cycle";
@@ -45,32 +42,7 @@ export class DependencyManager {
     const node = this.storeManager.getEvaluatedNode(nodeKey);
     if (!node) return new Set();
 
-    const frontierDepsMap = node.frontierDependencies ?? new Map();
-    const discardedDepsMap = node.discardedFrontierDependencies ?? new Map();
-    const deps = node.deps ?? new Set();
-
-    const allFrontierDeps = new Set<string>();
-    const allDiscardedDeps = new Set<string>();
-
-    // Collect all frontier dependencies across all ranges
-    for (const rangeDeps of frontierDepsMap.values()) {
-      for (const dep of rangeDeps) {
-        if (deps.has(dep)) {
-          continue;
-        }
-        allFrontierDeps.add(dep);
-      }
-    }
-
-    // Collect all discarded dependencies across all ranges
-    for (const rangeDeps of discardedDepsMap.values()) {
-      for (const dep of rangeDeps) {
-        allDiscardedDeps.add(dep);
-      }
-    }
-
-    // Return frontier dependencies minus discarded ones
-    return allFrontierDeps.difference(allDiscardedDeps);
+    return node.getAllFrontierDependencies();
   }
 
   /**
@@ -376,26 +348,6 @@ export class DependencyManager {
           toVisit.push(dep);
         }
       }
-    }
-  }
-
-  /**
-   * Mark nodes as having a cycle error
-   */
-  markNodesAsCycle(nodes: Set<string>, message: string): void {
-    for (const node of nodes) {
-      const currentNode = this.storeManager.getEvaluatedNode(node);
-      this.storeManager.setEvaluatedNode(node, {
-        deps: currentNode?.deps ?? new Set(),
-        frontierDependencies: currentNode?.frontierDependencies ?? new Map(),
-        discardedFrontierDependencies:
-          currentNode?.discardedFrontierDependencies ?? new Map(),
-        evaluationResult: {
-          type: "error",
-          err: FormulaError.CYCLE,
-          message,
-        },
-      });
     }
   }
 

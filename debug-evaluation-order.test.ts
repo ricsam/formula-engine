@@ -1,8 +1,7 @@
 import { test } from "bun:test";
 import { FormulaEngine } from "./src/core/engine";
-import { parseCellReference } from "./src/core/utils";
+import { cellAddressToKey, parseCellReference } from "./src/core/utils";
 import type { SerializedCellValue, SpreadsheetRange } from "./src/core/types";
-import { dependencyNodeToKey } from "./src/core/utils/dependency-node-key";
 
 test("debug evaluation order for multiplication", () => {
   const workbookName = "TestWorkbook";
@@ -57,8 +56,10 @@ test("debug evaluation order for multiplication", () => {
   console.log("\nStep 2: Evaluating C1");
 
   // Get the node key for C1
-  const c1NodeKey = dependencyNodeToKey({
-    address: { ...sheetAddress, colIndex: 2, rowIndex: 0 },
+  const c1NodeKey = cellAddressToKey({
+    ...sheetAddress,
+    colIndex: 2,
+    rowIndex: 0,
     sheetName,
     workbookName,
   });
@@ -95,8 +96,10 @@ test("debug evaluation order for multiplication", () => {
   }
 
   // Check B1 specifically
-  const b1NodeKey = dependencyNodeToKey({
-    address: { ...sheetAddress, colIndex: 1, rowIndex: 0 },
+  const b1NodeKey = cellAddressToKey({
+    ...sheetAddress,
+    colIndex: 1,
+    rowIndex: 0,
     sheetName,
     workbookName,
   });

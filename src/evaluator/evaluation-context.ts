@@ -2,13 +2,12 @@ import type { DependencyManager, EvaluationManager } from "src/core/managers";
 import type { StoreManager } from "src/core/managers/store-manager";
 import type {
   CellAddress,
-  EvaluatedDependencyNode,
   FunctionEvaluationResult,
   SingleEvaluationResult,
   SpreadsheetRange,
 } from "src/core/types";
-import { getCellReference, getRangeKey, indexToColumn } from "src/core/utils";
-import { dependencyNodeToKey } from "src/core/utils/dependency-node-key";
+import { cellAddressToKey, getCellReference, getRangeKey, indexToColumn } from "src/core/utils";
+import { DependencyNode } from "./dependency-node";
 
 export class EvaluationContext {
   private _currentCell: CellAddress;
@@ -28,7 +27,7 @@ export class EvaluationContext {
     private dependencyManager: DependencyManager,
     private storeManager: StoreManager,
     currentCell: CellAddress,
-    currentDepNode?: EvaluatedDependencyNode
+    currentDepNode?: DependencyNode
   ) {
     this._currentCell = currentCell;
     this.dependencies = currentDepNode?.deps ?? new Set();
@@ -123,13 +122,12 @@ export class EvaluationContext {
     return this.dependenciesDidUpdate;
   }
 
+  /**
+   * TODO move to dependency manager
+   */
   getTransitiveDependenciesResolved(deps: Set<string>) {
     // Get the current cell's dependency key to exclude self-references
-    const currentCellKey = dependencyNodeToKey({
-      address: this._currentCell,
-      sheetName: this._currentCell.sheetName,
-      workbookName: this._currentCell.workbookName,
-    });
+    const currentCellKey = cellAddressToKey(this._currentCell);
 
     // Track visited nodes to avoid infinite loops in circular dependencies
     const visited = new Set<string>();
@@ -169,10 +167,7 @@ export class EvaluationContext {
     return checkResolved(deps);
   }
 
-  getEvaluatedDependencyNode(
-    evaluationResult: FunctionEvaluationResult,
-    originSpillResult?: SingleEvaluationResult
-  ): EvaluatedDependencyNode {
+  getDependencyAttributes(): DependencyAttributes {
     // A node is resolved when:
     // 1. This context didn't update any dependencies during evaluation
     // 2. AND all its transitive dependencies (including frontier) are also resolved
@@ -199,8 +194,6 @@ export class EvaluationContext {
       deps: this.dependencies,
       frontierDependencies: this.frontierDependencies,
       discardedFrontierDependencies: this.discardedFrontierDependencies,
-      evaluationResult,
-      originSpillResult,
       didUpdate: !thisNodeDidNotUpdateDeps,
       resolved: thisNodeDidNotUpdateDeps && allTransitiveDepsResolved,
     };
@@ -214,3 +207,11 @@ export class EvaluationContext {
     );
   }
 }
+
+export type DependencyAttributes = {
+  deps: Set<string>;
+  frontierDependencies: Map<string, Set<string>>;
+  discardedFrontierDependencies: Map<string, Set<string>>;
+  didUpdate: boolean;
+  resolved: boolean;
+};

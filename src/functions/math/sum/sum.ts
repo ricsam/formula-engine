@@ -1,15 +1,10 @@
 import {
   FormulaError,
-  type CellAddress,
   type CellInfinity,
   type CellNumber,
   type FunctionDefinition,
-  type FunctionEvaluationResult,
   type SingleEvaluationResult,
 } from "src/core/types";
-import { parseCellReference } from "src/core/utils";
-import { dependencyNodeToKey } from "src/core/utils/dependency-node-key";
-import { OpenRangeEvaluator } from "../../../evaluator/open-range-evaluator";
 
 /**
  * SUM function - Adds all numbers in the arguments

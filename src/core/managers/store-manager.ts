@@ -1,27 +1,32 @@
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
+import type {
+  DependencyAttributes,
+  EvaluationContext,
+} from "src/evaluator/evaluation-context";
 import {
   type CellAddress,
-  type EvaluatedDependencyNode,
   type FunctionEvaluationResult,
+  type SingleEvaluationResult,
   type SpilledValue,
-  type SpreadsheetRange,
 } from "../types";
-import { isCellInRange } from "../utils";
-import {
-  dependencyNodeToKey,
-  keyToDependencyNode,
-} from "../utils/dependency-node-key";
-import type { NamedExpressionManager } from "./named-expression-manager";
+import { cellAddressToKey, isCellInRange } from "../utils";
+
+import { DependencyNode } from "src/evaluator/dependency-node";
 
 export class StoreManager {
+  /**
+   * move to dependency manager
+   */
   private evaluatedNodes: Map<
     /**
      * key is the dependency node key, from dependencyNodeToKey
      */
     string,
-    EvaluatedDependencyNode
+    DependencyNode
   > = new Map();
 
+  /**
+   * move to spilled value manager
+   */
   public spilledValues: Map<
     /**
      * key is the dependency node key, from dependencyNodeToKey for the origin cell
@@ -103,11 +108,7 @@ export class StoreManager {
         return spillOrigin.evaluate(spillSource.spillOffset, context);
       }
     }
-    const key = dependencyNodeToKey({
-      address: cellAddress,
-      sheetName: cellAddress.sheetName,
-      workbookName: cellAddress.workbookName,
-    });
+    const key = cellAddressToKey(cellAddress);
     context.addDependency(key);
     const result = this.evaluatedNodes.get(key)?.evaluationResult;
     return result;
@@ -118,24 +119,46 @@ export class StoreManager {
     this.spilledValues.clear();
   }
 
-  setEvaluatedNode(nodeKey: string, node: EvaluatedDependencyNode): void {
-    if (
-      node.evaluationResult &&
-      node.evaluationResult.type === "spilled-values" &&
-      !node.originSpillResult
-    ) {
-      throw new Error(
-        "Evaluation result is spilled-values but origin spill result is not set"
-      );
+  setEvaluatedNode(
+    nodeKey: string,
+    attributes: DependencyAttributes,
+    result: FunctionEvaluationResult,
+    originSpillResult?: SingleEvaluationResult
+  ): void {
+    const currentNode =
+      this.evaluatedNodes.get(nodeKey) ??
+      new DependencyNode(nodeKey, result, originSpillResult);
+    if (!currentNode) {
+      throw new Error("Node not found");
     }
-    this.evaluatedNodes.set(nodeKey, node);
+    currentNode.setDependencyAttributes(attributes);
+    currentNode.setEvaluationResult(result, originSpillResult);
+
+    this.evaluatedNodes.set(nodeKey, currentNode);
   }
 
-  getEvaluatedNode(nodeKey: string): EvaluatedDependencyNode | undefined {
+  setEvaluatedResult(
+    nodeKey: string,
+    result: FunctionEvaluationResult,
+    originSpillResult?: SingleEvaluationResult
+  ): void {
+    const currentNode =
+      this.evaluatedNodes.get(nodeKey) ??
+      new DependencyNode(nodeKey, result, originSpillResult);
+    if (!currentNode) {
+      throw new Error("Node not found");
+    }
+    currentNode.setEvaluationResult(result, originSpillResult);
+
+    this.evaluatedNodes.set(nodeKey, currentNode);
+  }
+
+  getEvaluatedNode(nodeKey: string): DependencyNode | undefined {
     return this.evaluatedNodes.get(nodeKey);
   }
 
-  getEvaluatedNodes(): Map<string, EvaluatedDependencyNode> {
+  getEvaluatedNodes(): Map<string, DependencyNode> {
     return this.evaluatedNodes;
   }
+
 }

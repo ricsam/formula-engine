@@ -1,26 +1,18 @@
 import type { WorkbookManager } from "src/core/managers";
 import {
   type CellAddress,
-  type ErrorEvaluationResult,
-  type RelativeRange,
   type EvaluateAllCellsResult,
-  type FunctionEvaluationResult,
-  type LocalCellAddress,
   type SpilledValuesEvaluationResult,
   type SpilledValuesEvaluator,
   type SpreadsheetRange,
-  type ValueEvaluationResult,
   FormulaError,
 } from "src/core/types";
 import {
+  cellAddressToKey,
   getCellReference,
-  getRangeKey,
-  getRelativeRange,
-  getRelativeRangeKey,
   isCellInRange,
-  parseCellReference,
 } from "src/core/utils";
-import { dependencyNodeToKey } from "src/core/utils/dependency-node-key";
+
 import type { StoreManager } from "src/core/managers/store-manager";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 import type { EvaluationContext } from "./evaluation-context";
@@ -100,11 +92,7 @@ export class OpenRangeEvaluator {
 
     // Evaluate frontier candidates first using the iterator
     for (const candidate of frontierCandidates) {
-      const key = dependencyNodeToKey({
-        address: candidate,
-        sheetName: candidate.sheetName,
-        workbookName: candidate.workbookName,
-      });
+      const key = cellAddressToKey(candidate);
 
       if (context.isFrontierDependencyDiscarded(key, options.origin.range)) {
         continue;
