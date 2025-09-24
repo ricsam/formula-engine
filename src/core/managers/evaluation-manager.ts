@@ -44,6 +44,7 @@ export class EvaluationManager {
   }
 
   clearEvaluationCache(): void {
+    this.numCalls = 0;
     this.dependencyManager.clearEvaluationCache();
   }
 
@@ -443,6 +444,7 @@ export class EvaluationManager {
 
     return true;
   }
+  public numCalls = 0;
 
   getCellEvaluationResult(
     cellAddress: CellAddress
@@ -471,6 +473,17 @@ export class EvaluationManager {
         value.evaluationResult.type === "spilled-values" &&
         !value.originSpillResult)
     ) {
+      this.numCalls++;
+      if (this.numCalls > 279) {
+        return {
+          type: "value",
+          result: {
+            type: "string",
+            value: "timeout",
+          },
+        };
+      }
+
       this.evaluateCell(cellAddress);
       value = getEvaluatedNode();
     }

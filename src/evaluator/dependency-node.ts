@@ -153,29 +153,22 @@ export class DependencyNode {
     const deps = this.deps ?? new Set();
 
     const allFrontierDeps = new Set<string>();
-    const allDiscardedDeps = new Set<string>();
 
     // Collect all frontier dependencies across all ranges
-    for (const rangeDeps of frontierDepsMap.values()) {
+    for (const [rangeKey, rangeDeps] of frontierDepsMap) {
       for (const dep of rangeDeps) {
         if (deps.has(dep)) {
+          continue;
+        }
+        if (discardedDepsMap.has(rangeKey) && discardedDepsMap.get(rangeKey)?.has(dep)) {
           continue;
         }
         allFrontierDeps.add(dep);
       }
     }
 
-    // Collect all discarded dependencies across all ranges
-    for (const rangeDeps of discardedDepsMap.values()) {
-      for (const dep of rangeDeps) {
-        allDiscardedDeps.add(dep);
-      }
-    }
-
-    // Return frontier dependencies minus discarded ones
-    const result = allFrontierDeps.difference(allDiscardedDeps);
-    this._allFrontierDependenciesCache = result;
-    return result;
+    this._allFrontierDependenciesCache = allFrontierDeps;
+    return allFrontierDeps;
   }
 
   private setsEqual(set1: Set<string>, set2: Set<string>): boolean {

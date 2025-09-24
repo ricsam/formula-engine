@@ -4,39 +4,39 @@ import {
   type FunctionEvaluationResult,
 } from "src/core/types";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import { 
-  processMultiCriteriaValues, 
+import {
+  processMultiCriteriaValues,
   validateSingleCriteriaArgs,
 } from "../../criteria-utils";
 import { parseCriteria, matchesParsedCriteria } from "../../criteria-parser";
-import { performAverage } from "./average-utils";
+import { performSummation } from "./summation-utils";
 
 /**
- * AVERAGEIF function - Calculates the average of cells in a range that meet a criteria
- * 
- * Usage: AVERAGEIF(range, criteria, [average_range])
- * 
+ * SUMIF function - Sums cells in a range that meet a criteria
+ *
+ * Usage: SUMIF(range, criteria, [sum_range])
+ *
  * range: The range of cells to evaluate against the criteria
  * criteria: The criteria to match against. Can be:
  *   - Exact value: "Apple", 42
  *   - Comparison: ">10", "<=5", "<>0"
  *   - Wildcards: "App*", "?ruit"
- * average_range: Optional. The range to average. If omitted, uses the range parameter
- * 
+ * sum_range: Optional. The range to sum. If omitted, uses the range parameter
+ *
  * Examples:
- *   AVERAGEIF(A1:A10, "Apple") - averages cells in A1:A10 that contain "Apple"
- *   AVERAGEIF(B1:B10, ">10") - averages cells in B1:B10 with values greater than 10
- *   AVERAGEIF(A1:A10, "Apple", B1:B10) - averages B1:B10 where A1:A10 contains "Apple"
- * 
+ *   SUMIF(A1:A10, "Apple") - sums cells in A1:A10 that contain "Apple"
+ *   SUMIF(B1:B10, ">10") - sums cells in B1:B10 with values greater than 10
+ *   SUMIF(A1:A10, "Apple", B1:B10) - sums B1:B10 where A1:A10 contains "Apple"
+ *
  * Note:
- * - Only numeric values are included in the average calculation
- * - Returns error if no values match the criteria
+ * - Only numeric values are included in the sum
+ * - Returns 0 if no values match the criteria
  */
-export const AVERAGEIF: FunctionDefinition = {
-  name: "AVERAGEIF",
+export const SUMIF: FunctionDefinition = {
+  name: "SUMIF",
   evaluate: function (node, context): FunctionEvaluationResult {
     // Validate arguments
-    const argError = validateSingleCriteriaArgs("AVERAGEIF", node.args.length);
+    const argError = validateSingleCriteriaArgs("SUMIF", node.args.length);
     if (argError) {
       return argError;
     }
@@ -57,7 +57,7 @@ export const AVERAGEIF: FunctionDefinition = {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        message: "AVERAGEIF criteria must be a single value",
+        message: "SUMIF criteria must be a single value",
       };
     }
 
@@ -71,23 +71,24 @@ export const AVERAGEIF: FunctionDefinition = {
       };
     }
 
-    // Determine average range (third argument if present, otherwise same as criteria range)
-    const averageRangeResult = node.args.length === 3 
-      ? this.evaluateNode(node.args[2]!, context)
-      : criteriaRangeResult;
-    
-    if (averageRangeResult.type === "error") {
-      return averageRangeResult;
+    // Determine sum range (third argument if present, otherwise same as criteria range)
+    const sumRangeResult =
+      node.args.length === 3
+        ? this.evaluateNode(node.args[2]!, context)
+        : criteriaRangeResult;
+
+    if (sumRangeResult.type === "error") {
+      return sumRangeResult;
     }
 
-    // Use shared average utility for standard cases
+    // Use shared summation utility
     const matchingValues = processMultiCriteriaValues(
       this,
-      averageRangeResult,
+      sumRangeResult,
       [{ rangeResult: criteriaRangeResult, parsedCriteria }],
       context
     );
 
-    return performAverage(matchingValues);
+    return performSummation(matchingValues);
   },
 };

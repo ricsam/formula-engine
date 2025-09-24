@@ -10,6 +10,7 @@ import type { FunctionDefinition } from "src/core/types";
 import { SEQUENCE } from "./array/sequence/sequence";
 import { INDEX } from "./lookup/index-lookup/index-lookup"; // Fixed import path
 import { MATCH } from "./lookup/match/match";
+import { COUNT } from "./lookup/count/count";
 import { COUNTIF } from "./lookup/count/countif";
 import { AVERAGE } from "./math/average/average";
 import { AVERAGEIF } from "./math/average/averageif";
@@ -19,6 +20,11 @@ import { MAXIFS } from "./math/max/maxifs";
 import { MIN } from "./math/min/min";
 import { MINIFS } from "./math/min/minifs";
 import { SUM } from "./math/sum/sum";
+import { SUMIF } from "./math/sum/sumif";
+import { SUMIFS } from "./math/sum/sumifs";
+import { COUNTIFS } from "./lookup/count/countifs";
+import { MAXIF } from "./math/max/maxif";
+import { MINIF } from "./math/min/minif";
 import { CEILING } from "./math/ceiling/ceiling";
 import { EXACT } from "./text/exact/exact";
 import { FIND } from "./text/find/find";
@@ -53,7 +59,9 @@ export const functions: Record<string, FunctionDefinition> = buildFunctionIndex(
     AVERAGEIFS,
     CEILING,
     CONCATENATE,
+    COUNT,
     COUNTIF,
+    COUNTIFS,
     EXACT,
     FIND,
     IF,
@@ -63,12 +71,16 @@ export const functions: Record<string, FunctionDefinition> = buildFunctionIndex(
     LEN,
     MATCH,
     MAX,
+    MAXIF,
     MAXIFS,
     MID,
     MIN,
+    MINIF,
     MINIFS,
     RIGHT,
     SEQUENCE,
     SUM,
+    SUMIF,
+    SUMIFS,
   }
 );

@@ -1,18 +1,13 @@
 import {
   FormulaError,
-  type CellValue,
-  type CellNumber,
   type FunctionDefinition,
   type FunctionEvaluationResult,
-  type ValueEvaluationResult,
-  type CellAddress,
-  type SpreadsheetRange,
-  type SpilledValuesEvaluationResult,
-  type SingleEvaluationResult,
 } from "src/core/types";
-import type { FormulaEngine } from "src/core/engine";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
-import { OpenRangeEvaluator } from "../../../evaluator/open-range-evaluator";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
+import { 
+  processMultiCriteriaValues, 
+  validateSingleCriteriaArgs 
+} from "../../criteria-utils";
 import { parseCriteria, matchesParsedCriteria } from "../../criteria-parser";
 
 /**
@@ -45,6 +40,7 @@ import { parseCriteria, matchesParsedCriteria } from "../../criteria-parser";
 export const COUNTIF: FunctionDefinition = {
   name: "COUNTIF",
   evaluate: function (node, context): FunctionEvaluationResult {
+    // Validate arguments - COUNTIF takes exactly 2 arguments
     if (node.args.length !== 2) {
       return {
         type: "error",
@@ -53,19 +49,18 @@ export const COUNTIF: FunctionDefinition = {
       };
     }
 
-    // Evaluate range argument
-    const rangeResult = this.evaluateNode(node.args[0]!, context);
-    if (rangeResult.type === "error") {
-      return rangeResult;
+    // Evaluate criteria range (first argument)
+    const criteriaRangeResult = this.evaluateNode(node.args[0]!, context);
+    if (criteriaRangeResult.type === "error") {
+      return criteriaRangeResult;
     }
 
-    // Evaluate criteria argument
+    // Evaluate criteria (second argument)
     const criteriaResult = this.evaluateNode(node.args[1]!, context);
     if (criteriaResult.type === "error") {
       return criteriaResult;
     }
 
-    // Criteria must be a single value
     if (criteriaResult.type !== "value") {
       return {
         type: "error",
@@ -74,9 +69,7 @@ export const COUNTIF: FunctionDefinition = {
       };
     }
 
-    let count = 0;
-
-    // Parse the criteria using the new parser
+    // Parse criteria
     const parsedCriteria = parseCriteria(criteriaResult.result);
     if (parsedCriteria.type === "error") {
       return {
@@ -87,12 +80,12 @@ export const COUNTIF: FunctionDefinition = {
     }
 
     // Special case: counting empty cells over infinite ranges
-    if (rangeResult.type === "spilled-values" && 
+    if (criteriaRangeResult.type === "spilled-values" && 
         parsedCriteria.type === "exact" && 
         parsedCriteria.value.type === "string" && 
         parsedCriteria.value.value === "") {
       
-      const spillArea = rangeResult.spillArea(context.currentCell);
+      const spillArea = criteriaRangeResult.spillArea(context.currentCell);
       
       // Check if this is an infinite range
       if (spillArea.end.col.type === "infinity" || spillArea.end.row.type === "infinity") {
@@ -102,66 +95,19 @@ export const COUNTIF: FunctionDefinition = {
           result: { type: "infinity", sign: "positive" },
         };
       }
-      
-      // Finite range - count empty cells by iterating over all cells in spill area
-      if (spillArea.end.col.type === "number" && spillArea.end.row.type === "number") {
-        let emptyCount = 0;
-        
-        for (let row = spillArea.start.row; row <= spillArea.end.row.value; row++) {
-          for (let col = spillArea.start.col; col <= spillArea.end.col.value; col++) {
-            const cellResult = rangeResult.evaluate(
-              { x: col - spillArea.start.col, y: row - spillArea.start.row }, 
-              context
-            );
-            
-            // If cell is undefined/null or empty string, count it
-            if (!cellResult || 
-                (cellResult.type === "value" && 
-                 cellResult.result.type === "string" && 
-                 cellResult.result.value === "")) {
-              emptyCount++;
-            }
-          }
-        }
-        
-        return {
-          type: "value",
-          result: { type: "number", value: emptyCount },
-        };
-      }
     }
 
-    // Handle different range types (normal case)
-    if (rangeResult.type === "value") {
-      // Single value case
-      if (matchesParsedCriteria(rangeResult.result, parsedCriteria)) {
-        count = 1;
-      }
-    } else if (rangeResult.type === "spilled-values") {
-      // Range case - use evaluateAllCells to iterate over non-empty cells
-      const values = rangeResult.evaluateAllCells.call(this, {
-        context,
-        evaluate: rangeResult.evaluate,
-        origin: context.currentCell,
-      });
+    // Use shared criteria processing - count all matching values (including non-numeric)
+    let count = 0;
 
-      for (const cellResult of values) {
-        if (cellResult.result.type === "error") {
-          // Skip error cells (like Excel does)
-          continue;
-        }
-        if (cellResult.result.type === "value") {
-          if (matchesParsedCriteria(cellResult.result.result, parsedCriteria)) {
-            count++;
-          }
-        }
-      }
-    } else {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Invalid range argument type",
-      };
+    for (const result of processMultiCriteriaValues(
+      this,
+      criteriaRangeResult,
+      [{ rangeResult: criteriaRangeResult, parsedCriteria }],
+      context
+    )) {
+      // COUNTIF counts all matching cells, including errors and non-numeric values
+      count++;
     }
 
     return {

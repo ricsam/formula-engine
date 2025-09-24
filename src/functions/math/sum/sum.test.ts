@@ -432,7 +432,7 @@ describe("SUM function", () => {
     expect(cell("B3")).toBe("INFINITY"); // Inf + (-Inf) = Inf (engine behavior)
   });
 
-  test("error handling", () => {
+  test("non-numeric values are ignored", () => {
     engine.setSheetContent(
       sheetAddress,
       new Map<string, SerializedCellValue>([
@@ -445,11 +445,10 @@ describe("SUM function", () => {
       ])
     );
 
-    // These should return errors due to non-numeric values
-    expect(cell("B1")).toBe("#VALUE!");
-    expect(cell("B2")).toBe("#VALUE!");
+    // These should return the only number: 10
+    expect(cell("B1")).toBe(10);
+    expect(cell("B2")).toBe(10);
 
-    // ENGINE ISSUE: SUM() with no arguments causes parse error instead of being handled by function
     expect(cell("B3")).toBe(0); // SUM with no arguments typically returns 0
   });
 

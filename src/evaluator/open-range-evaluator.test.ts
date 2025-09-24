@@ -97,14 +97,14 @@ describe("OpenRangeEvaluator", () => {
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(B10:B)"],
           ["B10", 10],
-          ["B11", "text"], // Should cause #VALUE! error
+          ["B11", "text"], // Should be ignored
           ["B12", 20],
-          ["B13", true], // Should cause #VALUE! error
+          ["B13", true], // Should be ignored
         ])
       );
 
       const result = cell("A1");
-      expect(result).toBe("#VALUE!");
+      expect(result).toBe(30);
     });
   });
 

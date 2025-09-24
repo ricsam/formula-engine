@@ -281,7 +281,7 @@ describe("AVERAGE function", () => {
     expect(cell("B3")).toBe("INFINITY"); // (Inf + (-Inf)) / 2 = Inf (engine behavior)
   });
 
-  test("error handling", () => {
+  test("non-numeric values are ignored", () => {
     engine.setSheetContent(
       sheetAddress,
       new Map<string, SerializedCellValue>([
@@ -294,9 +294,9 @@ describe("AVERAGE function", () => {
       ])
     );
 
-    // These should return errors due to non-numeric values
-    expect(cell("B1")).toBe("#VALUE!");
-    expect(cell("B2")).toBe("#VALUE!");
+    // Non-numeric values are now ignored, so these return the numeric values
+    expect(cell("B1")).toBe(10); // Ignores "text", returns 10
+    expect(cell("B2")).toBe(10); // Ignores true, returns 10
 
     // ENGINE ISSUE: AVERAGE() with no arguments causes parse error instead of being handled by function
     expect(cell("B3")).toBe("#DIV/0!"); // AVERAGE with no arguments should return error

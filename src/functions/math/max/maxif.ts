@@ -6,37 +6,37 @@ import {
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
 import { 
   processMultiCriteriaValues, 
-  validateSingleCriteriaArgs,
+  validateSingleCriteriaArgs 
 } from "../../criteria-utils";
 import { parseCriteria, matchesParsedCriteria } from "../../criteria-parser";
-import { performAverage } from "./average-utils";
+import { performMaximum } from "./max-utils";
 
 /**
- * AVERAGEIF function - Calculates the average of cells in a range that meet a criteria
+ * MAXIF function - Returns the maximum value among cells specified by a criteria
  * 
- * Usage: AVERAGEIF(range, criteria, [average_range])
+ * Usage: MAXIF(range, criteria, [max_range])
  * 
  * range: The range of cells to evaluate against the criteria
  * criteria: The criteria to match against. Can be:
  *   - Exact value: "Apple", 42
  *   - Comparison: ">10", "<=5", "<>0"
  *   - Wildcards: "App*", "?ruit"
- * average_range: Optional. The range to average. If omitted, uses the range parameter
+ * max_range: Optional. The range to find maximum from. If omitted, uses the range parameter
  * 
  * Examples:
- *   AVERAGEIF(A1:A10, "Apple") - averages cells in A1:A10 that contain "Apple"
- *   AVERAGEIF(B1:B10, ">10") - averages cells in B1:B10 with values greater than 10
- *   AVERAGEIF(A1:A10, "Apple", B1:B10) - averages B1:B10 where A1:A10 contains "Apple"
+ *   MAXIF(A1:A10, "Apple") - max of cells in A1:A10 that contain "Apple"
+ *   MAXIF(B1:B10, ">10") - max of cells in B1:B10 with values greater than 10
+ *   MAXIF(A1:A10, "Apple", B1:B10) - max of B1:B10 where A1:A10 contains "Apple"
  * 
  * Note:
- * - Only numeric values are included in the average calculation
+ * - Only numeric values are considered for the maximum
  * - Returns error if no values match the criteria
  */
-export const AVERAGEIF: FunctionDefinition = {
-  name: "AVERAGEIF",
+export const MAXIF: FunctionDefinition = {
+  name: "MAXIF",
   evaluate: function (node, context): FunctionEvaluationResult {
     // Validate arguments
-    const argError = validateSingleCriteriaArgs("AVERAGEIF", node.args.length);
+    const argError = validateSingleCriteriaArgs("MAXIF", node.args.length);
     if (argError) {
       return argError;
     }
@@ -57,7 +57,7 @@ export const AVERAGEIF: FunctionDefinition = {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        message: "AVERAGEIF criteria must be a single value",
+        message: "MAXIF criteria must be a single value",
       };
     }
 
@@ -71,23 +71,23 @@ export const AVERAGEIF: FunctionDefinition = {
       };
     }
 
-    // Determine average range (third argument if present, otherwise same as criteria range)
-    const averageRangeResult = node.args.length === 3 
+    // Determine max range (third argument if present, otherwise same as criteria range)
+    const maxRangeResult = node.args.length === 3 
       ? this.evaluateNode(node.args[2]!, context)
       : criteriaRangeResult;
     
-    if (averageRangeResult.type === "error") {
-      return averageRangeResult;
+    if (maxRangeResult.type === "error") {
+      return maxRangeResult;
     }
 
-    // Use shared average utility for standard cases
+    // Use shared maximum utility
     const matchingValues = processMultiCriteriaValues(
       this,
-      averageRangeResult,
+      maxRangeResult,
       [{ rangeResult: criteriaRangeResult, parsedCriteria }],
       context
     );
 
-    return performAverage(matchingValues);
+    return performMaximum(matchingValues);
   },
 };

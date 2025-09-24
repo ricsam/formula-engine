@@ -29,6 +29,7 @@ import { renameNamedExpressionInFormula } from "./named-expression-renamer";
 import { renameSheetInFormula } from "./sheet-renamer";
 import { renameTableInFormula } from "./table-renamer";
 import { renameWorkbookInFormula } from "./workbook-renamer";
+import { cellAddressToKey } from "./utils";
 
 /**
  * Main FormulaEngine class

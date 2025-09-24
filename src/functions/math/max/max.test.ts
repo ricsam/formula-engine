@@ -279,7 +279,7 @@ describe("MAX function", () => {
     expect(cell("B3")).toBe("INFINITY"); // Max of Inf and -Inf is Inf
   });
 
-  test("error handling", () => {
+  test("non-numeric values are ignored", () => {
     engine.setSheetContent(
       sheetAddress,
       new Map<string, SerializedCellValue>([
@@ -292,9 +292,9 @@ describe("MAX function", () => {
       ])
     );
 
-    // These should return errors due to non-numeric values
-    expect(cell("B1")).toBe(FormulaError.VALUE);
-    expect(cell("B2")).toBe(FormulaError.VALUE);
+    // Non-numeric values are now ignored, so these return the numeric values
+    expect(cell("B1")).toBe(10); // Ignores "text", returns 10
+    expect(cell("B2")).toBe(10); // Ignores true, returns 10
 
     // ENGINE ISSUE: MAX() with no arguments causes parse error instead of being handled by function
     expect(cell("B3")).toBe(FormulaError.VALUE); // MAX with no arguments should return error
