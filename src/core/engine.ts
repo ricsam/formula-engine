@@ -40,7 +40,7 @@ export class FormulaEngine {
   private eventManager: EventManager;
   private evaluationManager: EvaluationManager;
   private autoFillManager: AutoFill;
-  private storeManager: DependencyManager;
+  private dependencyManager: DependencyManager;
 
   /**
    * Public access to the store manager for testing
@@ -51,18 +51,18 @@ export class FormulaEngine {
   public _eventManager: EventManager;
   public _evaluationManager: EvaluationManager;
   public _autoFillManager: AutoFill;
-  public _storeManager: DependencyManager;
+  public _dependencyManager: DependencyManager;
 
   constructor() {
     this.eventManager = new EventManager();
     this.workbookManager = new WorkbookManager();
     this.namedExpressionManager = new NamedExpressionManager();
     this.tableManager = new TableManager(this.workbookManager);
-    this.storeManager = new DependencyManager();
+    this.dependencyManager = new DependencyManager();
 
     const formulaEvaluator = new FormulaEvaluator(
       this.tableManager,
-      this.storeManager,
+      this.dependencyManager,
       this.namedExpressionManager,
       this.workbookManager
     );
@@ -70,7 +70,7 @@ export class FormulaEngine {
     this.evaluationManager = new EvaluationManager(
       this.workbookManager,
       formulaEvaluator,
-      this.storeManager
+      this.dependencyManager
     );
 
     this.autoFillManager = new AutoFill(this.workbookManager, this);
@@ -81,7 +81,7 @@ export class FormulaEngine {
     this._eventManager = this.eventManager;
     this._evaluationManager = this.evaluationManager;
     this._autoFillManager = this.autoFillManager;
-    this._storeManager = this.storeManager;
+    this._dependencyManager = this.dependencyManager;
   }
 
   /**

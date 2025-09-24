@@ -48,7 +48,7 @@ describe("DependencyManager", () => {
       const deps: string[] = [];
       const frontierDependencies: Record<string, string[]> = {};
       const discardedFrontierDependencies: Record<string, string[]> = {};
-      const node = engine._storeManager.getEvaluatedNode(cellToDepKey(cell));
+      const node = engine._dependencyManager.getEvaluatedNode(cellToDepKey(cell));
       node?.deps?.forEach((dep) => deps.push(dep.split(":")[3]!));
 
       // Handle Map-based frontier dependencies
@@ -82,13 +82,13 @@ describe("DependencyManager", () => {
     };
 
     const evalOrder = (cell: string) => {
-      return engine._storeManager
+      return engine._dependencyManager
         .buildEvaluationOrder(cellToDepKey(cell))
         .evaluationOrder.map((depKey) => depKey.split(":")[3]!);
     };
 
     const dependencyTree = (cell: string) => {
-      return engine._storeManager.getDependencyTree(cellToDepKey(cell));
+      return engine._dependencyManager.getDependencyTree(cellToDepKey(cell));
     };
 
     test("Should reproduce DEPENDENCY_RESOLUTION_SPEC.md SUM example - tracking eval order at each step", () => {

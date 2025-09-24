@@ -254,3 +254,10 @@ export interface FunctionDefinition {
 export type EvaluationResult = {
   dependencies: Set<string>;
 } & FunctionEvaluationResult;
+
+export type EvaluationOrder = {
+  evaluationOrder: string[];
+  hasCycle: boolean;
+  cycleNodes?: Set<string>;
+  hash: string;
+};

@@ -18,7 +18,7 @@ export class EvaluationContext {
   private dependenciesDidUpdate: boolean;
 
   constructor(
-    private storeManager: DependencyManager,
+    private dependencyManager: DependencyManager,
     currentCell: CellAddress,
     currentDepNode?: DependencyNode
   ) {
@@ -78,7 +78,7 @@ export class EvaluationContext {
       return;
     }
     // Only discard if the frontier dependency itself is resolved
-    const depNode = this.storeManager.getEvaluatedNode(dependency);
+    const depNode = this.dependencyManager.getEvaluatedNode(dependency);
     if (depNode?.resolved) {
       this.discardFrontierDependency(dependency, range);
     }
@@ -89,7 +89,7 @@ export class EvaluationContext {
       return;
     }
     // Only upgrade if the frontier dependency itself is resolved
-    const depNode = this.storeManager.getEvaluatedNode(dependency);
+    const depNode = this.dependencyManager.getEvaluatedNode(dependency);
     if (depNode?.resolved) {
       this.addDependency(dependency);
     }
@@ -133,7 +133,7 @@ export class EvaluationContext {
         }
         visited.add(nodeKey);
 
-        const node = this.storeManager.getEvaluatedNode(nodeKey);
+        const node = this.dependencyManager.getEvaluatedNode(nodeKey);
         if (!node) {
           return false; // Node doesn't exist yet, not resolved
         }
@@ -143,13 +143,13 @@ export class EvaluationContext {
         }
 
         // Check the node's direct dependencies
-        const directDeps = this.storeManager.getNodeDeps(nodeKey);
+        const directDeps = this.dependencyManager.getNodeDeps(nodeKey);
         if (!checkResolved(directDeps)) {
           return false;
         }
 
         const frontierDeps =
-          this.storeManager.getNodeFrontierDependencies(nodeKey);
+          this.dependencyManager.getNodeFrontierDependencies(nodeKey);
         if (!checkResolved(frontierDeps)) {
           return false;
         }

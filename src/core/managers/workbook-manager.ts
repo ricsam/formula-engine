@@ -504,6 +504,10 @@ export class WorkbookManager {
     // Clear existing content without breaking the Map reference
     sheet.content.clear();
 
+    // Clean up indexes for this sheet
+    const key = this.getSheetIndexKey(opts.workbookName, opts.sheetName);
+    this.sheetIndexes.delete(key);
+
     // Repopulate with new content
     newContent.forEach((value, key) => {
       this.setCellContent(

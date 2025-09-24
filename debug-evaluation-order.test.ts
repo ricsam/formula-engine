@@ -41,11 +41,11 @@ test("debug evaluation order for multiplication", () => {
   console.log("D11 result:", d11Result);
 
   // Check evaluated nodes after D11
-  const storeManager = engine._storeManager;
+  const dependencyManager = engine._dependencyManager;
 
   console.log("\n=== Evaluated Nodes after D11 ===");
   const evaluatedAfterD11 = new Set<string>();
-  for (const [key, node] of storeManager.getEvaluatedNodes()) {
+  for (const [key, node] of dependencyManager.getEvaluatedNodes()) {
     evaluatedAfterD11.add(key);
     console.log(
       `${key}: deps=${node.deps ? [...node.deps] : []}, frontierDeps=${node.frontierDependencies ? [...node.frontierDependencies] : []}`
@@ -65,7 +65,7 @@ test("debug evaluation order for multiplication", () => {
 
   // Build evaluation order for C1
   console.log("\nBuilding evaluation order for C1...");
-  const evaluationPlan = storeManager.buildEvaluationOrder(c1NodeKey);
+  const evaluationPlan = dependencyManager.buildEvaluationOrder(c1NodeKey);
   console.log("Has cycle:", evaluationPlan.hasCycle);
   console.log("Evaluation order:", evaluationPlan.evaluationOrder);
 
@@ -75,7 +75,7 @@ test("debug evaluation order for multiplication", () => {
 
   // Check what new nodes were evaluated
   console.log("\n=== New Evaluated Nodes after C1 ===");
-  for (const [key, node] of storeManager.getEvaluatedNodes()) {
+  for (const [key, node] of dependencyManager.getEvaluatedNodes()) {
     if (!evaluatedAfterD11.has(key)) {
       console.log(
         `${key}: deps=${node.deps ? [...node.deps] : []}, frontierDeps=${node.frontierDependencies ? [...node.frontierDependencies] : []}, discardedFrontierDeps=${node.discardedFrontierDependencies ? [...node.discardedFrontierDependencies] : []}`
@@ -85,7 +85,7 @@ test("debug evaluation order for multiplication", () => {
 
   // Check all evaluated nodes after C1
   console.log("\n=== All Evaluated Nodes after C1 ===");
-  for (const [key, node] of storeManager.getEvaluatedNodes()) {
+  for (const [key, node] of dependencyManager.getEvaluatedNodes()) {
     const resultType = node.evaluationResult?.type;
     const resultValue =
       resultType === "value" ? node.evaluationResult?.result : resultType;
@@ -102,7 +102,7 @@ test("debug evaluation order for multiplication", () => {
     sheetName,
     workbookName,
   });
-  const b1Node = storeManager.getEvaluatedNode(b1NodeKey);
+  const b1Node = dependencyManager.getEvaluatedNode(b1NodeKey);
   console.log("\n=== B1 Node Details ===");
   console.log("B1 evaluated:", !!b1Node);
   if (b1Node) {

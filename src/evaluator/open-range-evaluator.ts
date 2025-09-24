@@ -22,7 +22,7 @@ import type { EvaluationContext } from "./evaluation-context";
  */
 export class OpenRangeEvaluator {
   constructor(
-    private storeManager: DependencyManager,
+    private dependencyManager: DependencyManager,
     private workbookManager: WorkbookManager,
     private evaluator: FormulaEvaluator
   ) {}
@@ -98,7 +98,7 @@ export class OpenRangeEvaluator {
         continue;
       }
 
-      const result = this.storeManager.getEvaluatedNode(key)?.evaluationResult;
+      const result = this.dependencyManager.getEvaluatedNode(key)?.evaluationResult;
 
       context.addFrontierDependency(key, options.origin.range);
 
@@ -140,7 +140,7 @@ export class OpenRangeEvaluator {
     for (const address of cellsInRange) {
       const cellKey = getCellReference(address);
 
-      const result = this.storeManager.evalTimeSafeEvaluateCell(
+      const result = this.dependencyManager.evalTimeSafeEvaluateCell(
         {
           ...address,
           sheetName: options.origin.sheetName,

@@ -4,6 +4,7 @@ import type {
 } from "src/evaluator/evaluation-context";
 import {
   type CellAddress,
+  type EvaluationOrder,
   type FunctionEvaluationResult,
   type SingleEvaluationResult,
   type SpilledValue,
@@ -33,6 +34,9 @@ export interface DependencyTreeNode {
   };
 }
 
+/**
+ * The DependencyManager is responsible for storing the evaluated values and their dependencies.
+ */
 export class DependencyManager {
   /**
    * The dependency graph
@@ -201,29 +205,53 @@ export class DependencyManager {
   }
 
   /**
-   * Get transitive dependencies using the provided dependency getter
+   * Get transitive dependencies and transitive frontier dependencies
    */
   getTransitiveDeps(
     nodeKey: string,
-    getDeps: (key: string) => Set<string>,
     visited: Set<string> = new Set()
   ): Set<string> {
+    // Prevent infinite recursion
     if (visited.has(nodeKey)) {
       return new Set();
     }
+
+    const node = this.getEvaluatedNode(nodeKey);
+    // If we have cached transitive deps for a resolved node, use them
+    if (node && node.resolved && node?.transitiveDeps) {
+      return node.transitiveDeps;
+    }
+
+    // Mark this node as visited for cycle detection
     visited.add(nodeKey);
 
-    const directDeps = getDeps(nodeKey);
-    const transitiveDeps = new Set(directDeps);
+    const allNodes = new Set<string>();
+    allNodes.add(nodeKey);
 
+    // Get direct dependencies (regular + frontier)
+    const regularDeps = this.getNodeDeps(nodeKey);
+    const frontierDeps = this.getNodeFrontierDependencies(nodeKey);
+    const directDeps = regularDeps.union(frontierDeps);
+
+    // Recursively get transitive dependencies for each direct dependency
     for (const dep of directDeps) {
-      const depTransitive = this.getTransitiveDeps(dep, getDeps, visited);
-      for (const transitiveDep of depTransitive) {
-        transitiveDeps.add(transitiveDep);
+      if (!visited.has(dep)) {
+        const depTransitiveDeps = this.getTransitiveDeps(dep, visited);
+        for (const transitiveDep of depTransitiveDeps) {
+          allNodes.add(transitiveDep);
+        }
       }
     }
 
-    return transitiveDeps;
+    // Remove this node from visited set for other branches
+    visited.delete(nodeKey);
+
+    // Cache the result if the node is resolved
+    if (node && node.resolved) {
+      node.setTransitiveDeps(allNodes);
+    }
+
+    return allNodes;
   }
 
   /**
@@ -288,42 +316,16 @@ export class DependencyManager {
    *
    * e.g: [B1],[B10],[D2],{A1},[B2],{C4},[E4],(B1),(G4),(H1),Y10
    */
-  buildEvaluationOrder(nodeKey: string): {
-    evaluationOrder: string[];
-    hasCycle: boolean;
-    cycleNodes?: Set<string>;
-    hash: string;
-  } {
+  buildEvaluationOrder(nodeKey: string): EvaluationOrder {
     const evaluationOrder: string[] = [];
 
-    // Collect all nodes in the dependency graph (regular + frontier)
-    const allNodes = new Set<string>();
-    const toVisit = [nodeKey];
-    const visited = new Set<string>();
-
-    while (toVisit.length > 0) {
-      const current = toVisit.pop()!;
-      if (visited.has(current)) continue;
-      visited.add(current);
-
-      allNodes.add(current);
-
-      // Add regular dependencies
-      const regularDeps = this.getNodeDeps(current);
-      for (const dep of regularDeps) {
-        if (!visited.has(dep)) {
-          toVisit.push(dep);
-        }
-      }
-
-      // Add frontier dependencies
-      const frontierDeps = this.getNodeFrontierDependencies(current);
-      for (const dep of frontierDeps) {
-        if (!visited.has(dep)) {
-          toVisit.push(dep);
-        }
-      }
+    const node = this.getEvaluatedNode(nodeKey);
+    if (node && node.resolved && node?.evaluationOrder) {
+      return node.evaluationOrder;
     }
+
+    // Collect all nodes in the dependency graph (regular + frontier)
+    const allNodes = this.getTransitiveDeps(nodeKey);
 
     // Separate frontier and regular dependencies
     const allFrontierDeps = new Set<string>();
@@ -358,12 +360,16 @@ export class DependencyManager {
     // Check for cycles in regular dependencies only
     const cycleCheckResult = this.topologicalSort(allRegularDeps);
     if (cycleCheckResult.type === "cycle") {
-      return {
+      const result: EvaluationOrder = {
         evaluationOrder: [],
         hasCycle: true,
         cycleNodes: cycleCheckResult.inCycle,
         hash: this.computeHash(allNodes),
       };
+      if (node && node.resolved) {
+        node.setEvaluationOrder(result);
+      }
+      return result;
     }
 
     // Create a specialized topological sort that handles frontier dependencies
@@ -405,11 +411,15 @@ export class DependencyManager {
       visit(node);
     }
 
-    return {
+    const result: EvaluationOrder = {
       evaluationOrder,
       hasCycle: false,
       hash: this.computeHash(allNodes),
     };
+    if (node && node.resolved) {
+      node.setEvaluationOrder(result);
+    }
+    return result;
   }
 
   /**
@@ -454,56 +464,6 @@ export class DependencyManager {
     }
 
     return nodeStates.join("|");
-  }
-
-  /**
-   * Check if a node has been evaluated
-   */
-  isNodeEvaluated(nodeKey: string): boolean {
-    return this.getEvaluatedNode(nodeKey) !== undefined;
-  }
-
-  /**
-   * Iterate over all transitive dependencies of the given dependencies
-   * Returns an iterator that yields dependency information including whether deps were updated
-   */
-  *iterateOverTransitiveDependencies(dependencies: Set<string>): Generator<{
-    nodeKey: string;
-    resolved: boolean;
-  }> {
-    const visited = new Set<string>();
-    const toVisit = Array.from(dependencies);
-
-    while (toVisit.length > 0) {
-      const current = toVisit.pop()!;
-      if (visited.has(current)) continue;
-      visited.add(current);
-
-      const node = this.getEvaluatedNode(current);
-      if (!node) continue;
-
-      // Yield information about this dependency
-      yield {
-        nodeKey: current,
-        resolved: node.resolved ?? false,
-      };
-
-      // Add direct dependencies to visit queue
-      const directDeps = this.getNodeDeps(current);
-      for (const dep of directDeps) {
-        if (!visited.has(dep)) {
-          toVisit.push(dep);
-        }
-      }
-
-      // Add active frontier dependencies to visit queue
-      const frontierDeps = this.getNodeFrontierDependencies(current);
-      for (const dep of frontierDeps) {
-        if (!visited.has(dep)) {
-          toVisit.push(dep);
-        }
-      }
-    }
   }
 
   /**

@@ -119,12 +119,12 @@ export class FormulaEvaluator {
   private openRangeEvaluator: OpenRangeEvaluator;
   constructor(
     private tableManager: TableManager,
-    private storeManager: DependencyManager,
+    private dependencyManager: DependencyManager,
     private namedExpressionManager: NamedExpressionManager,
     workbookManager: WorkbookManager
   ) {
     this.openRangeEvaluator = new OpenRangeEvaluator(
-      storeManager,
+      dependencyManager,
       workbookManager,
       this
     );
@@ -434,7 +434,7 @@ export class FormulaEvaluator {
           node.workbookName ?? context.currentCell.workbookName;
         const colIndex = node.range.start.col + spillOffset.x;
         const rowIndex = node.range.start.row + spillOffset.y;
-        const result = this.storeManager.evalTimeSafeEvaluateCell(
+        const result = this.dependencyManager.evalTimeSafeEvaluateCell(
           {
             colIndex,
             rowIndex,
@@ -736,7 +736,7 @@ export class FormulaEvaluator {
       sheetName: node.sheetName ?? context.currentCell.sheetName,
       workbookName: node.workbookName ?? context.currentCell.workbookName,
     };
-    const result = this.storeManager.evalTimeSafeEvaluateCell(
+    const result = this.dependencyManager.evalTimeSafeEvaluateCell(
       cellAddress,
       context
     );

@@ -32,19 +32,19 @@ export class EvaluationManager {
   constructor(
     private workbookManager: WorkbookManager,
     private formulaEvaluator: FormulaEvaluator,
-    private storeManager: DependencyManager
+    private dependencyManager: DependencyManager
   ) {}
 
   getEvaluatedNodes() {
-    return this.storeManager.getEvaluatedNodes();
+    return this.dependencyManager.getEvaluatedNodes();
   }
 
   getSpilledValues(): Map<string, SpilledValue> {
-    return this.storeManager.spilledValues;
+    return this.dependencyManager.spilledValues;
   }
 
   clearEvaluationCache(): void {
-    this.storeManager.clearEvaluationCache();
+    this.dependencyManager.clearEvaluationCache();
   }
 
   evaluationResultToSerializedValue(
@@ -75,7 +75,8 @@ export class EvaluationManager {
       colIndex: nodeAddress.colIndex,
     });
 
-    const currentDepNode = this.storeManager.getEvaluatedNode(cellReference);
+    const currentDepNode =
+      this.dependencyManager.getEvaluatedNode(cellReference);
 
     // Enable caching for resolved nodes
     if (currentDepNode?.resolved) {
@@ -86,7 +87,7 @@ export class EvaluationManager {
     }
 
     const ctx = new EvaluationContext(
-      this.storeManager,
+      this.dependencyManager,
       nodeAddress,
       currentDepNode
     );
@@ -101,7 +102,7 @@ export class EvaluationManager {
         err: FormulaError.REF,
         message: "Sheet not found",
       };
-      this.storeManager.setEvaluatedNode(
+      this.dependencyManager.setEvaluatedNode(
         cellReference,
         ctx.getDependencyAttributes(),
         evaluationResult
@@ -118,7 +119,7 @@ export class EvaluationManager {
         err: FormulaError.ERROR,
         message: "Syntax error",
       };
-      this.storeManager.setEvaluatedNode(
+      this.dependencyManager.setEvaluatedNode(
         cellReference,
         ctx.getDependencyAttributes(),
         evaluationResult
@@ -133,7 +134,7 @@ export class EvaluationManager {
           type: "value",
           result: this.convertScalarValueToCellValue(content),
         };
-        this.storeManager.setEvaluatedNode(
+        this.dependencyManager.setEvaluatedNode(
           cellReference,
           ctx.getDependencyAttributes(),
           result
@@ -141,13 +142,13 @@ export class EvaluationManager {
         return result;
       }
       // content === "", it is an empty cell, check if it has a spilled value
-      const spilled = this.storeManager.getSpillValue(nodeAddress);
+      const spilled = this.dependencyManager.getSpillValue(nodeAddress);
       if (spilled) {
-        const spillTarget = this.storeManager.getSpilledAddress(
+        const spillTarget = this.dependencyManager.getSpilledAddress(
           nodeAddress,
           spilled
         );
-        const spillOrigin = this.storeManager.evalTimeSafeEvaluateCell(
+        const spillOrigin = this.dependencyManager.evalTimeSafeEvaluateCell(
           spilled.origin,
           ctx
         );
@@ -181,10 +182,10 @@ export class EvaluationManager {
             continue;
           }
 
-          const node = this.storeManager.getEvaluatedNode(key);
+          const node = this.dependencyManager.getEvaluatedNode(key);
 
           const result =
-            this.storeManager.getEvaluatedNode(key)?.evaluationResult;
+            this.dependencyManager.getEvaluatedNode(key)?.evaluationResult;
 
           ctx.addFrontierDependency(key, emptyCellRange);
 
@@ -208,7 +209,7 @@ export class EvaluationManager {
           type: "value",
           result: this.convertScalarValueToCellValue(content),
         };
-        this.storeManager.setEvaluatedNode(
+        this.dependencyManager.setEvaluatedNode(
           cellReference,
           ctx.getDependencyAttributes(),
           evaluationResult
@@ -224,7 +225,7 @@ export class EvaluationManager {
       const spillArea = evaluation.spillArea(nodeAddress);
       if (!isRangeOneCell(spillArea)) {
         if (this.canSpill(nodeAddress, spillArea)) {
-          this.storeManager.spilledValues.set(cellReference, {
+          this.dependencyManager.spilledValues.set(cellReference, {
             spillOnto: spillArea,
             origin: nodeAddress,
           });
@@ -260,7 +261,7 @@ export class EvaluationManager {
       message: "Evaluation failed",
     };
 
-    this.storeManager.setEvaluatedNode(
+    this.dependencyManager.setEvaluatedNode(
       cellReference,
       // we store the evaluation result from evaluateFormula
       ctx.getDependencyAttributes(),
@@ -272,8 +273,7 @@ export class EvaluationManager {
   }
 
   evaluateCell(
-    cellAddress: CellAddress,
-    cycleCheck: boolean = false
+    cellAddress: CellAddress
   ): ValueEvaluationResult | ErrorEvaluationResult {
     if (this.isEvaluating) {
       throw new Error("Evaluation in progress");
@@ -304,7 +304,7 @@ export class EvaluationManager {
           err: FormulaError.ERROR,
           message: "Syntax error",
         };
-        this.storeManager.setEvaluatedResult(nodeKey, evaluationResult);
+        this.dependencyManager.setEvaluatedResult(nodeKey, evaluationResult);
         this.isEvaluating = false;
         return evaluationResult;
       }
@@ -317,13 +317,14 @@ export class EvaluationManager {
           type: "value",
           result: this.convertScalarValueToCellValue(content),
         };
-        this.storeManager.setEvaluatedResult(nodeKey, evaluationResult);
+        this.dependencyManager.setEvaluatedResult(nodeKey, evaluationResult);
         this.isEvaluating = false;
         return evaluationResult;
       }
 
       // Use DependencyManager to build evaluation order
-      const evaluationPlan = this.storeManager.buildEvaluationOrder(nodeKey);
+      const evaluationPlan =
+        this.dependencyManager.buildEvaluationOrder(nodeKey);
 
       if (evaluationPlan.hasCycle) {
         const evaluationResult: ErrorEvaluationResult = {
@@ -334,11 +335,14 @@ export class EvaluationManager {
         // cycle detected
         if (evaluationPlan.cycleNodes) {
           for (const nodeKey of evaluationPlan.cycleNodes) {
-            this.storeManager.setEvaluatedResult(nodeKey, evaluationResult);
+            this.dependencyManager.setEvaluatedResult(
+              nodeKey,
+              evaluationResult
+            );
           }
         }
         this.isEvaluating = false;
-        this.storeManager.setEvaluatedResult(nodeKey, evaluationResult);
+        this.dependencyManager.setEvaluatedResult(nodeKey, evaluationResult);
         return evaluationResult;
       }
 
@@ -352,21 +356,14 @@ export class EvaluationManager {
       const cellResult = this.evaluateDependencyNode(nodeKey);
 
       // Check if new dependencies were discovered during evaluation
-
       if (
-        this.storeManager.buildEvaluationOrder(nodeKey).hash !==
+        this.dependencyManager.buildEvaluationOrder(nodeKey).hash !==
         evaluationPlan.hash
       ) {
         requiresReRun = true;
       } else {
-        // check for cycles once we have finished
-        if (!cycleCheck) {
-          this.isEvaluating = false;
-          return this.evaluateCell(cellAddress, true);
-        } else {
-          this.isEvaluating = false;
-          return cellResult;
-        }
+        this.isEvaluating = false;
+        return cellResult;
       }
     }
     this.isEvaluating = false;
@@ -392,7 +389,6 @@ export class EvaluationManager {
 
   // todo optimize using workbook manager
   canSpill(originCellAddress: CellAddress, range: SpreadsheetRange): boolean {
-    console.count("canSpill");
     const sheet = this.workbookManager.getSheet(originCellAddress);
     if (!sheet) {
       throw new Error("Sheet not found");
@@ -402,7 +398,7 @@ export class EvaluationManager {
     if (!content) {
       throw new Error(`Cell not found: ${cellId}`);
     }
-    for (const spilledValue of this.storeManager.spilledValues.values()) {
+    for (const spilledValue of this.dependencyManager.spilledValues.values()) {
       if (
         spilledValue.origin.workbookName === originCellAddress.workbookName &&
         spilledValue.origin.sheetName === originCellAddress.sheetName &&
@@ -461,7 +457,9 @@ export class EvaluationManager {
     }
 
     const getEvaluatedNode = () => {
-      return this.storeManager.getEvaluatedNode(cellAddressToKey(cellAddress));
+      return this.dependencyManager.getEvaluatedNode(
+        cellAddressToKey(cellAddress)
+      );
     };
 
     let value = getEvaluatedNode();

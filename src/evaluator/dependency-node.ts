@@ -2,6 +2,7 @@ import type {
   CellAddress,
   FunctionEvaluationResult,
   SingleEvaluationResult,
+  EvaluationOrder,
 } from "src/core/types";
 import type { DependencyAttributes } from "./evaluation-context";
 import { keyToCellAddress } from "src/core/utils";
@@ -16,6 +17,7 @@ export class DependencyNode {
   private _originSpillResult?: SingleEvaluationResult;
   private _resolved?: boolean;
   private _didUpdate?: boolean;
+  private _transitiveDeps?: Set<string>;
 
   constructor(
     key: string,
@@ -99,16 +101,28 @@ export class DependencyNode {
   public setDependencyAttributes(attributes: DependencyAttributes) {
     // Check if dependencies have changed
     const depsChanged = !this.setsEqual(this._deps, attributes.deps);
-    const frontierDepsChanged = !this.mapsEqual(this._frontierDependencies, attributes.frontierDependencies);
-    const discardedDepsChanged = !this.mapsEqual(this._discardedFrontierDependencies, attributes.discardedFrontierDependencies);
-    
+    const frontierDepsChanged = !this.mapsEqual(
+      this._frontierDependencies,
+      attributes.frontierDependencies
+    );
+    const discardedDepsChanged = !this.mapsEqual(
+      this._discardedFrontierDependencies,
+      attributes.discardedFrontierDependencies
+    );
+
     this._deps = attributes.deps;
     this._frontierDependencies = attributes.frontierDependencies;
     this._discardedFrontierDependencies =
       attributes.discardedFrontierDependencies;
     this._didUpdate = attributes.didUpdate;
     this._resolved = attributes.resolved;
-    
+
+    if (!this.resolved) {
+      // invalidate transitive deps
+      this._transitiveDeps = undefined;
+      this._evaluationOrder = undefined;
+    }
+
     // Invalidate cache only if dependencies actually changed
     if (depsChanged || frontierDepsChanged || discardedDepsChanged) {
       this._allFrontierDependenciesCache = undefined;
@@ -190,5 +204,29 @@ export class DependencyNode {
       }
     }
     return true;
+  }
+
+  public setTransitiveDeps(deps: Set<string>) {
+    if (!this.resolved) {
+      throw new Error("Cannot set transitive deps for an unresolved node");
+    }
+    this._transitiveDeps = deps;
+  }
+
+  public get transitiveDeps() {
+    return this._transitiveDeps;
+  }
+
+  private _evaluationOrder?: EvaluationOrder;
+
+  public get evaluationOrder() {
+    return this._evaluationOrder;
+  }
+
+  public setEvaluationOrder(order: EvaluationOrder) {
+    if (!this.resolved) {
+      throw new Error("Cannot set evaluation order for an unresolved node");
+    }
+    this._evaluationOrder = order;
   }
 }
