@@ -3,7 +3,7 @@ import { FormulaEngine } from "src/core/engine";
 import { FormulaError, type SerializedCellValue } from "src/core/types";
 import { parseCellReference } from "src/core/utils";
 
-describe("TEMPLATE function", () => {
+describe("AVERAGEIFS function", () => {
   const sheetName = "TestSheet";
   const workbookName = "TestWorkbook";
   const sheetAddress = { workbookName, sheetName };

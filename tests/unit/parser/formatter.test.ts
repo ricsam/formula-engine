@@ -885,6 +885,85 @@ describe("Formula Formatter", () => {
         });
       });
 
+      test("should handle column names with operators correctly", () => {
+        const testCases = [
+          // Single columns with operators should use single brackets
+          { input: "Table1[CAR count TIER3+SNG-]", expected: "Table1[CAR count TIER3+SNG-]" },
+          { input: "Table1[Column+]", expected: "Table1[Column+]" },
+          { input: "Table1[Column-]", expected: "Table1[Column-]" },
+          { input: "Table1[Column*]", expected: "Table1[Column*]" },
+          { input: "Table1[Column/]", expected: "Table1[Column/]" },
+          { input: "Table1[Column^]", expected: "Table1[Column^]" },
+          { input: "Table1[Column&]", expected: "Table1[Column&]" },
+          { input: "Table1[Column%]", expected: "Table1[Column%]" },
+          { input: "Table1[Column=]", expected: "Table1[Column=]" },
+          
+          // Current row references should simplify when possible
+          { input: "[@[TIER3+SNG-]]", expected: "[@TIER3+SNG-]" },
+          { input: "[@Column+]", expected: "[@Column+]" },
+          { input: "[@Column-]", expected: "[@Column-]" },
+          
+          // Complex formulas should format correctly
+          { input: "IFERROR(AVERAGEIFS(DataTable[CAR count TIER3+SNG-],DataTable[Condition],\"10uT\"),\"\")", 
+            expected: "IFERROR(AVERAGEIFS(DataTable[CAR count TIER3+SNG-],DataTable[Condition],\"10uT\"),\"\")" },
+        ];
+
+        testCases.forEach(({ input, expected }) => {
+          const formatted = formatFormula(input);
+          expect(formatted).toBe(expected);
+          
+          // Ensure the formatted result is parseable
+          expect(() => parseFormula(formatted)).not.toThrow();
+          
+          // Ensure round-trip stability
+          const reparsed = parseFormula(formatted);
+          const reformatted = astToString(reparsed);
+          expect(reformatted).toBe(formatted);
+        });
+      });
+
+      test("should handle column names starting with operators", () => {
+        const testCases = [
+          // Column names starting with % and other operators
+          { input: "Table1[%Ethanol+ AP3 extra AD1+TRP-]", expected: "Table1[%Ethanol+ AP3 extra AD1+TRP-]" },
+          { input: "Table1[%RPP+ AP3 mid of AP8+ERC-]", expected: "Table1[%RPP+ AP3 mid of AP8+ERC-]" },
+          { input: "[@[%Purity Ethanol of AP8 ERC-]]", expected: "[@%Purity Ethanol of AP8 ERC-]" },
+          { input: "Table1[+Column]", expected: "Table1[+Column]" },
+          { input: "Table1[-Column]", expected: "Table1[-Column]" },
+          { input: "Table1[*Column]", expected: "Table1[*Column]" },
+          { input: "Table1[/Column]", expected: "Table1[/Column]" },
+          { input: "Table1[^Column]", expected: "Table1[^Column]" },
+          { input: "Table1[&Column]", expected: "Table1[&Column]" },
+          { input: "Table1[%Column]", expected: "Table1[%Column]" },
+          { input: "Table1[=Column]", expected: "Table1[=Column]" },
+          { input: "[@+Column]", expected: "[@+Column]" },
+          { input: "[@-Column]", expected: "[@-Column]" },
+          { input: "[@*Column]", expected: "[@*Column]" },
+          { input: "[@/Column]", expected: "[@/Column]" },
+          { input: "[@^Column]", expected: "[@^Column]" },
+          { input: "[@&Column]", expected: "[@&Column]" },
+          { input: "[@%Column]", expected: "[@%Column]" },
+          { input: "[@=Column]", expected: "[@=Column]" },
+          
+          // Complex formula with operators at start of column names
+          { input: "IFERROR(IF($D$10=\"yes\",AVERAGEIFS(DataTable[%Ethanol+ AP3 extra AD1+TRP-],DataTable[Condition],Summary1_AP3lowTRP[[#Headers],[10uT]],DataTable[TRP],[@TRP],DataTable[Car],[@[Serviced Car]])/[@[Purity %Ethanol of AP8 ERC-]]*100,AVERAGEIFS(DataTable[%RPP+ AP3 mid of AP8+ERC-],DataTable[Condition],Summary1_AP3midTRP[[#Headers],[10uT]],DataTable[TRP],[@TRP],DataTable[Car],[@[Serviced car]]),\"\"))",
+            expected: "IFERROR(IF($D$10=\"yes\",AVERAGEIFS(DataTable[%Ethanol+ AP3 extra AD1+TRP-],DataTable[Condition],Summary1_AP3lowTRP[[#Headers],[10uT]],DataTable[TRP],[@TRP],DataTable[Car],[@Serviced Car])/[@Purity %Ethanol of AP8 ERC-]*100,AVERAGEIFS(DataTable[%RPP+ AP3 mid of AP8+ERC-],DataTable[Condition],Summary1_AP3midTRP[[#Headers],[10uT]],DataTable[TRP],[@TRP],DataTable[Car],[@Serviced car]),\"\"))" },
+        ];
+
+        testCases.forEach(({ input, expected }) => {
+          const formatted = formatFormula(input);
+          expect(formatted).toBe(expected);
+          
+          // Ensure the formatted result is parseable
+          expect(() => parseFormula(formatted)).not.toThrow();
+          
+          // Ensure round-trip stability
+          const reparsed = parseFormula(formatted);
+          const reformatted = astToString(reparsed);
+          expect(reformatted).toBe(formatted);
+        });
+      });
+
       test("should parse and format complex formula with trailing spaces", () => {
         const formula = "[@[Cars needed (M) ]]+[@[Cars needed (M) ]]*20/100";
         

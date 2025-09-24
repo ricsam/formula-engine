@@ -13,6 +13,7 @@ import { MATCH } from "./lookup/match/match";
 import { COUNTIF } from "./lookup/count/countif";
 import { AVERAGE } from "./math/average/average";
 import { AVERAGEIF } from "./math/average/averageif";
+import { AVERAGEIFS } from "./math/average/averageifs";
 import { MAX } from "./math/max/max";
 import { MAXIFS } from "./math/max/maxifs";
 import { MIN } from "./math/min/min";
@@ -49,6 +50,7 @@ export const functions: Record<string, FunctionDefinition> = buildFunctionIndex(
     AND,
     AVERAGE,
     AVERAGEIF,
+    AVERAGEIFS,
     CEILING,
     CONCATENATE,
     COUNTIF,

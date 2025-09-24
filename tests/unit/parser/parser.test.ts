@@ -928,6 +928,142 @@ describe("Parser - Structured References", () => {
     expect(ast.args[1].args[2].type).toBe("value");
     expect(ast.args[1].args[2].value.value).toBe(0);
   });
+
+  test("should parse column names with plus signs and other operators", () => {
+    const testCases = [
+      { formula: "Table1[CAR count TIER3+SNG-]", expected: "CAR count TIER3+SNG-" },
+      { formula: "[@[TIER3+SNG-]]", expected: "TIER3+SNG-" },
+      { formula: "Table1[Column+]", expected: "Column+" },
+      { formula: "Table1[Column-]", expected: "Column-" },
+      { formula: "Table1[Column*]", expected: "Column*" },
+      { formula: "Table1[Column/]", expected: "Column/" },
+      { formula: "Table1[Column^]", expected: "Column^" },
+      { formula: "Table1[Column&]", expected: "Column&" },
+      { formula: "Table1[Column%]", expected: "Column%" },
+      { formula: "Table1[Column=]", expected: "Column=" },
+      { formula: "[@Column+]", expected: "Column+" },
+      { formula: "[@Column-]", expected: "Column-" },
+      { formula: "[@Column*]", expected: "Column*" },
+      { formula: "[@Column/]", expected: "Column/" },
+      { formula: "[@Column^]", expected: "Column^" },
+      { formula: "[@Column&]", expected: "Column&" },
+      { formula: "[@Column%]", expected: "Column%" },
+      { formula: "[@Column=]", expected: "Column=" },
+    ];
+
+    testCases.forEach(({ formula, expected }) => {
+      const ast = parseFormula(formula);
+      expect(ast.type).toBe("structured-reference");
+      expect(ast.cols).toEqual({
+        startCol: expected,
+        endCol: expected,
+      });
+    });
+  });
+
+  test("should parse complex formula with operators in column names", () => {
+    const formula = "IFERROR(AVERAGEIFS(DataTable[CAR count TIER3+SNG-],DataTable[Condition],\"10uT\",DataTable[CAR],[@CAR],DataTable[Fuel],[@Fuel]),\"\")";
+    
+    expect(() => parseFormula(formula)).not.toThrow();
+    
+    const ast = parseFormula(formula);
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("IFERROR");
+    expect(ast.args).toHaveLength(2);
+    
+    // First argument should be AVERAGEIFS function
+    expect(ast.args[0].type).toBe("function");
+    expect(ast.args[0].name).toBe("AVERAGEIFS");
+    
+    // First argument of AVERAGEIFS should be DataTable[CAR count TIER3+SNG-]
+    expect(ast.args[0].args[0].type).toBe("structured-reference");
+    expect(ast.args[0].args[0].tableName).toBe("DataTable");
+    expect(ast.args[0].args[0].cols?.startCol).toBe("CAR count TIER3+SNG-");
+  });
+
+  test("should parse column names with multiple operators", () => {
+    const testCases = [
+      "Table1[A+B-C]",
+      "Table1[X*Y/Z]", 
+      "Table1[P^Q&R]",
+      "Table1[M=N%O]",
+      "[@[A+B-C*D/E]]",
+      "Table1[Formula: A+B=C]",
+      "[@[Rate ($/hr) + Tax]]",
+    ];
+
+    testCases.forEach(formula => {
+      expect(() => parseFormula(formula)).not.toThrow();
+      const ast = parseFormula(formula);
+      expect(ast.type).toBe("structured-reference");
+      expect(ast.cols).toBeDefined();
+    });
+  });
+
+  test("should parse column names starting with operators", () => {
+    const testCases = [
+      { formula: "Table1[%Ethanol+ AP3 extra AD1+TRP-]", expected: "%Ethanol+ AP3 extra AD1+TRP-" },
+      { formula: "Table1[%RPP+ AP3 mid of AP8+ERC-]", expected: "%RPP+ AP3 mid of AP8+ERC-" },
+      { formula: "[@[%Purity Ethanol of AP8 ERC-]]", expected: "%Purity Ethanol of AP8 ERC-" },
+      { formula: "Table1[+Column]", expected: "+Column" },
+      { formula: "Table1[-Column]", expected: "-Column" },
+      { formula: "Table1[*Column]", expected: "*Column" },
+      { formula: "Table1[/Column]", expected: "/Column" },
+      { formula: "Table1[^Column]", expected: "^Column" },
+      { formula: "Table1[&Column]", expected: "&Column" },
+      { formula: "Table1[%Column]", expected: "%Column" },
+      { formula: "Table1[=Column]", expected: "=Column" },
+      { formula: "[@+Column]", expected: "+Column" },
+      { formula: "[@-Column]", expected: "-Column" },
+      { formula: "[@*Column]", expected: "*Column" },
+      { formula: "[@/Column]", expected: "/Column" },
+      { formula: "[@^Column]", expected: "^Column" },
+      { formula: "[@&Column]", expected: "&Column" },
+      { formula: "[@%Column]", expected: "%Column" },
+      { formula: "[@=Column]", expected: "=Column" },
+    ];
+
+    testCases.forEach(({ formula, expected }) => {
+      const ast = parseFormula(formula);
+      expect(ast.type).toBe("structured-reference");
+      expect(ast.cols).toEqual({
+        startCol: expected,
+        endCol: expected,
+      });
+    });
+  });
+
+  test("should parse complex formula with operators at start of column names", () => {
+    const formula = "IFERROR(IF($D$10=\"yes\",AVERAGEIFS(DataTable[%Ethanol+ AP3 extra AD1+TRP-],DataTable[Condition],Summary1_AP3lowTRP[[#Headers],[10uT]],DataTable[TRP],[@TRP],DataTable[Car],[@[Serviced Car]])/[@[Purity %Ethanol of AP8 ERC-]]*100,AVERAGEIFS(DataTable[%RPP+ AP3 mid of AP8+ERC-],DataTable[Condition],Summary1_AP3midTRP[[#Headers],[10uT]],DataTable[TRP],[@TRP],DataTable[Car],[@[Servied car]])),'')";
+    
+    expect(() => parseFormula(formula)).not.toThrow();
+    
+    const ast = parseFormula(formula);
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("IFERROR");
+    expect(ast.args).toHaveLength(2);
+    
+    // First argument should be IF function
+    expect(ast.args[0].type).toBe("function");
+    expect(ast.args[0].name).toBe("IF");
+    expect(ast.args[0].args).toHaveLength(3);
+    
+    // Second argument of IF should be a complex expression with AVERAGEIFS
+    const ifTrueArg = ast.args[0].args[1];
+    expect(ifTrueArg.type).toBe("binary-op");
+    expect(ifTrueArg.operator).toBe("*");
+    
+    // Left side should be a division with AVERAGEIFS in numerator
+    expect(ifTrueArg.left.type).toBe("binary-op");
+    expect(ifTrueArg.left.operator).toBe("/");
+    expect(ifTrueArg.left.left.type).toBe("function");
+    expect(ifTrueArg.left.left.name).toBe("AVERAGEIFS");
+    
+    // First argument of AVERAGEIFS should be DataTable[%Ethanol+ AP3 extra AD1+TRP-]
+    expect(ifTrueArg.left.left.args[0].type).toBe("structured-reference");
+    expect(ifTrueArg.left.left.args[0].tableName).toBe("DataTable");
+    expect(ifTrueArg.left.left.args[0].cols?.startCol).toBe("%Ethanol+ AP3 extra AD1+TRP-");
+  });
 });
 
 describe("Parser - Complex Formulas with New Syntax", () => {

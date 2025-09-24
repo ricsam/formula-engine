@@ -316,7 +316,8 @@ export class Parser {
     if (
       !this.tokens.match("IDENTIFIER") &&
       !this.tokens.match("FUNCTION") &&
-      !this.tokens.match("NUMBER")
+      !this.tokens.match("NUMBER") &&
+      !this.tokens.match("OPERATOR")
     ) {
       throw new ParseError("Expected column name", this.tokens.peek().position);
     }
@@ -341,24 +342,9 @@ export class Parser {
     while (!endTokens.has(this.tokens.peek().type)) {
       // Handle special cases where we need to validate token sequences
       if (this.tokens.match("OPERATOR")) {
-        const operatorValue = this.tokens.peek().value;
-        
-        // For operators that typically need to be followed by something, validate the sequence
-        if (operatorValue === "-" || operatorValue === "=" || operatorValue === "/") {
-          this.tokens.consume(); // consume the operator
-          
-          // After these operators, we expect another token that's part of the column name
-          // If the next token is an end token, that's an error
-          if (endTokens.has(this.tokens.peek().type)) {
-            throw new ParseError(
-              `Expected identifier after ${operatorValue} in column name`,
-              this.tokens.peek().position
-            );
-          }
-        } else {
-          // For other operators (%, +, *, ^, &, etc.), just consume them
-          this.tokens.consume();
-        }
+        // All operators are allowed in column names, including at the end
+        // No special validation needed - just consume the operator
+        this.tokens.consume();
       } else {
         // For all other token types (IDENTIFIER, FUNCTION, NUMBER, LPAREN, RPAREN, etc.)
         // just consume them as part of the column name
@@ -1223,7 +1209,8 @@ export class Parser {
           if (
             !this.tokens.match("IDENTIFIER") &&
             !this.tokens.match("FUNCTION") &&
-            !this.tokens.match("NUMBER")
+            !this.tokens.match("NUMBER") &&
+            !this.tokens.match("OPERATOR")
           ) {
             throw new ParseError(
               "Expected column name",
@@ -1239,7 +1226,8 @@ export class Parser {
             if (
               !this.tokens.match("IDENTIFIER") &&
               !this.tokens.match("FUNCTION") &&
-              !this.tokens.match("NUMBER")
+              !this.tokens.match("NUMBER") &&
+              !this.tokens.match("OPERATOR")
             ) {
               throw new ParseError(
                 "Expected end column name after :",
@@ -1279,7 +1267,8 @@ export class Parser {
       } else if (
         this.tokens.match("IDENTIFIER") ||
         this.tokens.match("FUNCTION") ||
-        this.tokens.match("NUMBER")
+        this.tokens.match("NUMBER") ||
+        this.tokens.match("OPERATOR")
       ) {
         // Handle [[Column1]:[Column2]] syntax
         const colStart = this.parseColumnName();
@@ -1424,7 +1413,8 @@ export class Parser {
     } else if (
       this.tokens.match("IDENTIFIER") ||
       this.tokens.match("FUNCTION") ||
-      this.tokens.match("NUMBER")
+      this.tokens.match("NUMBER") ||
+      this.tokens.match("OPERATOR")
     ) {
       // Simple column reference like Table1[Column1] or range Table1[Column1:Column2]
       const colStart = this.parseColumnName();
@@ -1546,7 +1536,8 @@ export class Parser {
           if (
             !this.tokens.match("IDENTIFIER") &&
             !this.tokens.match("FUNCTION") &&
-            !this.tokens.match("NUMBER")
+            !this.tokens.match("NUMBER") &&
+            !this.tokens.match("OPERATOR")
           ) {
             throw new ParseError(
               "Expected column name",
@@ -1562,7 +1553,8 @@ export class Parser {
             if (
               !this.tokens.match("IDENTIFIER") &&
               !this.tokens.match("FUNCTION") &&
-              !this.tokens.match("NUMBER")
+              !this.tokens.match("NUMBER") &&
+              !this.tokens.match("OPERATOR")
             ) {
               throw new ParseError(
                 "Expected end column name after :",
@@ -1602,7 +1594,8 @@ export class Parser {
       } else if (
         this.tokens.match("IDENTIFIER") ||
         this.tokens.match("FUNCTION") ||
-        this.tokens.match("NUMBER")
+        this.tokens.match("NUMBER") ||
+        this.tokens.match("OPERATOR")
       ) {
         // Handle [[Column1]:[Column2]] syntax
         const colStart = this.parseColumnName();
@@ -1747,7 +1740,8 @@ export class Parser {
     } else if (
       this.tokens.match("IDENTIFIER") ||
       this.tokens.match("FUNCTION") ||
-      this.tokens.match("NUMBER")
+      this.tokens.match("NUMBER") ||
+      this.tokens.match("OPERATOR")
     ) {
       // Simple column reference like Table1[Column1] or range Table1[Column1:Column2]
       const colStart = this.parseColumnName();
