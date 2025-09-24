@@ -82,13 +82,13 @@ describe("DependencyManager", () => {
     };
 
     const evalOrder = (cell: string) => {
-      return engine._dependencyManager
+      return engine._storeManager
         .buildEvaluationOrder(cellToDepKey(cell))
         .evaluationOrder.map((depKey) => depKey.split(":")[3]!);
     };
 
     const dependencyTree = (cell: string) => {
-      return engine._dependencyManager.getDependencyTree(cellToDepKey(cell));
+      return engine._storeManager.getDependencyTree(cellToDepKey(cell));
     };
 
     test("Should reproduce DEPENDENCY_RESOLUTION_SPEC.md SUM example - tracking eval order at each step", () => {

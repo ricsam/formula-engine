@@ -13,7 +13,7 @@ import {
   isCellInRange,
 } from "src/core/utils";
 
-import type { StoreManager } from "src/core/managers/store-manager";
+import type { DependencyManager } from "src/core/managers/dependency-manager";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 import type { EvaluationContext } from "./evaluation-context";
 
@@ -22,7 +22,7 @@ import type { EvaluationContext } from "./evaluation-context";
  */
 export class OpenRangeEvaluator {
   constructor(
-    private storeManager: StoreManager,
+    private storeManager: DependencyManager,
     private workbookManager: WorkbookManager,
     private evaluator: FormulaEvaluator
   ) {}

@@ -1,3 +1,5 @@
+import { EvaluationContext } from "src/evaluator/evaluation-context";
+import { checkRangeIntersection } from "src/evaluator/open-range-evaluator";
 import { normalizeSerializedCellValue } from "src/parser/formatter";
 import { FormulaEvaluator } from "../../evaluator/formula-evaluator";
 import {
@@ -21,12 +23,8 @@ import {
   keyToCellAddress,
   parseCellReference,
 } from "../utils";
-import type { StoreManager } from "./store-manager";
-import type { WorkbookManager } from "./workbook-manager";
 import type { DependencyManager } from "./dependency-manager";
-import { checkRangeIntersection } from "src/evaluator/open-range-evaluator";
-import { EvaluationContext } from "src/evaluator/evaluation-context";
-import { DependencyNode } from "src/evaluator/dependency-node";
+import type { WorkbookManager } from "./workbook-manager";
 
 export class EvaluationManager {
   private isEvaluating = false;
@@ -34,8 +32,7 @@ export class EvaluationManager {
   constructor(
     private workbookManager: WorkbookManager,
     private formulaEvaluator: FormulaEvaluator,
-    private storeManager: StoreManager,
-    private dependencyManager: DependencyManager
+    private storeManager: DependencyManager
   ) {}
 
   getEvaluatedNodes() {
@@ -89,7 +86,6 @@ export class EvaluationManager {
     }
 
     const ctx = new EvaluationContext(
-      this.dependencyManager,
       this.storeManager,
       nodeAddress,
       currentDepNode
@@ -327,8 +323,7 @@ export class EvaluationManager {
       }
 
       // Use DependencyManager to build evaluation order
-      const evaluationPlan =
-        this.dependencyManager.buildEvaluationOrder(nodeKey);
+      const evaluationPlan = this.storeManager.buildEvaluationOrder(nodeKey);
 
       if (evaluationPlan.hasCycle) {
         const evaluationResult: ErrorEvaluationResult = {
@@ -359,7 +354,7 @@ export class EvaluationManager {
       // Check if new dependencies were discovered during evaluation
 
       if (
-        this.dependencyManager.buildEvaluationOrder(nodeKey).hash !==
+        this.storeManager.buildEvaluationOrder(nodeKey).hash !==
         evaluationPlan.hash
       ) {
         requiresReRun = true;
@@ -397,6 +392,7 @@ export class EvaluationManager {
 
   // todo optimize using workbook manager
   canSpill(originCellAddress: CellAddress, range: SpreadsheetRange): boolean {
+    console.count("canSpill");
     const sheet = this.workbookManager.getSheet(originCellAddress);
     if (!sheet) {
       throw new Error("Sheet not found");

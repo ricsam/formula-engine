@@ -10,7 +10,7 @@ import {
   type TableDefinition,
 } from "../core/types";
 
-import type { StoreManager } from "src/core/managers/store-manager";
+import type { DependencyManager } from "src/core/managers/dependency-manager";
 import type { TableManager } from "src/core/managers/table-manager";
 import type { WorkbookManager } from "src/core/managers/workbook-manager";
 import {
@@ -119,7 +119,7 @@ export class FormulaEvaluator {
   private openRangeEvaluator: OpenRangeEvaluator;
   constructor(
     private tableManager: TableManager,
-    private storeManager: StoreManager,
+    private storeManager: DependencyManager,
     private namedExpressionManager: NamedExpressionManager,
     workbookManager: WorkbookManager
   ) {

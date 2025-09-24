@@ -42,7 +42,6 @@ test("debug evaluation order for multiplication", () => {
 
   // Check evaluated nodes after D11
   const storeManager = engine._storeManager;
-  const depManager = engine._dependencyManager;
 
   console.log("\n=== Evaluated Nodes after D11 ===");
   const evaluatedAfterD11 = new Set<string>();
@@ -66,7 +65,7 @@ test("debug evaluation order for multiplication", () => {
 
   // Build evaluation order for C1
   console.log("\nBuilding evaluation order for C1...");
-  const evaluationPlan = depManager.buildEvaluationOrder(c1NodeKey);
+  const evaluationPlan = storeManager.buildEvaluationOrder(c1NodeKey);
   console.log("Has cycle:", evaluationPlan.hasCycle);
   console.log("Evaluation order:", evaluationPlan.evaluationOrder);
 

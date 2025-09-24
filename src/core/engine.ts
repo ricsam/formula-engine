@@ -23,7 +23,6 @@ import {
   NamedExpressionManager,
   TableManager,
 } from "./managers";
-import { StoreManager } from "./managers/store-manager";
 import { WorkbookManager } from "./managers/workbook-manager";
 import { deserialize, serialize } from "./map-serializer";
 import { renameNamedExpressionInFormula } from "./named-expression-renamer";
@@ -41,8 +40,7 @@ export class FormulaEngine {
   private eventManager: EventManager;
   private evaluationManager: EvaluationManager;
   private autoFillManager: AutoFill;
-  private storeManager: StoreManager;
-  private dependencyManager: DependencyManager;
+  private storeManager: DependencyManager;
 
   /**
    * Public access to the store manager for testing
@@ -53,19 +51,14 @@ export class FormulaEngine {
   public _eventManager: EventManager;
   public _evaluationManager: EvaluationManager;
   public _autoFillManager: AutoFill;
-  public _storeManager: StoreManager;
-  public _dependencyManager: DependencyManager;
+  public _storeManager: DependencyManager;
 
   constructor() {
     this.eventManager = new EventManager();
     this.workbookManager = new WorkbookManager();
     this.namedExpressionManager = new NamedExpressionManager();
     this.tableManager = new TableManager(this.workbookManager);
-    this.storeManager = new StoreManager();
-    this.dependencyManager = new DependencyManager(
-      this.storeManager,
-      this.workbookManager
-    );
+    this.storeManager = new DependencyManager();
 
     const formulaEvaluator = new FormulaEvaluator(
       this.tableManager,
@@ -77,8 +70,7 @@ export class FormulaEngine {
     this.evaluationManager = new EvaluationManager(
       this.workbookManager,
       formulaEvaluator,
-      this.storeManager,
-      this.dependencyManager
+      this.storeManager
     );
 
     this.autoFillManager = new AutoFill(this.workbookManager, this);
@@ -90,7 +82,6 @@ export class FormulaEngine {
     this._evaluationManager = this.evaluationManager;
     this._autoFillManager = this.autoFillManager;
     this._storeManager = this.storeManager;
-    this._dependencyManager = this.dependencyManager;
   }
 
   /**

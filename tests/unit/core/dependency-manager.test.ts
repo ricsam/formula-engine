@@ -1,28 +1,33 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { DependencyManager } from "../../../src/core/managers/dependency-manager";
-import { StoreManager } from "../../../src/core/managers/store-manager";
+
 import { WorkbookManager } from "../../../src/core/managers/workbook-manager";
+import type {
+  FunctionEvaluationResult,
+  SingleEvaluationResult,
+} from "../../../src/core/types";
 import type { DependencyAttributes } from "../../../src/evaluator/evaluation-context";
-import type { FunctionEvaluationResult, SingleEvaluationResult } from "../../../src/core/types";
+import { DependencyManager } from "src/core/managers/dependency-manager";
 
 // Test utility functions
 function convertToFullKey(nodeKey: string): string {
-  return nodeKey.includes(':') ? nodeKey : `cell:Workbook1:Sheet1:${nodeKey}`;
+  return nodeKey.includes(":") ? nodeKey : `cell:Workbook1:Sheet1:${nodeKey}`;
 }
 
 function convertToSimpleKey(fullKey: string): string {
-  if (fullKey.startsWith('cell:Workbook1:Sheet1:')) {
-    return fullKey.replace('cell:Workbook1:Sheet1:', '');
+  if (fullKey.startsWith("cell:Workbook1:Sheet1:")) {
+    return fullKey.replace("cell:Workbook1:Sheet1:", "");
   }
   return fullKey;
 }
 
-function convertEvaluationOrderToSimpleKeys(evaluationOrder: string[]): string[] {
-  return evaluationOrder.map(key => convertToSimpleKey(key));
+function convertEvaluationOrderToSimpleKeys(
+  evaluationOrder: string[]
+): string[] {
+  return evaluationOrder.map((key) => convertToSimpleKey(key));
 }
 
 function setEvaluatedNodeForTest(
-  storeManager: StoreManager,
+  storeManager: DependencyManager,
   nodeKey: string,
   partialAttributes: Partial<DependencyAttributes>,
   result: FunctionEvaluationResult,
@@ -42,7 +47,9 @@ function setEvaluatedNodeForTest(
   };
 
   // Helper function to convert frontier dependencies
-  const convertFrontierDeps = (frontierDeps: Map<string, Set<string>>): Map<string, Set<string>> => {
+  const convertFrontierDeps = (
+    frontierDeps: Map<string, Set<string>>
+  ): Map<string, Set<string>> => {
     const fullFrontierDeps = new Map<string, Set<string>>();
     for (const [range, deps] of frontierDeps) {
       fullFrontierDeps.set(range, convertDepsToFullKeys(deps));
@@ -52,31 +59,42 @@ function setEvaluatedNodeForTest(
 
   // Create full attributes with defaults and convert simple references to full keys
   const fullAttributes: DependencyAttributes = {
-    deps: partialAttributes.deps ? convertDepsToFullKeys(partialAttributes.deps) : new Set(),
-    frontierDependencies: partialAttributes.frontierDependencies ? convertFrontierDeps(partialAttributes.frontierDependencies) : new Map(),
-    discardedFrontierDependencies: partialAttributes.discardedFrontierDependencies ? convertFrontierDeps(partialAttributes.discardedFrontierDependencies) : new Map(),
+    deps: partialAttributes.deps
+      ? convertDepsToFullKeys(partialAttributes.deps)
+      : new Set(),
+    frontierDependencies: partialAttributes.frontierDependencies
+      ? convertFrontierDeps(partialAttributes.frontierDependencies)
+      : new Map(),
+    discardedFrontierDependencies:
+      partialAttributes.discardedFrontierDependencies
+        ? convertFrontierDeps(partialAttributes.discardedFrontierDependencies)
+        : new Map(),
     didUpdate: partialAttributes.didUpdate ?? false,
     resolved: partialAttributes.resolved ?? false,
   };
 
-  storeManager.setEvaluatedNode(fullNodeKey, fullAttributes, result, originSpillResult);
+  storeManager.setEvaluatedNode(
+    fullNodeKey,
+    fullAttributes,
+    result,
+    originSpillResult
+  );
 }
 
 describe("DependencyManager", () => {
-  let dependencyManager: DependencyManager;
-  let storeManager: StoreManager;
+  let storeManager: DependencyManager;
   let workbookManager: WorkbookManager;
 
   beforeEach(() => {
-    storeManager = new StoreManager();
+    storeManager = new DependencyManager();
     workbookManager = new WorkbookManager();
-    dependencyManager = new DependencyManager(storeManager, workbookManager);
   });
 
   describe("Basic dependency resolution", () => {
     test("should handle simple linear dependencies", () => {
       // Set up A1 -> B1 -> C1
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(["B1"]),
@@ -86,7 +104,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 1 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["C1"]),
@@ -97,7 +116,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(),
@@ -108,15 +128,18 @@ describe("DependencyManager", () => {
         }
       );
 
-      const result = dependencyManager.buildEvaluationOrder(convertToFullKey("A1"));
+      const result = storeManager.buildEvaluationOrder(convertToFullKey("A1"));
 
       expect(result.hasCycle).toBe(false);
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toEqual(["C1", "B1", "A1"]);
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toEqual(["C1", "B1", "A1"]);
     });
 
     test("should handle multiple dependencies", () => {
       // Set up A1 -> [B1, B2], B1 -> C1, B2 -> C2
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(["B1", "B2"]),
@@ -127,7 +150,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["C1"]),
@@ -138,7 +162,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B2",
         {
           deps: new Set(["C2"]),
@@ -149,7 +174,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(),
@@ -160,7 +186,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C2",
         {
           deps: new Set(),
@@ -171,13 +198,21 @@ describe("DependencyManager", () => {
         }
       );
 
-      const result = dependencyManager.buildEvaluationOrder(convertToFullKey("A1"));
+      const result = storeManager.buildEvaluationOrder(convertToFullKey("A1"));
 
       expect(result.hasCycle).toBe(false);
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("C1");
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("C2");
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("B1");
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("B2");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("C1");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("C2");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("B1");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("B2");
 
       // C1 and C2 should come before B1 and B2
       const order = convertEvaluationOrderToSimpleKeys(result.evaluationOrder);
@@ -194,7 +229,8 @@ describe("DependencyManager", () => {
   describe("Cycle detection", () => {
     test("should detect simple cycle", () => {
       // Set up A1 -> B1 -> C1 -> A1
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(["B1"]),
@@ -204,7 +240,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 1 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["C1"]),
@@ -214,7 +251,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 2 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(["A1"]),
@@ -224,7 +262,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 3 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(["B1"]),
@@ -234,7 +273,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 1 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["C1"]),
@@ -244,7 +284,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 2 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(["A1"]),
@@ -254,7 +295,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 3 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(["B1"]),
@@ -264,7 +306,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 1 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["C1"]),
@@ -274,7 +317,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 2 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(["A1"]),
@@ -284,7 +328,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 3 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(["B1"]),
@@ -294,7 +339,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 1 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["C1"]),
@@ -304,7 +350,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 2 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(["A1"]),
@@ -314,7 +361,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 3 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(["B1"]),
@@ -324,7 +372,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 1 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["C1"]),
@@ -334,7 +383,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 2 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(["A1"]),
@@ -344,7 +394,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 3 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(["B1"]),
@@ -354,7 +405,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 1 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["C1"]),
@@ -364,7 +416,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 2 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(["A1"]),
@@ -375,7 +428,7 @@ describe("DependencyManager", () => {
         }
       );
 
-      const result = dependencyManager.buildEvaluationOrder(convertToFullKey("A1"));
+      const result = storeManager.buildEvaluationOrder(convertToFullKey("A1"));
 
       expect(result.hasCycle).toBe(true);
       expect(result.cycleNodes).toBeDefined();
@@ -386,7 +439,8 @@ describe("DependencyManager", () => {
 
     test("should detect self-reference", () => {
       // Set up A1 -> A1
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(["A1"]),
@@ -396,7 +450,7 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 1 },
         }
       );
-      const result = dependencyManager.buildEvaluationOrder(convertToFullKey("A1"));
+      const result = storeManager.buildEvaluationOrder(convertToFullKey("A1"));
 
       expect(result.hasCycle).toBe(true);
       expect(result.cycleNodes?.has(convertToFullKey("A1"))).toBe(true);
@@ -406,7 +460,8 @@ describe("DependencyManager", () => {
   describe("Frontier dependency handling", () => {
     test("should handle frontier dependencies without cycles", () => {
       // Set up: C1 has frontier dependency on B1, B1 depends on A1
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(),
@@ -418,7 +473,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["A1"]),
@@ -429,7 +485,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(),
@@ -440,11 +497,15 @@ describe("DependencyManager", () => {
         }
       );
 
-      const result = dependencyManager.buildEvaluationOrder(convertToFullKey("C1"));
+      const result = storeManager.buildEvaluationOrder(convertToFullKey("C1"));
 
       expect(result.hasCycle).toBe(false);
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("A1");
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("B1");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("A1");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("B1");
 
       // A1 should be evaluated before B1
       const order = convertEvaluationOrderToSimpleKeys(result.evaluationOrder);
@@ -460,7 +521,8 @@ describe("DependencyManager", () => {
       // D10 depends on C1
       // This looks like a cycle but isn't because B1 is a frontier dependency
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(["A1"]),
@@ -472,7 +534,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["D11"]),
@@ -483,7 +546,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "D10",
         {
           deps: new Set(["C1"]),
@@ -494,7 +558,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "D11",
         {
           deps: new Set(["D10"]), // D11 is created from D10's spill
@@ -505,7 +570,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(),
@@ -516,19 +582,28 @@ describe("DependencyManager", () => {
         }
       );
 
-      const result = dependencyManager.buildEvaluationOrder(convertToFullKey("C1"));
+      const result = storeManager.buildEvaluationOrder(convertToFullKey("C1"));
 
       // This should NOT be a cycle
       expect(result.hasCycle).toBe(false);
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("A1");
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("B1");
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("D10");
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("D11");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("A1");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("B1");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("D10");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("D11");
     });
 
     test("should handle discarded frontier dependencies", () => {
       // Set up: C1 has frontier dependency on B1, but B1 is discarded
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(["A1"]),
@@ -541,7 +616,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(),
@@ -551,7 +627,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 2 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(),
@@ -562,12 +639,16 @@ describe("DependencyManager", () => {
         }
       );
 
-      const result = dependencyManager.buildEvaluationOrder(convertToFullKey("C1"));
+      const result = storeManager.buildEvaluationOrder(convertToFullKey("C1"));
 
       expect(result.hasCycle).toBe(false);
       // B1 should not be in the evaluation order since it's discarded
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).not.toContain("B1");
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("A1");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).not.toContain("B1");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("A1");
     });
   });
 
@@ -585,7 +666,8 @@ describe("DependencyManager", () => {
 
       // First, let's simulate the state after initial discovery:
       // C1 is being evaluated and has discovered its dependencies
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(["A1", "A2", "A3", "B1", "B2", "B3"]),
@@ -598,7 +680,8 @@ describe("DependencyManager", () => {
       ); // Placeholder for not evaluated yet
 
       // B1 depends on D11 (which doesn't exist yet)
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["D11"]),
@@ -610,7 +693,8 @@ describe("DependencyManager", () => {
       );
 
       // D10 depends on A1, A2, B2
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "D10",
         {
           deps: new Set(["A1", "A2", "B2"]),
@@ -622,7 +706,8 @@ describe("DependencyManager", () => {
       );
 
       // D11 depends on D10 (it's part of D10's spill result)
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "D11",
         {
           deps: new Set(["D10"]),
@@ -635,7 +720,8 @@ describe("DependencyManager", () => {
 
       // Basic cells
       ["A1", "A2", "A3", "B2", "B3"].forEach((cell) => {
-        setEvaluatedNodeForTest(storeManager,
+        setEvaluatedNodeForTest(
+          storeManager,
           cell,
           {
             deps: new Set(),
@@ -648,17 +734,29 @@ describe("DependencyManager", () => {
       });
 
       // When we try to build evaluation order for C1, it should include B1's dependencies
-      const result = dependencyManager.buildEvaluationOrder(convertToFullKey("C1"));
+      const result = storeManager.buildEvaluationOrder(convertToFullKey("C1"));
 
       expect(result.hasCycle).toBe(false);
 
       // The evaluation order should include all dependencies
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("A1");
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("A2");
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("B2");
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("D10");
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("B1");
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("D11");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("A1");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("A2");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("B2");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("D10");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("B1");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("D11");
 
       // Verify the correct order:
       // D10 should come before D11 (D11 depends on D10)
@@ -677,7 +775,8 @@ describe("DependencyManager", () => {
       // but D11 doesn't exist yet (will be created by D10's spill)
 
       // C1 has B1 as a frontier dependency
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(["A1"]),
@@ -690,7 +789,8 @@ describe("DependencyManager", () => {
       );
 
       // B1 depends on D11 which doesn't exist
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["D11"]),
@@ -704,7 +804,8 @@ describe("DependencyManager", () => {
       // D11 doesn't exist in the store yet
       // (it will be created when D10 is evaluated)
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(),
@@ -715,14 +816,20 @@ describe("DependencyManager", () => {
         }
       );
 
-      const result = dependencyManager.buildEvaluationOrder(convertToFullKey("C1"));
+      const result = storeManager.buildEvaluationOrder(convertToFullKey("C1"));
 
       expect(result.hasCycle).toBe(false);
 
       // The evaluation order should include D11 even though it doesn't exist yet
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("A1");
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("B1");
-      expect(convertEvaluationOrderToSimpleKeys(result.evaluationOrder)).toContain("D11");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("A1");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("B1");
+      expect(
+        convertEvaluationOrderToSimpleKeys(result.evaluationOrder)
+      ).toContain("D11");
 
       // D11 should come before B1 (B1 depends on D11)
       const order = convertEvaluationOrderToSimpleKeys(result.evaluationOrder);
@@ -740,7 +847,8 @@ describe("DependencyManager", () => {
       // A also depends on B which depends on C
 
       // Target cell A1
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(["B1"]),
@@ -753,7 +861,8 @@ describe("DependencyManager", () => {
       );
 
       // Frontier dependency F1 with its own dependencies
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "F1",
         {
           deps: new Set(["F2", "F3"]),
@@ -765,7 +874,8 @@ describe("DependencyManager", () => {
       );
 
       // Transitive dependencies of F1
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "F2",
         {
           deps: new Set(["F4"]),
@@ -776,7 +886,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "F3",
         {
           deps: new Set(),
@@ -787,7 +898,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "F4",
         {
           deps: new Set(),
@@ -799,7 +911,8 @@ describe("DependencyManager", () => {
       );
 
       // Regular dependency chain
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["C1"]),
@@ -810,7 +923,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(),
@@ -821,7 +935,7 @@ describe("DependencyManager", () => {
         }
       );
 
-      const result = dependencyManager.buildEvaluationOrder(convertToFullKey("A1"));
+      const result = storeManager.buildEvaluationOrder(convertToFullKey("A1"));
 
       expect(result.hasCycle).toBe(false);
 
@@ -863,7 +977,8 @@ describe("DependencyManager", () => {
       // F2 depends on Y, Z
       // A also depends on B
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(["B1"]),
@@ -875,7 +990,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "F1",
         {
           deps: new Set(["X1", "Y1"]),
@@ -886,7 +1002,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "F2",
         {
           deps: new Set(["Y1", "Z1"]),
@@ -898,7 +1015,8 @@ describe("DependencyManager", () => {
       );
 
       ["X1", "Y1", "Z1", "B1"].forEach((cell) => {
-        setEvaluatedNodeForTest(storeManager,
+        setEvaluatedNodeForTest(
+          storeManager,
           cell,
           {
             deps: new Set(),
@@ -910,7 +1028,7 @@ describe("DependencyManager", () => {
         );
       });
 
-      const result = dependencyManager.buildEvaluationOrder(convertToFullKey("A1"));
+      const result = storeManager.buildEvaluationOrder(convertToFullKey("A1"));
 
       expect(result.hasCycle).toBe(false);
 
@@ -952,7 +1070,8 @@ describe("DependencyManager", () => {
       // 1. B1 is a frontier dependency (may or may not affect C1)
       // 2. The evaluation order ensures D10 creates D11 before B1 needs it
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(["A1", "A2", "A3", "B1", "B2", "B3"]),
@@ -964,7 +1083,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["D11"]),
@@ -975,7 +1095,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "D10",
         {
           deps: new Set(["A1", "A2", "B2"]),
@@ -986,7 +1107,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "D11",
         {
           deps: new Set(["D10"]),
@@ -998,7 +1120,8 @@ describe("DependencyManager", () => {
       );
 
       ["A1", "A2", "A3", "B2", "B3"].forEach((cell) => {
-        setEvaluatedNodeForTest(storeManager,
+        setEvaluatedNodeForTest(
+          storeManager,
           cell,
           {
             deps: new Set(),
@@ -1010,7 +1133,7 @@ describe("DependencyManager", () => {
         );
       });
 
-      const result = dependencyManager.buildEvaluationOrder(convertToFullKey("C1"));
+      const result = storeManager.buildEvaluationOrder(convertToFullKey("C1"));
 
       expect(result.hasCycle).toBe(false);
 
@@ -1044,7 +1167,8 @@ describe("DependencyManager", () => {
       // A has frontier dependency on F1 (discarded) and F2 (not discarded)
       // Only F2 and its dependencies should be in the evaluation order
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(["B1"]),
@@ -1057,7 +1181,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "F1",
         {
           deps: new Set(["X1"]),
@@ -1068,7 +1193,8 @@ describe("DependencyManager", () => {
         }
       );
 
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "F2",
         {
           deps: new Set(["Y1"]),
@@ -1080,7 +1206,8 @@ describe("DependencyManager", () => {
       );
 
       ["X1", "Y1", "B1"].forEach((cell) => {
-        setEvaluatedNodeForTest(storeManager,
+        setEvaluatedNodeForTest(
+          storeManager,
           cell,
           {
             deps: new Set(),
@@ -1092,7 +1219,7 @@ describe("DependencyManager", () => {
         );
       });
 
-      const result = dependencyManager.buildEvaluationOrder(convertToFullKey("A1"));
+      const result = storeManager.buildEvaluationOrder(convertToFullKey("A1"));
 
       expect(result.hasCycle).toBe(false);
 
@@ -1124,7 +1251,8 @@ describe("DependencyManager", () => {
   describe("Transitive dependency methods", () => {
     test("should get transitive dependencies correctly", () => {
       // Set up A -> B -> C -> D
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(["B1"]),
@@ -1134,7 +1262,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 1 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["C1"]),
@@ -1144,7 +1273,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 2 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(["D1"]),
@@ -1154,7 +1284,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 3 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "D1",
         {
           deps: new Set(),
@@ -1165,8 +1296,9 @@ describe("DependencyManager", () => {
         }
       );
 
-      const transitiveDeps = dependencyManager.getTransitiveDeps(convertToFullKey("A1"), (key) =>
-        dependencyManager.getNodeDeps(key)
+      const transitiveDeps = storeManager.getTransitiveDeps(
+        convertToFullKey("A1"),
+        (key) => storeManager.getNodeDeps(key)
       );
 
       expect(transitiveDeps.has(convertToFullKey("B1"))).toBe(true);
@@ -1177,7 +1309,8 @@ describe("DependencyManager", () => {
 
     test("should handle circular dependencies in getTransitiveDeps", () => {
       // Set up A -> B -> C -> A
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "A1",
         {
           deps: new Set(["B1"]),
@@ -1187,7 +1320,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 1 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "B1",
         {
           deps: new Set(["C1"]),
@@ -1197,7 +1331,8 @@ describe("DependencyManager", () => {
           result: { type: "number", value: 2 },
         }
       );
-      setEvaluatedNodeForTest(storeManager,
+      setEvaluatedNodeForTest(
+        storeManager,
         "C1",
         {
           deps: new Set(["A1"]),
@@ -1208,8 +1343,9 @@ describe("DependencyManager", () => {
         }
       );
 
-      const transitiveDeps = dependencyManager.getTransitiveDeps(convertToFullKey("A1"), (key) =>
-        dependencyManager.getNodeDeps(key)
+      const transitiveDeps = storeManager.getTransitiveDeps(
+        convertToFullKey("A1"),
+        (key) => storeManager.getNodeDeps(key)
       );
 
       // Should include all nodes but not infinitely loop

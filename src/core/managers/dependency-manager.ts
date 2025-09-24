@@ -1,5 +1,16 @@
-import type { StoreManager } from "./store-manager";
-import type { WorkbookManager } from "./workbook-manager";
+import type {
+  DependencyAttributes,
+  EvaluationContext,
+} from "src/evaluator/evaluation-context";
+import {
+  type CellAddress,
+  type FunctionEvaluationResult,
+  type SingleEvaluationResult,
+  type SpilledValue,
+} from "../types";
+import { cellAddressToKey, isCellInRange } from "../utils";
+
+import { DependencyNode } from "src/evaluator/dependency-node";
 
 interface TopologicalSortResult {
   type: "success" | "cycle";
@@ -23,23 +34,167 @@ export interface DependencyTreeNode {
 }
 
 export class DependencyManager {
-  constructor(
-    private storeManager: StoreManager,
-    private workbookManager: WorkbookManager
-  ) {}
+  /**
+   * The dependency graph
+   */
+  private evaluatedNodes: Map<
+    /**
+     * key is the cell key, from cellAddressToKey
+     */
+    string,
+    DependencyNode
+  > = new Map();
 
+  /**
+   * registry of spilled values
+   */
+  public spilledValues: Map<
+    /**
+     * key is the dependency node key, from dependencyNodeToKey for the origin cell
+     */
+    string,
+    SpilledValue
+  > = new Map();
+
+  constructor() {}
+
+  getSpillValue(cellAddress: CellAddress): SpilledValue | undefined {
+    for (const spilledValue of this.spilledValues.values()) {
+      if (
+        spilledValue.origin.sheetName !== cellAddress.sheetName ||
+        spilledValue.origin.workbookName !== cellAddress.workbookName
+      ) {
+        continue;
+      }
+      if (
+        spilledValue.origin.colIndex === cellAddress.colIndex &&
+        spilledValue.origin.rowIndex === cellAddress.rowIndex
+      ) {
+        return undefined;
+      }
+      if (isCellInRange(cellAddress, spilledValue.spillOnto)) {
+        return spilledValue;
+      }
+    }
+    return undefined;
+  }
+
+  getSpilledAddress(
+    cellAddress: CellAddress,
+    /**
+     * if the spilled value is already available, we can use it to get the source address
+     */
+    passedSpilledValue?: SpilledValue
+  ): { address: CellAddress; spillOffset: { x: number; y: number } } {
+    const spilledValue = passedSpilledValue ?? this.getSpillValue(cellAddress);
+    if (!spilledValue) {
+      throw new Error("Cell is not spilled");
+    }
+    const offsetLeft = cellAddress.colIndex - spilledValue.origin.colIndex;
+    const offsetTop = cellAddress.rowIndex - spilledValue.origin.rowIndex;
+    const address: CellAddress = {
+      ...cellAddress,
+      colIndex: spilledValue.origin.colIndex + offsetLeft,
+      rowIndex: spilledValue.origin.rowIndex + offsetTop,
+    };
+    if (offsetLeft === 0 && offsetTop === 0) {
+      throw new Error(
+        "Spilled value is the same as the cell address! The origin has a pre-calculated value that can be used"
+      );
+    }
+    return { address, spillOffset: { x: offsetLeft, y: offsetTop } };
+  }
+
+  /**
+   * During evaluation, we can't use the formula evaluator to evaluate a cell, because it will create a cycle.
+   * This method can be used to "evaluate" a cell during evaluation, without creating a cycle.
+   *
+   * Internally this method will try to look up the evaluated result for the cell,
+   * if it doesn't exist it will push the cell address to the dependency graph,
+   * causing the engine to re-evaluate the dependency graph,
+   * such that on the second evaluation the cell's evaluation result will be available.
+   */
+  evalTimeSafeEvaluateCell(
+    cellAddress: CellAddress,
+    context: EvaluationContext
+  ): FunctionEvaluationResult | undefined {
+    const spilled = this.getSpillValue(cellAddress);
+    if (spilled) {
+      const spillSource = this.getSpilledAddress(cellAddress, spilled);
+      const spillOrigin = this.evalTimeSafeEvaluateCell(
+        spilled.origin,
+        context
+      );
+      if (spillOrigin && spillOrigin.type === "spilled-values") {
+        return spillOrigin.evaluate(spillSource.spillOffset, context);
+      }
+    }
+    const key = cellAddressToKey(cellAddress);
+    context.addDependency(key);
+    const result = this.evaluatedNodes.get(key)?.evaluationResult;
+    return result;
+  }
+
+  clearEvaluationCache(): void {
+    this.evaluatedNodes.clear();
+    this.spilledValues.clear();
+  }
+
+  setEvaluatedNode(
+    nodeKey: string,
+    attributes: DependencyAttributes,
+    result: FunctionEvaluationResult,
+    originSpillResult?: SingleEvaluationResult
+  ): void {
+    const currentNode =
+      this.evaluatedNodes.get(nodeKey) ??
+      new DependencyNode(nodeKey, result, originSpillResult);
+    if (!currentNode) {
+      throw new Error("Node not found");
+    }
+    currentNode.setDependencyAttributes(attributes);
+    currentNode.setEvaluationResult(result, originSpillResult);
+
+    this.evaluatedNodes.set(nodeKey, currentNode);
+  }
+
+  setEvaluatedResult(
+    nodeKey: string,
+    result: FunctionEvaluationResult,
+    originSpillResult?: SingleEvaluationResult
+  ): void {
+    const currentNode =
+      this.evaluatedNodes.get(nodeKey) ??
+      new DependencyNode(nodeKey, result, originSpillResult);
+    if (!currentNode) {
+      throw new Error("Node not found");
+    }
+    currentNode.setEvaluationResult(result, originSpillResult);
+
+    this.evaluatedNodes.set(nodeKey, currentNode);
+  }
+
+  getEvaluatedNode(nodeKey: string): DependencyNode | undefined {
+    return this.evaluatedNodes.get(nodeKey);
+  }
+
+  getEvaluatedNodes(): Map<string, DependencyNode> {
+    return this.evaluatedNodes;
+  }
+
+  //#region dependency graph methods
   /**
    * Get the direct dependencies of a node
    */
   getNodeDeps(nodeKey: string): Set<string> {
-    return this.storeManager.getEvaluatedNode(nodeKey)?.deps ?? new Set();
+    return this.getEvaluatedNode(nodeKey)?.deps ?? new Set();
   }
 
   /**
    * Get the frontier dependencies of a node
    */
   getNodeFrontierDependencies(nodeKey: string): Set<string> {
-    const node = this.storeManager.getEvaluatedNode(nodeKey);
+    const node = this.getEvaluatedNode(nodeKey);
     if (!node) return new Set();
 
     return node.getAllFrontierDependencies();
@@ -265,7 +420,7 @@ export class DependencyManager {
     const nodeStates: string[] = [];
 
     for (const nodeKey of Array.from(allNodes).sort()) {
-      const node = this.storeManager.getEvaluatedNode(nodeKey);
+      const node = this.getEvaluatedNode(nodeKey);
       if (node) {
         const deps = Array.from(node.deps || [])
           .sort()
@@ -305,7 +460,7 @@ export class DependencyManager {
    * Check if a node has been evaluated
    */
   isNodeEvaluated(nodeKey: string): boolean {
-    return this.storeManager.getEvaluatedNode(nodeKey) !== undefined;
+    return this.getEvaluatedNode(nodeKey) !== undefined;
   }
 
   /**
@@ -324,7 +479,7 @@ export class DependencyManager {
       if (visited.has(current)) continue;
       visited.add(current);
 
-      const node = this.storeManager.getEvaluatedNode(current);
+      const node = this.getEvaluatedNode(current);
       if (!node) continue;
 
       // Yield information about this dependency
@@ -362,7 +517,7 @@ export class DependencyManager {
 
       // Handle self-reference to avoid infinite recursion
       if (isSelf) {
-        const node = this.storeManager.getEvaluatedNode(key);
+        const node = this.getEvaluatedNode(key);
         return {
           key: cellRef,
           resolved: node?.resolved ?? false,
@@ -372,7 +527,7 @@ export class DependencyManager {
 
       // Avoid infinite recursion for circular dependencies
       if (visited.has(key)) {
-        const node = this.storeManager.getEvaluatedNode(key);
+        const node = this.getEvaluatedNode(key);
         return {
           key: cellRef,
           resolved: node?.resolved ?? false,
@@ -389,7 +544,7 @@ export class DependencyManager {
       }
 
       // Get frontier dependencies and debug info
-      const node = this.storeManager.getEvaluatedNode(key);
+      const node = this.getEvaluatedNode(key);
       const rawFrontierDepsMap: Map<
         string,
         Set<string>
@@ -513,4 +668,5 @@ export class DependencyManager {
 
     return buildTree(nodeKey);
   }
+  //#endregion
 }

@@ -1,12 +1,6 @@
-import type { DependencyManager, EvaluationManager } from "src/core/managers";
-import type { StoreManager } from "src/core/managers/store-manager";
-import type {
-  CellAddress,
-  FunctionEvaluationResult,
-  SingleEvaluationResult,
-  SpreadsheetRange,
-} from "src/core/types";
-import { cellAddressToKey, getCellReference, getRangeKey, indexToColumn } from "src/core/utils";
+import type { DependencyManager } from "src/core/managers";
+import type { CellAddress, SpreadsheetRange } from "src/core/types";
+import { cellAddressToKey, getRangeKey } from "src/core/utils";
 import { DependencyNode } from "./dependency-node";
 
 export class EvaluationContext {
@@ -24,8 +18,7 @@ export class EvaluationContext {
   private dependenciesDidUpdate: boolean;
 
   constructor(
-    private dependencyManager: DependencyManager,
-    private storeManager: StoreManager,
+    private storeManager: DependencyManager,
     currentCell: CellAddress,
     currentDepNode?: DependencyNode
   ) {
@@ -150,13 +143,13 @@ export class EvaluationContext {
         }
 
         // Check the node's direct dependencies
-        const directDeps = this.dependencyManager.getNodeDeps(nodeKey);
+        const directDeps = this.storeManager.getNodeDeps(nodeKey);
         if (!checkResolved(directDeps)) {
           return false;
         }
 
         const frontierDeps =
-          this.dependencyManager.getNodeFrontierDependencies(nodeKey);
+          this.storeManager.getNodeFrontierDependencies(nodeKey);
         if (!checkResolved(frontierDeps)) {
           return false;
         }
