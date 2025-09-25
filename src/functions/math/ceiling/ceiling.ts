@@ -195,7 +195,7 @@ function createCeilingSpilledResult(
       }
 
       const result = ceilingOperation(spillNumberResult.result, spillSigResult.result);
-      if (result.type === "error") {
+      if (result.type === "error" || result.type === "awaiting-evaluation") {
         return result;
       }
       return { type: "value", result };
@@ -273,7 +273,7 @@ export const CEILING: FunctionDefinition = {
 
     // Perform CEILING operation
     const result = ceilingOperation(numberResult.result, significanceResult.result);
-    if (result.type === "error") {
+    if (result.type === "error" || result.type === "awaiting-evaluation") {
       return result;
     }
     return { type: "value", result };

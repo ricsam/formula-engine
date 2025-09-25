@@ -105,7 +105,7 @@ export const LEFT: FunctionDefinition = {
 
     // Use MID operation: LEFT(text, num_chars) = MID(text, 1, num_chars)
     const result = midOperation(textResult, startNumResult, numCharsResult);
-    if (result.type === "error") {
+    if (result.type === "error" || result.type === "awaiting-evaluation") {
       return result;
     }
     return {

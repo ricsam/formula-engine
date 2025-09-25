@@ -7,6 +7,7 @@ import {
   type SpilledValuesEvaluationResult,
   type CellAddress,
   type SpreadsheetRange,
+  type ErrorEvaluationResult,
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
@@ -37,7 +38,7 @@ function getValueFromArray(
   row: number,
   col: number,
   context: EvaluationContext
-): CellValue | { type: "error"; err: FormulaError; message: string } {
+): CellValue | ErrorEvaluationResult {
   const dims = arrayResult.spillArea(context.currentCell);
 
   // Convert 1-based indices to 0-based
@@ -96,7 +97,7 @@ function getValueFromArray(
     };
   }
 
-  if (spillResult.type === "error") {
+  if (spillResult.type === "error" || spillResult.type === "awaiting-evaluation") {
     return spillResult;
   }
 
@@ -230,7 +231,7 @@ export const INDEX: FunctionDefinition = {
         context
       );
 
-      if (result.type === "error") {
+      if (result.type === "error" || result.type === "awaiting-evaluation") {
         return result;
       }
 

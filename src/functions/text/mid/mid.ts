@@ -117,7 +117,7 @@ export const MID: FunctionDefinition = {
     }
 
     const result = midOperation(textResult, startNumResult, numCharsResult);
-    if (result.type === "error") {
+    if (result.type === "error" || result.type === "awaiting-evaluation") {
       return result;
     }
     return {

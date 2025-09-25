@@ -618,7 +618,7 @@ export class FormulaEvaluator {
             this,
             options
           )) {
-            if (cellValue.result.type === "error") {
+            if (cellValue.result.type === "error" || cellValue.result.type === "awaiting-evaluation") {
               yield cellValue;
             } else {
               yield {

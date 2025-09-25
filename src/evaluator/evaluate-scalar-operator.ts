@@ -63,7 +63,7 @@ export function evaluateScalarOperator(
       source: `evaulate left spilled range onto right value in scalar operator ${name}`,
       evaluate: (spilled, context) => {
         const evaledLeft = left.evaluate(spilled, context);
-        if (evaledLeft.type === "error") {
+        if (evaledLeft.type === "error" || evaledLeft.type === "awaiting-evaluation") {
           return evaledLeft;
         }
         return evaluateSingleScalarOperator(
@@ -74,7 +74,7 @@ export function evaluateScalarOperator(
       },
       evaluateAllCells: function* (options) {
         for (const cellValue of left.evaluateAllCells.call(this, options)) {
-          if (cellValue.result.type === "error") {
+          if (cellValue.result.type === "error" || cellValue.result.type === "awaiting-evaluation") {
             yield cellValue;
           } else {
             yield {
@@ -97,7 +97,7 @@ export function evaluateScalarOperator(
       source: `evaluate right spilled range onto left value in scalar operator ${name}`,
       evaluate: (spilled, context) => {
         const evaledRight = right.evaluate(spilled, context);
-        if (evaledRight.type === "error") {
+        if (evaledRight.type === "error" || evaledRight.type === "awaiting-evaluation") {
           return evaledRight;
         }
         return evaluateSingleScalarOperator(
@@ -108,7 +108,7 @@ export function evaluateScalarOperator(
       },
       evaluateAllCells: function* (options) {
         for (const cellValue of right.evaluateAllCells.call(this, options)) {
-          if (cellValue.result.type === "error") {
+          if (cellValue.result.type === "error" || cellValue.result.type === "awaiting-evaluation") {
             yield cellValue;
           } else {
             const result = evaluateSingleScalarOperator(
@@ -134,11 +134,11 @@ export function evaluateScalarOperator(
       source: `evaluate spilled ranges in scalar operator ${name}`,
       evaluate: (spilled, context) => {
         const evaledLeft = left.evaluate(spilled, context);
-        if (evaledLeft.type === "error") {
+        if (evaledLeft.type === "error" || evaledLeft.type === "awaiting-evaluation") {
           return evaledLeft;
         }
         const evaledRight = right.evaluate(spilled, context);
-        if (evaledRight.type === "error") {
+        if (evaledRight.type === "error" || evaledRight.type === "awaiting-evaluation") {
           return evaledRight;
         }
         return evaluateSingleScalarOperator(

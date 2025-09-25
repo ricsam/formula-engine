@@ -14,6 +14,7 @@ import type { FormulaEngine } from "src/core/engine";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
 import { OpenRangeEvaluator } from "../../../evaluator/open-range-evaluator";
+import { flags } from "src/debug/flags";
 
 /**
  * MATCH function - Returns the position of a value in an array
@@ -52,17 +53,25 @@ function matchOperation(
 
   let foundSomething = false;
 
+  let i = 0;
+  const values: any[] = [];
   for (const value of lookupArray) {
+    i++;
+    values.push(value.result);
     if (value.result.type === "value") {
       foundSomething = true;
       if (matchType === 0) {
         // Exact match
         const arrayValue = value.result.result;
+
         if (
           arrayValue.type === lookupValue.type &&
           arrayValue.value === lookupValue.value
         ) {
-          return { type: "value", result: { type: "number", value: value.relativePos.y + 1 } }; // 1-based index
+          return {
+            type: "value",
+            result: { type: "number", value: value.relativePos.y + 1 },
+          }; // 1-based index
         }
       } else {
         // Approximate match (1 or -1) - requires sorted array
@@ -175,11 +184,13 @@ export const MATCH: FunctionDefinition = {
       ];
     } else if (lookupArrayResult.type === "spilled-values") {
       // Extract values from spilled array
+      flags.profilingNamespaces["lookup/match"] = true;
       lookupArray = lookupArrayResult.evaluateAllCells.call(this, {
         context,
         evaluate: lookupArrayResult.evaluate,
         origin: context.currentCell,
       });
+      flags.profilingNamespaces["lookup/match"] = false;
     }
 
     // Perform MATCH operation

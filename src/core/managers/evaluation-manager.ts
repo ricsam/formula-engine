@@ -7,6 +7,7 @@ import {
   type CellAddress,
   type CellValue,
   type ErrorEvaluationResult,
+  type EvaluationOrder,
   type FunctionEvaluationResult,
   type SerializedCellValue,
   type SingleEvaluationResult,
@@ -25,6 +26,7 @@ import {
 } from "../utils";
 import type { DependencyManager } from "./dependency-manager";
 import type { WorkbookManager } from "./workbook-manager";
+import { flags } from "src/debug/flags";
 
 export class EvaluationManager {
   private isEvaluating = false;
@@ -44,6 +46,7 @@ export class EvaluationManager {
   }
 
   clearEvaluationCache(): void {
+    flags.numEvaluationCalls = 0;
     this.dependencyManager.clearEvaluationCache();
   }
 
@@ -51,7 +54,10 @@ export class EvaluationManager {
     evaluation: SingleEvaluationResult,
     debug?: boolean
   ): SerializedCellValue {
-    if (evaluation.type !== "error") {
+    if (
+      evaluation.type !== "error" &&
+      evaluation.type !== "awaiting-evaluation"
+    ) {
       const value = evaluation.result;
 
       return value.type === "infinity"
@@ -59,6 +65,12 @@ export class EvaluationManager {
           ? "INFINITY"
           : "-INFINITY"
         : value.value;
+    }
+
+    if (evaluation.type === "awaiting-evaluation") {
+      return (
+        "AWAITING_EVALUATION of " + cellAddressToKey(evaluation.cellAddress)
+      );
     }
 
     if (debug) {
@@ -291,6 +303,7 @@ export class EvaluationManager {
     });
 
     const nodeKey = cellAddressToKey(cellAddress);
+    let precalculatedPlan: EvaluationOrder | undefined;
 
     let requiresReRun = true;
     while (requiresReRun) {
@@ -324,6 +337,7 @@ export class EvaluationManager {
 
       // Use DependencyManager to build evaluation order
       const evaluationPlan =
+        precalculatedPlan ??
         this.dependencyManager.buildEvaluationOrder(nodeKey);
 
       if (evaluationPlan.hasCycle) {
@@ -355,11 +369,13 @@ export class EvaluationManager {
       });
       const cellResult = this.evaluateDependencyNode(nodeKey);
 
+      const nextEvaluationPlan =
+        this.dependencyManager.buildEvaluationOrder(nodeKey);
+
+      precalculatedPlan = nextEvaluationPlan;
+
       // Check if new dependencies were discovered during evaluation
-      if (
-        this.dependencyManager.buildEvaluationOrder(nodeKey).hash !==
-        evaluationPlan.hash
-      ) {
+      if (nextEvaluationPlan.hash !== evaluationPlan.hash) {
         requiresReRun = true;
       } else {
         this.isEvaluating = false;
@@ -471,7 +487,28 @@ export class EvaluationManager {
         value.evaluationResult.type === "spilled-values" &&
         !value.originSpillResult)
     ) {
+      flags.numEvaluationCalls++;
+      if (flags.numEvaluationCalls > flags.maxEvaluationCalls) {
+        return {
+          type: "value",
+          result: {
+            type: "string",
+            value: "timeout",
+          },
+        };
+      }
+      if (flags.numEvaluationCalls === flags.profiledCall) {
+        console.group("profiling " + cellAddressToKey(cellAddress));
+        // console.profile("evaluate " + cellAddressToKey(cellAddress));
+        flags.isProfiling = true;
+      } else {
+        flags.isProfiling = false;
+      }
       this.evaluateCell(cellAddress);
+      if (flags.isProfiling) {
+        // console.profileEnd("evaluate " + cellAddressToKey(cellAddress));
+        console.groupEnd();
+      }
       value = getEvaluatedNode();
     }
 

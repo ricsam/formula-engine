@@ -12,6 +12,7 @@ import {
 import { cellAddressToKey, isCellInRange } from "../utils";
 
 import { DependencyNode } from "src/evaluator/dependency-node";
+import { flags } from "src/debug/flags";
 
 interface TopologicalSortResult {
   type: "success" | "cycle";
@@ -121,7 +122,7 @@ export class DependencyManager {
   evalTimeSafeEvaluateCell(
     cellAddress: CellAddress,
     context: EvaluationContext
-  ): FunctionEvaluationResult | undefined {
+  ): FunctionEvaluationResult {
     const spilled = this.getSpillValue(cellAddress);
     if (spilled) {
       const spillSource = this.getSpilledAddress(cellAddress, spilled);
@@ -136,6 +137,12 @@ export class DependencyManager {
     const key = cellAddressToKey(cellAddress);
     context.addDependency(key);
     const result = this.evaluatedNodes.get(key)?.evaluationResult;
+    if (!result) {
+      return {
+        type: "awaiting-evaluation",
+        cellAddress,
+      };
+    }
     return result;
   }
 
@@ -206,6 +213,7 @@ export class DependencyManager {
 
   /**
    * Get transitive dependencies and transitive frontier dependencies
+   * This is only used by buildEvaluationOrder, so we'll optimize it there
    */
   getTransitiveDeps(
     nodeKey: string,
@@ -255,51 +263,6 @@ export class DependencyManager {
   }
 
   /**
-   * Perform topological sort on dependencies with cycle detection
-   */
-  topologicalSort(deps: Set<string>): TopologicalSortResult {
-    const sorted: string[] = [];
-    const visited = new Set<string>();
-    const visiting = new Set<string>();
-    const inCycle = new Set<string>();
-
-    const visit = (node: string): boolean => {
-      if (visiting.has(node)) {
-        // Found a cycle
-        inCycle.add(node);
-        return true;
-      }
-      if (visited.has(node)) {
-        return false;
-      }
-
-      visiting.add(node);
-      const nodeDeps = this.getNodeDeps(node);
-
-      for (const dep of nodeDeps) {
-        if (deps.has(dep) && visit(dep)) {
-          inCycle.add(node);
-        }
-      }
-
-      visiting.delete(node);
-      visited.add(node);
-      sorted.push(node);
-      return inCycle.has(node);
-    };
-
-    for (const node of deps) {
-      visit(node);
-    }
-
-    if (inCycle.size > 0) {
-      return { type: "cycle", inCycle };
-    }
-
-    return { type: "success", sorted };
-  }
-
-  /**
    * Build evaluation order for a cell, handling frontier dependencies specially
    *
    * Evaluation order:
@@ -317,108 +280,182 @@ export class DependencyManager {
    * e.g: [B1],[B10],[D2],{A1},[B2],{C4},[E4],(B1),(G4),(H1),Y10
    */
   buildEvaluationOrder(nodeKey: string): EvaluationOrder {
-    const evaluationOrder: string[] = [];
-
     const node = this.getEvaluatedNode(nodeKey);
     if (node && node.resolved && node?.evaluationOrder) {
       return node.evaluationOrder;
     }
 
-    // Collect all nodes in the dependency graph (regular + frontier)
-    const allNodes = this.getTransitiveDeps(nodeKey);
-
-    // Separate frontier and regular dependencies
-    const allFrontierDeps = new Set<string>();
-    const allRegularDeps = new Set<string>();
-
-    for (const node of allNodes) {
-      // Check if this node is a frontier dependency of any node in the graph
-      let isFrontierDep = false;
-      for (const graphNode of allNodes) {
-        if (graphNode !== node) {
-          const frontierDeps = this.getNodeFrontierDependencies(graphNode);
-          if (frontierDeps.has(node)) {
-            isFrontierDep = true;
-            break;
-          }
-        }
-      }
-
-      // Also check if it's a frontier dependency of the target node
-      const targetFrontierDeps = this.getNodeFrontierDependencies(nodeKey);
-      if (targetFrontierDeps.has(node)) {
-        isFrontierDep = true;
-      }
-
-      if (isFrontierDep) {
-        allFrontierDeps.add(node);
-      } else {
-        allRegularDeps.add(node);
-      }
+    if (flags.isProfiling) {
+      console.time("buildEvaluationOrder");
     }
 
-    // Check for cycles in regular dependencies only
-    const cycleCheckResult = this.topologicalSort(allRegularDeps);
-    if (cycleCheckResult.type === "cycle") {
-      const result: EvaluationOrder = {
-        evaluationOrder: [],
-        hasCycle: true,
-        cycleNodes: cycleCheckResult.inCycle,
-        hash: this.computeHash(allNodes),
-      };
-      if (node && node.resolved) {
-        node.setEvaluationOrder(result);
-      }
-      return result;
+    // Single-pass algorithm that:
+    // 1. Collects all transitive dependencies
+    // 2. Identifies which are frontier vs regular
+    // 3. Detects cycles
+    // 4. Builds evaluation order
+
+    interface NodeInfo {
+      isFrontierDep: boolean;
+      frontierParents: Set<string>; // Nodes that have this as a frontier dependency
     }
 
-    // Create a specialized topological sort that handles frontier dependencies
-    const visitedNodes = new Set<string>();
-    const visitingNodes = new Set<string>();
+    const allNodes = new Map<string, NodeInfo>();
+    const visitedForDiscovery = new Set<string>();
+    const visitingForCycle = new Set<string>();
+    const cycleNodes = new Set<string>();
+    const evaluationOrder: string[] = [];
+    const visitedForOrder = new Set<string>();
 
-    const visit = (node: string): void => {
-      if (visitingNodes.has(node) || visitedNodes.has(node)) {
+    // Phase 1: Discover all nodes and their types
+    const discoverNodes = (
+      current: string,
+      parentKey?: string,
+      isFrontierEdge: boolean = false
+    ) => {
+      if (!allNodes.has(current)) {
+        allNodes.set(current, {
+          isFrontierDep: false,
+          frontierParents: new Set(),
+        });
+      }
+
+      const nodeInfo = allNodes.get(current)!;
+
+      // If this edge is a frontier dependency, mark it
+      if (isFrontierEdge && parentKey) {
+        nodeInfo.isFrontierDep = true;
+        nodeInfo.frontierParents.add(parentKey);
+      }
+
+      if (visitedForDiscovery.has(current)) {
         return;
       }
 
-      visitingNodes.add(node);
+      visitedForDiscovery.add(current);
 
-      // First, visit all regular dependencies
-      const regularDeps = this.getNodeDeps(node);
+      // Get regular dependencies
+      const regularDeps = this.getNodeDeps(current);
       for (const dep of regularDeps) {
-        if (allNodes.has(dep)) {
-          visit(dep);
-        }
+        discoverNodes(dep, current, false);
       }
 
-      // Then, visit all frontier dependencies (but don't create cycles)
-      const frontierDeps = this.getNodeFrontierDependencies(node);
+      // Get frontier dependencies
+      const frontierDeps = this.getNodeFrontierDependencies(current);
       for (const dep of frontierDeps) {
-        if (allNodes.has(dep) && !visitingNodes.has(dep)) {
-          visit(dep);
-        }
-      }
-
-      visitingNodes.delete(node);
-      if (!visitedNodes.has(node)) {
-        visitedNodes.add(node);
-        evaluationOrder.push(node);
+        discoverNodes(dep, current, true);
       }
     };
 
-    // Visit all nodes
-    for (const node of allNodes) {
-      visit(node);
+    // Start discovery from the target node
+    discoverNodes(nodeKey);
+
+    // Phase 2: Check for cycles (only considering regular dependencies)
+    const checkCycles = (current: string): boolean => {
+      if (visitingForCycle.has(current)) {
+        cycleNodes.add(current);
+        return true;
+      }
+
+      if (visitedForOrder.has(current)) {
+        return false;
+      }
+
+      visitingForCycle.add(current);
+
+      // Only check regular dependencies for cycles
+      const regularDeps = this.getNodeDeps(current);
+      for (const dep of regularDeps) {
+        if (allNodes.has(dep) && checkCycles(dep)) {
+          cycleNodes.add(current);
+        }
+      }
+
+      visitingForCycle.delete(current);
+      return cycleNodes.has(current);
+    };
+
+    // Check for cycles starting from all nodes
+    for (const [nodeKey] of allNodes) {
+      if (!visitedForOrder.has(nodeKey)) {
+        checkCycles(nodeKey);
+      }
+    }
+
+    // If there are cycles, return early
+    if (cycleNodes.size > 0) {
+      const result: EvaluationOrder = {
+        evaluationOrder: [],
+        hasCycle: true,
+        cycleNodes,
+        hash: this.computeHash(new Set(allNodes.keys())),
+      };
+
+      if (node && node.resolved) {
+        node.setEvaluationOrder(result);
+      }
+
+      if (flags.isProfiling) {
+        console.timeEnd("buildEvaluationOrder");
+        console.log(`Nodes: ${allNodes.size}`);
+      }
+
+      return result;
+    }
+
+    // Phase 3: Build evaluation order
+    visitedForOrder.clear();
+    const buildOrder = (current: string) => {
+      if (visitedForOrder.has(current) || visitingForCycle.has(current)) {
+        return;
+      }
+
+      visitingForCycle.add(current);
+
+      // First visit regular dependencies
+      const regularDeps = this.getNodeDeps(current);
+      for (const dep of regularDeps) {
+        if (allNodes.has(dep)) {
+          buildOrder(dep);
+        }
+      }
+
+      // Then visit frontier dependencies (without creating cycles)
+      const frontierDeps = this.getNodeFrontierDependencies(current);
+      for (const dep of frontierDeps) {
+        if (allNodes.has(dep) && !visitingForCycle.has(dep)) {
+          buildOrder(dep);
+        }
+      }
+
+      visitingForCycle.delete(current);
+
+      if (!visitedForOrder.has(current)) {
+        visitedForOrder.add(current);
+        evaluationOrder.push(current);
+      }
+    };
+
+    // Build order for all nodes
+    for (const [nodeKey] of allNodes) {
+      buildOrder(nodeKey);
     }
 
     const result: EvaluationOrder = {
       evaluationOrder,
       hasCycle: false,
-      hash: this.computeHash(allNodes),
+      hash: this.computeHash(new Set(allNodes.keys())),
     };
+
     if (node && node.resolved) {
       node.setEvaluationOrder(result);
     }
+
+    if (flags.isProfiling) {
+      console.timeEnd("buildEvaluationOrder");
+      console.log(`Nodes: ${allNodes.size}`);
+    }
+
     return result;
   }
 

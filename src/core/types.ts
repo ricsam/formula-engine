@@ -142,11 +142,18 @@ export type ValueEvaluationResult = {
   result: CellValue;
 };
 
-export type ErrorEvaluationResult = {
-  type: "error";
-  err: FormulaError;
-  message: string;
+export type AwaitingEvaluationResult = {
+  type: "awaiting-evaluation";
+  cellAddress: CellAddress;
 };
+
+export type ErrorEvaluationResult =
+  | {
+      type: "error";
+      err: FormulaError;
+      message: string;
+    }
+  | AwaitingEvaluationResult;
 
 export type SingleEvaluationResult =
   | ValueEvaluationResult
@@ -220,8 +227,7 @@ export type EvaluateAllCellsResult = {
 };
 
 export type FunctionEvaluationResult =
-  | ValueEvaluationResult
-  | ErrorEvaluationResult
+  | SingleEvaluationResult
   | SpilledValuesEvaluationResult;
 
 export type SpilledValue = {

@@ -87,7 +87,7 @@ export class DependencyNode {
    * resolved is true if all transitive dependencies are resolved.
    * A dependency is resolved if it had no updates to its dependencies during the evaluation.
    *
-   * The dependencies considered include regular dependencies, frontier dependencies and discarded frontier dependencies.
+   * A dependency in this context is regular dependencies, frontier dependencies and discarded frontier dependencies.
    *
    */
   public get resolved() {

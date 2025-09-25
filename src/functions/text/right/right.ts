@@ -46,8 +46,20 @@ function rightOperation(
   const textStr = convertToString(textResult);
   const numChars = extractNumericValue(numCharsResult);
 
+  // Check if any of the results are awaiting evaluation or errors
+  if (typeof textStr === "object" && (textStr.type === "awaiting-evaluation" || textStr.type === "error")) {
+    return textStr;
+  }
+  if (typeof numChars === "object" && (numChars.type === "awaiting-evaluation" || numChars.type === "error")) {
+    return numChars;
+  }
+
+  // At this point, all values should be primitive types
+  const textValue = textStr as string;
+  const numCharsValue = numChars as number;
+
   // Validate numChars
-  if (numChars < 0) {
+  if (numCharsValue < 0) {
     return {
       type: "error",
       err: FormulaError.VALUE,
@@ -56,8 +68,8 @@ function rightOperation(
   }
 
   // Calculate start position: LEN(text) - num_chars + 1
-  const textLength = textStr.length;
-  const startPos = Math.max(1, textLength - Math.floor(numChars) + 1);
+  const textLength = textValue.length;
+  const startPos = Math.max(1, textLength - Math.floor(numCharsValue) + 1);
 
   // Create start_num result
   const startNumResult: FunctionEvaluationResult = {
@@ -82,7 +94,7 @@ export const RIGHT: FunctionDefinition = {
 
     // Evaluate the text argument
     const textResult = this.evaluateNode(node.args[0]!, context);
-    if (textResult.type === "error") {
+    if (textResult.type === "error" || textResult.type === "awaiting-evaluation") {
       return textResult;
     }
 
