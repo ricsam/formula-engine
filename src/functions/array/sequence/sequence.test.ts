@@ -318,4 +318,15 @@ describe("SEQUENCE function", () => {
     expect(cell("C1")).toBe(FormulaError.SPILL);
     expect(cell("C2")).toBe("");
   });
+
+  test("SEQUENCE lazy evaluation", () => {
+    engine.setSheetContent(
+      sheetAddress,
+      new Map<string, SerializedCellValue>([
+        ["A1", "=B10000000"],
+        ["B1", "=SEQUENCE(10000000)"],
+      ])
+    );
+    expect(cell("A1")).toBe(10000000);
+  });
 });

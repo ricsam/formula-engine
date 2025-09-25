@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import { FormulaEngine } from "../../../src/core/engine";
 import { getCellReference, parseCellReference } from "../../../src/core/utils";
-import type { SpreadsheetRange, SerializedCellValue } from "../../../src/core/types";
+import type {
+  SpreadsheetRange,
+  SerializedCellValue,
+} from "../../../src/core/types";
 
 describe("AutoFill and ClearSpreadsheetRange", () => {
   let engine: FormulaEngine;
@@ -10,10 +13,17 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
   const sheetAddress = { workbookName, sheetName };
 
   const cell = (ref: string) =>
-    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) });
+    engine.getCellValue({
+      sheetName,
+      workbookName,
+      ...parseCellReference(ref),
+    });
 
   const setCellContent = (ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
+    engine.setCellContent(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      content
+    );
   };
 
   beforeEach(() => {
@@ -28,16 +38,19 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
       engine.setSheetContent(
         sheetAddress,
         new Map<string, SerializedCellValue>([
-          ["A1", "A1"],
-          ["B1", "B1"],
-          ["A2", "A2"],
-          ["B2", "B2"],
+          ["A1", "content in A1"],
+          ["B1", "content in B1"],
+          ["A2", "content in A2"],
+          ["B2", "content in B2"],
         ])
       );
 
       const range: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 1 }, row: { type: "number", value: 1 } }
+        end: {
+          col: { type: "number", value: 1 },
+          row: { type: "number", value: 1 },
+        },
       };
 
       engine.clearSpreadsheetRange(sheetAddress, range);
@@ -49,24 +62,48 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
       expect(cell("B2")).toBe("");
     });
 
-    it("should throw error for infinite ranges", () => {
+    it("should work for infinite ranges", () => {
       const infiniteRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "infinity", sign: "positive" }, row: { type: "number", value: 1 } }
+        end: {
+          col: { type: "infinity", sign: "positive" },
+          row: { type: "number", value: 1 },
+        },
       };
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "content in A1"],
+          ["B1", "content in B1"],
+          ["A2", "content in A2"],
+          ["B2", "content in B2"],
+        ])
+      );
 
-      expect(() => engine.clearSpreadsheetRange(sheetAddress, infiniteRange))
-        .toThrow("Clearing infinite ranges is not supported");
+      engine.clearSpreadsheetRange(sheetAddress, infiniteRange);
+
+      // Check that all cells are cleared (engine returns "" for empty cells)
+      expect(cell("A1")).toBe("");
+      expect(cell("B1")).toBe("");
+      expect(cell("A2")).toBe("");
+      expect(cell("B2")).toBe("");
     });
 
     it("should throw error for non-existent sheet", () => {
       const range: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 1 }, row: { type: "number", value: 1 } }
+        end: {
+          col: { type: "number", value: 1 },
+          row: { type: "number", value: 1 },
+        },
       };
 
-      expect(() => engine.clearSpreadsheetRange({ workbookName, sheetName: "NonExistentSheet" }, range))
-        .toThrow('Sheet not found');
+      expect(() =>
+        engine.clearSpreadsheetRange(
+          { workbookName, sheetName: "NonExistentSheet" },
+          range
+        )
+      ).toThrow("Sheet not found");
     });
   });
 
@@ -76,12 +113,18 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
 
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 1, row: 0 },
-        end: { col: { type: "number", value: 3 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 3 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       engine.autoFill(sheetAddress, seedRange, fillRange, "right");
@@ -96,12 +139,18 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
 
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 0, row: 1 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 2 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 2 },
+        },
       };
 
       engine.autoFill(sheetAddress, seedRange, fillRange, "down");
@@ -122,12 +171,18 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
 
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 1, row: 0 },
-        end: { col: { type: "number", value: 2 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 2 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       engine.autoFill(sheetAddress, seedRange, fillRange, "right");
@@ -141,12 +196,18 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
 
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 1, row: 0 },
-        end: { col: { type: "number", value: 2 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 2 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       engine.autoFill(sheetAddress, seedRange, fillRange, "right");
@@ -162,12 +223,18 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
 
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 1, row: 0 },
-        end: { col: { type: "number", value: 1 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 1 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       engine.autoFill(sheetAddress, seedRange, fillRange, "right");
@@ -182,12 +249,18 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
 
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 0, row: 1 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 1 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 1 },
+        },
       };
 
       engine.autoFill(sheetAddress, seedRange, fillRange, "down");
@@ -210,12 +283,18 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
 
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 1 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 1 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 0, row: 2 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 4 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 4 },
+        },
       };
 
       engine.autoFill(sheetAddress, seedRange, fillRange, "down");
@@ -236,12 +315,18 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
 
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 1 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 1 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 2, row: 0 },
-        end: { col: { type: "number", value: 4 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 4 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       engine.autoFill(sheetAddress, seedRange, fillRange, "right");
@@ -262,12 +347,18 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
 
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 1 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 1 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 0, row: 2 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 3 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 3 },
+        },
       };
 
       engine.autoFill(sheetAddress, seedRange, fillRange, "down");
@@ -287,12 +378,18 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
 
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 1 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 1 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 0, row: 2 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 3 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 3 },
+        },
       };
 
       engine.autoFill(sheetAddress, seedRange, fillRange, "down");
@@ -314,12 +411,18 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
 
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 1 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 1 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 0, row: 2 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 5 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 5 },
+        },
       };
 
       engine.autoFill(sheetAddress, seedRange, fillRange, "down");
@@ -343,12 +446,18 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
 
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 1 }, row: { type: "number", value: 1 } }
+        end: {
+          col: { type: "number", value: 1 },
+          row: { type: "number", value: 1 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 2, row: 0 },
-        end: { col: { type: "number", value: 3 }, row: { type: "number", value: 1 } }
+        end: {
+          col: { type: "number", value: 3 },
+          row: { type: "number", value: 1 },
+        },
       };
 
       engine.autoFill(sheetAddress, seedRange, fillRange, "right");
@@ -370,12 +479,18 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
 
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 1 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 1 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 1, row: 0 },
-        end: { col: { type: "number", value: 1 }, row: { type: "number", value: 1 } }
+        end: {
+          col: { type: "number", value: 1 },
+          row: { type: "number", value: 1 },
+        },
       };
 
       engine.autoFill(sheetAddress, seedRange, fillRange, "right");
@@ -391,31 +506,50 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
     it("should throw error for infinite ranges", () => {
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       const infiniteFillRange: SpreadsheetRange = {
         start: { col: 1, row: 0 },
-        end: { col: { type: "infinity", sign: "positive" }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "infinity", sign: "positive" },
+          row: { type: "number", value: 0 },
+        },
       };
 
-      expect(() => engine.autoFill(sheetAddress, seedRange, infiniteFillRange, "right"))
-        .toThrow("AutoFill with infinite ranges is not supported");
+      expect(() =>
+        engine.autoFill(sheetAddress, seedRange, infiniteFillRange, "right")
+      ).toThrow("AutoFill with infinite ranges is not supported");
     });
 
     it("should throw error for non-existent sheet", () => {
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 1, row: 0 },
-        end: { col: { type: "number", value: 1 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 1 },
+          row: { type: "number", value: 0 },
+        },
       };
 
-      expect(() => engine.autoFill({ workbookName, sheetName: "NonExistentSheet" }, seedRange, fillRange, "right"))
-        .toThrow('Sheet not found');
+      expect(() =>
+        engine.autoFill(
+          { workbookName, sheetName: "NonExistentSheet" },
+          seedRange,
+          fillRange,
+          "right"
+        )
+      ).toThrow("Sheet not found");
     });
   });
 
@@ -431,12 +565,18 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
 
       const seedRange: SpreadsheetRange = {
         start: { col: 0, row: 2 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 3 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 3 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 1 } }
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 1 },
+        },
       };
 
       engine.autoFill(sheetAddress, seedRange, fillRange, "up");
@@ -456,12 +596,18 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
 
       const seedRange: SpreadsheetRange = {
         start: { col: 2, row: 0 },
-        end: { col: { type: "number", value: 3 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 3 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       const fillRange: SpreadsheetRange = {
         start: { col: 0, row: 0 },
-        end: { col: { type: "number", value: 1 }, row: { type: "number", value: 0 } }
+        end: {
+          col: { type: "number", value: 1 },
+          row: { type: "number", value: 0 },
+        },
       };
 
       engine.autoFill(sheetAddress, seedRange, fillRange, "left");

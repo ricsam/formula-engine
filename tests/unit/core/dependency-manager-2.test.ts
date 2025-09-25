@@ -48,7 +48,9 @@ describe("DependencyManager", () => {
       const deps: string[] = [];
       const frontierDependencies: Record<string, string[]> = {};
       const discardedFrontierDependencies: Record<string, string[]> = {};
-      const node = engine._dependencyManager.getEvaluatedNode(cellToDepKey(cell));
+      const node = engine._dependencyManager.getEvaluatedNode(
+        cellToDepKey(cell)
+      );
       node?.deps?.forEach((dep) => deps.push(dep.split(":")[3]!));
 
       // Handle Map-based frontier dependencies
@@ -231,7 +233,7 @@ describe("DependencyManager", () => {
 
       expect(directDeps("D11")).toEqual({
         deps: [],
-        frontierDependencies: { "D11:D11": ["D10", "A2", "C1"] },
+        frontierDependencies: { "D11:D11": ["D10", "C1", "A2"] },
         discardedFrontierDependencies: {},
       });
 
@@ -258,16 +260,16 @@ describe("DependencyManager", () => {
                     "activeFrontierDependencies": {
                       "D11:D11": [
                         "D10",
-                        "A2",
                         "C1",
+                        "A2",
                       ],
                     },
                     "discardedFrontierDependencies": undefined,
                     "rawFrontierDependencies": {
                       "D11:D11": [
                         "D10",
-                        "A2",
                         "C1",
+                        "A2",
                       ],
                     },
                   },
@@ -278,6 +280,11 @@ describe("DependencyManager", () => {
                         "resolved": false,
                       },
                       {
+                        "key": "C1",
+                        "resolved": false,
+                        "self": true,
+                      },
+                      {
                         "deps": [
                           {
                             "key": "F1",
@@ -286,11 +293,6 @@ describe("DependencyManager", () => {
                         ],
                         "key": "A2",
                         "resolved": true,
-                      },
-                      {
-                        "key": "C1",
-                        "resolved": false,
-                        "self": true,
                       },
                     ],
                   },
@@ -370,16 +372,16 @@ describe("DependencyManager", () => {
                     "activeFrontierDependencies": {
                       "D11:D11": [
                         "D10",
-                        "A2",
                         "C1",
+                        "A2",
                       ],
                     },
                     "discardedFrontierDependencies": undefined,
                     "rawFrontierDependencies": {
                       "D11:D11": [
                         "D10",
-                        "A2",
                         "C1",
+                        "A2",
                       ],
                     },
                   },
@@ -495,7 +497,7 @@ describe("DependencyManager", () => {
         deps: ["D10", "A2"],
         discardedFrontierDependencies: {},
         frontierDependencies: {
-          "D11:D11": ["D10", "A2", "C1"],
+          "D11:D11": ["D10", "C1", "A2"],
         },
       });
 
@@ -538,16 +540,16 @@ describe("DependencyManager", () => {
                     "activeFrontierDependencies": {
                       "D11:D11": [
                         "D10",
-                        "A2",
                         "C1",
+                        "A2",
                       ],
                     },
                     "discardedFrontierDependencies": undefined,
                     "rawFrontierDependencies": {
                       "D11:D11": [
                         "D10",
-                        "A2",
                         "C1",
+                        "A2",
                       ],
                     },
                   },

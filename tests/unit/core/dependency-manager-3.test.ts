@@ -117,8 +117,8 @@ describe("DependencyManager", () => {
           "discardedFrontierDependencies": {},
           "frontierDependencies": {
             "C3:D4": [
-              "B2",
               "A1",
+              "B2",
             ],
           },
         }
@@ -135,28 +135,28 @@ describe("DependencyManager", () => {
           "_debug": {
             "activeFrontierDependencies": {
               "C3:D4": [
-                "B2",
                 "A1",
+                "B2",
               ],
             },
             "discardedFrontierDependencies": undefined,
             "rawFrontierDependencies": {
               "C3:D4": [
-                "B2",
                 "A1",
+                "B2",
               ],
             },
           },
           "frontierDependencies": {
             "C3:D4": [
               {
-                "key": "B2",
-                "resolved": false,
-              },
-              {
                 "key": "A1",
                 "resolved": false,
                 "self": true,
+              },
+              {
+                "key": "B2",
+                "resolved": false,
               },
             ],
           },
