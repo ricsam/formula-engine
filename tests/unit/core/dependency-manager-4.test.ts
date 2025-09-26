@@ -96,6 +96,7 @@ describe("DependencyManager", () => {
         for (const cell of evalOrder("D11")) {
           evalCell(cell);
         }
+        engine._dependencyManager.markResolvedNodes(cellToDepKey("D11"));
       };
 
       // Setup: Reproduce the exact scenario from the spec
@@ -152,13 +153,16 @@ describe("DependencyManager", () => {
               ],
             },
           },
+          "directDepsUpdated": true,
           "frontierDependencies": {
             "D11:D11": [
               {
+                "directDepsUpdated": false,
                 "key": "D10",
                 "resolved": false,
               },
               {
+                "directDepsUpdated": false,
                 "key": "C1",
                 "resolved": false,
               },
@@ -198,29 +202,35 @@ describe("DependencyManager", () => {
               ],
             },
           },
+          "directDepsUpdated": false,
           "frontierDependencies": {
             "D11:D11": [
               {
                 "deps": [
                   {
+                    "directDepsUpdated": false,
                     "key": "B2",
                     "resolved": false,
                   },
                   {
+                    "directDepsUpdated": false,
                     "key": "A1",
                     "resolved": false,
                   },
                 ],
+                "directDepsUpdated": true,
                 "key": "D10",
                 "resolved": false,
               },
               {
                 "deps": [
                   {
+                    "directDepsUpdated": false,
                     "key": "A1",
                     "resolved": false,
                   },
                 ],
+                "directDepsUpdated": true,
                 "key": "C1",
                 "resolved": false,
               },

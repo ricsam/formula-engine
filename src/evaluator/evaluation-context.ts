@@ -115,80 +115,23 @@ export class EvaluationContext {
     return this.dependenciesDidUpdate;
   }
 
-  /**
-   * TODO move to dependency manager
-   */
-  getTransitiveDependenciesResolved(deps: Set<string>) {
-    // Get the current cell's dependency key to exclude self-references
-    const currentCellKey = cellAddressToKey(this._currentCell);
-
-    // Track visited nodes to avoid infinite loops in circular dependencies
-    const visited = new Set<string>();
-    visited.add(currentCellKey); // Don't revisit the current cell
-
-    const checkResolved = (nodeKeys: Set<string>): boolean => {
-      for (const nodeKey of nodeKeys) {
-        if (visited.has(nodeKey)) {
-          continue; // Skip already visited nodes (circular references)
-        }
-        visited.add(nodeKey);
-
-        const node = this.dependencyManager.getEvaluatedNode(nodeKey);
-        if (!node) {
-          return false; // Node doesn't exist yet, not resolved
-        }
-
-        if (node.didUpdate) {
-          return false; // Node itself is not update
-        }
-
-        // Check the node's direct dependencies
-        const directDeps = this.dependencyManager.getNodeDeps(nodeKey);
-        if (!checkResolved(directDeps)) {
-          return false;
-        }
-
-        const frontierDeps =
-          this.dependencyManager.getNodeFrontierDependencies(nodeKey);
-        if (!checkResolved(frontierDeps)) {
-          return false;
-        }
-      }
-      return true;
-    };
-
-    return checkResolved(deps);
-  }
-
   getDependencyAttributes(): DependencyAttributes {
-    // A node is resolved when:
-    // 1. This context didn't update any dependencies during evaluation
-    // 2. AND all its transitive dependencies (including frontier) are also resolved
-    const thisNodeDidNotUpdateDeps = !this.getDependenciesDidUpdate();
     const depsToCheck = new Set(this.dependencies);
-    const discardedFrontierDepsToCheck = new Set<string>();
-    for (const discardedFrontierDep of this.discardedFrontierDependencies.values()) {
-      for (const dep of discardedFrontierDep) {
-        discardedFrontierDepsToCheck.add(dep);
-      }
-    }
-    for (const frontierDep of this.frontierDependencies.values()) {
+
+    for (const [rangeKey, frontierDep] of this.frontierDependencies) {
       for (const dep of frontierDep) {
-        if (discardedFrontierDepsToCheck.has(dep)) {
+        if (this.discardedFrontierDependencies.get(rangeKey)?.has(dep)) {
           continue;
         }
         depsToCheck.add(dep);
       }
     }
-    const allTransitiveDepsResolved =
-      this.getTransitiveDependenciesResolved(depsToCheck);
 
     return {
       deps: this.dependencies,
       frontierDependencies: this.frontierDependencies,
       discardedFrontierDependencies: this.discardedFrontierDependencies,
-      didUpdate: !thisNodeDidNotUpdateDeps,
-      resolved: thisNodeDidNotUpdateDeps && allTransitiveDepsResolved,
+      directDepsUpdated: this.getDependenciesDidUpdate(),
     };
   }
 
@@ -205,6 +148,5 @@ export type DependencyAttributes = {
   deps: Set<string>;
   frontierDependencies: Map<string, Set<string>>;
   discardedFrontierDependencies: Map<string, Set<string>>;
-  didUpdate: boolean;
-  resolved: boolean;
+  directDepsUpdated: boolean;
 };

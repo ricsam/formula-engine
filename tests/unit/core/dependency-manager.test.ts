@@ -69,8 +69,7 @@ function setEvaluatedNodeForTest(
       partialAttributes.discardedFrontierDependencies
         ? convertFrontierDeps(partialAttributes.discardedFrontierDependencies)
         : new Map(),
-    didUpdate: partialAttributes.didUpdate ?? false,
-    resolved: partialAttributes.resolved ?? false,
+    directDepsUpdated: partialAttributes.directDepsUpdated ?? false,
   };
 
   dependencyManager.setEvaluatedNode(
@@ -1322,7 +1321,7 @@ describe("DependencyManager", () => {
         }
       );
 
-      const transitiveDeps = dependencyManager.getTransitiveDeps(
+      const transitiveDeps = dependencyManager.getTransitiveDepsForEvalOrder(
         convertToFullKey("A1")
       );
 
@@ -1368,7 +1367,7 @@ describe("DependencyManager", () => {
         }
       );
 
-      const transitiveDeps = dependencyManager.getTransitiveDeps(
+      const transitiveDeps = dependencyManager.getTransitiveDepsForEvalOrder(
         convertToFullKey("A1")
       );
 

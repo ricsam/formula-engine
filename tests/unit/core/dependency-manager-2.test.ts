@@ -92,14 +92,20 @@ describe("DependencyManager", () => {
     const dependencyTree = (cell: string) => {
       return engine._dependencyManager.getDependencyTree(cellToDepKey(cell));
     };
+    const evaluate = (cell: string) => {
+      for (const c of evalOrder(cell)) {
+        evalCell(c);
+      }
+      engine._dependencyManager.markResolvedNodes(cellToDepKey(cell));
+    };
 
     test("Should reproduce DEPENDENCY_RESOLUTION_SPEC.md SUM example - tracking eval order at each step", () => {
       const evaluate = () => {
         for (const cell of evalOrder("C1")) {
           evalCell(cell);
         }
+        engine._dependencyManager.markResolvedNodes(cellToDepKey("C1"));
       };
-
       // Setup: Reproduce the exact scenario from the spec
       engine.setSheetContent(
         sheetAddress,
@@ -142,17 +148,21 @@ describe("DependencyManager", () => {
           },
           "deps": [
             {
+              "directDepsUpdated": false,
               "key": "B1",
               "resolved": false,
             },
             {
+              "directDepsUpdated": false,
               "key": "A1",
               "resolved": false,
             },
           ],
+          "directDepsUpdated": true,
           "frontierDependencies": {
             "B1:B3": [
               {
+                "directDepsUpdated": false,
                 "key": "A2",
                 "resolved": false,
               },
@@ -177,7 +187,16 @@ describe("DependencyManager", () => {
         discardedFrontierDependencies: {},
       });
 
-      expect(evalOrder("C1")).toEqual(["D11", "B1", "A1", "F1", "A2", "C1"]);
+      expect(evalOrder("C1")).toMatchInlineSnapshot(`
+        [
+          "D11",
+          "B1",
+          "A1",
+          "F1",
+          "A2",
+          "C1",
+        ]
+      `);
 
       expect(dependencyTree("C1")).toMatchInlineSnapshot(`
         {
@@ -198,27 +217,33 @@ describe("DependencyManager", () => {
             {
               "deps": [
                 {
+                  "directDepsUpdated": false,
                   "key": "D11",
                   "resolved": false,
                 },
               ],
+              "directDepsUpdated": true,
               "key": "B1",
               "resolved": false,
             },
             {
+              "directDepsUpdated": false,
               "key": "A1",
-              "resolved": true,
+              "resolved": false,
             },
           ],
+          "directDepsUpdated": false,
           "frontierDependencies": {
             "B1:B3": [
               {
                 "deps": [
                   {
+                    "directDepsUpdated": false,
                     "key": "F1",
                     "resolved": false,
                   },
                 ],
+                "directDepsUpdated": true,
                 "key": "A2",
                 "resolved": false,
               },
@@ -273,13 +298,16 @@ describe("DependencyManager", () => {
                       ],
                     },
                   },
+                  "directDepsUpdated": true,
                   "frontierDependencies": {
                     "D11:D11": [
                       {
+                        "directDepsUpdated": false,
                         "key": "D10",
                         "resolved": false,
                       },
                       {
+                        "directDepsUpdated": true,
                         "key": "C1",
                         "resolved": false,
                         "self": true,
@@ -287,12 +315,14 @@ describe("DependencyManager", () => {
                       {
                         "deps": [
                           {
+                            "directDepsUpdated": false,
                             "key": "F1",
-                            "resolved": true,
+                            "resolved": false,
                           },
                         ],
+                        "directDepsUpdated": false,
                         "key": "A2",
-                        "resolved": true,
+                        "resolved": false,
                       },
                     ],
                   },
@@ -300,54 +330,60 @@ describe("DependencyManager", () => {
                   "resolved": false,
                 },
               ],
+              "directDepsUpdated": false,
               "key": "B1",
               "resolved": false,
             },
             {
+              "directDepsUpdated": false,
               "key": "A1",
-              "resolved": true,
+              "resolved": false,
             },
             {
               "deps": [
                 {
+                  "directDepsUpdated": false,
                   "key": "F1",
-                  "resolved": true,
+                  "resolved": false,
                 },
               ],
+              "directDepsUpdated": false,
               "key": "A2",
-              "resolved": true,
+              "resolved": false,
             },
           ],
+          "directDepsUpdated": true,
           "key": "C1",
           "resolved": false,
         }
       `);
 
-      expect(evalOrder("C1")).toEqual([
-        "D10",
-        "F1",
-        "A2",
-        "D11",
-        "B1",
-        "A1",
-        "C1",
-      ]);
+      expect(evalOrder("C1")).toMatchInlineSnapshot(`
+        [
+          "D10",
+          "F1",
+          "A2",
+          "D11",
+          "B1",
+          "A1",
+          "C1",
+        ]
+      `);
 
       // now that
       evaluate();
 
       // A1 * B1 resolves fine now so SUM doesn't short circuit on that and continues to A2 * B2
-      expect(evalOrder("C1")).toEqual([
-        "F1",
-        "A2",
-        "A1",
-        "D10",
-        "D11",
-        "B1",
-        "B3",
-        "A3",
-        "C1",
-      ]);
+      expect(evalOrder("C1")).toMatchInlineSnapshot(`
+        [
+          "D10",
+          "D11",
+          "B1",
+          "B3",
+          "A3",
+          "C1",
+        ]
+      `);
 
       expect(dependencyTree("C1")).toMatchInlineSnapshot(`
         {
@@ -391,35 +427,43 @@ describe("DependencyManager", () => {
                         {
                           "deps": [
                             {
+                              "directDepsUpdated": false,
                               "key": "F1",
                               "resolved": true,
                             },
                           ],
+                          "directDepsUpdated": false,
                           "key": "A2",
                           "resolved": true,
                         },
                         {
+                          "directDepsUpdated": false,
                           "key": "A1",
                           "resolved": true,
                         },
                       ],
+                      "directDepsUpdated": true,
                       "key": "D10",
                       "resolved": false,
                     },
                     {
                       "deps": [
                         {
+                          "directDepsUpdated": false,
                           "key": "F1",
                           "resolved": true,
                         },
                       ],
+                      "directDepsUpdated": false,
                       "key": "A2",
                       "resolved": true,
                     },
                   ],
+                  "directDepsUpdated": true,
                   "frontierDependencies": {
                     "D11:D11": [
                       {
+                        "directDepsUpdated": true,
                         "key": "C1",
                         "resolved": false,
                         "self": true,
@@ -434,64 +478,246 @@ describe("DependencyManager", () => {
                     {
                       "deps": [
                         {
+                          "directDepsUpdated": false,
                           "key": "F1",
                           "resolved": true,
                         },
                       ],
+                      "directDepsUpdated": false,
                       "key": "A2",
                       "resolved": true,
                     },
                     {
+                      "directDepsUpdated": false,
                       "key": "A1",
                       "resolved": true,
                     },
                   ],
+                  "directDepsUpdated": true,
                   "key": "D10",
                   "resolved": false,
                 },
                 {
                   "deps": [
                     {
+                      "directDepsUpdated": false,
                       "key": "F1",
                       "resolved": true,
                     },
                   ],
+                  "directDepsUpdated": false,
                   "key": "A2",
                   "resolved": true,
                 },
               ],
+              "directDepsUpdated": true,
               "key": "B1",
               "resolved": false,
             },
             {
+              "directDepsUpdated": false,
               "key": "A1",
               "resolved": true,
             },
             {
               "deps": [
                 {
+                  "directDepsUpdated": false,
                   "key": "F1",
                   "resolved": true,
                 },
               ],
+              "directDepsUpdated": false,
               "key": "A2",
               "resolved": true,
             },
             {
+              "directDepsUpdated": false,
               "key": "B3",
               "resolved": false,
             },
             {
+              "directDepsUpdated": false,
               "key": "A3",
               "resolved": false,
             },
           ],
+          "directDepsUpdated": true,
           "key": "C1",
           "resolved": false,
         }
       `);
 
       evaluate();
+
+      expect(evalOrder("C1")).toMatchInlineSnapshot(`
+        [
+          "C1",
+        ]
+      `);
+
+      expect(dependencyTree("C1")).toMatchInlineSnapshot(`
+        {
+          "_debug": {
+            "activeFrontierDependencies": {
+              "B1:B3": [
+                "A2",
+              ],
+            },
+            "discardedFrontierDependencies": undefined,
+            "rawFrontierDependencies": {
+              "B1:B3": [
+                "A2",
+              ],
+            },
+          },
+          "deps": [
+            {
+              "deps": [
+                {
+                  "_debug": {
+                    "activeFrontierDependencies": {
+                      "D11:D11": [
+                        "D10",
+                        "C1",
+                        "A2",
+                      ],
+                    },
+                    "discardedFrontierDependencies": undefined,
+                    "rawFrontierDependencies": {
+                      "D11:D11": [
+                        "D10",
+                        "C1",
+                        "A2",
+                      ],
+                    },
+                  },
+                  "deps": [
+                    {
+                      "deps": [
+                        {
+                          "deps": [
+                            {
+                              "directDepsUpdated": false,
+                              "key": "F1",
+                              "resolved": true,
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "A2",
+                          "resolved": true,
+                        },
+                        {
+                          "directDepsUpdated": false,
+                          "key": "A1",
+                          "resolved": true,
+                        },
+                      ],
+                      "directDepsUpdated": false,
+                      "key": "D10",
+                      "resolved": true,
+                    },
+                    {
+                      "deps": [
+                        {
+                          "directDepsUpdated": false,
+                          "key": "F1",
+                          "resolved": true,
+                        },
+                      ],
+                      "directDepsUpdated": false,
+                      "key": "A2",
+                      "resolved": true,
+                    },
+                  ],
+                  "directDepsUpdated": false,
+                  "frontierDependencies": {
+                    "D11:D11": [
+                      {
+                        "directDepsUpdated": false,
+                        "key": "C1",
+                        "resolved": true,
+                        "self": true,
+                      },
+                    ],
+                  },
+                  "key": "D11",
+                  "resolved": true,
+                },
+                {
+                  "deps": [
+                    {
+                      "deps": [
+                        {
+                          "directDepsUpdated": false,
+                          "key": "F1",
+                          "resolved": true,
+                        },
+                      ],
+                      "directDepsUpdated": false,
+                      "key": "A2",
+                      "resolved": true,
+                    },
+                    {
+                      "directDepsUpdated": false,
+                      "key": "A1",
+                      "resolved": true,
+                    },
+                  ],
+                  "directDepsUpdated": false,
+                  "key": "D10",
+                  "resolved": true,
+                },
+                {
+                  "deps": [
+                    {
+                      "directDepsUpdated": false,
+                      "key": "F1",
+                      "resolved": true,
+                    },
+                  ],
+                  "directDepsUpdated": false,
+                  "key": "A2",
+                  "resolved": true,
+                },
+              ],
+              "directDepsUpdated": false,
+              "key": "B1",
+              "resolved": true,
+            },
+            {
+              "directDepsUpdated": false,
+              "key": "A1",
+              "resolved": true,
+            },
+            {
+              "deps": [
+                {
+                  "directDepsUpdated": false,
+                  "key": "F1",
+                  "resolved": true,
+                },
+              ],
+              "directDepsUpdated": false,
+              "key": "A2",
+              "resolved": true,
+            },
+            {
+              "directDepsUpdated": false,
+              "key": "B3",
+              "resolved": true,
+            },
+            {
+              "directDepsUpdated": false,
+              "key": "A3",
+              "resolved": true,
+            },
+          ],
+          "directDepsUpdated": false,
+          "key": "C1",
+          "resolved": true,
+        }
+      `);
 
       expect(directDeps("D11")).toEqual({
         deps: ["D10", "A2"],
@@ -501,160 +727,74 @@ describe("DependencyManager", () => {
         },
       });
 
-      // SUM can now continue to A3 * B3
-      expect(evalOrder("C1")).toEqual([
-        "F1",
-        "A2",
-        "A1",
-        "D10",
-        "D11",
-        "B1",
-        "B3",
-        "A3",
-        "C1",
-      ]);
+      expect(evalOrder("C1")).toMatchInlineSnapshot(`
+        [
+          "C1",
+        ]
+      `);
+    });
 
-      evaluate();
+    test("should detect cycles", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "=B1"],
+          ["B1", "=A1"],
+        ])
+      );
+      evaluate("A1");
+      expect(evalOrder("A1")).toMatchInlineSnapshot(`
+        [
+          "B1",
+          "A1",
+        ]
+      `);
+    });
 
-      // C1 is now resolved
-      expect(dependencyTree("C1")).toMatchInlineSnapshot(`
+    test("should handle self-referencing cell", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([["A1", "=A1"]])
+      );
+      expect(evalOrder("A1")).toMatchInlineSnapshot(`
+        [
+          "A1",
+        ]
+      `);
+      evaluate("A1");
+      expect(dependencyTree("A1")).toMatchInlineSnapshot(`
         {
-          "_debug": {
-            "activeFrontierDependencies": {
-              "B1:B3": [
-                "A2",
-              ],
-            },
-            "discardedFrontierDependencies": undefined,
-            "rawFrontierDependencies": {
-              "B1:B3": [
-                "A2",
-              ],
-            },
-          },
           "deps": [
             {
-              "deps": [
-                {
-                  "_debug": {
-                    "activeFrontierDependencies": {
-                      "D11:D11": [
-                        "D10",
-                        "C1",
-                        "A2",
-                      ],
-                    },
-                    "discardedFrontierDependencies": undefined,
-                    "rawFrontierDependencies": {
-                      "D11:D11": [
-                        "D10",
-                        "C1",
-                        "A2",
-                      ],
-                    },
-                  },
-                  "deps": [
-                    {
-                      "deps": [
-                        {
-                          "deps": [
-                            {
-                              "key": "F1",
-                              "resolved": true,
-                            },
-                          ],
-                          "key": "A2",
-                          "resolved": true,
-                        },
-                        {
-                          "key": "A1",
-                          "resolved": true,
-                        },
-                      ],
-                      "key": "D10",
-                      "resolved": true,
-                    },
-                    {
-                      "deps": [
-                        {
-                          "key": "F1",
-                          "resolved": true,
-                        },
-                      ],
-                      "key": "A2",
-                      "resolved": true,
-                    },
-                  ],
-                  "frontierDependencies": {
-                    "D11:D11": [
-                      {
-                        "key": "C1",
-                        "resolved": true,
-                        "self": true,
-                      },
-                    ],
-                  },
-                  "key": "D11",
-                  "resolved": true,
-                },
-                {
-                  "deps": [
-                    {
-                      "deps": [
-                        {
-                          "key": "F1",
-                          "resolved": true,
-                        },
-                      ],
-                      "key": "A2",
-                      "resolved": true,
-                    },
-                    {
-                      "key": "A1",
-                      "resolved": true,
-                    },
-                  ],
-                  "key": "D10",
-                  "resolved": true,
-                },
-                {
-                  "deps": [
-                    {
-                      "key": "F1",
-                      "resolved": true,
-                    },
-                  ],
-                  "key": "A2",
-                  "resolved": true,
-                },
-              ],
-              "key": "B1",
-              "resolved": true,
-            },
-            {
+              "directDepsUpdated": true,
               "key": "A1",
-              "resolved": true,
-            },
-            {
-              "deps": [
-                {
-                  "key": "F1",
-                  "resolved": true,
-                },
-              ],
-              "key": "A2",
-              "resolved": true,
-            },
-            {
-              "key": "B3",
-              "resolved": true,
-            },
-            {
-              "key": "A3",
-              "resolved": true,
+              "resolved": false,
+              "self": true,
             },
           ],
-          "key": "C1",
+          "directDepsUpdated": true,
+          "key": "A1",
+          "resolved": false,
+        }
+      `);
+      expect(evalOrder("A1")).toMatchInlineSnapshot(`
+        [
+          "A1",
+        ]
+      `)
+      evaluate("A1");
+      expect(dependencyTree("A1")).toMatchInlineSnapshot(`
+        {
+          "deps": [
+            {
+              "directDepsUpdated": false,
+              "key": "A1",
+              "resolved": true,
+              "self": true,
+            },
+          ],
+          "directDepsUpdated": false,
+          "key": "A1",
           "resolved": true,
         }
       `);

@@ -63,7 +63,7 @@ describe("COUNTIF function", () => {
       expect(cell("B1")).toBe(3);
     });
 
-    test("should be case-sensitive for strings", () => {
+    test("should be case-insensitive for strings", () => {
       engine.setSheetContent(
         sheetAddress,
         new Map<string, SerializedCellValue>([
@@ -74,7 +74,7 @@ describe("COUNTIF function", () => {
         ])
       );
 
-      expect(cell("B1")).toBe(1);
+      expect(cell("B1")).toBe(3);
     });
 
     test("should handle single cell range", () => {

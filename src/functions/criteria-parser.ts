@@ -118,6 +118,9 @@ export function matchesParsedCriteria(cellValue: CellValue, parsedCriteria: Pars
         return false;
       }
       if ("value" in cellValue && "value" in parsedCriteria.value) {
+        if (cellValue.type === 'string' && parsedCriteria.value.type === 'string') {
+          return cellValue.value.toLowerCase() === parsedCriteria.value.value.toLowerCase();
+        }
         return cellValue.value === parsedCriteria.value.value;
       }
       if (cellValue.type === "infinity" && parsedCriteria.value.type === "infinity") {

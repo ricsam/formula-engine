@@ -22,6 +22,7 @@ interface TopologicalSortResult {
 
 export interface DependencyTreeNode {
   key: string;
+  directDepsUpdated?: boolean;
   resolved?: boolean;
   deps?: DependencyTreeNode[];
   frontierDependencies?:
@@ -215,7 +216,7 @@ export class DependencyManager {
    * Get transitive dependencies and transitive frontier dependencies
    * This is only used by buildEvaluationOrder, so we'll optimize it there
    */
-  getTransitiveDeps(
+  getTransitiveDepsForEvalOrder(
     nodeKey: string,
     visited: Set<string> = new Set()
   ): Set<string> {
@@ -225,9 +226,9 @@ export class DependencyManager {
     }
 
     const node = this.getEvaluatedNode(nodeKey);
-    // If we have cached transitive deps for a resolved node, use them
-    if (node && node.resolved && node?.transitiveDeps) {
-      return node.transitiveDeps;
+    // If the node is resolved, then we don't need to evaluate it
+    if (node && node.resolved) {
+      return new Set();
     }
 
     // Mark this node as visited for cycle detection
@@ -244,7 +245,10 @@ export class DependencyManager {
     // Recursively get transitive dependencies for each direct dependency
     for (const dep of directDeps) {
       if (!visited.has(dep)) {
-        const depTransitiveDeps = this.getTransitiveDeps(dep, visited);
+        const depTransitiveDeps = this.getTransitiveDepsForEvalOrder(
+          dep,
+          visited
+        );
         for (const transitiveDep of depTransitiveDeps) {
           allNodes.add(transitiveDep);
         }
@@ -253,11 +257,6 @@ export class DependencyManager {
 
     // Remove this node from visited set for other branches
     visited.delete(nodeKey);
-
-    // Cache the result if the node is resolved
-    if (node && node.resolved) {
-      node.setTransitiveDeps(allNodes);
-    }
 
     return allNodes;
   }
@@ -307,12 +306,18 @@ export class DependencyManager {
     const evaluationOrder: string[] = [];
     const visitedForOrder = new Set<string>();
 
-    // Phase 1: Discover all nodes and their types
+    // Phase 1: Discover all nodes and their types, skipping resolved nodes
     const discoverNodes = (
       current: string,
       parentKey?: string,
       isFrontierEdge: boolean = false
     ) => {
+      // Check if this node is resolved - if so, skip it entirely
+      const currentNode = this.getEvaluatedNode(current);
+      if (currentNode && currentNode.resolved) {
+        return; // Skip resolved nodes completely
+      }
+
       if (!allNodes.has(current)) {
         allNodes.set(current, {
           isFrontierDep: false,
@@ -350,6 +355,26 @@ export class DependencyManager {
     // Start discovery from the target node
     discoverNodes(nodeKey);
 
+    // If the target node itself was resolved, return empty evaluation order
+    if (allNodes.size === 0 && node && node.resolved) {
+      const result: EvaluationOrder = {
+        evaluationOrder: [nodeKey],
+        hasCycle: false,
+        hash: this.computeHash(new Set(nodeKey)),
+      };
+
+      if (node && node.resolved) {
+        node.setEvaluationOrder(result);
+      }
+
+      if (flags.isProfiling) {
+        console.timeEnd("buildEvaluationOrder");
+        console.log(`Nodes: 0 (target node was resolved)`);
+      }
+
+      return result;
+    }
+
     // Phase 2: Check for cycles (only considering regular dependencies)
     const checkCycles = (current: string): boolean => {
       if (visitingForCycle.has(current)) {
@@ -385,7 +410,7 @@ export class DependencyManager {
     // If there are cycles, return early
     if (cycleNodes.size > 0) {
       const result: EvaluationOrder = {
-        evaluationOrder: [],
+        evaluationOrder: [nodeKey],
         hasCycle: true,
         cycleNodes,
         hash: this.computeHash(new Set(allNodes.keys())),
@@ -517,6 +542,7 @@ export class DependencyManager {
         const node = this.getEvaluatedNode(key);
         return {
           key: cellRef,
+          directDepsUpdated: node?.directDepsUpdated ?? false,
           resolved: node?.resolved ?? false,
           self: true,
         };
@@ -527,6 +553,7 @@ export class DependencyManager {
         const node = this.getEvaluatedNode(key);
         return {
           key: cellRef,
+          directDepsUpdated: node?.directDepsUpdated ?? false,
           resolved: node?.resolved ?? false,
         };
       }
@@ -591,6 +618,7 @@ export class DependencyManager {
 
       const result: DependencyTreeNode = {
         key: cellRef,
+        directDepsUpdated: node?.directDepsUpdated ?? false,
         resolved: node?.resolved ?? false,
       };
 
@@ -666,4 +694,54 @@ export class DependencyManager {
     return buildTree(nodeKey);
   }
   //#endregion
+
+  markResolvedNodes(nodeKey: string): void {
+    const node = this.getEvaluatedNode(nodeKey);
+    if (!node) {
+      return;
+    }
+
+    // Track visited nodes to avoid infinite loops in circular dependencies
+    const visited = new Set<string>();
+    visited.add(nodeKey); // Don't revisit the current cell
+
+    const checkDidUpdate = (nodeKeys: Set<string>): boolean => {
+      for (const nodeKey of nodeKeys) {
+        if (visited.has(nodeKey)) {
+          continue;
+        }
+        visited.add(nodeKey);
+
+        const node = this.getEvaluatedNode(nodeKey);
+        if (!node) {
+          return true; // Node doesn't exist yet, not resolved
+        }
+
+        // Check the node's direct dependencies
+        const directDeps = this.getNodeDeps(nodeKey);
+        if (checkDidUpdate(directDeps)) {
+          return true;
+        }
+
+        const frontierDeps = this.getNodeFrontierDependencies(nodeKey);
+        if (checkDidUpdate(frontierDeps)) {
+          return true;
+        }
+
+        if (node.directDepsUpdated) {
+          return true; // Node itself is not update
+        }
+
+        node.resolve();
+      }
+      return false;
+    };
+
+    const didUpdate = checkDidUpdate(
+      this.getNodeDeps(nodeKey).union(this.getNodeFrontierDependencies(nodeKey))
+    );
+    if (!didUpdate && !node.directDepsUpdated) {
+      node.resolve();
+    }
+  }
 }

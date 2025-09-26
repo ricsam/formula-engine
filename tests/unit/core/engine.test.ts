@@ -258,6 +258,8 @@ describe("FormulaEngine", () => {
         ["C2", "=SUM(Table1[result])"],
         ["C3", "=SUM(Table1[[num]:[result]])"],
         ["C4", "=SUM(Table1[@[num]:[result]])"],
+        ["F1", "=Table1[[#Headers],[result]]"],
+        ["F20", "=Table1[#Headers]"]
       ])
     );
 
@@ -277,6 +279,11 @@ describe("FormulaEngine", () => {
     expect(cell("C2", true)).toBe(90);
     expect(cell("C3")).toBe(99);
     expect(cell("C4")).toBe(44);
+
+    expect(cell("F1")).toBe("result");
+    expect(cell("F20")).toBe("num");
+    expect(cell("G20")).toBe("result");
+    expect(cell("H20")).toBe("sum");
   });
 
   const fourByFour: [string, SerializedCellValue][] = [

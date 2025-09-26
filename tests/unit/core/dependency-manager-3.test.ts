@@ -96,7 +96,7 @@ describe("DependencyManager", () => {
         for (const cell of evalOrder("A1")) {
           evalCell(cell);
         }
-        // evalCell("A1");
+        engine._dependencyManager.markResolvedNodes(cellToDepKey("A1"));
       };
 
       // Setup: Reproduce the exact scenario from the spec
@@ -147,14 +147,17 @@ describe("DependencyManager", () => {
               ],
             },
           },
+          "directDepsUpdated": true,
           "frontierDependencies": {
             "C3:D4": [
               {
+                "directDepsUpdated": true,
                 "key": "A1",
                 "resolved": false,
                 "self": true,
               },
               {
+                "directDepsUpdated": false,
                 "key": "B2",
                 "resolved": false,
               },

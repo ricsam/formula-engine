@@ -273,6 +273,111 @@ export class FormulaEvaluator {
 
     const rowIndex = context.currentCell.rowIndex;
     const tableStart = table.start;
+    
+    // Handle selector-based references
+    if (node.selector) {
+      let startRow: number;
+      let endRow: SpreadsheetRangeEnd;
+      
+      switch (node.selector) {
+        case "#Headers":
+          startRow = table.start.rowIndex;
+          endRow = { type: "number", value: table.start.rowIndex };
+          break;
+        case "#Data":
+          startRow = table.start.rowIndex + 1;
+          endRow = table.endRow;
+          break;
+        case "#All":
+          startRow = table.start.rowIndex;
+          endRow = table.endRow;
+          break;
+        default:
+          return {
+            type: "error",
+            err: FormulaError.REF,
+            message: `Unknown table selector: ${node.selector}`,
+          };
+      }
+      
+      // If we also have column specification, use those columns
+      if (node.cols) {
+        const startCol = table.headers.get(node.cols.startCol);
+        const endCol = table.headers.get(node.cols.endCol);
+        if (!startCol || !endCol) {
+          return {
+            type: "error",
+            err: FormulaError.REF,
+            message: `Column ${node.cols.startCol} or ${node.cols.endCol} not found in table ${table.name}`,
+          };
+        }
+        const startColIndex = tableStart.colIndex + startCol.index;
+        const endColIndex = tableStart.colIndex + endCol.index;
+        
+        const range: SpreadsheetRange = {
+          start: {
+            row: startRow,
+            col: startColIndex,
+          },
+          end: {
+            row: endRow,
+            col: { type: "number", value: endColIndex },
+          },
+        };
+
+        return this.evaluateRange(
+          {
+            type: "range",
+            range,
+            isAbsolute: {
+              start: {
+                col: true,
+                row: true,
+              },
+              end: {
+                col: true,
+                row: true,
+              },
+            },
+            sheetName: table.sheetName,
+          },
+          context
+        );
+      } else {
+        // No column specification, return entire row(s) for the selector
+        const range: SpreadsheetRange = {
+          start: {
+            row: startRow,
+            col: tableStart.colIndex,
+          },
+          end: {
+            row: endRow,
+            col: { type: "number", value: tableStart.colIndex + table.headers.size - 1 },
+          },
+        };
+
+        return this.evaluateRange(
+          {
+            type: "range",
+            range,
+            isAbsolute: {
+              start: {
+                col: true,
+                row: true,
+              },
+              end: {
+                col: true,
+                row: true,
+              },
+            },
+            sheetName: table.sheetName,
+          },
+          context
+        );
+      }
+    }
+    
+    // Handle column-only references (no selector)
     if (node.cols) {
       const startCol = table.headers.get(node.cols.startCol);
       const endCol = table.headers.get(node.cols.endCol);
@@ -317,10 +422,11 @@ export class FormulaEvaluator {
         context
       );
     }
+    
     return {
       type: "error",
       err: FormulaError.REF,
-      message: "WIP: unimplemented support for structured reference",
+      message: "Structured reference must specify either a selector or columns",
     };
   }
 

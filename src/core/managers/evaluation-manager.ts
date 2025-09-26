@@ -369,6 +369,9 @@ export class EvaluationManager {
       });
       const cellResult = this.evaluateDependencyNode(nodeKey);
 
+      // let's check which nodes can be considered resolved
+      this.dependencyManager.markResolvedNodes(nodeKey);
+
       const nextEvaluationPlan =
         this.dependencyManager.buildEvaluationOrder(nodeKey);
 
@@ -499,6 +502,7 @@ export class EvaluationManager {
       }
       if (flags.numEvaluationCalls === flags.profiledCall) {
         console.group("profiling " + cellAddressToKey(cellAddress));
+        console.time("evaluate " + cellAddressToKey(cellAddress));
         // console.profile("evaluate " + cellAddressToKey(cellAddress));
         flags.isProfiling = true;
       } else {
@@ -507,6 +511,7 @@ export class EvaluationManager {
       this.evaluateCell(cellAddress);
       if (flags.isProfiling) {
         // console.profileEnd("evaluate " + cellAddressToKey(cellAddress));
+        console.timeEnd("evaluate " + cellAddressToKey(cellAddress));
         console.groupEnd();
       }
       value = getEvaluatedNode();

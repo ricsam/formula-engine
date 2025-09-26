@@ -4,6 +4,7 @@ import {
   type FunctionEvaluationResult,
   type SingleEvaluationResult,
   type CellInfinity,
+  type ValueEvaluationResult,
 } from "src/core/types";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
@@ -53,15 +54,30 @@ export function parseCriteriaPairs(
       return criteriaResult;
     }
 
-    if (criteriaResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Criteria must be single values",
-      };
+    if (criteriaResult.type === "awaiting-evaluation") {
+      continue;
     }
 
-    const parsedCriteria = parseCriteria(criteriaResult.result);
+    let result: ValueEvaluationResult;
+
+    if (criteriaResult.type === "spilled-values") {
+      // just take the first spilled value
+      const firstSpilledValue = criteriaResult.evaluate(
+        { x: 0, y: 0 },
+        context
+      );
+      if (firstSpilledValue.type === "error") {
+        return firstSpilledValue;
+      } else if (firstSpilledValue.type === "awaiting-evaluation") {
+        continue;
+      } else {
+        result = firstSpilledValue;
+      }
+    } else {
+      result = criteriaResult;
+    }
+
+    const parsedCriteria = parseCriteria(result.result);
     if (parsedCriteria.type === "error") {
       return {
         type: "error",

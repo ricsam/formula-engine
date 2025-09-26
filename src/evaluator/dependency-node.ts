@@ -16,8 +16,7 @@ export class DependencyNode {
   private _evaluationResult: FunctionEvaluationResult;
   private _originSpillResult?: SingleEvaluationResult;
   private _resolved?: boolean;
-  private _didUpdate?: boolean;
-  private _transitiveDeps?: Set<string>;
+  private _directDepsUpdated?: boolean;
 
   constructor(
     key: string,
@@ -32,7 +31,7 @@ export class DependencyNode {
     this._evaluationResult = evaluationResult;
     this._originSpillResult = originSpillResult;
     this._resolved = false;
-    this._didUpdate = false;
+    this._directDepsUpdated = false;
   }
 
   public get key() {
@@ -90,12 +89,17 @@ export class DependencyNode {
    * A dependency in this context is regular dependencies, frontier dependencies and discarded frontier dependencies.
    *
    */
+
   public get resolved() {
     return this._resolved;
   }
 
-  public get didUpdate() {
-    return this._didUpdate;
+  public get directDepsUpdated() {
+    return this._directDepsUpdated;
+  }
+
+  public resolve() {
+    this._resolved = true;
   }
 
   public setDependencyAttributes(attributes: DependencyAttributes) {
@@ -114,14 +118,7 @@ export class DependencyNode {
     this._frontierDependencies = attributes.frontierDependencies;
     this._discardedFrontierDependencies =
       attributes.discardedFrontierDependencies;
-    this._didUpdate = attributes.didUpdate;
-    this._resolved = attributes.resolved;
-
-    if (!this.resolved) {
-      // invalidate transitive deps
-      this._transitiveDeps = undefined;
-      this._evaluationOrder = undefined;
-    }
+    this._directDepsUpdated = attributes.directDepsUpdated;
 
     // Invalidate cache only if dependencies actually changed
     if (depsChanged || frontierDepsChanged || discardedDepsChanged) {
@@ -160,7 +157,10 @@ export class DependencyNode {
         if (deps.has(dep)) {
           continue;
         }
-        if (discardedDepsMap.has(rangeKey) && discardedDepsMap.get(rangeKey)?.has(dep)) {
+        if (
+          discardedDepsMap.has(rangeKey) &&
+          discardedDepsMap.get(rangeKey)?.has(dep)
+        ) {
           continue;
         }
         allFrontierDeps.add(dep);
@@ -197,17 +197,6 @@ export class DependencyNode {
       }
     }
     return true;
-  }
-
-  public setTransitiveDeps(deps: Set<string>) {
-    if (!this.resolved) {
-      throw new Error("Cannot set transitive deps for an unresolved node");
-    }
-    this._transitiveDeps = deps;
-  }
-
-  public get transitiveDeps() {
-    return this._transitiveDeps;
   }
 
   private _evaluationOrder?: EvaluationOrder;
