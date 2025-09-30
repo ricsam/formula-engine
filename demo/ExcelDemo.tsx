@@ -5,10 +5,12 @@ import {
   Calculator,
   ChevronDown,
   ChevronUp,
+  Download,
   Edit2,
   Plus,
   Save,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -154,6 +156,83 @@ export function ExcelDemo() {
       console.error("Failed to save to localStorage:", error);
     }
   };
+
+  // Export state to JSON file
+  const exportState = useCallback(() => {
+    try {
+      const dataToExport: SavedState = {
+        workbookGridItems,
+        serializedEngine: engine.serializeEngine(),
+        viewport,
+      };
+
+      const jsonString = JSON.stringify(dataToExport, null, 2);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `formula-engine-export-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      console.log("State exported successfully");
+    } catch (error) {
+      console.error("Failed to export state:", error);
+      alert("Failed to export state. Please try again.");
+    }
+  }, [workbookGridItems, engine, viewport]);
+
+  // Import state from JSON file
+  const importState = useCallback(() => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    
+    input.onchange = (event) => {
+      const file = (event.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const jsonString = e.target?.result as string;
+          const importedData: SavedState = JSON.parse(jsonString);
+          
+          // Validate the imported data structure
+          if (!importedData.serializedEngine || !importedData.workbookGridItems) {
+            throw new Error("Invalid file format: missing required fields");
+          }
+          
+          // Reset the engine with imported data
+          engine.resetToSerializedEngine(importedData.serializedEngine);
+          
+          // Update workbook grid items
+          setWorkbookGridItems(importedData.workbookGridItems);
+          
+          // Update viewport if available
+          if (importedData.viewport) {
+            _setViewport(importedData.viewport);
+          }
+          
+          // Mark as having unsaved changes since we haven't saved to localStorage yet
+          setHasUnsavedChanges(true);
+          
+          console.log("State imported successfully");
+          alert("State imported successfully! Don't forget to save if you want to persist these changes.");
+        } catch (error) {
+          console.error("Failed to import state:", error);
+          alert(`Failed to import state: ${error instanceof Error ? error.message : "Unknown error"}`);
+        }
+      };
+      
+      reader.readAsText(file);
+    };
+    
+    input.click();
+  }, [engine, _setViewport]);
 
   // Mark as having unsaved changes when sheets change
   const markUnsavedChanges = useCallback(() => {
@@ -708,6 +787,28 @@ export function ExcelDemo() {
                   ) : (
                     <ChevronDown className="h-3 w-3 ml-1" />
                   )}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-gray-300 text-gray-700"
+                  onClick={exportState}
+                  data-testid="export-button"
+                  title="Export state to JSON file"
+                >
+                  <Download className="h-4 w-4 mr-1" />
+                  Export
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-gray-300 text-gray-700"
+                  onClick={importState}
+                  data-testid="import-button"
+                  title="Import state from JSON file"
+                >
+                  <Upload className="h-4 w-4 mr-1" />
+                  Import
                 </Button>
                 <Button
                   size="sm"
