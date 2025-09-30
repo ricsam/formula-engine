@@ -29,7 +29,7 @@ import { renameNamedExpressionInFormula } from "./named-expression-renamer";
 import { renameSheetInFormula } from "./sheet-renamer";
 import { renameTableInFormula } from "./table-renamer";
 import { renameWorkbookInFormula } from "./workbook-renamer";
-import { cellAddressToKey } from "./utils";
+import { cellAddressToKey, keyToCellAddress } from "./utils";
 
 /**
  * Main FormulaEngine class
@@ -435,6 +435,89 @@ export class FormulaEngine {
     this.workbookManager.removeWorkbook(workbookName);
     this.namedExpressionManager.removeWorkbook(workbookName);
     this.tableManager.removeWorkbook(workbookName);
+
+    this.reevaluate();
+    this.eventManager.emitUpdate();
+  }
+
+  cloneWorkbook(fromWorkbookName: string, toWorkbookName: string) {
+    // Check if source workbook exists
+    const sourceWorkbook = this.workbookManager.getWorkbooks().get(fromWorkbookName);
+    if (!sourceWorkbook) {
+      throw new Error(`Source workbook "${fromWorkbookName}" not found`);
+    }
+
+    // Check if target workbook name already exists
+    if (this.workbookManager.getWorkbooks().has(toWorkbookName)) {
+      throw new Error(`Target workbook "${toWorkbookName}" already exists`);
+    }
+
+    // Create new workbook
+    this.addWorkbook(toWorkbookName);
+
+    // Clone all sheets from source workbook
+    for (const [sheetName, sheet] of sourceWorkbook.sheets) {
+      // Add sheet to target workbook
+      this.addSheet({
+        workbookName: toWorkbookName,
+        sheetName: sheetName,
+      });
+
+      // Copy all cell content using setSheetContent for efficiency
+      this.setSheetContent({
+        workbookName: toWorkbookName,
+        sheetName: sheetName,
+      }, new Map(sheet.content));
+    }
+
+    // Clone workbook-scoped named expressions
+    const sourceWorkbookExpressions = this.namedExpressionManager.getNamedExpressions().workbookExpressions.get(fromWorkbookName);
+    if (sourceWorkbookExpressions) {
+      for (const [name, expression] of sourceWorkbookExpressions) {
+        this.addNamedExpression({
+          expressionName: name,
+          expression: expression.expression,
+          workbookName: toWorkbookName,
+        });
+      }
+    }
+
+    // Clone sheet-scoped named expressions
+    const sourceSheetExpressions = this.namedExpressionManager.getNamedExpressions().sheetExpressions.get(fromWorkbookName);
+    if (sourceSheetExpressions) {
+      for (const [sheetName, sheetExpressions] of sourceSheetExpressions) {
+        for (const [name, expression] of sheetExpressions) {
+          this.addNamedExpression({
+            expressionName: name,
+            expression: expression.expression,
+            workbookName: toWorkbookName,
+            sheetName: sheetName,
+          });
+        }
+      }
+    }
+
+    // Clone tables
+    const sourceTables = this.tableManager.tables.get(fromWorkbookName);
+    if (sourceTables) {
+      for (const [tableName, table] of sourceTables) {
+        // Convert start position to cell reference string
+        const startCellRef = `${String.fromCharCode(65 + table.start.colIndex)}${table.start.rowIndex + 1}`;
+        
+        // Calculate numRows and numCols from the original table
+        const numCols = table.headers.size;
+        const numRows = table.endRow;
+        
+        this.addTable({
+          workbookName: toWorkbookName,
+          tableName: tableName,
+          sheetName: table.sheetName,
+          start: startCellRef,
+          numRows: numRows,
+          numCols: numCols,
+        });
+      }
+    }
 
     this.reevaluate();
     this.eventManager.emitUpdate();

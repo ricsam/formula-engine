@@ -5,6 +5,7 @@ import {
   Calculator,
   ChevronDown,
   ChevronUp,
+  Copy,
   Download,
   Edit2,
   Plus,
@@ -16,6 +17,7 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FormulaEngine } from "../src/core/engine";
 import { useEngine } from "../src/react/hooks";
+import { serialize, deserialize } from "../src/core/map-serializer";
 import { SpreadsheetWithFormulaBar } from "./components/SpreadsheetWithFormulaBar";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -31,7 +33,7 @@ interface WorkbookGridItem {
 
 interface SavedState {
   workbookGridItems: WorkbookGridItem[];
-  serializedEngine: string;
+  engineState: ReturnType<FormulaEngine["getState"]>;
   viewport?: ViewportState;
 }
 
@@ -41,8 +43,8 @@ const loadFromLocalStorage = (): undefined | SavedState => {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (!saved) return undefined;
   try {
-    const { serializedEngine, workbookGridItems, viewport } = JSON.parse(saved);
-    return { serializedEngine, workbookGridItems, viewport };
+    const data = deserialize(saved) as SavedState;
+    return data;
   } catch (error) {
     console.error("Failed to load from localStorage:", error);
     return undefined;
@@ -53,8 +55,29 @@ const createEngine = () => {
   const engine = FormulaEngine.buildEmpty();
   const savedData = loadFromLocalStorage();
 
-  if (savedData) {
-    engine.resetToSerializedEngine(savedData.serializedEngine);
+  if (savedData && savedData.engineState) {
+    // Reset the engine using the deserialized state
+    engine._workbookManager.resetWorkbooks(savedData.engineState.workbooks);
+
+    savedData.engineState.workbooks.forEach((workbook) => {
+      engine._namedExpressionManager.addWorkbook(workbook.name);
+      engine._tableManager.addWorkbook(workbook.name);
+      workbook.sheets.forEach((sheet) => {
+        engine._namedExpressionManager.addSheet({
+          workbookName: workbook.name,
+          sheetName: sheet.name,
+        });
+      });
+    });
+
+    engine._namedExpressionManager.resetNamedExpressions(
+      savedData.engineState.namedExpressions
+    );
+    engine._tableManager.resetTables(savedData.engineState.tables);
+
+    // Re-evaluate all sheets to ensure all dependencies are resolved correctly
+    engine.reevaluate();
+    engine._eventManager.emitUpdate();
 
     return {
       engine,
@@ -137,11 +160,11 @@ export function ExcelDemo() {
     try {
       const dataToSave: SavedState = {
         workbookGridItems,
-        serializedEngine: engine.serializeEngine(),
+        engineState: engine.getState(),
         viewport,
       };
 
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(dataToSave));
+      localStorage.setItem(STORAGE_KEY, serialize(dataToSave));
       setHasUnsavedChanges(false);
       console.log("Spreadsheet saved to localStorage");
       console.log(
@@ -162,14 +185,14 @@ export function ExcelDemo() {
     try {
       const dataToExport: SavedState = {
         workbookGridItems,
-        serializedEngine: engine.serializeEngine(),
+        engineState: engine.getState(),
         viewport,
       };
 
-      const jsonString = JSON.stringify(dataToExport, null, 2);
+      const jsonString = serialize(dataToExport);
       const blob = new Blob([jsonString], { type: "application/json" });
       const url = URL.createObjectURL(blob);
-      
+
       const link = document.createElement("a");
       link.href = url;
       link.download = `formula-engine-export-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.json`;
@@ -177,7 +200,7 @@ export function ExcelDemo() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      
+
       console.log("State exported successfully");
     } catch (error) {
       console.error("Failed to export state:", error);
@@ -190,47 +213,75 @@ export function ExcelDemo() {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".json";
-    
+
     input.onchange = (event) => {
       const file = (event.target as HTMLInputElement).files?.[0];
       if (!file) return;
-      
+
       const reader = new FileReader();
       reader.onload = (e) => {
         try {
           const jsonString = e.target?.result as string;
-          const importedData: SavedState = JSON.parse(jsonString);
-          
+          const importedData: SavedState = deserialize(
+            jsonString
+          ) as SavedState;
+
           // Validate the imported data structure
-          if (!importedData.serializedEngine || !importedData.workbookGridItems) {
+          if (!importedData.engineState || !importedData.workbookGridItems) {
             throw new Error("Invalid file format: missing required fields");
           }
-          
-          // Reset the engine with imported data
-          engine.resetToSerializedEngine(importedData.serializedEngine);
-          
+
+          // Reset the engine using the deserialized state
+          engine._workbookManager.resetWorkbooks(
+            importedData.engineState.workbooks
+          );
+
+          importedData.engineState.workbooks.forEach((workbook) => {
+            engine._namedExpressionManager.addWorkbook(workbook.name);
+            engine._tableManager.addWorkbook(workbook.name);
+            workbook.sheets.forEach((sheet) => {
+              engine._namedExpressionManager.addSheet({
+                workbookName: workbook.name,
+                sheetName: sheet.name,
+              });
+            });
+          });
+
+          engine._namedExpressionManager.resetNamedExpressions(
+            importedData.engineState.namedExpressions
+          );
+          engine._tableManager.resetTables(importedData.engineState.tables);
+
+          // Re-evaluate all sheets to ensure all dependencies are resolved correctly
+          engine.reevaluate();
+          engine._eventManager.emitUpdate();
+
           // Update workbook grid items
           setWorkbookGridItems(importedData.workbookGridItems);
-          
+
           // Update viewport if available
           if (importedData.viewport) {
             _setViewport(importedData.viewport);
           }
-          
+
           // Mark as having unsaved changes since we haven't saved to localStorage yet
           setHasUnsavedChanges(true);
-          
+
           console.log("State imported successfully");
-          alert("State imported successfully! Don't forget to save if you want to persist these changes.");
+          alert(
+            "State imported successfully! Don't forget to save if you want to persist these changes."
+          );
         } catch (error) {
           console.error("Failed to import state:", error);
-          alert(`Failed to import state: ${error instanceof Error ? error.message : "Unknown error"}`);
+          alert(
+            `Failed to import state: ${error instanceof Error ? error.message : "Unknown error"}`
+          );
         }
       };
-      
+
       reader.readAsText(file);
     };
-    
+
     input.click();
   }, [engine, _setViewport]);
 
@@ -275,16 +326,30 @@ export function ExcelDemo() {
   // Update active sheet for a workbook
   const updateWorkbookActiveSheet = useCallback(
     (workbookName: string, sheetName: string) => {
-      setWorkbookGridItems((prev) =>
-        prev.map((item) =>
+      setWorkbookGridItems((prev) => {
+        // Find the workbook item
+        const workbookItem = prev.find(item => item.name === workbookName);
+        
+        // If workbook not found or sheet is already active, no update needed
+        if (!workbookItem || workbookItem.activeSheet === sheetName) {
+          return prev;
+        }
+        
+        // Only update if there's an actual change
+        return prev.map((item) =>
           item.name === workbookName
             ? { ...item, activeSheet: sheetName }
             : item
-        )
-      );
-      markUnsavedChanges();
+        );
+      });
+      
+      // Only mark as unsaved if we found the workbook and it's a different sheet
+      const workbookItem = workbookGridItems.find(item => item.name === workbookName);
+      if (workbookItem && workbookItem.activeSheet !== sheetName) {
+        markUnsavedChanges();
+      }
     },
-    [markUnsavedChanges]
+    [markUnsavedChanges, workbookGridItems]
   );
 
   // Add named expression
@@ -451,6 +516,95 @@ export function ExcelDemo() {
     setNewWorkbookName("");
   }, []);
 
+  // Clone workbook
+  const cloneWorkbook = useCallback(
+    (sourceWorkbookName: string) => {
+      try {
+        // Generate a unique name for the cloned workbook
+        let cloneNumber = 2;
+        let cloneName = `${sourceWorkbookName} (Copy)`;
+
+        // Keep incrementing until we find a unique name
+        while (workbookGridItems.some((item) => item.name === cloneName)) {
+          cloneName = `${sourceWorkbookName} (Copy ${cloneNumber})`;
+          cloneNumber++;
+        }
+
+        // Clone the workbook in the engine
+        engine.cloneWorkbook(sourceWorkbookName, cloneName);
+
+        // Find the source workbook's grid item to position the clone nearby
+        const sourceItem = workbookGridItems.find(
+          (item) => item.name === sourceWorkbookName
+        );
+        const sourceX = sourceItem?.x || 100;
+        const sourceY = sourceItem?.y || 100;
+
+        // Create grid item for the cloned workbook
+        const clonedGridItem: WorkbookGridItem = {
+          name: cloneName,
+          x: sourceX + 50, // Offset slightly from the original
+          y: sourceY + 50,
+          width: sourceItem?.width || 800,
+          height: sourceItem?.height || 600,
+          activeSheet: sourceItem?.activeSheet || "Sheet1",
+        };
+
+        setWorkbookGridItems((prev) => [...prev, clonedGridItem]);
+        markUnsavedChanges();
+
+        console.log(
+          `Workbook "${sourceWorkbookName}" cloned as "${cloneName}"`
+        );
+      } catch (error) {
+        console.error("Failed to clone workbook:", error);
+        alert(
+          `Failed to clone workbook: ${error instanceof Error ? error.message : "Unknown error"}`
+        );
+      }
+    },
+    [workbookGridItems, engine, markUnsavedChanges]
+  );
+
+  // Delete workbook
+  const deleteWorkbook = useCallback(
+    (workbookName: string) => {
+      try {
+        // Prevent deleting the last workbook
+        if (workbookGridItems.length <= 1) {
+          alert(
+            "Cannot delete the last workbook. At least one workbook must remain."
+          );
+          return;
+        }
+
+        // Show confirmation dialog
+        const confirmMessage = `Are you sure you want to delete workbook "${workbookName}"?\n\nThis will permanently delete all sheets, data, named expressions, and tables in this workbook. This action cannot be undone.`;
+
+        if (!confirm(confirmMessage)) {
+          return;
+        }
+
+        // Remove from engine
+        engine.removeWorkbook(workbookName);
+
+        // Remove from grid items
+        setWorkbookGridItems((prev) =>
+          prev.filter((item) => item.name !== workbookName)
+        );
+
+        markUnsavedChanges();
+        console.log(`Workbook "${workbookName}" deleted successfully`);
+      } catch (error) {
+        console.error("Failed to delete workbook:", error);
+        alert(
+          `Failed to delete workbook: ${error instanceof Error ? error.message : "Unknown error"}`
+        );
+      }
+    },
+    [workbookGridItems, engine, markUnsavedChanges]
+  );
+
   // Delete table
   const deleteTable = useCallback(
     (tableName: string, workbookName: string) => {
@@ -531,14 +685,14 @@ export function ExcelDemo() {
               </div>
             ) : (
               <div className="flex items-center gap-2 flex-1">
-                <span 
+                <span
                   className="text-sm font-medium text-gray-700 cursor-pointer hover:text-gray-900"
                   onDoubleClick={() => startRenamingWorkbook(workbookName)}
                   data-testid={`workbook-name-${workbookName}`}
                 >
                   {workbookName}
                 </span>
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
                   <div
                     className="h-4 w-4 p-0 text-gray-500 hover:text-blue-600 flex items-center justify-center cursor-pointer"
                     onClick={() => startRenamingWorkbook(workbookName)}
@@ -547,6 +701,24 @@ export function ExcelDemo() {
                   >
                     <Edit2 className="h-3 w-3" />
                   </div>
+                  <div
+                    className="h-4 w-4 p-0 text-gray-500 hover:text-green-600 flex items-center justify-center cursor-pointer"
+                    onClick={() => cloneWorkbook(workbookName)}
+                    title="Clone Workbook"
+                    data-testid={`clone-workbook-${workbookName}`}
+                  >
+                    <Copy className="h-3 w-3" />
+                  </div>
+                  {workbookGridItems.length > 1 && (
+                    <div
+                      className="h-4 w-4 p-0 text-gray-500 hover:text-red-600 flex items-center justify-center cursor-pointer"
+                      onClick={() => deleteWorkbook(workbookName)}
+                      title="Delete Workbook"
+                      data-testid={`delete-workbook-${workbookName}`}
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -625,12 +797,15 @@ export function ExcelDemo() {
                               : "bg-transparent text-gray-600 border-transparent hover:bg-gray-100"
                           }
                         `}
-                        onClick={() =>
-                          updateWorkbookActiveSheet(workbookName, sheetName)
-                        }
-                        onDoubleClick={() =>
-                          startRenaming(workbookName, sheetName)
-                        }
+                        onClick={(ev) => {
+                          return updateWorkbookActiveSheet(
+                            workbookName,
+                            sheetName
+                          );
+                        }}
+                        onDoubleClick={(ev) => {
+                          return startRenaming(workbookName, sheetName);
+                        }}
                         data-testid={`sheet-tab-${sheetName}`}
                       >
                         <span>{sheetName}</span>
@@ -709,6 +884,8 @@ export function ExcelDemo() {
       renameWorkbook,
       startRenamingWorkbook,
       cancelWorkbookRenaming,
+      cloneWorkbook,
+      deleteWorkbook,
     ]
   );
 

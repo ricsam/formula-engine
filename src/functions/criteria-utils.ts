@@ -14,6 +14,8 @@ import {
   matchesParsedCriteria,
   type ParsedCriteria,
 } from "./criteria-parser";
+import { flags } from "src/debug/flags";
+import { getRelativeRange } from "src/core/utils";
 
 /**
  * Criteria pair for criteria-based functions
@@ -160,51 +162,151 @@ export function* processMultiCriteriaValues(
       yield valueRangeResult; // Yield the entire result (ValueEvaluationResult)
     }
   } else if (valueRangeResult.type === "spilled-values") {
-    // Range case - iterate over all values and check criteria
-    const valueValues = Array.from(
-      valueRangeResult.evaluateAllCells.call(evaluator, {
-        context,
-        evaluate: valueRangeResult.evaluate,
-        origin: context.currentCell,
-      })
-    );
+    if (flags.isProfiling) {
+      console.time("criteriaValueArrays");
+    }
+    // Range case - first validate dimensions using spillArea for efficiency
+    const valueSpillArea = valueRangeResult.spillArea(context.currentCell);
 
-    // Get all criteria values for parallel iteration
-    const criteriaValueArrays: Array<Array<FunctionEvaluationResult>> =
-      criteriaPairs.map(({ rangeResult }) => {
-        if (rangeResult.type === "spilled-values") {
-          return Array.from(
-            rangeResult.evaluateAllCells.call(evaluator, {
-              context,
-              evaluate: rangeResult.evaluate,
-              origin: context.currentCell,
-            })
-          ).map((cell) => cell.result);
-        } else if (rangeResult.type === "value") {
-          // Single criteria value - repeat for all values
-          return Array(valueValues.length).fill(rangeResult);
-        } else {
-          return [];
+    // Check that all criteria ranges have compatible dimensions
+    for (const { rangeResult } of criteriaPairs) {
+      if (rangeResult.type === "spilled-values") {
+        const criteriaSpillArea = rangeResult.spillArea(context.currentCell);
+
+        // Compare dimensions using relative ranges to get width/height
+        const valueRelRange = getRelativeRange(
+          valueSpillArea,
+          context.currentCell
+        );
+        const criteriaRelRange = getRelativeRange(
+          criteriaSpillArea,
+          context.currentCell
+        );
+
+        // Check if dimensions are compatible
+        const widthsMatch =
+          (valueRelRange.width.type === "infinity" &&
+            criteriaRelRange.width.type === "infinity") ||
+          (valueRelRange.width.type === "number" &&
+            criteriaRelRange.width.type === "number" &&
+            valueRelRange.width.value === criteriaRelRange.width.value);
+
+        const heightsMatch =
+          (valueRelRange.height.type === "infinity" &&
+            criteriaRelRange.height.type === "infinity") ||
+          (valueRelRange.height.type === "number" &&
+            criteriaRelRange.height.type === "number" &&
+            valueRelRange.height.value === criteriaRelRange.height.value);
+
+        if (!widthsMatch || !heightsMatch) {
+          // Return #VALUE! error for dimension mismatch
+          yield {
+            type: "error",
+            err: FormulaError.VALUE,
+            message:
+              "Criteria range dimensions do not match value range dimensions",
+          };
+          return;
         }
-      });
+      }
+      // Single values (type === "value") are compatible with any range size
+    }
 
-    // Check that all arrays have compatible lengths
-    const minLength = Math.min(
-      valueValues.length,
-      ...criteriaValueArrays.map((arr) => arr.length)
+    // Now use efficient iterator-based processing (no Array.from conversion)
+    const valueIterator = valueRangeResult.evaluateAllCells.call(evaluator, {
+      context,
+      evaluate: valueRangeResult.evaluate,
+      origin: context.currentCell,
+    });
+
+    const criteriaIterators = criteriaPairs.map(({ rangeResult }) => {
+      if (rangeResult.type === "spilled-values") {
+        return rangeResult.evaluateAllCells.call(evaluator, {
+          context,
+          evaluate: rangeResult.evaluate,
+          origin: context.currentCell,
+        });
+      } else {
+        // Single value - create a repeating iterator
+        const singleValue = rangeResult;
+        return (function* () {
+          while (true) {
+            yield { result: singleValue };
+          }
+        })();
+      }
+    });
+
+    // Create synchronized iteration using a manual approach
+    const valueIteratorResult = valueIterator[Symbol.iterator]();
+    const criteriaIteratorResults = criteriaIterators.map((iter) =>
+      iter[Symbol.iterator]()
     );
+    let i = 0;
 
-    for (let i = 0; i < minLength; i++) {
-      const valueCell = valueValues[i];
+    const durations: number[] = [];
+
+    let valueNext = valueIteratorResult.next();
+    while (!valueNext.done) {
+      let duration = performance.now();
+      const valueCell = valueNext.value;
+      i++;
 
       if (!valueCell) {
+        valueNext = valueIteratorResult.next();
         continue; // Skip undefined cells
+      }
+
+      if (flags.isProfiling && i === 1) {
+        console.time("step 1");
+      }
+
+      if (flags.isProfiling && i === 1) {
+        console.log("@criteriaIteratorResults", criteriaIteratorResults);
+      }
+
+      const criteriaDurations: number[] = [];
+      // Get corresponding criteria values for this position
+      const criteriaNextResults = criteriaIteratorResults.map(function criteriaNextResults(iter, innerIndex) {
+        const duration = performance.now();
+        if (flags.isProfiling && i === 1 && innerIndex === 0 && !flags.profilingNamespaces["criteria-utils-profiled"]) {
+          flags.profilingNamespaces["criteria-utils"] = true;
+          // console.profile("What is going on here?");
+        }
+        const result = iter.next();
+        if (flags.isProfiling && i === 1 && innerIndex === 0 && !flags.profilingNamespaces["criteria-utils-profiled"]) {
+          flags.profilingNamespaces["criteria-utils"] = false;
+          // console.profileEnd("What is going on here?");
+        }
+        if (flags.isProfiling && i === 1 && innerIndex === 0 && !flags.profilingNamespaces["criteria-utils-profiled"]) {
+          flags.profilingNamespaces["criteria-utils-profiled"] = true;
+        }
+        criteriaDurations.push(performance.now() - duration);
+        return result;
+      });
+
+      if (flags.isProfiling && i === 1) {
+        console.log("@criteriaDurations", criteriaDurations);
+      }
+
+      if (flags.isProfiling && i === 1) {
+        console.timeEnd("step 1");
+      }
+
+      // Check if any criteria iterator is done (shouldn't happen if dimensions match)
+      if (criteriaNextResults.some((result) => result.done)) {
+        break;
+      }
+
+      if (flags.isProfiling && i === 1) {
+        console.time("step 2");
       }
 
       // Check if all criteria match for this position
       let allMatch = true;
       for (let j = 0; j < criteriaPairs.length; j++) {
-        const criteriaCell = criteriaValueArrays[j]?.[i];
+        const criteriaCell = criteriaNextResults[j]?.value?.result;
+
         if (criteriaCell?.type === "error") {
           allMatch = false;
           break;
@@ -225,9 +327,54 @@ export function* processMultiCriteriaValues(
         }
       }
 
+      if (flags.isProfiling && i === 1) {
+        console.timeEnd("step 2");
+      }
+
       if (allMatch) {
+        if (flags.isProfiling) {
+          console.log(
+            "All match for value cell and criteria cells",
+            valueCell.result,
+            criteriaNextResults,
+            i
+          );
+        }
         yield valueCell.result; // Yield the entire SingleEvaluationResult (includes errors and values)
       }
+
+      // Advance to next value
+      if (flags.isProfiling && i === 1) {
+        console.time("step 3");
+      }
+      valueNext = valueIteratorResult.next();
+      durations.push(performance.now() - duration);
+      if (flags.isProfiling && i === 1) {
+        console.timeEnd("step 3");
+      }
+    }
+
+    if (flags.isProfiling) {
+      const averageDuration =
+        durations.reduce((a, b) => a + b, 0) / durations.length;
+      console.log("average duration: " + averageDuration);
+      const maxDurationIndex = durations.indexOf(Math.max(...durations));
+      console.log("min duration: " + Math.min(...durations));
+      console.log("max duration: " + Math.max(...durations));
+      console.log("max duration index: " + maxDurationIndex);
+
+      // Log top 10 slowest indexes
+      const indexedDurations = durations.map((duration, index) => ({
+        duration,
+        index,
+      }));
+      const top10Slowest = indexedDurations
+        .sort((a, b) => b.duration - a.duration)
+        .slice(0, 10);
+      console.log("top 10 slowest indexes:", top10Slowest);
+
+      console.log("processed " + i + " values");
+      console.timeEnd("criteriaValueArrays");
     }
   }
 }
