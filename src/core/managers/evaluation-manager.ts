@@ -413,9 +413,15 @@ export class EvaluationManager {
       }
 
       // Evaluate all dependencies in order
+      if (flags.isProfiling) {
+        console.time("evaluate dependencies: " + evaluationPlan.evaluationOrder.size);
+      }
       evaluationPlan.evaluationOrder.forEach((dependency) => {
         this.evaluateDependencyNode(dependency.key);
       });
+      if (flags.isProfiling) {
+        console.timeEnd("evaluate dependencies: " + evaluationPlan.evaluationOrder.size);
+      }
       const evalResult = this.dependencyManager.getCellNode(nodeKey);
       const failedEvaluation: ErrorEvaluationResult = {
         type: "error",
@@ -558,15 +564,15 @@ export class EvaluationManager {
         !value.originSpillResult)
     ) {
       flags.numEvaluationCalls++;
-      if (flags.numEvaluationCalls > flags.maxEvaluationCalls) {
-        return {
-          type: "value",
-          result: {
-            type: "string",
-            value: "timeout",
-          },
-        };
-      }
+      // if (flags.numEvaluationCalls > flags.maxEvaluationCalls) {
+      //   return {
+      //     type: "value",
+      //     result: {
+      //       type: "string",
+      //       value: "timeout",
+      //     },
+      //   };
+      // }
       if (flags.numEvaluationCalls === flags.profiledCall) {
         console.group("profiling " + cellAddressToKey(cellAddress));
         console.time("evaluate " + cellAddressToKey(cellAddress));

@@ -62,7 +62,10 @@ export class FormulaEngine {
     this.namedExpressionManager = new NamedExpressionManager();
     this.tableManager = new TableManager(this.workbookManager);
     const cacheManager = new CacheManager();
-    this.dependencyManager = new DependencyManager(cacheManager, this.workbookManager);
+    this.dependencyManager = new DependencyManager(
+      cacheManager,
+      this.workbookManager
+    );
 
     const formulaEvaluator = new FormulaEvaluator(
       this.tableManager,
@@ -445,7 +448,9 @@ export class FormulaEngine {
 
   cloneWorkbook(fromWorkbookName: string, toWorkbookName: string) {
     // Check if source workbook exists
-    const sourceWorkbook = this.workbookManager.getWorkbooks().get(fromWorkbookName);
+    const sourceWorkbook = this.workbookManager
+      .getWorkbooks()
+      .get(fromWorkbookName);
     if (!sourceWorkbook) {
       throw new Error(`Source workbook "${fromWorkbookName}" not found`);
     }
@@ -467,14 +472,19 @@ export class FormulaEngine {
       });
 
       // Copy all cell content using setSheetContent for efficiency
-      this.setSheetContent({
-        workbookName: toWorkbookName,
-        sheetName: sheetName,
-      }, new Map(sheet.content));
+      this.setSheetContent(
+        {
+          workbookName: toWorkbookName,
+          sheetName: sheetName,
+        },
+        new Map(sheet.content)
+      );
     }
 
     // Clone workbook-scoped named expressions
-    const sourceWorkbookExpressions = this.namedExpressionManager.getNamedExpressions().workbookExpressions.get(fromWorkbookName);
+    const sourceWorkbookExpressions = this.namedExpressionManager
+      .getNamedExpressions()
+      .workbookExpressions.get(fromWorkbookName);
     if (sourceWorkbookExpressions) {
       for (const [name, expression] of sourceWorkbookExpressions) {
         this.addNamedExpression({
@@ -486,7 +496,9 @@ export class FormulaEngine {
     }
 
     // Clone sheet-scoped named expressions
-    const sourceSheetExpressions = this.namedExpressionManager.getNamedExpressions().sheetExpressions.get(fromWorkbookName);
+    const sourceSheetExpressions = this.namedExpressionManager
+      .getNamedExpressions()
+      .sheetExpressions.get(fromWorkbookName);
     if (sourceSheetExpressions) {
       for (const [sheetName, sheetExpressions] of sourceSheetExpressions) {
         for (const [name, expression] of sheetExpressions) {
@@ -504,21 +516,16 @@ export class FormulaEngine {
     const sourceTables = this.tableManager.tables.get(fromWorkbookName);
     if (sourceTables) {
       for (const [tableName, table] of sourceTables) {
-        // Convert start position to cell reference string
-        const startCellRef = `${String.fromCharCode(65 + table.start.colIndex)}${table.start.rowIndex + 1}`;
-        
-        // Calculate numRows and numCols from the original table
-        const numCols = table.headers.size;
-        const numRows = table.endRow;
-        
-        this.addTable({
-          workbookName: toWorkbookName,
-          tableName: tableName,
-          sheetName: table.sheetName,
-          start: startCellRef,
-          numRows: numRows,
-          numCols: numCols,
-        });
+        this.tableManager.copyTable(
+          {
+            workbookName: fromWorkbookName,
+            tableName: tableName,
+          },
+          {
+            workbookName: toWorkbookName,
+            tableName: tableName,
+          }
+        );
       }
     }
 
@@ -617,9 +624,7 @@ export class FormulaEngine {
   /**
    * Removes the content in the spreadsheet that is inside the range.
    */
-  clearSpreadsheetRange(
-    address: RangeAddress,
-  ) {
+  clearSpreadsheetRange(address: RangeAddress) {
     this.workbookManager.clearSpreadsheetRange(address);
 
     // Re-evaluate all sheets to ensure all dependencies are resolved correctly

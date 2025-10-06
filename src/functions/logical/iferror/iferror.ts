@@ -135,6 +135,9 @@ export const IFERROR: FunctionDefinition = {
     // Evaluate the value argument (the expression to check for errors)
     const valueResult = this.evaluateNode(node.args[0]!, context);
 
+    // comment out to debug
+    // return valueResult;
+
     // Evaluate the value_if_error argument
     const valueIfErrorResult = this.evaluateNode(node.args[1]!, context);
     if (valueIfErrorResult.type === "error") {

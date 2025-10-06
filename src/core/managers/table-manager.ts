@@ -87,6 +87,31 @@ export class TableManager {
     return table;
   }
 
+  copyTable(from: {
+    workbookName: string;
+    tableName: string;
+  }, to: {
+    workbookName: string;
+    tableName: string;
+  }): void {
+    const fromTable = this.getTable({
+      workbookName: from.workbookName,
+      name: from.tableName,
+    });
+    if (!fromTable) {
+      throw new Error("Table not found");
+    }
+    const wb = this.tables.get(to.workbookName);
+    if (!wb) {
+      throw new Error("Workbook not found");
+    }
+    const newTable: TableDefinition = {
+      ...fromTable,
+      workbookName: to.workbookName,
+    };
+    wb.set(to.tableName, newTable);
+  }
+
   addTable(props: {
     tableName: string;
     sheetName: string;

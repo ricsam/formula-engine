@@ -216,6 +216,7 @@ export class DependencyManager {
     if (!this.ranges.has(rangeKey)) {
       const node = new RangeEvaluationNode(
         rangeKey,
+        this.cacheManager,
         this,
         this.workbookManager
       );

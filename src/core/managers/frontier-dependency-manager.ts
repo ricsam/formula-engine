@@ -8,8 +8,8 @@ import type { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluatio
 
 export class FrontierDependencyManager {
   constructor(
-    private workbookManager: WorkbookManager,
-    private evaluationManager: DependencyManager
+    protected workbookManager: WorkbookManager,
+    protected evaluationManager: DependencyManager
   ) {}
 
   private _resolved: boolean = false;
@@ -34,7 +34,8 @@ export class FrontierDependencyManager {
   /**
    * hard edge dependencies, which can cause cycles in the dependency graph
    */
-  private _dependencies: Set<CellEvalNode | EmptyCellEvaluationNode> = new Set();
+  private _dependencies: Set<CellEvalNode | EmptyCellEvaluationNode> =
+    new Set();
 
   /**
    * cache, should maybe be stored in the cache manager

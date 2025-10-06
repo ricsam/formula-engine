@@ -6,7 +6,7 @@ type DebugFlags = {
   maxEvaluationCalls: number;
 };
 
-const PROFILED_CALL = 287;
+const PROFILED_CALL = 943;
 const MAX_EVALUATION_CALLS = PROFILED_CALL + 1;
 
 export const flags: DebugFlags = {

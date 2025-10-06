@@ -69,7 +69,8 @@ export class OpenRangeEvaluator {
       );
     }
 
-    const cellsInRange = this.workbookManager.getCellsInRange(options.origin);
+    const cellsInRange = rangeNode.getCellsInRange();
+    const frontierCandidates = rangeNode.getFrontierCandidates();
 
     // Iterate over all defined cells in the sheet using optimized index-based iterator
     for (const address of cellsInRange) {
@@ -132,10 +133,6 @@ export class OpenRangeEvaluator {
             };
       }
     }
-
-    const frontierCandidates = this.workbookManager.iterateFrontierCandidates(
-      options.origin
-    );
 
     // Evaluate frontier candidates first using the iterator
     for (const candidate of frontierCandidates) {
