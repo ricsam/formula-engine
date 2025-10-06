@@ -7,6 +7,10 @@ import type { ASTNode, FunctionNode } from "src/parser/ast";
 import type { FormulaEngine } from "./engine";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
+import type { CellEvalNode } from "src/evaluator/cell-eval-node";
+import type { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
+import type { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
+import type { DependencyNode } from "./managers/dependency-node";
 
 // Cell addressing types
 export interface CellAddress {
@@ -14,6 +18,12 @@ export interface CellAddress {
   workbookName: string;
   colIndex: number;
   rowIndex: number;
+}
+
+export interface RangeAddress {
+  sheetName: string;
+  workbookName: string;
+  range: SpreadsheetRange;
 }
 
 export interface LocalCellAddress {
@@ -262,8 +272,8 @@ export type EvaluationResult = {
 } & FunctionEvaluationResult;
 
 export type EvaluationOrder = {
-  evaluationOrder: string[];
+  evaluationOrder: Set<DependencyNode>;
   hasCycle: boolean;
-  cycleNodes?: Set<string>;
+  cycleNodes?: Set<DependencyNode>;
   hash: string;
 };

@@ -82,7 +82,7 @@ export const COUNTIF: FunctionDefinition = {
     const countingEmptyCells = countEmptyCells(
       criteriaRangeResult,
       parsedCriteria,
-      context.currentCell
+      context.originCell.cellAddress
     );
     if (countingEmptyCells) {
       return countingEmptyCells;

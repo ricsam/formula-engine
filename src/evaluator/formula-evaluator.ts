@@ -18,10 +18,7 @@ import {
   type EvaluateScalarOperatorOptions,
 } from "src/evaluator/evaluate-scalar-operator";
 import { functions } from "src/functions";
-import {
-  getRangeIntersection,
-  OpenRangeEvaluator,
-} from "src/evaluator/open-range-evaluator";
+import { OpenRangeEvaluator } from "src/evaluator/open-range-evaluator";
 import type {
   ArrayNode,
   ASTNode,
@@ -38,6 +35,7 @@ import type {
 import {
   getAbsoluteRange,
   getCellReference,
+  getRangeIntersection,
   getRangeKey,
   getRelativeRange,
   getRelativeRangeKey,
@@ -57,6 +55,8 @@ import { notEquals } from "./comparison/not-equals";
 import { concatenate } from "./concatenation/concatenate";
 import type { NamedExpressionManager } from "src/core/managers/named-expression-manager";
 import type { EvaluationContext } from "./evaluation-context";
+import { flags } from "src/debug/flags";
+import { EvaluationError } from "./evaluation-error";
 
 function isFormulaError(value: string): value is FormulaError {
   if (typeof value !== "string") return false;
@@ -116,7 +116,7 @@ function mapJSErrorToFormulaError(error: Error): FormulaError {
 }
 
 export class FormulaEvaluator {
-  private openRangeEvaluator: OpenRangeEvaluator;
+  public openRangeEvaluator: OpenRangeEvaluator;
   constructor(
     private tableManager: TableManager,
     private dependencyManager: DependencyManager,
@@ -179,6 +179,14 @@ export class FormulaEvaluator {
 
       return result;
     } catch (error) {
+      if (error instanceof EvaluationError) {
+        return {
+          type: "error",
+          err: error.type,
+          message: error.message,
+        };
+      }
+
       // Convert JavaScript errors to formula errors
       const formulaError =
         error instanceof Error
@@ -258,10 +266,10 @@ export class FormulaEvaluator {
         .get(node.tableName);
     } else if (node.tableName) {
       table = this.tableManager
-        .getTables(context.currentCell.workbookName)
+        .getTables(context.originCell.cellAddress.workbookName)
         .get(node.tableName);
     } else {
-      table = this.isCellInTable(context.currentCell);
+      table = this.isCellInTable(context.originCell.cellAddress);
     }
     if (!table) {
       return {
@@ -271,14 +279,14 @@ export class FormulaEvaluator {
       };
     }
 
-    const rowIndex = context.currentCell.rowIndex;
+    const rowIndex = context.originCell.cellAddress.rowIndex;
     const tableStart = table.start;
-    
+
     // Handle selector-based references
     if (node.selector) {
       let startRow: number;
       let endRow: SpreadsheetRangeEnd;
-      
+
       switch (node.selector) {
         case "#Headers":
           startRow = table.start.rowIndex;
@@ -299,7 +307,7 @@ export class FormulaEvaluator {
             message: `Unknown table selector: ${node.selector}`,
           };
       }
-      
+
       // If we also have column specification, use those columns
       if (node.cols) {
         const startCol = table.headers.get(node.cols.startCol);
@@ -313,7 +321,7 @@ export class FormulaEvaluator {
         }
         const startColIndex = tableStart.colIndex + startCol.index;
         const endColIndex = tableStart.colIndex + endCol.index;
-        
+
         const range: SpreadsheetRange = {
           start: {
             row: startRow,
@@ -352,7 +360,10 @@ export class FormulaEvaluator {
           },
           end: {
             row: endRow,
-            col: { type: "number", value: tableStart.colIndex + table.headers.size - 1 },
+            col: {
+              type: "number",
+              value: tableStart.colIndex + table.headers.size - 1,
+            },
           },
         };
 
@@ -376,7 +387,7 @@ export class FormulaEvaluator {
         );
       }
     }
-    
+
     // Handle column-only references (no selector)
     if (node.cols) {
       const startCol = table.headers.get(node.cols.startCol);
@@ -422,7 +433,7 @@ export class FormulaEvaluator {
         context
       );
     }
-    
+
     return {
       type: "error",
       err: FormulaError.REF,
@@ -535,9 +546,10 @@ export class FormulaEvaluator {
       spillArea: (origin) => this.projectRange(node.range, origin),
       source: `range ${debugRange}`,
       evaluate: (spillOffset, context) => {
-        const originSheetName = node.sheetName ?? context.currentCell.sheetName;
+        const originSheetName =
+          node.sheetName ?? context.originCell.cellAddress.sheetName;
         const originWorkbookName =
-          node.workbookName ?? context.currentCell.workbookName;
+          node.workbookName ?? context.originCell.cellAddress.workbookName;
         const colIndex = node.range.start.col + spillOffset.x;
         const rowIndex = node.range.start.row + spillOffset.y;
         const result = this.dependencyManager.evalTimeSafeEvaluateCell(
@@ -598,13 +610,23 @@ export class FormulaEvaluator {
           }
         }
 
+        if (flags.profilingNamespaces["criteria-utils"]) {
+          console.log(
+            "evaluateAllCells for range",
+            debugRange,
+            "on",
+            node.sheetName ?? context.originCell.cellAddress.sheetName
+          );
+        }
+
         return yield* this.openRangeEvaluator.evaluateCellsInRange({
-          evaluate,
           context,
           origin: {
             range,
-            sheetName: node.sheetName ?? context.currentCell.sheetName,
-            workbookName: node.workbookName ?? context.currentCell.workbookName,
+            sheetName:
+              node.sheetName ?? context.originCell.cellAddress.sheetName,
+            workbookName:
+              node.workbookName ?? context.originCell.cellAddress.workbookName,
           },
         });
       },
@@ -724,7 +746,10 @@ export class FormulaEvaluator {
             this,
             options
           )) {
-            if (cellValue.result.type === "error" || cellValue.result.type === "awaiting-evaluation") {
+            if (
+              cellValue.result.type === "error" ||
+              cellValue.result.type === "awaiting-evaluation"
+            ) {
               yield cellValue;
             } else {
               yield {
@@ -839,8 +864,9 @@ export class FormulaEvaluator {
   ): FunctionEvaluationResult {
     const cellAddress: CellAddress = {
       ...node.address,
-      sheetName: node.sheetName ?? context.currentCell.sheetName,
-      workbookName: node.workbookName ?? context.currentCell.workbookName,
+      sheetName: node.sheetName ?? context.originCell.cellAddress.sheetName,
+      workbookName:
+        node.workbookName ?? context.originCell.cellAddress.workbookName,
     };
     const result = this.dependencyManager.evalTimeSafeEvaluateCell(
       cellAddress,

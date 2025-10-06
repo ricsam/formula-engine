@@ -6,6 +6,7 @@
 import {
   type CellAddress,
   type NamedExpression,
+  type RangeAddress,
   type SerializedCellValue,
   type SingleEvaluationResult,
   type SpreadsheetRange,
@@ -30,6 +31,7 @@ import { renameSheetInFormula } from "./sheet-renamer";
 import { renameTableInFormula } from "./table-renamer";
 import { renameWorkbookInFormula } from "./workbook-renamer";
 import { cellAddressToKey, keyToCellAddress } from "./utils";
+import { CacheManager } from "./managers/cache-manager";
 
 /**
  * Main FormulaEngine class
@@ -59,7 +61,8 @@ export class FormulaEngine {
     this.workbookManager = new WorkbookManager();
     this.namedExpressionManager = new NamedExpressionManager();
     this.tableManager = new TableManager(this.workbookManager);
-    this.dependencyManager = new DependencyManager();
+    const cacheManager = new CacheManager();
+    this.dependencyManager = new DependencyManager(cacheManager, this.workbookManager);
 
     const formulaEvaluator = new FormulaEvaluator(
       this.tableManager,
@@ -615,10 +618,9 @@ export class FormulaEngine {
    * Removes the content in the spreadsheet that is inside the range.
    */
   clearSpreadsheetRange(
-    opts: { sheetName: string; workbookName: string },
-    range: SpreadsheetRange
+    address: RangeAddress,
   ) {
-    this.workbookManager.clearSpreadsheetRange(opts, range);
+    this.workbookManager.clearSpreadsheetRange(address);
 
     // Re-evaluate all sheets to ensure all dependencies are resolved correctly
     this.reevaluate();

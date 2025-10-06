@@ -1,152 +1,32 @@
-import type { DependencyManager } from "src/core/managers";
-import type { CellAddress, SpreadsheetRange } from "src/core/types";
-import { cellAddressToKey, getRangeKey } from "src/core/utils";
-import { DependencyNode } from "./dependency-node";
+import type { CellAddress } from "src/core/types";
+import type { CellEvalNode } from "./cell-eval-node";
+import type { RangeEvaluationNode } from "./range-evaluation-node";
+import type { EmptyCellEvaluationNode } from "./empty-cell-evaluation-node";
 
 export class EvaluationContext {
-  private _currentCell: CellAddress;
-  private dependencies: Set<string>;
   /**
-   * Map is keyed by the range key, e.g. A4:D8
+   * Can be a range or a cell
    */
-  private frontierDependencies: Map<string, Set<string>>;
+  private _dependencyNode: CellEvalNode | RangeEvaluationNode | EmptyCellEvaluationNode;
   /**
-   * Map is keyed by the range key, e.g. A4:D8
+   * The cell evaluating a cell,e.g.
+   * if we are evaluting A1=SUM(B2:B4) + B1, then the origin cell is A1 and the dependency node is A1 as well
+   * the open range evaluator will create a new context with the origin cell being A1 and the dependency node being B2:B4
+   * 
+   * A new dependency will be added to A1 onto B1, and then B1 will be evaluated just like A1 is evaluated where the origin cell is B1
    */
-  private discardedFrontierDependencies: Map<string, Set<string>>;
+  private _originCell: CellEvalNode | EmptyCellEvaluationNode;
 
-  private dependenciesDidUpdate: boolean;
-
-  constructor(
-    private dependencyManager: DependencyManager,
-    currentCell: CellAddress,
-    currentDepNode?: DependencyNode
-  ) {
-    this._currentCell = currentCell;
-    this.dependencies = currentDepNode?.deps ?? new Set();
-    this.frontierDependencies =
-      currentDepNode?.frontierDependencies ?? new Map();
-    this.discardedFrontierDependencies =
-      currentDepNode?.discardedFrontierDependencies ?? new Map();
-    this.dependenciesDidUpdate = false;
+  constructor(dependencyNode: CellEvalNode | RangeEvaluationNode | EmptyCellEvaluationNode, originCell: CellEvalNode | EmptyCellEvaluationNode) {
+    this._dependencyNode = dependencyNode;
+    this._originCell = originCell;
   }
 
-  get currentCell() {
-    return this._currentCell;
+  get dependencyNode() {
+    return this._dependencyNode;
   }
 
-  addDependency(dependency: string) {
-    if (!this.dependencies.has(dependency)) {
-      this.dependenciesDidUpdate = true;
-    }
-    this.dependencies.add(dependency);
-  }
-
-  addFrontierDependency(dependency: string, range: SpreadsheetRange) {
-    const rangeKey = getRangeKey(range);
-    if (
-      !this.frontierDependencies.has(rangeKey) &&
-      !this.frontierDependencies.get(rangeKey)?.has(dependency)
-    ) {
-      this.dependenciesDidUpdate = true;
-    }
-    if (!this.frontierDependencies.has(rangeKey)) {
-      this.frontierDependencies.set(rangeKey, new Set());
-    }
-    this.frontierDependencies.get(rangeKey)?.add(dependency);
-  }
-
-  private discardFrontierDependency(
-    dependency: string,
-    range: SpreadsheetRange
-  ) {
-    const rangeKey = getRangeKey(range);
-    if (
-      !this.discardedFrontierDependencies.has(rangeKey) &&
-      !this.discardedFrontierDependencies.get(rangeKey)?.has(dependency)
-    ) {
-      this.dependenciesDidUpdate = true;
-    }
-    if (!this.discardedFrontierDependencies.has(rangeKey)) {
-      this.discardedFrontierDependencies.set(rangeKey, new Set());
-    }
-    this.discardedFrontierDependencies.get(rangeKey)?.add(dependency);
-  }
-
-  maybeDiscardFrontierDependency(dependency: string, range: SpreadsheetRange) {
-    if (this.isFrontierDependencyDiscarded(dependency, range)) {
-      return;
-    }
-    // Only discard if the frontier dependency itself is resolved
-    const depNode = this.dependencyManager.getEvaluatedNode(dependency);
-    if (depNode?.resolved) {
-      this.discardFrontierDependency(dependency, range);
-    }
-  }
-
-  maybeUpgradeFrontierDependency(dependency: string, range: SpreadsheetRange) {
-    if (this.isFrontierDependencyDiscarded(dependency, range)) {
-      return;
-    }
-    // Only upgrade if the frontier dependency itself is resolved
-    const depNode = this.dependencyManager.getEvaluatedNode(dependency);
-    if (depNode?.resolved) {
-      this.addDependency(dependency);
-    }
-  }
-
-  getCurrentCell() {
-    return this.currentCell;
-  }
-
-  getDependencies() {
-    return this.dependencies;
-  }
-
-  getFrontierDependencies() {
-    return this.frontierDependencies;
-  }
-
-  getDiscardedFrontierDependencies() {
-    return this.discardedFrontierDependencies;
-  }
-
-  getDependenciesDidUpdate() {
-    return this.dependenciesDidUpdate;
-  }
-
-  getDependencyAttributes(): DependencyAttributes {
-    const depsToCheck = new Set(this.dependencies);
-
-    for (const [rangeKey, frontierDep] of this.frontierDependencies) {
-      for (const dep of frontierDep) {
-        if (this.discardedFrontierDependencies.get(rangeKey)?.has(dep)) {
-          continue;
-        }
-        depsToCheck.add(dep);
-      }
-    }
-
-    return {
-      deps: this.dependencies,
-      frontierDependencies: this.frontierDependencies,
-      discardedFrontierDependencies: this.discardedFrontierDependencies,
-      directDepsUpdated: this.getDependenciesDidUpdate(),
-    };
-  }
-
-  isFrontierDependencyDiscarded(dependency: string, range: SpreadsheetRange) {
-    const key = getRangeKey(range);
-    return (
-      this.discardedFrontierDependencies.has(key) &&
-      this.discardedFrontierDependencies.get(key)?.has(dependency)
-    );
+  get originCell() {
+    return this._originCell;
   }
 }
-
-export type DependencyAttributes = {
-  deps: Set<string>;
-  frontierDependencies: Map<string, Set<string>>;
-  discardedFrontierDependencies: Map<string, Set<string>>;
-  directDepsUpdated: boolean;
-};

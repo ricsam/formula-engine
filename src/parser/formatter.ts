@@ -145,7 +145,7 @@ function formatInfiniteRange(ast: RangeNode): string {
   // 1. Start is always explicit cell (A5, $A$5, etc.)
   // 2. End varies by openness:
   //    - Open→: A5:10 (row-bounded)
-  //    - Open↓: A5:D (column-bounded)  
+  //    - Open↓: A5:D (column-bounded)
   //    - Open both: A5:INFINITY
   // 3. Excel compatibility: whole rows/columns use canonical cell form
   //    - 5:5 → A5:5, A:A → A1:A
@@ -154,7 +154,9 @@ function formatInfiniteRange(ast: RangeNode): string {
   const startRow = range.start.row + 1;
 
   const startColRef = isAbsolute.start.col ? `$${startCol}` : startCol;
-  const startRowRef = isAbsolute.start.row ? `$${startRow}` : startRow.toString();
+  const startRowRef = isAbsolute.start.row
+    ? `$${startRow}`
+    : startRow.toString();
 
   if (range.end.col.type === "infinity" && range.end.row.type === "infinity") {
     // Open both: A5:INFINITY
@@ -164,10 +166,10 @@ function formatInfiniteRange(ast: RangeNode): string {
     if (range.end.row.type !== "number") {
       throw new Error("Expected finite row for infinite column range");
     }
-    
+
     const endRow = range.end.row.value + 1;
     const endRowRef = isAbsolute.end.row ? `$${endRow}` : endRow.toString();
-    
+
     // Always use canonical cell form: A5:10 (not 5:10)
     rangeRef = `${startColRef}${startRowRef}:${endRowRef}`;
   } else if (range.end.row.type === "infinity") {
@@ -178,11 +180,13 @@ function formatInfiniteRange(ast: RangeNode): string {
 
     const endCol = indexToColumn(range.end.col.value);
     const endColRef = isAbsolute.end.col ? `$${endCol}` : endCol;
-    
+
     // Always use canonical cell form: A1:D (not A:D)
     rangeRef = `${startColRef}${startRowRef}:${endColRef}`;
   } else {
-    throw new Error("Expected at least one infinite dimension for infinite range");
+    throw new Error(
+      "Expected at least one infinite dimension for infinite range"
+    );
   }
 
   let result = rangeRef;
@@ -281,19 +285,19 @@ function formatArray(ast: ArrayNode): string {
 
 function formatNamedExpression(ast: NamedExpressionNode): string {
   const { name, sheetName, workbookName } = ast;
-  
+
   let result = name;
-  
+
   if (sheetName !== undefined) {
     // Sheet-scoped named expression
     const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
     result = `${quotedSheet}!${name}`;
   }
-  
+
   if (workbookName) {
     result = `[${workbookName}]${result}`;
   }
-  
+
   return result;
 }
 
@@ -335,7 +339,8 @@ function needsColumnBrackets(columnName: string): boolean {
 }
 
 function formatStructuredReference(ast: StructuredReferenceNode): string {
-  const { tableName, sheetName, workbookName, cols, selector, isCurrentRow } = ast;
+  const { tableName, sheetName, workbookName, cols, selector, isCurrentRow } =
+    ast;
 
   if (!tableName && isCurrentRow) {
     // Current row reference like [@Column] or @Column
@@ -351,9 +356,10 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
       return `[${selector}]`;
     } else if (cols) {
       const startNeedsBrackets = needsColumnBrackets(cols.startCol);
-      const endNeedsBrackets = cols.startCol !== cols.endCol && needsColumnBrackets(cols.endCol);
+      const endNeedsBrackets =
+        cols.startCol !== cols.endCol && needsColumnBrackets(cols.endCol);
       const anyNeedsBrackets = startNeedsBrackets || endNeedsBrackets;
-      
+
       if (cols.startCol === cols.endCol) {
         // Single column
         if (startNeedsBrackets) {
@@ -398,9 +404,10 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
     result += `[${selector}]`;
   } else if (cols) {
     const startNeedsBrackets = needsColumnBrackets(cols.startCol);
-    const endNeedsBrackets = cols.startCol !== cols.endCol && needsColumnBrackets(cols.endCol);
+    const endNeedsBrackets =
+      cols.startCol !== cols.endCol && needsColumnBrackets(cols.endCol);
     const anyNeedsBrackets = startNeedsBrackets || endNeedsBrackets;
-    
+
     if (isCurrentRow) {
       // Current row references
       if (cols.startCol === cols.endCol) {
@@ -444,7 +451,8 @@ export function formatFormula(formula: string): string {
 export function normalizeSerializedCellValue(
   value: SerializedCellValue
 ): SerializedCellValue {
-  if (value === undefined || value === "") return "";
+  if (value === undefined || (typeof value === "string" && value === ""))
+    return "";
 
   if (typeof value === "string" && value.startsWith("=")) {
     return `=${formatFormula(value.slice(1))}`;

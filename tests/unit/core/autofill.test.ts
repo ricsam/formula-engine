@@ -4,6 +4,7 @@ import { getCellReference, parseCellReference } from "../../../src/core/utils";
 import type {
   SpreadsheetRange,
   SerializedCellValue,
+  RangeAddress,
 } from "../../../src/core/types";
 
 describe("AutoFill and ClearSpreadsheetRange", () => {
@@ -45,15 +46,19 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         ])
       );
 
-      const range: SpreadsheetRange = {
-        start: { col: 0, row: 0 },
-        end: {
-          col: { type: "number", value: 1 },
-          row: { type: "number", value: 1 },
+      const range: RangeAddress = {
+        sheetName,
+        workbookName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number", value: 1 },
+            row: { type: "number", value: 1 },
+          },
         },
       };
 
-      engine.clearSpreadsheetRange(sheetAddress, range);
+      engine.clearSpreadsheetRange(range);
 
       // Check that all cells are cleared (engine returns "" for empty cells)
       expect(cell("A1")).toBe("");
@@ -63,11 +68,15 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
     });
 
     it("should work for infinite ranges", () => {
-      const infiniteRange: SpreadsheetRange = {
-        start: { col: 0, row: 0 },
-        end: {
-          col: { type: "infinity", sign: "positive" },
-          row: { type: "number", value: 1 },
+      const infiniteRange: RangeAddress = {
+        sheetName,
+        workbookName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "number", value: 1 },
+          },
         },
       };
       engine.setSheetContent(
@@ -80,7 +89,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         ])
       );
 
-      engine.clearSpreadsheetRange(sheetAddress, infiniteRange);
+      engine.clearSpreadsheetRange(infiniteRange);
 
       // Check that all cells are cleared (engine returns "" for empty cells)
       expect(cell("A1")).toBe("");
@@ -99,10 +108,11 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
       };
 
       expect(() =>
-        engine.clearSpreadsheetRange(
-          { workbookName, sheetName: "NonExistentSheet" },
-          range
-        )
+        engine.clearSpreadsheetRange({
+          workbookName,
+          sheetName: "NonExistentSheet",
+          range,
+        })
       ).toThrow("Sheet not found");
     });
   });

@@ -310,15 +310,15 @@ export class NamedExpressionManager {
     if (!namedExpression.sheetName && !namedExpression.workbookName) {
       // step 1, check if there is a named expression in the sheet scope
       const expression = this.sheetExpressions
-        .get(context.currentCell.workbookName)
-        ?.get(context.currentCell.sheetName)
+        .get(context.originCell.cellAddress.workbookName)
+        ?.get(context.originCell.cellAddress.sheetName)
         ?.get(namedExpression.name);
       if (expression) {
         return expression.expression;
       } else {
         // step 2, check if there is a named expression in the workbook scope
         const expression = this.workbookExpressions
-          .get(context.currentCell.workbookName)
+          .get(context.originCell.cellAddress.workbookName)
           ?.get(namedExpression.name);
         if (expression) {
           return expression.expression;
@@ -335,7 +335,7 @@ export class NamedExpressionManager {
     // scenario 2: we only have a workbookName - a bit weird, but could happen
     if (namedExpression.workbookName && !namedExpression.sheetName) {
       // special case: if workbook is the current workbook, we should just resolve the named expression according to scenario 1
-      if (namedExpression.workbookName === context.currentCell.workbookName) {
+      if (namedExpression.workbookName === context.originCell.cellAddress.workbookName) {
         return this.resolveNamedExpression(
           {
             name: namedExpression.name,
@@ -362,7 +362,7 @@ export class NamedExpressionManager {
     // scenario 3: we only have a sheetName
     if (namedExpression.sheetName && !namedExpression.workbookName) {
       const expression = this.sheetExpressions
-        .get(context.currentCell.workbookName)
+        .get(context.originCell.cellAddress.workbookName)
         ?.get(namedExpression.sheetName)
         ?.get(namedExpression.name);
       if (expression) {
@@ -371,7 +371,7 @@ export class NamedExpressionManager {
       } else {
         // step 2, check if there is a named expression in the current workbook has a workbook scoped named expression
         const expression = this.workbookExpressions
-          .get(context.currentCell.workbookName)
+          .get(context.originCell.cellAddress.workbookName)
           ?.get(namedExpression.name);
         if (expression) {
           return expression.expression;

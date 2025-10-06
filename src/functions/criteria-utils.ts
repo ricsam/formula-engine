@@ -166,21 +166,21 @@ export function* processMultiCriteriaValues(
       console.time("criteriaValueArrays");
     }
     // Range case - first validate dimensions using spillArea for efficiency
-    const valueSpillArea = valueRangeResult.spillArea(context.currentCell);
+    const valueSpillArea = valueRangeResult.spillArea(context.originCell.cellAddress);
 
     // Check that all criteria ranges have compatible dimensions
     for (const { rangeResult } of criteriaPairs) {
       if (rangeResult.type === "spilled-values") {
-        const criteriaSpillArea = rangeResult.spillArea(context.currentCell);
+        const criteriaSpillArea = rangeResult.spillArea(context.originCell.cellAddress);
 
         // Compare dimensions using relative ranges to get width/height
         const valueRelRange = getRelativeRange(
           valueSpillArea,
-          context.currentCell
+          context.originCell.cellAddress
         );
         const criteriaRelRange = getRelativeRange(
           criteriaSpillArea,
-          context.currentCell
+          context.originCell.cellAddress
         );
 
         // Check if dimensions are compatible
@@ -216,7 +216,7 @@ export function* processMultiCriteriaValues(
     const valueIterator = valueRangeResult.evaluateAllCells.call(evaluator, {
       context,
       evaluate: valueRangeResult.evaluate,
-      origin: context.currentCell,
+      origin: context.originCell.cellAddress,
     });
 
     const criteriaIterators = criteriaPairs.map(({ rangeResult }) => {
@@ -224,7 +224,7 @@ export function* processMultiCriteriaValues(
         return rangeResult.evaluateAllCells.call(evaluator, {
           context,
           evaluate: rangeResult.evaluate,
-          origin: context.currentCell,
+          origin: context.originCell.cellAddress,
         });
       } else {
         // Single value - create a repeating iterator
@@ -457,7 +457,7 @@ function* handleEmptyCriteriaSpilledValues(
   ) {
     throw new Error("Not an empty criteria case");
   }
-  const valueSpillArea = valueRangeResult.spillArea(context.currentCell);
+  const valueSpillArea = valueRangeResult.spillArea(context.originCell.cellAddress);
 
   // Check if this is an infinite range - yield error
   if (
@@ -502,7 +502,7 @@ function* handleEmptyCriteriaSpilledValues(
 
           if (rangeResult.type === "spilled-values") {
             const criteriaSpillArea = rangeResult.spillArea(
-              context.currentCell
+              context.originCell.cellAddress
             );
             const criteriaRow =
               row - valueSpillArea.start.row + criteriaSpillArea.start.row;

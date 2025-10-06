@@ -120,7 +120,7 @@ function createExactSpilledResult(
           message: "The spilled text1 argument has not been evaluated",
         };
       }
-      if (spillText1Result.type === "error") {
+      if (spillText1Result.type === "error" || spillText1Result.type === "awaiting-evaluation") {
         return spillText1Result;
       }
 
@@ -131,7 +131,7 @@ function createExactSpilledResult(
           message: "The spilled text2 argument has not been evaluated",
         };
       }
-      if (spillText2Result.type === "error") {
+      if (spillText2Result.type === "error" || spillText2Result.type === "awaiting-evaluation") {
         return spillText2Result;
       }
 
@@ -140,7 +140,7 @@ function createExactSpilledResult(
         return {
           type: "error",
           err: FormulaError.VALUE,
-          message: "Invalid argument types for EXACT function",
+          message: "Invalid argument types for EXACT function #1",
         };
       }
 
@@ -174,12 +174,12 @@ export const EXACT: FunctionDefinition = {
 
     // Evaluate both text arguments
     const text1Result = this.evaluateNode(node.args[0]!, context);
-    if (text1Result.type === "error") {
+    if (text1Result.type === "error" || text1Result.type === "awaiting-evaluation") {
       return text1Result;
     }
 
     const text2Result = this.evaluateNode(node.args[1]!, context);
-    if (text2Result.type === "error") {
+    if (text2Result.type === "error" || text2Result.type === "awaiting-evaluation") {
       return text2Result;
     }
 
@@ -201,7 +201,7 @@ export const EXACT: FunctionDefinition = {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        message: "Invalid argument types for EXACT function",
+        message: "Invalid argument types for EXACT function #2",
       };
     }
 

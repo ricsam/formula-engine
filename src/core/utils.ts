@@ -1,8 +1,10 @@
 import type {
   CellAddress,
   LocalCellAddress,
+  RangeAddress,
   RelativeRange,
   SpreadsheetRange,
+  SpreadsheetRangeEnd,
 } from "./types";
 
 // Column utilities
@@ -301,6 +303,190 @@ export function cellAddressToKey(cellAddress: CellAddress): string {
       `Invalid cell address: rowIndex and colIndex must be defined (got rowIndex=${cellAddress.rowIndex}, colIndex=${cellAddress.colIndex})`
     );
   }
-  const cellRef = `${indexToColumn(cellAddress.colIndex)}${getRowNumber(cellAddress.rowIndex)}`;
+  const cellRef = getCellReference(cellAddress);
   return `cell:${cellAddress.workbookName}:${cellAddress.sheetName}:${cellRef}`;
+}
+
+export function rangeAddressToKey(rangeAddress: RangeAddress): string {
+  return `range:${rangeAddress.workbookName}:${rangeAddress.sheetName}:${getRangeKey(rangeAddress.range)}`;
+}
+
+/**
+ *
+ * @param key - the range key to parse e.g. range:workbook:sheet:A3:A5
+ * @returns
+ */
+export function keyToRangeAddress(key: string): RangeAddress {
+  const parts = key.split(":");
+  if (parts.length !== 5) {
+    throw new Error(`Invalid range key format: ${key}`);
+  }
+  const workbookName = parts[1];
+  const sheetName = parts[2];
+  const rangeKey = parts[3] + ":" + parts[4];
+  return {
+    workbookName: workbookName!,
+    sheetName: sheetName!,
+    range: parseRangeKey(rangeKey!),
+  };
+}
+
+/**
+ *
+ * @param key - the range key to parse e.g. A3:A5 or A4:INFINITY
+ * @returns
+ */
+function parseRangeKey(key: string): SpreadsheetRange {
+  const parts = key.split(":");
+  if (parts.length !== 2) {
+    throw new Error(`Invalid range key format: ${key}`);
+  }
+
+  const start = parseCellReference(parts[0]!);
+  const end = parts[1]!;
+
+  let endRow: SpreadsheetRangeEnd;
+  let endCol: SpreadsheetRangeEnd;
+
+  if (end === "INFINITY") {
+    endRow = {
+      type: "infinity",
+      sign: "positive",
+    };
+    endCol = {
+      type: "infinity",
+      sign: "positive",
+    };
+  } else if (!end?.match(/\d/)) {
+    endRow = {
+      type: "infinity",
+      sign: "positive",
+    };
+    endCol = {
+      type: "number",
+      value: columnToIndex(end!),
+    };
+  } else if (!end?.match(/[A-Z]/)) {
+    endRow = {
+      type: "number",
+      value: parseInt(end!, 10) - 1,
+    };
+    endCol = {
+      type: "infinity",
+      sign: "positive",
+    };
+  } else {
+    const { rowIndex, colIndex } = parseCellReference(end!);
+    endRow = {
+      type: "number",
+      value: rowIndex,
+    };
+    endCol = {
+      type: "number",
+      value: colIndex,
+    };
+  }
+
+  return {
+    start: {
+      col: start.colIndex,
+      row: start.rowIndex,
+    },
+    end: {
+      row: endRow,
+      col: endCol,
+    },
+  };
+}
+
+/**
+ * Check if two ranges intersect
+ */
+export function checkRangeIntersection(
+  range1: SpreadsheetRange,
+  range2: SpreadsheetRange
+): boolean {
+  // Check if ranges don't intersect
+  if (
+    range1.end.col.type === "number" &&
+    range2.start.col > range1.end.col.value
+  )
+    return false;
+  if (
+    range2.end.col.type === "number" &&
+    range1.start.col > range2.end.col.value
+  )
+    return false;
+  if (
+    range1.end.row.type === "number" &&
+    range2.start.row > range1.end.row.value
+  )
+    return false;
+  if (
+    range2.end.row.type === "number" &&
+    range1.start.row > range2.end.row.value
+  )
+    return false;
+
+  return true;
+}
+
+/**
+ * Get the intersection of two ranges
+ */
+export function getRangeIntersection(
+  range1: SpreadsheetRange,
+  range2: SpreadsheetRange
+): SpreadsheetRange | null {
+  if (!checkRangeIntersection(range1, range2)) {
+    return null;
+  }
+
+  const startRow = Math.max(range1.start.row, range2.start.row);
+  const startCol = Math.max(range1.start.col, range2.start.col);
+
+  let endRow, endCol;
+
+  // Handle end row
+  if (
+    range1.end.row.type === "infinity" &&
+    range2.end.row.type === "infinity"
+  ) {
+    endRow = { type: "infinity" as const, sign: "positive" as const };
+  } else if (
+    range1.end.row.type === "number" &&
+    range2.end.row.type === "number"
+  ) {
+    endRow = {
+      type: "number" as const,
+      value: Math.min(range1.end.row.value, range2.end.row.value),
+    };
+  } else {
+    // One is finite, one is infinite
+    endRow = range1.end.row.type === "number" ? range1.end.row : range2.end.row;
+  }
+
+  // Handle end col
+  if (
+    range1.end.col.type === "infinity" &&
+    range2.end.col.type === "infinity"
+  ) {
+    endCol = { type: "infinity" as const, sign: "positive" as const };
+  } else if (
+    range1.end.col.type === "number" &&
+    range2.end.col.type === "number"
+  ) {
+    endCol = {
+      type: "number" as const,
+      value: Math.min(range1.end.col.value, range2.end.col.value),
+    };
+  } else {
+    // One is finite, one is infinite
+    endCol = range1.end.col.type === "number" ? range1.end.col : range2.end.col;
+  }
+
+  return {
+    start: { row: startRow, col: startCol },
+    end: { row: endRow, col: endCol },
+  };
 }

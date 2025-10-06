@@ -32,7 +32,7 @@ export function* createArgumentIterator(
       const cellValues = result.evaluateAllCells.call(evaluator, {
         context,
         evaluate: result.evaluate,
-        origin: context.currentCell,
+        origin: context.originCell.cellAddress,
       });
 
       for (const cellValue of cellValues) {

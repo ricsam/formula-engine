@@ -2,6 +2,7 @@ import type { WorkbookManager } from "src/core/managers";
 import {
   type CellAddress,
   type EvaluateAllCellsResult,
+  type RangeAddress,
   type SpilledValuesEvaluationResult,
   type SpilledValuesEvaluator,
   type SpreadsheetRange,
@@ -11,11 +12,17 @@ import {
   cellAddressToKey,
   getCellReference,
   isCellInRange,
+  checkRangeIntersection,
+  rangeAddressToKey,
 } from "src/core/utils";
 
 import type { DependencyManager } from "src/core/managers/dependency-manager";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
-import type { EvaluationContext } from "./evaluation-context";
+import { EvaluationContext } from "./evaluation-context";
+import { flags } from "src/debug/flags";
+import type { CellEvalNode } from "./cell-eval-node";
+import { EmptyCellEvaluationNode } from "./empty-cell-evaluation-node";
+import { EvaluationError } from "./evaluation-error";
 
 /**
  * Utility class for evaluating cells within open-ended ranges
@@ -35,133 +42,79 @@ export class OpenRangeEvaluator {
    * @returns Array of evaluation results or INFINITY if infinite spill detected
    */
   *evaluateCellsInRange(options: {
-    origin: {
-      range: SpreadsheetRange;
-      sheetName: string;
-      workbookName: string;
-    };
+    origin: RangeAddress;
     context: EvaluationContext;
-    evaluate: SpilledValuesEvaluator;
   }): Iterable<EvaluateAllCellsResult> {
-    const { evaluate, context } = options;
+    const rangeNode = this.dependencyManager.getRangeNode(
+      rangeAddressToKey(options.origin)
+    );
 
-    if (
-      options.origin.sheetName === context.currentCell.sheetName &&
-      isCellInRange(context.currentCell, options.origin.range)
-    ) {
-      yield {
-        result: {
-          type: "error",
-          err: FormulaError.CYCLE,
-          message: "Cycle detected",
-        },
-        relativePos: {
-          x: context.currentCell.colIndex - options.origin.range.start.col,
-          y: context.currentCell.rowIndex - options.origin.range.start.row,
-        },
-      };
-      return;
+    if (options.context.originCell instanceof EmptyCellEvaluationNode) {
+      throw new Error(
+        "If the origin cell is an empty cell, we could not be evaluating a range"
+      );
     }
+    options.context.originCell.addDependency(rangeNode);
+    const rangeContext = new EvaluationContext(
+      rangeNode,
+      options.context.originCell
+    );
 
     // Check if the sheet exists
     const sheet = this.workbookManager.getSheet(options.origin);
     if (!sheet) {
-      yield {
-        result: {
-          type: "error",
-          err: FormulaError.REF,
-          message: `Sheet ${options.origin.sheetName} not found`,
-        },
-        relativePos: {
-          x: context.currentCell.colIndex - options.origin.range.start.col,
-          y: context.currentCell.rowIndex - options.origin.range.start.row,
-        },
-      };
-      return;
+      throw new EvaluationError(
+        FormulaError.REF,
+        `Sheet ${options.origin.sheetName} not found`
+      );
     }
 
-    // todo change to using the iterator
-    // const frontierCandidates = this.workbookManager.getFrontierCandidates(
-    //   options.origin.range,
-    //   options.origin
-    // );
-    const frontierCandidates = this.workbookManager.iterateFrontierCandidates(
-      options.origin.range,
-      options.origin
-    );
-
-    // Evaluate frontier candidates first using the iterator
-    for (const candidate of frontierCandidates) {
-      const key = cellAddressToKey(candidate);
-
-      if (context.isFrontierDependencyDiscarded(key, options.origin.range)) {
-        continue;
-      }
-
-      const result = this.dependencyManager.getEvaluatedNode(key)?.evaluationResult;
-
-      context.addFrontierDependency(key, options.origin.range);
-
-      if (result) {
-        if (result.type === "spilled-values") {
-          const spillArea = result.spillArea(candidate);
-          const intersects = checkRangeIntersection(
-            spillArea,
-            options.origin.range
-          );
-          if (intersects) {
-            context.maybeUpgradeFrontierDependency(key, options.origin.range); // upgraded!
-            yield* this.handleSpilledValues({
-              spillResult: result,
-              targetRange: options.origin.range,
-              candidate,
-              context,
-            });
-          } else {
-            context.maybeDiscardFrontierDependency(key, options.origin.range); // downgraded!
-          }
-        } else {
-          context.maybeDiscardFrontierDependency(key, options.origin.range); // downgraded!
-        }
-      }
-    }
-
-    // todo change to using the iterator
-    // const cellsInRange = this.workbookManager.getCellsInRange(
-    //   options.origin,
-    //   options.origin.range
-    // );
-    const cellsInRange = this.workbookManager.iterateCellsInRange(
-      options.origin,
-      options.origin.range
-    );
+    const cellsInRange = this.workbookManager.getCellsInRange(options.origin);
 
     // Iterate over all defined cells in the sheet using optimized index-based iterator
     for (const address of cellsInRange) {
-      const cellKey = getCellReference(address);
+      const cellKey = cellAddressToKey(address);
 
-      const result = this.dependencyManager.evalTimeSafeEvaluateCell(
-        {
-          ...address,
-          sheetName: options.origin.sheetName,
-          workbookName: options.origin.workbookName,
-        },
-        context
-      );
-
-      if (result?.type === "spilled-values") {
-        const candidate: CellAddress = {
-          ...address,
-          sheetName: options.origin.sheetName,
-          workbookName: options.origin.workbookName,
+      if (cellKey === options.context.originCell.key) {
+        // if a cell in range for some reason is the origin, well, that's a cycle
+        yield {
+          result: {
+            type: "error",
+            err: FormulaError.CYCLE,
+            message: "Cycle detected",
+          },
+          relativePos: {
+            x:
+              options.context.originCell.cellAddress.colIndex -
+              options.origin.range.start.col,
+            y:
+              options.context.originCell.cellAddress.rowIndex -
+              options.origin.range.start.row,
+          },
         };
-        const spillHandleResult = this.handleSpilledValues({
-          spillResult: result,
-          targetRange: options.origin.range,
-          context,
-          candidate,
+        return;
+      }
+
+      const cellNode = this.dependencyManager.getCellNode(cellKey);
+
+      if (cellNode instanceof EmptyCellEvaluationNode) {
+        throw new Error("A cell in range can not be an empty cell");
+      }
+
+      rangeNode.addDependency(cellNode);
+
+      const result = cellNode.evaluationResult;
+
+      if (result.type === "spilled-values") {
+        const spilledResults = result.evaluateAllCells.call(this.evaluator, {
+          context: rangeContext,
+          evaluate: result.evaluate,
+          intersection: options.origin.range,
+          origin: address,
         });
-        yield* spillHandleResult;
+        for (const spilledResult of spilledResults) {
+          yield spilledResult;
+        }
       } else {
         const relativePos = {
           x: address.colIndex - options.origin.range.start.col,
@@ -179,124 +132,60 @@ export class OpenRangeEvaluator {
             };
       }
     }
+
+    const frontierCandidates = this.workbookManager.iterateFrontierCandidates(
+      options.origin
+    );
+
+    // Evaluate frontier candidates first using the iterator
+    for (const candidate of frontierCandidates) {
+      const candidateKey = cellAddressToKey(candidate);
+      const candidateNode = this.dependencyManager.getCellNode(candidateKey);
+      const result = candidateNode.evaluationResult;
+
+      if (candidateNode instanceof EmptyCellEvaluationNode) {
+        throw new Error("A frontier dependencies can not be an empty cell");
+      }
+
+      rangeNode.addFrontierDependency(candidateNode);
+
+      if (result) {
+        if (result.type === "spilled-values") {
+          const spillArea = result.spillArea(candidate);
+          const intersects = checkRangeIntersection(
+            spillArea,
+            options.origin.range
+          );
+          if (intersects) {
+            rangeNode.maybeUpgradeFrontierDependency(candidateNode); // upgraded!
+            // When a spilled range intersects with our target range, we need to evaluate
+            // only the cells that fall within the intersection area.
+            //
+            // Example: If cell A10 contains a spilled range that covers A10:B11,
+            // and our target range is B10:INFINITY, then we only want to evaluate
+            // the intersection B10:B11 from the spilled range.
+            //
+            // The evaluateAllCells method expects the intersection to be passed
+            // so it can limit evaluation to only the relevant cells.
+
+            const spilledResults = Array.from(
+              result.evaluateAllCells.call(this.evaluator, {
+                context: rangeContext,
+                evaluate: result.evaluate,
+                intersection: options.origin.range,
+                origin: candidate,
+              })
+            );
+            for (const spilledResult of spilledResults) {
+              yield spilledResult;
+            }
+          } else {
+            rangeNode.maybeDiscardFrontierDependency(candidateNode); // downgraded!
+          }
+        } else {
+          rangeNode.maybeDiscardFrontierDependency(candidateNode); // downgraded!
+        }
+      }
+    }
   }
-
-  /**
-   * Handle spilled values that may intersect with the target range
-   */
-  *handleSpilledValues(options: {
-    spillResult: SpilledValuesEvaluationResult;
-    targetRange: SpreadsheetRange;
-    candidate: CellAddress;
-    context: EvaluationContext;
-  }): Iterable<EvaluateAllCellsResult> {
-    // When a spilled range intersects with our target range, we need to evaluate
-    // only the cells that fall within the intersection area.
-    //
-    // Example: If cell A10 contains a spilled range that covers A10:B11,
-    // and our target range is B10:INFINITY, then we only want to evaluate
-    // the intersection B10:B11 from the spilled range.
-    //
-    // The evaluateAllCells method expects the intersection to be passed
-    // so it can limit evaluation to only the relevant cells.
-
-    return yield* options.spillResult.evaluateAllCells.call(this.evaluator, {
-      context: options.context,
-      evaluate: options.spillResult.evaluate,
-      intersection: options.targetRange,
-      origin: options.candidate,
-    });
-  }
-}
-
-/**
- * Check if two ranges intersect
- */
-export function checkRangeIntersection(
-  range1: SpreadsheetRange,
-  range2: SpreadsheetRange
-): boolean {
-  // Check if ranges don't intersect
-  if (
-    range1.end.col.type === "number" &&
-    range2.start.col > range1.end.col.value
-  )
-    return false;
-  if (
-    range2.end.col.type === "number" &&
-    range1.start.col > range2.end.col.value
-  )
-    return false;
-  if (
-    range1.end.row.type === "number" &&
-    range2.start.row > range1.end.row.value
-  )
-    return false;
-  if (
-    range2.end.row.type === "number" &&
-    range1.start.row > range2.end.row.value
-  )
-    return false;
-
-  return true;
-}
-
-/**
- * Get the intersection of two ranges
- */
-export function getRangeIntersection(
-  range1: SpreadsheetRange,
-  range2: SpreadsheetRange
-): SpreadsheetRange | null {
-  if (!checkRangeIntersection(range1, range2)) {
-    return null;
-  }
-
-  const startRow = Math.max(range1.start.row, range2.start.row);
-  const startCol = Math.max(range1.start.col, range2.start.col);
-
-  let endRow, endCol;
-
-  // Handle end row
-  if (
-    range1.end.row.type === "infinity" &&
-    range2.end.row.type === "infinity"
-  ) {
-    endRow = { type: "infinity" as const, sign: "positive" as const };
-  } else if (
-    range1.end.row.type === "number" &&
-    range2.end.row.type === "number"
-  ) {
-    endRow = {
-      type: "number" as const,
-      value: Math.min(range1.end.row.value, range2.end.row.value),
-    };
-  } else {
-    // One is finite, one is infinite
-    endRow = range1.end.row.type === "number" ? range1.end.row : range2.end.row;
-  }
-
-  // Handle end col
-  if (
-    range1.end.col.type === "infinity" &&
-    range2.end.col.type === "infinity"
-  ) {
-    endCol = { type: "infinity" as const, sign: "positive" as const };
-  } else if (
-    range1.end.col.type === "number" &&
-    range2.end.col.type === "number"
-  ) {
-    endCol = {
-      type: "number" as const,
-      value: Math.min(range1.end.col.value, range2.end.col.value),
-    };
-  } else {
-    // One is finite, one is infinite
-    endCol = range1.end.col.type === "number" ? range1.end.col : range2.end.col;
-  }
-
-  return {
-    start: { row: startRow, col: startCol },
-    end: { row: endRow, col: endCol },
-  };
 }

@@ -5,14 +5,8 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
   type SpreadsheetRange,
-  type PositiveInfinity,
-  type ErrorEvaluationResult,
 } from "src/core/types";
-import { getCellReference, isRangeOneCell } from "src/core/utils";
-import {
-  getRangeIntersection,
-  OpenRangeEvaluator,
-} from "src/evaluator/open-range-evaluator";
+import { getRangeIntersection, isRangeOneCell } from "src/core/utils";
 
 /**
  * SEQUENCE(rows, [columns], [start], [step])
@@ -51,7 +45,7 @@ export const SEQUENCE: FunctionDefinition = {
 
       if (result.type === "spilled-values") {
         hasArrayInput = true;
-        const spillArea = result.spillArea(context.currentCell);
+        const spillArea = result.spillArea(context.originCell.cellAddress);
         if (!largestSpillArea) {
           largestSpillArea = spillArea;
         } else {
@@ -259,7 +253,7 @@ export const SEQUENCE: FunctionDefinition = {
       value: start,
     };
 
-    if (isRangeOneCell(spillArea(context.currentCell))) {
+    if (isRangeOneCell(spillArea(context.originCell.cellAddress))) {
       return {
         type: "value",
         result: originResult,

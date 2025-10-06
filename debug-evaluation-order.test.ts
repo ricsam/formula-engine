@@ -48,7 +48,7 @@ test("debug evaluation order for multiplication", () => {
   for (const [key, node] of dependencyManager.getEvaluatedNodes()) {
     evaluatedAfterD11.add(key);
     console.log(
-      `${key}: deps=${node.deps ? [...node.deps] : []}, frontierDeps=${node.frontierDependencies ? [...node.frontierDependencies] : []}`
+      `${key}: deps=${node.cellDeps ? [...node.cellDeps] : []}, frontierDeps=${node.frontierDependencies ? [...node.frontierDependencies] : []}`
     );
   }
 
@@ -78,7 +78,7 @@ test("debug evaluation order for multiplication", () => {
   for (const [key, node] of dependencyManager.getEvaluatedNodes()) {
     if (!evaluatedAfterD11.has(key)) {
       console.log(
-        `${key}: deps=${node.deps ? [...node.deps] : []}, frontierDeps=${node.frontierDependencies ? [...node.frontierDependencies] : []}, discardedFrontierDeps=${node.discardedFrontierDependencies ? [...node.discardedFrontierDependencies] : []}`
+        `${key}: deps=${node.cellDeps ? [...node.cellDeps] : []}, frontierDeps=${node.frontierDependencies ? [...node.frontierDependencies] : []}, discardedFrontierDeps=${node.discardedFrontierDependencies ? [...node.discardedFrontierDependencies] : []}`
       );
     }
   }
@@ -90,7 +90,7 @@ test("debug evaluation order for multiplication", () => {
     const resultValue =
       resultType === "value" ? node.evaluationResult?.result : resultType;
     console.log(
-      `${key}: result=${resultValue}, deps=${node.deps ? [...node.deps].length : 0}, frontierDeps=${node.frontierDependencies ? [...node.frontierDependencies].length : 0}`
+      `${key}: result=${resultValue}, deps=${node.cellDeps ? [...node.cellDeps].length : 0}, frontierDeps=${node.frontierDependencies ? [...node.frontierDependencies].length : 0}`
     );
   }
 
@@ -102,12 +102,12 @@ test("debug evaluation order for multiplication", () => {
     sheetName,
     workbookName,
   });
-  const b1Node = dependencyManager.getEvaluatedNode(b1NodeKey);
+  const b1Node = dependencyManager.getCellNode(b1NodeKey);
   console.log("\n=== B1 Node Details ===");
   console.log("B1 evaluated:", !!b1Node);
   if (b1Node) {
     console.log("B1 result:", b1Node.evaluationResult);
-    console.log("B1 deps:", b1Node.deps ? [...b1Node.deps] : []);
+    console.log("B1 deps:", b1Node.cellDeps ? [...b1Node.cellDeps] : []);
   }
 
   // Check the actual frontier candidates for C1:C3

@@ -3,6 +3,7 @@ import {
   type FunctionEvaluationResult,
   type SingleEvaluationResult,
 } from "src/core/types";
+import { flags } from "src/debug/flags";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 
@@ -19,9 +20,22 @@ export function performAverage(
   let sum = 0;
   let count = 0;
 
+  if (flags.isProfiling) {
+    console.time("performAverage");
+  }
+
   for (const result of results) {
     if (result.type === "error") {
       // Propagate errors immediately
+      if (flags.isProfiling) {
+        console.timeEnd("performAverage");
+      }
+      return result;
+    }
+    if (result.type === "awaiting-evaluation") {
+      if (flags.isProfiling) {
+        console.timeEnd("performAverage");
+      }
       return result;
     }
 
@@ -31,6 +45,9 @@ export function performAverage(
         count++;
       } else if (result.result.type === "infinity") {
         // Infinity dominates - return immediately
+        if (flags.isProfiling) {
+          console.timeEnd("performAverage");
+        }
         return {
           type: "value",
           result: result.result,
@@ -41,11 +58,17 @@ export function performAverage(
   }
 
   if (count === 0) {
+    if (flags.isProfiling) {
+      console.timeEnd("performAverage");
+    }
     return {
       type: "error",
       err: FormulaError.DIV0,
       message: "Cannot calculate average of empty range",
     };
+  }
+  if (flags.isProfiling) {
+    console.timeEnd("performAverage");
   }
 
   return {
@@ -53,4 +76,3 @@ export function performAverage(
     result: { type: "number", value: sum / count },
   };
 }
-

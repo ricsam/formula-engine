@@ -39,7 +39,7 @@ function getValueFromArray(
   col: number,
   context: EvaluationContext
 ): CellValue | ErrorEvaluationResult {
-  const dims = arrayResult.spillArea(context.currentCell);
+  const dims = arrayResult.spillArea(context.originCell.cellAddress);
 
   // Convert 1-based indices to 0-based
   const rowIndex = row - 1;
@@ -75,8 +75,8 @@ function getValueFromArray(
   const spilledAddress: CellAddress = {
     colIndex: actualCol,
     rowIndex: actualRow,
-    sheetName: context.currentCell.sheetName,
-    workbookName: context.currentCell.workbookName,
+    sheetName: context.originCell.cellAddress.sheetName,
+    workbookName: context.originCell.cellAddress.workbookName,
   };
 
   const spill = {

@@ -9,6 +9,8 @@ import type {
 } from "../types";
 import { getCellReference, parseCellReference } from "../utils";
 
+import type { RangeAddress } from "src/core/types";
+
 interface IndexEntry {
   number: number;
   key: string;
@@ -53,7 +55,10 @@ class IndexEntryBinarySearch {
    * Find the first element >= target
    * Returns the index of the first element, or -1 if not found
    */
-  static findFirstGreaterOrEqual(entries: IndexEntry[], target: number): number {
+  static findFirstGreaterOrEqual(
+    entries: IndexEntry[],
+    target: number
+  ): number {
     if (entries.length === 0) return -1;
 
     let left = 0;
@@ -78,7 +83,10 @@ class IndexEntryBinarySearch {
    * Find the rightmost position where we could insert a target value
    * Useful for finding elements that come before a target
    */
-  static findRightmostInsertionPoint(entries: IndexEntry[], target: number): number {
+  static findRightmostInsertionPoint(
+    entries: IndexEntry[],
+    target: number
+  ): number {
     return IndexEntryBinarySearch.findInsertionPoint(entries, target);
   }
 }
@@ -467,7 +475,10 @@ export class WorkbookManager {
     }
 
     // Find the insertion point using binary search for efficiency
-    const insertionPoint = IndexEntryBinarySearch.findInsertionPoint(array, item.number);
+    const insertionPoint = IndexEntryBinarySearch.findInsertionPoint(
+      array,
+      item.number
+    );
 
     // Insert at the found position
     array.splice(insertionPoint, 0, item);
@@ -586,10 +597,9 @@ export class WorkbookManager {
    * ENHANCED: Now supports infinite ranges.
    */
   clearSpreadsheetRange(
-    opts: { sheetName: string; workbookName: string },
-    range: SpreadsheetRange
+    address: RangeAddress,
   ) {
-    const sheet = this.getSheet(opts);
+    const sheet = this.getSheet(address);
 
     if (!sheet) {
       throw new Error("Sheet not found");
@@ -597,18 +607,18 @@ export class WorkbookManager {
 
     // Get current sheet content and prepare new content with cleared cells
     const newContent = new Map(sheet.content);
-    
+
     // Use iterateCellsInRange to only process cells that actually exist
     // This handles both finite and infinite ranges efficiently
-    for (const cellAddress of this.iterateCellsInRange(opts, range)) {
+    for (const cellAddress of this.iterateCellsInRange(address)) {
       const cellRef = getCellReference(cellAddress);
-      
+
       // Remove from content
       newContent.delete(cellRef);
     }
 
     // setSheetContent will rebuild indexes from scratch, so no need to manually update them
-    this.setSheetContent(opts, newContent);
+    this.setSheetContent(address, newContent);
   }
 
   /**
@@ -628,42 +638,43 @@ export class WorkbookManager {
    * Uses indexes to efficiently find and yield only cells that exist within the range
    */
   *iterateCellsInRange(
-    opts: { workbookName: string; sheetName: string },
-    range: SpreadsheetRange
-  ): Generator<LocalCellAddress> {
+    address: RangeAddress,
+  ): Generator<CellAddress> {
     // First check if the sheet exists
-    const sheet = this.getSheet(opts);
+    const sheet = this.getSheet(address);
     if (!sheet) {
       throw new Error("Sheet not found");
     }
 
-    const indexes = this.getSheetIndexes(opts);
+    const indexes = this.getSheetIndexes(address);
+
+    const range = address.range;
 
     // Use the sorted index to find only rows that actually contain cells
     // This avoids iterating through empty rows regardless of finite/infinite bounds
-    
+
     if (range.end.row.type === "number") {
       // Finite bounds: Use binary search to find the range of cells to check
       const startIndex = IndexEntryBinarySearch.findFirstGreaterOrEqual(
-        indexes.cellsSortedByRow, 
+        indexes.cellsSortedByRow,
         range.start.row
       );
-      
+
       if (startIndex === -1) return; // No cells at or after start row
 
       // Process cells from startIndex until we exceed the end row
       for (let i = startIndex; i < indexes.cellsSortedByRow.length; i++) {
         const cellEntry = indexes.cellsSortedByRow[i];
         if (!cellEntry) continue;
-        
+
         const parsed = parseCellReference(cellEntry.key);
-        
+
         // Stop if we've gone beyond the row range
         if (parsed.rowIndex > range.end.row.value) break;
-        
+
         // Check if cell is within column bounds
         if (parsed.colIndex < range.start.col) continue;
-        
+
         if (
           range.end.col.type === "number" &&
           parsed.colIndex > range.end.col.value
@@ -674,27 +685,29 @@ export class WorkbookManager {
         yield {
           rowIndex: parsed.rowIndex,
           colIndex: parsed.colIndex,
+          sheetName: address.sheetName,
+          workbookName: address.workbookName,
         };
       }
     } else {
       // Infinite row bounds: Use binary search to find starting point
       const startIndex = IndexEntryBinarySearch.findFirstGreaterOrEqual(
-        indexes.cellsSortedByRow, 
+        indexes.cellsSortedByRow,
         range.start.row
       );
-      
+
       if (startIndex === -1) return; // No cells at or after start row
 
       // Process all cells from startIndex to end
       for (let i = startIndex; i < indexes.cellsSortedByRow.length; i++) {
         const cellEntry = indexes.cellsSortedByRow[i];
         if (!cellEntry) continue;
-        
+
         const parsed = parseCellReference(cellEntry.key);
-        
+
         // Check if cell is within column bounds
         if (parsed.colIndex < range.start.col) continue;
-        
+
         if (
           range.end.col.type === "number" &&
           parsed.colIndex > range.end.col.value
@@ -705,16 +718,15 @@ export class WorkbookManager {
         yield {
           rowIndex: parsed.rowIndex,
           colIndex: parsed.colIndex,
+          sheetName: address.sheetName,
+          workbookName: address.workbookName,
         };
       }
     }
   }
 
-  getCellsInRange(
-    opts: { workbookName: string; sheetName: string },
-    range: SpreadsheetRange
-  ): LocalCellAddress[] {
-    return Array.from(this.iterateCellsInRange(opts, range));
+  getCellsInRange(address: RangeAddress): CellAddress[] {
+    return Array.from(this.iterateCellsInRange(address));
   }
 
   /**
@@ -742,18 +754,12 @@ export class WorkbookManager {
    * For region 3, we yield all formula cells that have no blocking formula cells
    * between them and the range (both horizontally and vertically).
    */
-  *iterateFrontierCandidates(
-    range: SpreadsheetRange,
-    opts: {
-      sheetName: string;
-      workbookName: string;
-    }
-  ): Generator<CellAddress> {
+  *iterateFrontierCandidates(range: RangeAddress): Generator<CellAddress> {
     const candidateKeys = new Set<string>();
 
     const sheet = this.getSheet({
-      sheetName: opts.sheetName,
-      workbookName: opts.workbookName,
+      sheetName: range.sheetName,
+      workbookName: range.workbookName,
     });
 
     if (!sheet) {
@@ -761,43 +767,43 @@ export class WorkbookManager {
     }
 
     // 1. Get columns that intersect with the range (cells above)
-    const colsToCheck = this.getColumnsInRange(range, opts);
+    const colsToCheck = this.getColumnsInRange(range);
 
     // For each column, find the nearest formula cell above the range
     for (const col of colsToCheck) {
-      const cellsInCol = this.getCellsInColumn(opts, col);
+      const cellsInCol = this.getCellsInColumn(range, col);
       const nearestAbove = this.findNearestFormulaAbove(
         cellsInCol,
-        range.start.row,
+        range.range.start.row,
         sheet
       );
       if (nearestAbove && !candidateKeys.has(nearestAbove)) {
         candidateKeys.add(nearestAbove);
         yield {
           ...parseCellReference(nearestAbove),
-          sheetName: opts.sheetName,
-          workbookName: opts.workbookName,
+          sheetName: range.sheetName,
+          workbookName: range.workbookName,
         };
       }
     }
 
     // 2. Get rows that intersect with the range (cells to the left)
-    const rowsToCheck = this.getRowsInRange(range, opts);
+    const rowsToCheck = this.getRowsInRange(range);
 
     // For each row, find the nearest formula cell to the left of the range
     for (const row of rowsToCheck) {
-      const cellsInRow = this.getCellsInRow(opts, row);
+      const cellsInRow = this.getCellsInRow(range, row);
       const nearestLeft = this.findNearestFormulaLeft(
         cellsInRow,
-        range.start.col,
+        range.range.start.col,
         sheet
       );
       if (nearestLeft && !candidateKeys.has(nearestLeft)) {
         candidateKeys.add(nearestLeft);
         yield {
           ...parseCellReference(nearestLeft),
-          sheetName: opts.sheetName,
-          workbookName: opts.workbookName,
+          sheetName: range.sheetName,
+          workbookName: range.workbookName,
         };
       }
     }
@@ -806,7 +812,6 @@ export class WorkbookManager {
     // These are cells that might spill diagonally into the range
     for (const candidate of this.findTopLeftQuadrantCandidates(
       range,
-      opts,
       sheet,
       candidateKeys
     )) {
@@ -823,14 +828,8 @@ export class WorkbookManager {
    * 2. To the left of the range (same rows, columns before)
    * 3. Top-left quadrant (both above AND to the left of the range)
    */
-  getFrontierCandidates(
-    range: SpreadsheetRange,
-    opts: {
-      sheetName: string;
-      workbookName: string;
-    }
-  ): CellAddress[] {
-    return Array.from(this.iterateFrontierCandidates(range, opts));
+  getFrontierCandidates(range: RangeAddress): CellAddress[] {
+    return Array.from(this.iterateFrontierCandidates(range));
   }
 
   /**
@@ -838,24 +837,24 @@ export class WorkbookManager {
    * This checks cells that are both above AND to the left of the range
    */
   *findTopLeftQuadrantCandidates(
-    range: SpreadsheetRange,
-    opts: { workbookName: string; sheetName: string },
+    address: RangeAddress,
     sheet: Sheet,
     existingCandidates: Set<string>
   ): Generator<CellAddress> {
     // Only process if there's actually a top-left quadrant
-    if (range.start.row === 0 || range.start.col === 0) {
+    if (address.range.start.row === 0 || address.range.start.col === 0) {
       return;
     }
 
-    const indexes = this.getSheetIndexes(opts);
+    const indexes = this.getSheetIndexes(address);
 
     // Use sorted index to find only cells that exist above and to the left of the range
     // This avoids iterating through empty rows/columns
     const candidateCells = indexes.cellsSortedByRow.filter((cell) => {
       const parsed = parseCellReference(cell.key);
       return (
-        parsed.rowIndex < range.start.row && parsed.colIndex < range.start.col
+        parsed.rowIndex < address.range.start.row &&
+        parsed.colIndex < address.range.start.col
       );
     });
 
@@ -878,11 +877,11 @@ export class WorkbookManager {
         let hasBlockingCell = false;
 
         // Check horizontal path (same row, columns between this cell and range)
-        const cellsInRow = this.getCellsInRow(opts, row);
+        const cellsInRow = this.getCellsInRow(address, row);
         for (const blockingCandidate of cellsInRow) {
           if (
             blockingCandidate.number > col &&
-            blockingCandidate.number < range.start.col
+            blockingCandidate.number < address.range.start.col
           ) {
             const blockingContent = sheet.content.get(blockingCandidate.key);
             if (
@@ -897,11 +896,11 @@ export class WorkbookManager {
 
         if (!hasBlockingCell) {
           // Check vertical path (same column, rows between this cell and range)
-          const colCells = this.getCellsInColumn(opts, col);
+          const colCells = this.getCellsInColumn(address, col);
           for (const blockingCandidate of colCells) {
             if (
               blockingCandidate.number > row &&
-              blockingCandidate.number < range.start.row
+              blockingCandidate.number < address.range.start.row
             ) {
               const blockingContent = sheet.content.get(blockingCandidate.key);
               if (
@@ -918,8 +917,8 @@ export class WorkbookManager {
         if (!hasBlockingCell) {
           yield {
             ...parsed,
-            sheetName: opts.sheetName,
-            workbookName: opts.workbookName,
+            sheetName: address.sheetName,
+            workbookName: address.workbookName,
           };
         }
       }
@@ -937,7 +936,10 @@ export class WorkbookManager {
     if (cellsInCol.length === 0) return null;
 
     // Binary search to find the rightmost position where we could insert beforeRow
-    const insertionPoint = IndexEntryBinarySearch.findRightmostInsertionPoint(cellsInCol, beforeRow);
+    const insertionPoint = IndexEntryBinarySearch.findRightmostInsertionPoint(
+      cellsInCol,
+      beforeRow
+    );
 
     // Now search backwards from the insertion point to find the nearest formula
     for (let i = insertionPoint - 1; i >= 0; i--) {
@@ -964,7 +966,10 @@ export class WorkbookManager {
     if (cellsInRow.length === 0) return null;
 
     // Binary search to find the rightmost position where we could insert beforeCol
-    const insertionPoint = IndexEntryBinarySearch.findRightmostInsertionPoint(cellsInRow, beforeCol);
+    const insertionPoint = IndexEntryBinarySearch.findRightmostInsertionPoint(
+      cellsInRow,
+      beforeCol
+    );
 
     // Now search backwards from the insertion point to find the nearest formula
     for (let i = insertionPoint - 1; i >= 0; i--) {
@@ -992,7 +997,10 @@ export class WorkbookManager {
     const dimensions = new Set<number>();
 
     // Use binary search to find the first cell >= startNum
-    const startIdx = IndexEntryBinarySearch.findFirstGreaterOrEqual(list, startNum);
+    const startIdx = IndexEntryBinarySearch.findFirstGreaterOrEqual(
+      list,
+      startNum
+    );
     if (startIdx === -1) {
       // No cells at or after startNum
       return [];
@@ -1002,7 +1010,7 @@ export class WorkbookManager {
     for (let i = startIdx; i < list.length; i++) {
       const entry = list[i];
       if (!entry) continue;
-      
+
       const num = entry.number;
 
       // Check if we've gone past the end of a finite range
@@ -1027,15 +1035,12 @@ export class WorkbookManager {
    * Get columns that actually contain cells and intersect with the range
    * OPTIMIZED: Only returns columns that have actual cell data within the range
    */
-  private getColumnsInRange(
-    range: SpreadsheetRange,
-    opts: { workbookName: string; sheetName: string }
-  ): number[] {
-    const indexes = this.getSheetIndexes(opts);
+  private getColumnsInRange(range: RangeAddress): number[] {
+    const indexes = this.getSheetIndexes(range);
     return this.getActualDimensionsInRange(
       indexes.cellsSortedByCol,
-      range.start.col,
-      range.end.col
+      range.range.start.col,
+      range.range.end.col
     );
   }
 
@@ -1043,15 +1048,28 @@ export class WorkbookManager {
    * Get rows that actually contain cells and intersect with the range
    * OPTIMIZED: Only returns rows that have actual cell data within the range
    */
-  private getRowsInRange(
-    range: SpreadsheetRange,
-    opts: { workbookName: string; sheetName: string }
-  ): number[] {
-    const indexes = this.getSheetIndexes(opts);
+  private getRowsInRange(range: RangeAddress): number[] {
+    const indexes = this.getSheetIndexes(range);
     return this.getActualDimensionsInRange(
       indexes.cellsSortedByRow,
-      range.start.row,
-      range.end.row
+      range.range.start.row,
+      range.range.end.row
+    );
+  }
+
+  public getCellContent(cellAddress: CellAddress): SerializedCellValue {
+    const sheet = this.getSheet(cellAddress);
+    if (!sheet) {
+      throw new Error("Sheet not found");
+    }
+    return sheet.content.get(getCellReference(cellAddress));
+  }
+
+  public isCellEmpty(cellAddress: CellAddress): boolean {
+    const content = this.getCellContent(cellAddress);
+    return (
+      content === undefined ||
+      (typeof content === "string" && content === "")
     );
   }
 }

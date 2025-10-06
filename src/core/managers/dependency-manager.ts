@@ -1,38 +1,55 @@
-import type {
-  DependencyAttributes,
-  EvaluationContext,
-} from "src/evaluator/evaluation-context";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 import {
   type CellAddress,
   type EvaluationOrder,
   type FunctionEvaluationResult,
+  type RangeAddress,
   type SingleEvaluationResult,
   type SpilledValue,
 } from "../types";
-import { cellAddressToKey, isCellInRange } from "../utils";
+import {
+  cellAddressToKey,
+  getCellReference,
+  getRangeKey,
+  isCellInRange,
+  keyToCellAddress,
+  rangeAddressToKey,
+} from "../utils";
 
-import { DependencyNode } from "src/evaluator/dependency-node";
 import { flags } from "src/debug/flags";
+import { CellEvalNode } from "src/evaluator/cell-eval-node";
+import { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
+import { CacheManager } from "./cache-manager";
+import { WorkbookManager } from "./workbook-manager";
+import { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
+import type { DependencyNode } from "./dependency-node";
 
-interface TopologicalSortResult {
-  type: "success" | "cycle";
-  sorted?: string[];
-  inCycle?: Set<string>;
+interface NodeInfo {
+  isFrontierDep: boolean;
+  frontierParents: Set<string>; // Nodes that have this as a frontier dependency
+  node: CellEvalNode | RangeEvaluationNode;
 }
 
 export interface DependencyTreeNode {
+  type: "cell" | "range" | "empty";
+  circular?: boolean;
   key: string;
   directDepsUpdated?: boolean;
   resolved?: boolean;
+  canResolve: boolean;
+  resultType:
+    | "awaiting-evaluation"
+    | "spilled-values"
+    | "value"
+    | "range"
+    | "error";
   deps?: DependencyTreeNode[];
-  frontierDependencies?:
-    | DependencyTreeNode[]
-    | Record<string, DependencyTreeNode[]>;
+  frontierDependencies?: DependencyTreeNode[];
   self?: boolean;
   _debug?: {
-    rawFrontierDependencies?: Record<string, string[]>;
-    discardedFrontierDependencies?: Record<string, string[]>;
-    activeFrontierDependencies?: Record<string, string[]>;
+    rawFrontierDependencies?: string[];
+    discardedFrontierDependencies?: string[];
+    activeFrontierDependencies?: string[];
   };
 }
 
@@ -48,8 +65,10 @@ export class DependencyManager {
      * key is the cell key, from cellAddressToKey
      */
     string,
-    DependencyNode
+    CellEvalNode
   > = new Map();
+
+  private emptyCells: Map<string, EmptyCellEvaluationNode> = new Map();
 
   /**
    * registry of spilled values
@@ -62,7 +81,15 @@ export class DependencyManager {
     SpilledValue
   > = new Map();
 
-  constructor() {}
+  /**
+   * Key is workbook:sheetName:rangeKey, e.g. Workbook1:Sheet1:A1:D10, from rangeAddressToKey
+   */
+  private ranges: Map<string, RangeEvaluationNode> = new Map();
+
+  constructor(
+    private cacheManager: CacheManager,
+    private workbookManager: WorkbookManager
+  ) {}
 
   getSpillValue(cellAddress: CellAddress): SpilledValue | undefined {
     for (const spilledValue of this.spilledValues.values()) {
@@ -136,111 +163,100 @@ export class DependencyManager {
       }
     }
     const key = cellAddressToKey(cellAddress);
-    context.addDependency(key);
-    const result = this.evaluatedNodes.get(key)?.evaluationResult;
-    if (!result) {
-      return {
-        type: "awaiting-evaluation",
-        cellAddress,
-      };
-    }
+    const node = this.getCellNode(key);
+    context.dependencyNode.addDependency(node);
+    const result = node.evaluationResult;
     return result;
   }
 
   clearEvaluationCache(): void {
     this.evaluatedNodes.clear();
+    this.emptyCells.clear();
+    this.ranges.clear();
     this.spilledValues.clear();
   }
 
-  setEvaluatedNode(
-    nodeKey: string,
-    attributes: DependencyAttributes,
-    result: FunctionEvaluationResult,
-    originSpillResult?: SingleEvaluationResult
-  ): void {
-    const currentNode =
-      this.evaluatedNodes.get(nodeKey) ??
-      new DependencyNode(nodeKey, result, originSpillResult);
-    if (!currentNode) {
-      throw new Error("Node not found");
+  getEmptyCellNode(nodeKey: string): EmptyCellEvaluationNode {
+    if (!nodeKey.startsWith("empty:")) {
+      throw new Error("Invalid empty cell node key: " + nodeKey);
     }
-    currentNode.setDependencyAttributes(attributes);
-    currentNode.setEvaluationResult(result, originSpillResult);
-
-    this.evaluatedNodes.set(nodeKey, currentNode);
-  }
-
-  setEvaluatedResult(
-    nodeKey: string,
-    result: FunctionEvaluationResult,
-    originSpillResult?: SingleEvaluationResult
-  ): void {
-    const currentNode =
-      this.evaluatedNodes.get(nodeKey) ??
-      new DependencyNode(nodeKey, result, originSpillResult);
-    if (!currentNode) {
-      throw new Error("Node not found");
+    if (!this.emptyCells.has(nodeKey)) {
+      const node = new EmptyCellEvaluationNode(
+        nodeKey,
+        this,
+        this.workbookManager
+      );
+      this.emptyCells.set(nodeKey, node);
+      return node;
     }
-    currentNode.setEvaluationResult(result, originSpillResult);
-
-    this.evaluatedNodes.set(nodeKey, currentNode);
+    return this.emptyCells.get(nodeKey)!;
   }
 
-  getEvaluatedNode(nodeKey: string): DependencyNode | undefined {
-    return this.evaluatedNodes.get(nodeKey);
+  getCellNode(nodeKey: string): CellEvalNode | EmptyCellEvaluationNode {
+    if (!nodeKey.startsWith("cell:") && !nodeKey.startsWith("empty:")) {
+      throw new Error("Invalid cell node key: " + nodeKey);
+    }
+    if (!this.evaluatedNodes.has(nodeKey)) {
+      const cellAddress = keyToCellAddress(nodeKey);
+      if (this.workbookManager.isCellEmpty(cellAddress)) {
+        return this.getEmptyCellNode(nodeKey.replace(/^cell:/, "empty:"));
+      }
+
+      const node = new CellEvalNode(nodeKey);
+      this.evaluatedNodes.set(nodeKey, node);
+      return node;
+    }
+    return this.evaluatedNodes.get(nodeKey)!;
   }
 
-  getEvaluatedNodes(): Map<string, DependencyNode> {
+  getRangeNode(rangeKey: string): RangeEvaluationNode {
+    if (!rangeKey.startsWith("range:")) {
+      throw new Error("Invalid range node key: " + rangeKey);
+    }
+    if (!this.ranges.has(rangeKey)) {
+      const node = new RangeEvaluationNode(
+        rangeKey,
+        this,
+        this.workbookManager
+      );
+      this.ranges.set(rangeKey, node);
+      return node;
+    }
+    return this.ranges.get(rangeKey)!;
+  }
+
+  getEvaluatedNodes(): Map<string, CellEvalNode> {
     return this.evaluatedNodes;
   }
 
   //#region dependency graph methods
-  /**
-   * Get the direct dependencies of a node
-   */
-  getNodeDeps(nodeKey: string): Set<string> {
-    return this.getEvaluatedNode(nodeKey)?.deps ?? new Set();
-  }
-
-  /**
-   * Get the frontier dependencies of a node
-   */
-  getNodeFrontierDependencies(nodeKey: string): Set<string> {
-    const node = this.getEvaluatedNode(nodeKey);
-    if (!node) return new Set();
-
-    return node.getAllFrontierDependencies();
-  }
 
   /**
    * Get transitive dependencies and transitive frontier dependencies
    * This is only used by buildEvaluationOrder, so we'll optimize it there
    */
   getTransitiveDepsForEvalOrder(
-    nodeKey: string,
-    visited: Set<string> = new Set()
-  ): Set<string> {
+    node: DependencyNode,
+    visited: Set<DependencyNode> = new Set()
+  ): Set<DependencyNode> {
     // Prevent infinite recursion
-    if (visited.has(nodeKey)) {
+    if (visited.has(node)) {
       return new Set();
     }
 
-    const node = this.getEvaluatedNode(nodeKey);
     // If the node is resolved, then we don't need to evaluate it
     if (node && node.resolved) {
       return new Set();
     }
 
     // Mark this node as visited for cycle detection
-    visited.add(nodeKey);
+    visited.add(node);
 
-    const allNodes = new Set<string>();
-    allNodes.add(nodeKey);
+    const allNodes = new Set<DependencyNode>();
+    allNodes.add(node);
 
     // Get direct dependencies (regular + frontier)
-    const regularDeps = this.getNodeDeps(nodeKey);
-    const frontierDeps = this.getNodeFrontierDependencies(nodeKey);
-    const directDeps = regularDeps.union(frontierDeps);
+    const directDeps = node.getDependencies();
 
     // Recursively get transitive dependencies for each direct dependency
     for (const dep of directDeps) {
@@ -256,7 +272,7 @@ export class DependencyManager {
     }
 
     // Remove this node from visited set for other branches
-    visited.delete(nodeKey);
+    visited.delete(node);
 
     return allNodes;
   }
@@ -279,9 +295,13 @@ export class DependencyManager {
    * e.g: [B1],[B10],[D2],{A1},[B2],{C4},[E4],(B1),(G4),(H1),Y10
    */
   buildEvaluationOrder(nodeKey: string): EvaluationOrder {
-    const node = this.getEvaluatedNode(nodeKey);
-    if (node && node.resolved && node?.evaluationOrder) {
-      return node.evaluationOrder;
+    const node = this.getCellNode(nodeKey);
+    if (
+      node &&
+      node.resolved &&
+      this.cacheManager.getEvaluationOrder(nodeKey)
+    ) {
+      return this.cacheManager.getEvaluationOrder(nodeKey)!;
     }
 
     if (flags.isProfiling) {
@@ -294,78 +314,50 @@ export class DependencyManager {
     // 3. Detects cycles
     // 4. Builds evaluation order
 
-    interface NodeInfo {
-      isFrontierDep: boolean;
-      frontierParents: Set<string>; // Nodes that have this as a frontier dependency
-    }
-
-    const allNodes = new Map<string, NodeInfo>();
-    const visitedForDiscovery = new Set<string>();
-    const visitingForCycle = new Set<string>();
-    const cycleNodes = new Set<string>();
-    const evaluationOrder: string[] = [];
-    const visitedForOrder = new Set<string>();
+    const allNodes = new Map<string, DependencyNode>();
+    const visitedForDiscovery = new Set<DependencyNode>();
+    const cycleNodes = new Set<DependencyNode>();
+    const evaluationOrder = new Set<DependencyNode>();
+    const visitedForOrder = new Set<DependencyNode>();
 
     // Phase 1: Discover all nodes and their types, skipping resolved nodes
-    const discoverNodes = (
-      current: string,
-      parentKey?: string,
-      isFrontierEdge: boolean = false
-    ) => {
+    const discoverNodes = (currentNode: DependencyNode) => {
       // Check if this node is resolved - if so, skip it entirely
-      const currentNode = this.getEvaluatedNode(current);
       if (currentNode && currentNode.resolved) {
         return; // Skip resolved nodes completely
       }
 
-      if (!allNodes.has(current)) {
-        allNodes.set(current, {
-          isFrontierDep: false,
-          frontierParents: new Set(),
-        });
+      if (!allNodes.has(currentNode.key)) {
+        allNodes.set(currentNode.key, currentNode);
       }
 
-      const nodeInfo = allNodes.get(current)!;
-
-      // If this edge is a frontier dependency, mark it
-      if (isFrontierEdge && parentKey) {
-        nodeInfo.isFrontierDep = true;
-        nodeInfo.frontierParents.add(parentKey);
-      }
-
-      if (visitedForDiscovery.has(current)) {
+      if (visitedForDiscovery.has(currentNode)) {
         return;
       }
 
-      visitedForDiscovery.add(current);
+      visitedForDiscovery.add(currentNode);
 
-      // Get regular dependencies
-      const regularDeps = this.getNodeDeps(current);
+      // Get all dependencies (frontier and regular)
+      const regularDeps = currentNode.getAllDependencies();
       for (const dep of regularDeps) {
-        discoverNodes(dep, current, false);
-      }
-
-      // Get frontier dependencies
-      const frontierDeps = this.getNodeFrontierDependencies(current);
-      for (const dep of frontierDeps) {
-        discoverNodes(dep, current, true);
+        discoverNodes(dep);
       }
     };
 
     // Start discovery from the target node
-    discoverNodes(nodeKey);
+    discoverNodes(node);
 
     // If the target node itself was resolved, return empty evaluation order
     if (allNodes.size === 0 && node && node.resolved) {
       const result: EvaluationOrder = {
-        evaluationOrder: [nodeKey],
+        evaluationOrder: new Set([node]),
         hasCycle: false,
-        hash: this.computeHash(new Set(nodeKey)),
+        hash: this.computeHash(new Set([node])),
       };
 
-      if (node && node.resolved) {
-        node.setEvaluationOrder(result);
-      }
+      // if (node && node.resolved) {
+      //   this.cacheManager.setEvaluationOrder(nodeKey, result);
+      // }
 
       if (flags.isProfiling) {
         console.timeEnd("buildEvaluationOrder");
@@ -375,49 +367,87 @@ export class DependencyManager {
       return result;
     }
 
-    // Phase 2: Check for cycles (only considering regular dependencies)
-    const checkCycles = (current: string): boolean => {
-      if (visitingForCycle.has(current)) {
-        cycleNodes.add(current);
-        return true;
-      }
+    // Phase 2: Check for cycles (only considering regular dependencies) using Tarjan's algorithm
+    const getStronglyConnectedComponents = (): Set<DependencyNode>[] => {
+      // Tarjan's algorithm for finding strongly connected components
+      // Note: Phase 1 already discovered all reachable nodes into allNodes
+      const index = new Map<DependencyNode, number>();
+      const lowlink = new Map<DependencyNode, number>();
+      const onStack = new Set<DependencyNode>();
+      const stack: DependencyNode[] = [];
+      const sccs: Set<DependencyNode>[] = [];
+      let currentIndex = 0;
 
-      if (visitedForOrder.has(current)) {
-        return false;
-      }
+      const strongConnect = (v: DependencyNode) => {
+        // Set the depth index for v to the smallest unused index
+        index.set(v, currentIndex);
+        lowlink.set(v, currentIndex);
+        currentIndex++;
+        stack.push(v);
+        onStack.add(v);
 
-      visitingForCycle.add(current);
+        // Consider successors of v (only regular dependencies, not frontier)
+        const successors = v.getDependencies();
+        for (const w of successors) {
+          // Only process nodes that are in our discovered set
+          if (!allNodes.has(w.key)) {
+            continue;
+          }
 
-      // Only check regular dependencies for cycles
-      const regularDeps = this.getNodeDeps(current);
-      for (const dep of regularDeps) {
-        if (allNodes.has(dep) && checkCycles(dep)) {
-          cycleNodes.add(current);
+          if (!index.has(w)) {
+            // Successor w has not yet been visited; recurse on it
+            strongConnect(w);
+            lowlink.set(v, Math.min(lowlink.get(v)!, lowlink.get(w)!));
+          } else if (onStack.has(w)) {
+            // Successor w is in stack S and hence in the current SCC
+            lowlink.set(v, Math.min(lowlink.get(v)!, index.get(w)!));
+          }
+        }
+
+        // If v is a root node, pop the stack and generate an SCC
+        if (lowlink.get(v) === index.get(v)) {
+          const scc = new Set<DependencyNode>();
+          let w: DependencyNode;
+          do {
+            w = stack.pop()!;
+            onStack.delete(w);
+            scc.add(w);
+          } while (w !== v);
+
+          // Only add SCCs with more than one node (cycles) or self-loops
+          if (scc.size > 1 || (scc.size === 1 && v.getDependencies().has(v))) {
+            sccs.push(scc);
+          }
+        }
+      };
+
+      // Run Tarjan's algorithm on all nodes discovered in Phase 1
+      for (const [nodeKey, node] of allNodes) {
+        if (!index.has(node)) {
+          strongConnect(node);
         }
       }
 
-      visitingForCycle.delete(current);
-      return cycleNodes.has(current);
+      return sccs;
     };
 
-    // Check for cycles starting from all nodes
-    for (const [nodeKey] of allNodes) {
-      if (!visitedForOrder.has(nodeKey)) {
-        checkCycles(nodeKey);
+    for (const stronglyConnectedNodes of getStronglyConnectedComponents()) {
+      for (const node of stronglyConnectedNodes) {
+        cycleNodes.add(node);
       }
     }
 
     // If there are cycles, return early
     if (cycleNodes.size > 0) {
       const result: EvaluationOrder = {
-        evaluationOrder: [nodeKey],
+        evaluationOrder: new Set([node]),
         hasCycle: true,
         cycleNodes,
-        hash: this.computeHash(new Set(allNodes.keys())),
+        hash: this.computeHash(new Set(allNodes.values().map((node) => node))),
       };
 
       if (node && node.resolved) {
-        node.setEvaluationOrder(result);
+        this.cacheManager.setEvaluationOrder(nodeKey, result);
       }
 
       if (flags.isProfiling) {
@@ -430,7 +460,8 @@ export class DependencyManager {
 
     // Phase 3: Build evaluation order
     visitedForOrder.clear();
-    const buildOrder = (current: string) => {
+    const visitingForCycle = new Set<DependencyNode>();
+    const buildOrder = (current: DependencyNode) => {
       if (visitedForOrder.has(current) || visitingForCycle.has(current)) {
         return;
       }
@@ -438,17 +469,18 @@ export class DependencyManager {
       visitingForCycle.add(current);
 
       // First visit regular dependencies
-      const regularDeps = this.getNodeDeps(current);
+      const regularDeps = current.getDependencies();
       for (const dep of regularDeps) {
-        if (allNodes.has(dep)) {
+        if (allNodes.has(dep.key)) {
           buildOrder(dep);
         }
       }
 
       // Then visit frontier dependencies (without creating cycles)
-      const frontierDeps = this.getNodeFrontierDependencies(current);
+
+      const frontierDeps = current.getFrontierDependencies();
       for (const dep of frontierDeps) {
-        if (allNodes.has(dep) && !visitingForCycle.has(dep)) {
+        if (allNodes.has(dep.key) && !visitingForCycle.has(dep)) {
           buildOrder(dep);
         }
       }
@@ -457,23 +489,23 @@ export class DependencyManager {
 
       if (!visitedForOrder.has(current)) {
         visitedForOrder.add(current);
-        evaluationOrder.push(current);
+        evaluationOrder.add(current);
       }
     };
 
     // Build order for all nodes
-    for (const [nodeKey] of allNodes) {
-      buildOrder(nodeKey);
+    for (const [nodeKey, node] of allNodes) {
+      buildOrder(node);
     }
 
     const result: EvaluationOrder = {
-      evaluationOrder,
+      evaluationOrder: evaluationOrder,
       hasCycle: false,
-      hash: this.computeHash(new Set(allNodes.keys())),
+      hash: this.computeHash(new Set(allNodes.values())),
     };
 
     if (node && node.resolved) {
-      node.setEvaluationOrder(result);
+      this.cacheManager.setEvaluationOrder(nodeKey, result);
     }
 
     if (flags.isProfiling) {
@@ -488,39 +520,23 @@ export class DependencyManager {
    * Compute a hash representing the current state of evaluated nodes
    * This hash changes when dependencies, frontier dependencies, or discarded frontier dependencies change
    */
-  private computeHash(allNodes: Set<string>): string {
+  private computeHash(allNodes: Set<DependencyNode>): string {
     const nodeStates: string[] = [];
 
-    for (const nodeKey of Array.from(allNodes).sort()) {
-      const node = this.getEvaluatedNode(nodeKey);
+    for (const node of Array.from(allNodes).sort()) {
       if (node) {
-        const deps = Array.from(node.deps || [])
+        const deps = Array.from(node.getDependencies() || [])
+          .map((dep) => dep.key)
           .sort()
           .join(",");
 
         // Handle frontier dependencies (Map<string, Set<string>>)
-        const frontierDeps: string[] = [];
-        if (node.frontierDependencies) {
-          for (const [range, rangeDeps] of Array.from(
-            node.frontierDependencies.entries()
-          ).sort()) {
-            const sortedDeps = Array.from(rangeDeps).sort().join(",");
-            frontierDeps.push(`${range}:[${sortedDeps}]`);
-          }
-        }
+        const frontierDeps: string = Array.from(node.getFrontierDependencies())
+          .map((dep) => dep.key)
+          .sort()
+          .join(";");
 
-        // Handle discarded frontier dependencies (Map<string, Set<string>>)
-        const discardedFrontierDeps: string[] = [];
-        if (node.discardedFrontierDependencies) {
-          for (const [range, rangeDeps] of Array.from(
-            node.discardedFrontierDependencies.entries()
-          ).sort()) {
-            const sortedDeps = Array.from(rangeDeps).sort().join(",");
-            discardedFrontierDeps.push(`${range}:[${sortedDeps}]`);
-          }
-        }
-
-        const nodeState = `${nodeKey}:{deps:[${deps}],frontier:{${frontierDeps.join(";")}},discarded:{${discardedFrontierDeps.join(";")}}}`;
+        const nodeState = `${node.key}:{deps:[${deps}],frontier:[${frontierDeps}]}`;
         nodeStates.push(nodeState);
       }
     }
@@ -532,215 +548,141 @@ export class DependencyManager {
    * Get a hierarchical dependency tree for a node
    */
   getDependencyTree(nodeKey: string): DependencyTreeNode {
-    const visited = new Set<string>();
+    const visited = new Set<DependencyNode>();
 
-    const buildTree = (key: string, isSelf = false): DependencyTreeNode => {
-      const cellRef = key.split(":")[3] || key;
+    const nodeToType = (node: DependencyNode): "cell" | "range" | "empty" => {
+      if (node instanceof RangeEvaluationNode) {
+        return "range";
+      }
+      if (node instanceof EmptyCellEvaluationNode) {
+        return "empty";
+      }
+      return "cell";
+    };
+
+    const buildTree = (
+      node: DependencyNode,
+      isSelf = false
+    ): DependencyTreeNode => {
+      const cellRef =
+        node instanceof RangeEvaluationNode
+          ? getRangeKey(node.address.range)
+          : getCellReference(node.cellAddress);
 
       // Handle self-reference to avoid infinite recursion
       if (isSelf) {
-        const node = this.getEvaluatedNode(key);
         return {
+          type: nodeToType(node),
+          resultType:
+            node instanceof RangeEvaluationNode
+              ? "range"
+              : node.evaluationResult.type,
+          canResolve: node.canResolve(),
           key: cellRef,
-          directDepsUpdated: node?.directDepsUpdated ?? false,
-          resolved: node?.resolved ?? false,
+          directDepsUpdated: node.directDepsUpdated,
+          resolved: node.resolved,
           self: true,
+          circular: true,
         };
       }
 
       // Avoid infinite recursion for circular dependencies
-      if (visited.has(key)) {
-        const node = this.getEvaluatedNode(key);
+      if (visited.has(node)) {
         return {
+          type: nodeToType(node),
+          resultType:
+            node instanceof RangeEvaluationNode
+              ? "range"
+              : node.evaluationResult.type,
+          canResolve: node.canResolve(),
           key: cellRef,
-          directDepsUpdated: node?.directDepsUpdated ?? false,
-          resolved: node?.resolved ?? false,
+          directDepsUpdated: node.directDepsUpdated,
+          resolved: node.resolved,
+          circular: true,
         };
       }
 
-      visited.add(key);
+      visited.add(node);
+
+      const directDeps = Array.from(node.getDependencies());
+      let frontierDeps = Array.from(node.getFrontierDependencies());
 
       // Get regular dependencies
-      const regularDeps = this.getNodeDeps(key);
-      const deps: DependencyTreeNode[] = [];
-      for (const dep of regularDeps) {
-        deps.push(buildTree(dep, dep === nodeKey));
-      }
+      const deps: DependencyTreeNode[] = directDeps.map((dep) =>
+        buildTree(dep, dep.key === node.key)
+      );
 
-      // Get frontier dependencies and debug info
-      const node = this.getEvaluatedNode(key);
-      const rawFrontierDepsMap: Map<
-        string,
-        Set<string>
-      > = node?.frontierDependencies ?? new Map();
-      const discardedFrontierDepsMap: Map<
-        string,
-        Set<string>
-      > = node?.discardedFrontierDependencies ?? new Map();
-      const activeFrontierDeps = this.getNodeFrontierDependencies(key);
+      const frontierDependencies: DependencyTreeNode[] = frontierDeps.map(
+        (dep) => buildTree(dep, false)
+      );
 
-      // Build frontier dependencies structure
-      let frontierDependencies:
-        | DependencyTreeNode[]
-        | Record<string, DependencyTreeNode[]>
-        | undefined;
-
-      if (rawFrontierDepsMap.size > 0) {
-        // Always use object format for consistency with the new Map-based structure
-        const ranges = Array.from(rawFrontierDepsMap.keys());
-        frontierDependencies = {};
-
-        for (const range of ranges) {
-          const rangeDeps: Set<string> =
-            rawFrontierDepsMap.get(range) ?? new Set();
-          const discardedRangeDeps: Set<string> =
-            discardedFrontierDepsMap.get(range) ?? new Set();
-          // Exclude frontier dependencies that are already regular dependencies
-          const activeRangeDeps = rangeDeps
-            .difference(discardedRangeDeps)
-            .difference(regularDeps);
-
-          if (activeRangeDeps.size > 0) {
-            frontierDependencies[range] = [];
-            for (const dep of activeRangeDeps) {
-              frontierDependencies[range].push(buildTree(dep, dep === nodeKey));
-            }
-          }
-        }
-
-        // If no active dependencies, don't include the frontierDependencies field
-        if (Object.keys(frontierDependencies).length === 0) {
-          frontierDependencies = undefined;
-        }
-      }
-
-      visited.delete(key);
+      visited.delete(node);
 
       const result: DependencyTreeNode = {
+        type: nodeToType(node),
+        resultType:
+          node instanceof RangeEvaluationNode
+            ? "range"
+            : node.evaluationResult.type,
+        canResolve: node.canResolve(),
         key: cellRef,
-        directDepsUpdated: node?.directDepsUpdated ?? false,
-        resolved: node?.resolved ?? false,
+        directDepsUpdated: node.directDepsUpdated,
+        resolved: node.resolved,
       };
 
       // Only include deps and frontierDependencies if they have content
       if (deps.length > 0) {
         result.deps = deps;
       }
-      if (frontierDependencies) {
+      if (frontierDependencies.length > 0) {
         result.frontierDependencies = frontierDependencies;
-      }
-
-      // Add debug information if there are any frontier dependencies (raw, discarded, or active)
-      const hasAnyFrontierDeps =
-        rawFrontierDepsMap.size > 0 ||
-        discardedFrontierDepsMap.size > 0 ||
-        activeFrontierDeps.size > 0;
-
-      if (hasAnyFrontierDeps) {
-        const rawFrontierDebug: Record<string, string[]> = {};
-        const discardedFrontierDebug: Record<string, string[]> = {};
-        const activeFrontierDebug: Record<string, string[]> = {};
-
-        // Build raw frontier dependencies by range
-        for (const [range, rangeDeps] of rawFrontierDepsMap.entries()) {
-          if (rangeDeps.size > 0) {
-            rawFrontierDebug[range] = Array.from(rangeDeps).map(
-              (k) => k.split(":")[3] || k
-            );
-          }
-        }
-
-        // Build discarded frontier dependencies by range
-        for (const [range, rangeDeps] of discardedFrontierDepsMap.entries()) {
-          if (rangeDeps.size > 0) {
-            discardedFrontierDebug[range] = Array.from(rangeDeps).map(
-              (k) => k.split(":")[3] || k
-            );
-          }
-        }
-
-        // Build active frontier dependencies by range
-        for (const [range, rangeDeps] of rawFrontierDepsMap.entries()) {
-          const discardedRangeDeps: Set<string> =
-            discardedFrontierDepsMap.get(range) ?? new Set<string>();
-          const activeRangeDeps: Set<string> =
-            rangeDeps.difference(discardedRangeDeps);
-          if (activeRangeDeps.size > 0) {
-            activeFrontierDebug[range] = Array.from(activeRangeDeps).map(
-              (k) => k.split(":")[3] || k
-            );
-          }
-        }
-
-        result._debug = {
-          rawFrontierDependencies:
-            Object.keys(rawFrontierDebug).length > 0
-              ? rawFrontierDebug
-              : undefined,
-          discardedFrontierDependencies:
-            Object.keys(discardedFrontierDebug).length > 0
-              ? discardedFrontierDebug
-              : undefined,
-          activeFrontierDependencies:
-            Object.keys(activeFrontierDebug).length > 0
-              ? activeFrontierDebug
-              : undefined,
-        };
       }
 
       return result;
     };
 
-    return buildTree(nodeKey);
+    return buildTree(this.getCellNode(nodeKey));
   }
   //#endregion
 
   markResolvedNodes(nodeKey: string): void {
-    const node = this.getEvaluatedNode(nodeKey);
+    const node = this.getCellNode(nodeKey);
     if (!node) {
       return;
     }
 
     // Track visited nodes to avoid infinite loops in circular dependencies
-    const visited = new Set<string>();
-    visited.add(nodeKey); // Don't revisit the current cell
+    const visited = new Set<DependencyNode>();
+    visited.add(node); // Don't revisit the current cell
 
-    const checkDidUpdate = (nodeKeys: Set<string>): boolean => {
-      for (const nodeKey of nodeKeys) {
-        if (visited.has(nodeKey)) {
+    const areTransitiveDepsResolved = (nodes: Set<DependencyNode>): boolean => {
+      let canResolve = true;
+      for (const node of nodes) {
+        if (visited.has(node)) {
           continue;
         }
-        visited.add(nodeKey);
-
-        const node = this.getEvaluatedNode(nodeKey);
-        if (!node) {
-          return true; // Node doesn't exist yet, not resolved
-        }
+        visited.add(node);
 
         // Check the node's direct dependencies
-        const directDeps = this.getNodeDeps(nodeKey);
-        if (checkDidUpdate(directDeps)) {
-          return true;
-        }
+        const directDeps = node.getAllDependencies();
 
-        const frontierDeps = this.getNodeFrontierDependencies(nodeKey);
-        if (checkDidUpdate(frontierDeps)) {
-          return true;
-        }
+        const a = areTransitiveDepsResolved(directDeps);
+        const b = node.canResolve();
 
-        if (node.directDepsUpdated) {
-          return true; // Node itself is not update
+        if (!a || !b) {
+          canResolve = false;
         }
-
-        node.resolve();
+        if (a && b) {
+          node.resolve();
+        }
       }
-      return false;
+      return canResolve;
     };
 
-    const didUpdate = checkDidUpdate(
-      this.getNodeDeps(nodeKey).union(this.getNodeFrontierDependencies(nodeKey))
-    );
-    if (!didUpdate && !node.directDepsUpdated) {
+    if (
+      areTransitiveDepsResolved(node.getAllDependencies()) &&
+      node.canResolve()
+    ) {
       node.resolve();
     }
   }

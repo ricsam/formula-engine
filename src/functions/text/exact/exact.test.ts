@@ -271,7 +271,7 @@ describe("EXACT function", () => {
       ])
     );
 
-    expect(cell("A1")).toBe(true); // Empty cell = empty string
+    expect(cell("A1", true)).toBe(true); // Empty cell = empty string
     expect(cell("A2")).toBe(true); // 0 converts to "0"
     expect(cell("A3")).toBe(true); // FALSE converts to "FALSE"
     expect(cell("A4")).toBe(false); // Case-sensitive

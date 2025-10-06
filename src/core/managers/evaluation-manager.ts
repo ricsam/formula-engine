@@ -1,5 +1,4 @@
 import { EvaluationContext } from "src/evaluator/evaluation-context";
-import { checkRangeIntersection } from "src/evaluator/open-range-evaluator";
 import { normalizeSerializedCellValue } from "src/parser/formatter";
 import { FormulaEvaluator } from "../../evaluator/formula-evaluator";
 import {
@@ -9,6 +8,7 @@ import {
   type ErrorEvaluationResult,
   type EvaluationOrder,
   type FunctionEvaluationResult,
+  type RangeAddress,
   type SerializedCellValue,
   type SingleEvaluationResult,
   type SpilledValue,
@@ -18,15 +18,20 @@ import {
 } from "../types";
 import {
   cellAddressToKey,
+  checkRangeIntersection,
   getCellReference,
   isCellInRange,
   isRangeOneCell,
   keyToCellAddress,
   parseCellReference,
+  rangeAddressToKey,
 } from "../utils";
 import type { DependencyManager } from "./dependency-manager";
 import type { WorkbookManager } from "./workbook-manager";
 import { flags } from "src/debug/flags";
+import { CellEvalNode } from "src/evaluator/cell-eval-node";
+import { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
+import { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
 
 export class EvaluationManager {
   private isEvaluating = false;
@@ -36,10 +41,6 @@ export class EvaluationManager {
     private formulaEvaluator: FormulaEvaluator,
     private dependencyManager: DependencyManager
   ) {}
-
-  getEvaluatedNodes() {
-    return this.dependencyManager.getEvaluatedNodes();
-  }
 
   getSpilledValues(): Map<string, SpilledValue> {
     return this.dependencyManager.spilledValues;
@@ -80,96 +81,39 @@ export class EvaluationManager {
     return evaluation.err;
   }
 
-  evaluateDependencyNode(cellReference: string): SingleEvaluationResult {
+  evaluateEmptyCell(cellReference: string): void {
     const nodeAddress: CellAddress = keyToCellAddress(cellReference);
-    const cellId = getCellReference({
-      rowIndex: nodeAddress.rowIndex,
-      colIndex: nodeAddress.colIndex,
-    });
 
-    const currentDepNode =
-      this.dependencyManager.getEvaluatedNode(cellReference);
+    const node = this.dependencyManager.getEmptyCellNode(cellReference);
+    node.resetDirectDepsUpdated();
 
-    // Enable caching for resolved nodes
-    if (currentDepNode?.resolved) {
-      const result = currentDepNode.evaluationResult;
-      if (result && result.type === "value") {
-        return result;
+    if (node.resolved) {
+      const result = node.evaluationResult;
+      if (result && result.type !== "awaiting-evaluation") {
+        return;
       }
     }
 
-    const ctx = new EvaluationContext(
-      this.dependencyManager,
-      nodeAddress,
-      currentDepNode
-    );
+    const ctx = new EvaluationContext(node, node);
+    const inSpilled = this.dependencyManager.getSpillValue(nodeAddress);
 
-    let evaluation: FunctionEvaluationResult | undefined;
-
-    const sheet = this.workbookManager.getSheet(nodeAddress);
-
-    if (!sheet) {
-      const evaluationResult: ErrorEvaluationResult = {
-        type: "error",
-        err: FormulaError.REF,
-        message: "Sheet not found",
-      };
-      this.dependencyManager.setEvaluatedNode(
-        cellReference,
-        ctx.getDependencyAttributes(),
-        evaluationResult
+    if (inSpilled) {
+      const spillTarget = this.dependencyManager.getSpilledAddress(
+        nodeAddress,
+        inSpilled
       );
-      return evaluationResult;
-    }
-
-    let content: SerializedCellValue;
-    try {
-      content = normalizeSerializedCellValue(sheet.content.get(cellId));
-    } catch (err) {
-      const evaluationResult: ErrorEvaluationResult = {
-        type: "error",
-        err: FormulaError.ERROR,
-        message: "Syntax error",
-      };
-      this.dependencyManager.setEvaluatedNode(
-        cellReference,
-        ctx.getDependencyAttributes(),
-        evaluationResult
+      const spillOrigin = this.dependencyManager.evalTimeSafeEvaluateCell(
+        inSpilled.origin,
+        ctx
       );
-      return evaluationResult;
-    }
-
-    if (typeof content !== "string" || !content.startsWith("=")) {
-      if (content !== "") {
-        // Static value cells cannot have frontier dependencies
-        const result: ValueEvaluationResult = {
-          type: "value",
-          result: this.convertScalarValueToCellValue(content),
-        };
-        this.dependencyManager.setEvaluatedNode(
-          cellReference,
-          ctx.getDependencyAttributes(),
-          result
-        );
-        return result;
+      if (spillOrigin && spillOrigin.type === "spilled-values") {
+        // let's evaluate the spilled value to extract dependencies
+        const evaluation = spillOrigin.evaluate(spillTarget.spillOffset, ctx);
+        node.setEvaluationResult(evaluation);
       }
-      // content === "", it is an empty cell, check if it has a spilled value
-      const spilled = this.dependencyManager.getSpillValue(nodeAddress);
-      if (spilled) {
-        const spillTarget = this.dependencyManager.getSpilledAddress(
-          nodeAddress,
-          spilled
-        );
-        const spillOrigin = this.dependencyManager.evalTimeSafeEvaluateCell(
-          spilled.origin,
-          ctx
-        );
-        if (spillOrigin && spillOrigin.type === "spilled-values") {
-          // let's evaluate the spilled value to extract dependencies
-          evaluation = spillOrigin.evaluate(spillTarget.spillOffset, ctx);
-        }
-      } else {
-        const emptyCellRange: SpreadsheetRange = {
+    } else {
+      const emptyCellRange: RangeAddress = {
+        range: {
           start: {
             col: nodeAddress.colIndex,
             row: nodeAddress.rowIndex,
@@ -178,66 +122,193 @@ export class EvaluationManager {
             col: { type: "number", value: nodeAddress.colIndex },
             row: { type: "number", value: nodeAddress.rowIndex },
           },
-        };
-        // todo can be optimized to not generate the frontier candidates every time
-        // we can cache the frontier candidates for the current cell
-        const frontierCandidates: CellAddress[] =
-          this.workbookManager.getFrontierCandidates(
-            emptyCellRange,
-            nodeAddress
-          );
+        },
+        sheetName: nodeAddress.sheetName,
+        workbookName: nodeAddress.workbookName,
+      };
+      // todo can be optimized to not generate the frontier candidates every time
+      // we can cache the frontier candidates for the current cell
+      const frontierCandidates: CellAddress[] =
+        this.workbookManager.getFrontierCandidates(emptyCellRange);
 
-        for (const candidate of frontierCandidates) {
-          const key = cellAddressToKey(candidate);
+      for (const candidate of frontierCandidates) {
+        const key = cellAddressToKey(candidate);
 
-          if (ctx.isFrontierDependencyDiscarded(key, emptyCellRange)) {
-            continue;
-          }
+        const candidateNode = this.dependencyManager.getCellNode(key);
 
-          const node = this.dependencyManager.getEvaluatedNode(key);
-
-          const result =
-            this.dependencyManager.getEvaluatedNode(key)?.evaluationResult;
-
-          ctx.addFrontierDependency(key, emptyCellRange);
-
-          // upgrade or downgrade frontier dependency
-          if (result) {
-            if (result.type === "spilled-values") {
-              const spillArea = result.spillArea(candidate);
-              const intersects = isCellInRange(nodeAddress, spillArea);
-              if (intersects) {
-                ctx.maybeUpgradeFrontierDependency(key, emptyCellRange); // upgraded!
-              } else {
-                ctx.maybeDiscardFrontierDependency(key, emptyCellRange); // downgraded!
-              }
-            } else {
-              ctx.maybeDiscardFrontierDependency(key, emptyCellRange); // downgraded!
-            }
-          }
+        if (candidateNode instanceof EmptyCellEvaluationNode) {
+          throw new Error("A frontier dependencies can not be an empty cell");
         }
 
-        const evaluationResult: SingleEvaluationResult = {
-          type: "value",
-          result: this.convertScalarValueToCellValue(content),
-        };
-        this.dependencyManager.setEvaluatedNode(
-          cellReference,
-          ctx.getDependencyAttributes(),
-          evaluationResult
-        );
-        return evaluationResult;
+        node.addFrontierDependency(candidateNode); // register the frontier dependency
+
+        const result = candidateNode.evaluationResult;
+
+        // upgrade or downgrade frontier dependency
+        if (result) {
+          if (result.type === "spilled-values") {
+            const spillArea = result.spillArea(candidate);
+            const intersects = isCellInRange(nodeAddress, spillArea);
+            if (intersects) {
+              node.maybeUpgradeFrontierDependency(candidateNode); // upgraded!
+            } else {
+              node.maybeDiscardFrontierDependency(candidateNode); // downgraded!
+            }
+          } else {
+            node.maybeDiscardFrontierDependency(candidateNode); // downgraded!
+          }
+        }
       }
-    } else {
-      evaluation = this.formulaEvaluator.evaluateFormula(content.slice(1), ctx);
+
+      const evaluationResult: SingleEvaluationResult = {
+        type: "value",
+        result: this.convertScalarValueToCellValue(""),
+      };
+      // for now let's just store the empty value, the next time the cell is evaluated isSpilled will be true and the spilled value will be evaluated
+      node.setEvaluationResult(evaluationResult);
+    }
+  }
+
+  evaluateRangeNode(dependencyKey: string): void {
+    const node = this.dependencyManager.getRangeNode(dependencyKey);
+    if (node.resolved) {
+      return;
     }
 
+    node.resetDirectDepsUpdated();
+    // this is just about setting up the dependencies for the range node
+
+    // let's setup the dependencies
+
+    //#region frontier dependencies
+    const frontierCandidates: CellAddress[] =
+      this.workbookManager.getFrontierCandidates(node.address);
+
+    for (const candidate of frontierCandidates) {
+      const key = cellAddressToKey(candidate);
+
+      const candidateNode = this.dependencyManager.getCellNode(key);
+
+      if (candidateNode instanceof EmptyCellEvaluationNode) {
+        throw new Error("A frontier dependencies can not be an empty cell");
+      }
+
+      node.addFrontierDependency(candidateNode); // register the frontier dependency
+
+      const result = candidateNode.evaluationResult;
+
+      // upgrade or downgrade frontier dependency
+      if (result) {
+        if (result.type === "spilled-values") {
+          const spillArea = result.spillArea(candidate);
+          const intersects = checkRangeIntersection(
+            node.address.range,
+            spillArea
+          );
+          if (intersects) {
+            node.maybeUpgradeFrontierDependency(candidateNode); // upgraded!
+          } else {
+            node.maybeDiscardFrontierDependency(candidateNode); // downgraded!
+          }
+        } else {
+          node.maybeDiscardFrontierDependency(candidateNode); // downgraded!
+        }
+      }
+    }
+    //#endregion
+
+    //#region normal dependencies
+    const cellsInRange = this.workbookManager.getCellsInRange(node.address);
+
+    // Iterate over all defined cells in the sheet using optimized index-based iterator
+    for (const address of cellsInRange) {
+      const cellKey = cellAddressToKey(address);
+
+      const cellNode = this.dependencyManager.getCellNode(cellKey);
+      node.addDependency(cellNode);
+    }
+    //#endregion
+  }
+
+  evaluateCellNode(dependencyKey: string): void {
+    const nodeAddress: CellAddress = keyToCellAddress(dependencyKey);
+    const cellId = getCellReference({
+      rowIndex: nodeAddress.rowIndex,
+      colIndex: nodeAddress.colIndex,
+    });
+
+    const sheet = this.workbookManager.getSheet(nodeAddress);
+
+    if (!sheet) {
+      throw new Error("Sheet not found");
+    }
+
+    const rawContent = sheet.content.get(cellId);
+    let isEmptyCell = false;
+    if (rawContent === undefined) {
+      isEmptyCell = true;
+    } else if (typeof rawContent === "string") {
+      if (rawContent === "") {
+        isEmptyCell = true;
+      }
+    }
+
+    if (isEmptyCell) {
+      this.evaluateEmptyCell(dependencyKey);
+      return;
+    }
+
+    const currentDepNode = this.dependencyManager.getCellNode(dependencyKey);
+
+    if (currentDepNode instanceof EmptyCellEvaluationNode) {
+      this.evaluateEmptyCell(dependencyKey);
+      return;
+    }
+
+    // Enable caching for resolved nodes
+    if (currentDepNode.resolved) {
+      const result = currentDepNode.evaluationResult;
+      if (result && result.type !== "awaiting-evaluation") {
+        return;
+      }
+    }
+
+    currentDepNode.resetDirectDepsUpdated();
+
+    const ctx = new EvaluationContext(currentDepNode, currentDepNode);
+
+    let content: SerializedCellValue;
+    try {
+      content = normalizeSerializedCellValue(rawContent);
+    } catch (err) {
+      const evaluationResult: ErrorEvaluationResult = {
+        type: "error",
+        err: FormulaError.ERROR,
+        message: "Syntax error",
+      };
+      currentDepNode.setEvaluationResult(evaluationResult);
+      return;
+    }
+
+    if (typeof content !== "string" || !content.startsWith("=")) {
+      // Static value cells cannot have frontier dependencies
+      const result: ValueEvaluationResult = {
+        type: "value",
+        result: this.convertScalarValueToCellValue(content),
+      };
+      currentDepNode.setEvaluationResult(result);
+      return;
+    }
+
+    let evaluation: FunctionEvaluationResult =
+      this.formulaEvaluator.evaluateFormula(content.slice(1), ctx);
+
     // if a cell returns a range, we need to spill the values onto the sheet
-    if (evaluation && evaluation.type === "spilled-values") {
+    if (evaluation.type === "spilled-values") {
       const spillArea = evaluation.spillArea(nodeAddress);
       if (!isRangeOneCell(spillArea)) {
         if (this.canSpill(nodeAddress, spillArea)) {
-          this.dependencyManager.spilledValues.set(cellReference, {
+          this.dependencyManager.spilledValues.set(dependencyKey, {
             spillOnto: spillArea,
             origin: nodeAddress,
           });
@@ -253,17 +324,11 @@ export class EvaluationManager {
       }
     }
 
-    let returnResult: SingleEvaluationResult | undefined;
     let originSpillResult: SingleEvaluationResult | undefined;
     if (evaluation) {
-      if (evaluation.type !== "spilled-values") {
-        returnResult = evaluation;
-      } else {
-        // for the spilled origin we need to evaluate the origin and return the result
+      if (evaluation.type === "spilled-values") {
+        // for the spilled origin we need to evaluate the origin and store the result
         originSpillResult = evaluation.evaluate({ x: 0, y: 0 }, ctx);
-        if (originSpillResult) {
-          returnResult = originSpillResult;
-        }
       }
     }
 
@@ -273,17 +338,32 @@ export class EvaluationManager {
       message: "Evaluation failed",
     };
 
-    this.dependencyManager.setEvaluatedNode(
-      cellReference,
+    currentDepNode.setEvaluationResult(
       // we store the evaluation result from evaluateFormula
-      ctx.getDependencyAttributes(),
       evaluation ?? failedEvaluation,
       originSpillResult
     );
-
-    return returnResult ?? failedEvaluation;
   }
 
+  evaluateDependencyNode(dependencyKey: string): void {
+    if (dependencyKey.startsWith("empty:")) {
+      this.evaluateEmptyCell(dependencyKey);
+      return;
+    }
+    if (dependencyKey.startsWith("range:")) {
+      this.evaluateRangeNode(dependencyKey);
+      return;
+    }
+    if (dependencyKey.startsWith("cell:")) {
+      this.evaluateCellNode(dependencyKey);
+      return;
+    }
+    throw new Error("Invalid dependency key: " + dependencyKey);
+  }
+
+  /**
+   * Evaluates a cell by building the evaluation order and evaluating the dependencies in order
+   */
   evaluateCell(
     cellAddress: CellAddress
   ): ValueEvaluationResult | ErrorEvaluationResult {
@@ -308,32 +388,6 @@ export class EvaluationManager {
     let requiresReRun = true;
     while (requiresReRun) {
       requiresReRun = false;
-      let content: SerializedCellValue;
-      try {
-        content = normalizeSerializedCellValue(sheet.content.get(cellId));
-      } catch (err) {
-        const evaluationResult: ErrorEvaluationResult = {
-          type: "error",
-          err: FormulaError.ERROR,
-          message: "Syntax error",
-        };
-        this.dependencyManager.setEvaluatedResult(nodeKey, evaluationResult);
-        this.isEvaluating = false;
-        return evaluationResult;
-      }
-      if (
-        typeof content !== "string" ||
-        // "" may be spilled, so should be evaluated
-        (!content.startsWith("=") && content !== "")
-      ) {
-        const evaluationResult: ValueEvaluationResult = {
-          type: "value",
-          result: this.convertScalarValueToCellValue(content),
-        };
-        this.dependencyManager.setEvaluatedResult(nodeKey, evaluationResult);
-        this.isEvaluating = false;
-        return evaluationResult;
-      }
 
       // Use DependencyManager to build evaluation order
       const evaluationPlan =
@@ -348,26 +402,40 @@ export class EvaluationManager {
         };
         // cycle detected
         if (evaluationPlan.cycleNodes) {
-          for (const nodeKey of evaluationPlan.cycleNodes) {
-            this.dependencyManager.setEvaluatedResult(
-              nodeKey,
-              evaluationResult
-            );
+          for (const node of evaluationPlan.cycleNodes) {
+            if (!(node instanceof RangeEvaluationNode)) {
+              node.setEvaluationResult(evaluationResult);
+            }
           }
         }
         this.isEvaluating = false;
-        this.dependencyManager.setEvaluatedResult(nodeKey, evaluationResult);
         return evaluationResult;
       }
 
       // Evaluate all dependencies in order
       evaluationPlan.evaluationOrder.forEach((dependency) => {
-        if (dependency === nodeKey) {
-          return;
-        }
-        return this.evaluateDependencyNode(dependency);
+        this.evaluateDependencyNode(dependency.key);
       });
-      const cellResult = this.evaluateDependencyNode(nodeKey);
+      const evalResult = this.dependencyManager.getCellNode(nodeKey);
+      const failedEvaluation: ErrorEvaluationResult = {
+        type: "error",
+        err: FormulaError.ERROR,
+        message: "Evaluation failed",
+      };
+
+      /**
+       * In reality, this is a SingleEvaluationResult
+       */
+      const cellResult: FunctionEvaluationResult =
+        evalResult?.originSpillResult ??
+        evalResult?.evaluationResult ??
+        failedEvaluation;
+
+      if (cellResult.type === "spilled-values") {
+        throw new Error(
+          "Spilled values should have been evaluated before, and originSpillResult should be set"
+        );
+      }
 
       // let's check which nodes can be considered resolved
       this.dependencyManager.markResolvedNodes(nodeKey);
@@ -476,17 +544,16 @@ export class EvaluationManager {
     }
 
     const getEvaluatedNode = () => {
-      return this.dependencyManager.getEvaluatedNode(
-        cellAddressToKey(cellAddress)
-      );
+      return this.dependencyManager.getCellNode(cellAddressToKey(cellAddress));
     };
 
     let value = getEvaluatedNode();
 
     if (
       !value ||
-      (value &&
-        value.evaluationResult &&
+      (value && !value.evaluationResult) ||
+      (value && value.evaluationResult?.type === "awaiting-evaluation") ||
+      (value.evaluationResult &&
         value.evaluationResult.type === "spilled-values" &&
         !value.originSpillResult)
     ) {

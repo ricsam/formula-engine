@@ -188,7 +188,7 @@ export const MATCH: FunctionDefinition = {
       lookupArray = lookupArrayResult.evaluateAllCells.call(this, {
         context,
         evaluate: lookupArrayResult.evaluate,
-        origin: context.currentCell,
+        origin: context.originCell.cellAddress,
       });
       flags.profilingNamespaces["lookup/match"] = false;
     }

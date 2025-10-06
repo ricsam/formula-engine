@@ -260,8 +260,9 @@ describe("OpenRangeEvaluator", () => {
         ])
       );
 
-      const result = cell("A1");
-      expect(result).toBe("#CYCLE!");
+      expect(cell("A1")).toBe(0);
+      expect(cell("A10")).toBe("#CYCLE!");
+      expect(cell("B10")).toBe("#CYCLE!");
     });
 
     it("should handle missing sheet references", () => {
@@ -565,7 +566,9 @@ describe("OpenRangeEvaluator", () => {
       );
 
       const result = cell("A1");
-      expect(result).toBe("#CYCLE!");
+      expect(result).toBe(0);
+
+      expect(cell("A10")).toBe("#CYCLE!");
     });
 
     it("should handle references to non-existent sheets", () => {

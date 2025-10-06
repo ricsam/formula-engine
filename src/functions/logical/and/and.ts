@@ -16,17 +16,17 @@ import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 /**
  * AND function - Returns TRUE if all arguments are TRUE, FALSE otherwise
- * 
+ *
  * Usage: AND(logical1, [logical2], ...)
- * 
+ *
  * logical1, logical2, ...: Logical values or expressions to evaluate
- * 
+ *
  * Examples:
  *   AND(TRUE, TRUE) - returns TRUE
  *   AND(TRUE, FALSE) - returns FALSE
  *   AND(A1>10, B1<20) - returns TRUE if both conditions are met
  *   AND(A1:A3) - returns TRUE if all values in A1:A3 are truthy
- * 
+ *
  * Note:
  * - Supports spilled values (dynamic arrays) for arguments
  * - Logical evaluation: 0 and empty string are FALSE, everything else is TRUE
@@ -72,11 +72,11 @@ export const AND: FunctionDefinition = {
     // Process arguments one by one (like SUM function)
     for (const arg of node.args) {
       const argResult = this.evaluateNode(arg, context);
-      
+
       if (argResult.type === "error") {
         return argResult;
       }
-      
+
       if (argResult.type === "value") {
         // Single value - check if truthy
         if (!isTruthy(argResult.result)) {
@@ -89,7 +89,7 @@ export const AND: FunctionDefinition = {
         // Range - check all values in the range
         const cellValues = argResult.evaluateAllCells.call(this, {
           context,
-          origin: context.currentCell,
+          origin: context.originCell.cellAddress,
           evaluate: argResult.evaluate,
         });
 

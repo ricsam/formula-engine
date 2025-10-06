@@ -234,10 +234,11 @@ export function SpreadsheetWithFormulaBar({
               ev.direction
             );
           } else {
-            engine.clearSpreadsheetRange(
-              { sheetName, workbookName },
-              convertSmAreaToSpreadsheetRange(ev.rangeToClear)
-            );
+            engine.clearSpreadsheetRange({
+              sheetName,
+              workbookName,
+              range: convertSmAreaToSpreadsheetRange(ev.rangeToClear),
+            });
           }
         }),
         selectionManager.observeStateChange(
