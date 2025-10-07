@@ -1,9 +1,12 @@
 import type { CellAddress, EvaluationOrder } from "../types";
+import type { RangeEvalOrderEntry } from "./range-eval-order-builder";
 
 export class CacheManager {
   private _evaluationOrderCache = new Map<string, EvaluationOrder>();
-  private _cellsInRangeCache = new Map<string, CellAddress[]>();
-  private _frontierCandidatesCache = new Map<string, CellAddress[]>();
+  /**
+   * Key is rangeKey + "@" + lookupOrder
+   */
+  private _rangeEvalOrderCache = new Map<string, RangeEvalOrderEntry[]>();
   constructor() {}
 
   setEvaluationOrder(nodeKey: string, evaluationOrder: EvaluationOrder): void {
@@ -14,19 +17,11 @@ export class CacheManager {
     return this._evaluationOrderCache.get(nodeKey);
   }
 
-  setCellsInRange(nodeKey: string, cellsInRange: CellAddress[]): void {
-    this._cellsInRangeCache.set(nodeKey, cellsInRange);
+  setRangeEvalOrder(nodeKey: string, rangeEvalOrder: RangeEvalOrderEntry[]): void {
+    this._rangeEvalOrderCache.set(nodeKey, rangeEvalOrder);
   }
 
-  getCellsInRange(nodeKey: string): CellAddress[] | undefined {
-    return this._cellsInRangeCache.get(nodeKey);
-  }
-
-  setFrontierCandidates(nodeKey: string, frontierCandidates: CellAddress[]): void {
-    this._frontierCandidatesCache.set(nodeKey, frontierCandidates);
-  }
-
-  getFrontierCandidates(nodeKey: string): CellAddress[] | undefined {
-    return this._frontierCandidatesCache.get(nodeKey);
+  getRangeEvalOrder(nodeKey: string): RangeEvalOrderEntry[] | undefined {
+    return this._rangeEvalOrderCache.get(nodeKey);
   }
 }

@@ -4,6 +4,7 @@ import type { RangeAddress, SpreadsheetRange } from "src/core/types";
 import { keyToRangeAddress, rangeAddressToKey } from "src/core/utils";
 import type { DependencyManager } from "src/core/managers/dependency-manager";
 import type { CacheManager } from "src/core/managers/cache-manager";
+import type { LookupOrder } from "src/core/managers";
 
 export class RangeEvaluationNode extends FrontierDependencyManager {
   public key: string;
@@ -22,27 +23,17 @@ export class RangeEvaluationNode extends FrontierDependencyManager {
     this.key = rangeKey;
   }
 
-  public getCellsInRange() {
-    const cachedCellsInRange = this.cacheManager.getCellsInRange(this.key);
-    if (cachedCellsInRange) {
-      return cachedCellsInRange;
+  public getRangeEvalOrder(lookupOrder: LookupOrder) {
+    const cacheKey = this.key + "@" + lookupOrder;
+    const cachedRangeEvalOrder = this.cacheManager.getRangeEvalOrder(cacheKey);
+    if (cachedRangeEvalOrder) {
+      return cachedRangeEvalOrder;
     }
-    const cellsInRange = this.workbookManager.getCellsInRange(this.address);
-    this.cacheManager.setCellsInRange(this.key, cellsInRange);
-    return cellsInRange;
-  }
-
-  public getFrontierCandidates() {
-    const cachedFrontierCandidates = this.cacheManager.getFrontierCandidates(
-      this.key
-    );
-    if (cachedFrontierCandidates) {
-      return cachedFrontierCandidates;
-    }
-    const frontierCandidates = this.workbookManager.getFrontierCandidates(
+    const rangeEvalOrder = this.workbookManager.buildRangeEvalOrder(
+      lookupOrder,
       this.address
     );
-    this.cacheManager.setFrontierCandidates(this.key, frontierCandidates);
-    return frontierCandidates;
+    this.cacheManager.setRangeEvalOrder(cacheKey, rangeEvalOrder);
+    return rangeEvalOrder;
   }
 }

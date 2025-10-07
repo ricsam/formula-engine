@@ -748,8 +748,6 @@ function findAllCandidatesForRange(
           const cellRef = getCellReference({
             rowIndex: r,
             colIndex: c,
-            sheetName: emptyRange.sheetName,
-            workbookName: emptyRange.workbookName,
           });
           if (sheet.content.has(cellRef)) {
             positionsToCheck.push({ row: r, col: startCol });

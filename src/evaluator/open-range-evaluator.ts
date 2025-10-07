@@ -70,10 +70,7 @@ export class OpenRangeEvaluator {
       );
     }
 
-    const evalOrder = this.workbookManager.buildRangeEvalOrder(
-      options.lookupOrder,
-      options.address
-    );
+    const evalOrder = rangeNode.getRangeEvalOrder(options.lookupOrder);
 
     for (const entry of evalOrder) {
       if (entry.type === "value") {
