@@ -25,7 +25,12 @@ export const AVERAGE: FunctionDefinition = {
   name: "AVERAGE",
   evaluate: function (node, context): FunctionEvaluationResult {
     // Create iterator over all argument values
-    const argumentValues = createArgumentIterator(this, node, context);
+    const argumentValues = createArgumentIterator(
+      this,
+      node,
+      context,
+      "col-major"
+    );
 
     // Use shared averaging utility (now with unified error propagation)
     return performAverage(argumentValues);

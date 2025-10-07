@@ -22,6 +22,8 @@ export interface SpreadsheetVisualizerOptions {
   showColumnHeaders?: boolean;
   /** Whether to show row numbers */
   showRowNumbers?: boolean;
+  /** If output is used for snapshotting */
+  snapshot?: boolean;
 }
 
 /**
@@ -43,6 +45,7 @@ export function visualizeSpreadsheet(
     maxColWidth = 20,
     showColumnHeaders = true,
     showRowNumbers = true,
+    snapshot = false,
   } = options;
 
   // Determine the sheet name to use upfront
@@ -150,6 +153,9 @@ export function visualizeSpreadsheet(
     let rowContent = formattedCells.join(" | ");
     // Pad the entire row to ensure consistent width
     rowContent = rowContent.padEnd(totalRowWidth);
+    if (snapshot && i > 0) {
+      rowContent = " " + rowContent;
+    }
     result += rowContent + "\n";
 
     // Add separator line after header
@@ -157,7 +163,7 @@ export function visualizeSpreadsheet(
       const separatorParts: string[] = [];
 
       if (showRowNumbers) {
-        separatorParts.push("---");
+        separatorParts.push(snapshot ? "----" : "---");
       }
 
       for (let col = 0; col < numCols; col++) {

@@ -62,7 +62,8 @@ export const AVERAGEIFS: FunctionDefinition = {
       this,
       averageRangeResult,
       criteriaPairs,
-      context
+      context,
+      "col-major"
     );
 
     return performAverage(matchingValues);

@@ -85,7 +85,8 @@ export const AVERAGEIF: FunctionDefinition = {
       this,
       averageRangeResult,
       [{ rangeResult: criteriaRangeResult, parsedCriteria }],
-      context
+      context,
+      "col-major"
     );
 
     return performAverage(matchingValues);

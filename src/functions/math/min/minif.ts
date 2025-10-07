@@ -86,7 +86,8 @@ export const MINIF: FunctionDefinition = {
       this,
       minRangeResult,
       [{ rangeResult: criteriaRangeResult, parsedCriteria }],
-      context
+      context,
+      "col-major"
     );
 
     return performMinimum(matchingValues);

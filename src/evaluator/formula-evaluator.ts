@@ -583,6 +583,7 @@ export class FormulaEvaluator {
         intersection,
         context,
         origin,
+        lookupOrder,
       }) {
         let range = node.range;
         if (intersection) {
@@ -621,7 +622,8 @@ export class FormulaEvaluator {
 
         return yield* this.openRangeEvaluator.evaluateCellsInRange({
           context,
-          origin: {
+          lookupOrder,
+          address: {
             range,
             sheetName:
               node.sheetName ?? context.originCell.cellAddress.sheetName,

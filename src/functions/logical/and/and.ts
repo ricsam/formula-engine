@@ -91,6 +91,7 @@ export const AND: FunctionDefinition = {
           context,
           origin: context.originCell.cellAddress,
           evaluate: argResult.evaluate,
+          lookupOrder: "col-major",
         });
 
         for (const cellValue of cellValues) {

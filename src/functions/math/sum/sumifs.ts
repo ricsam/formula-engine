@@ -62,7 +62,8 @@ export const SUMIFS: FunctionDefinition = {
       this,
       sumRangeResult,
       criteriaPairsResult,
-      context
+      context,
+      "col-major"
     );
 
     return performSummation(matchingValues);

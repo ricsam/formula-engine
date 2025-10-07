@@ -95,7 +95,8 @@ export const COUNTIF: FunctionDefinition = {
       this,
       criteriaRangeResult,
       [{ rangeResult: criteriaRangeResult, parsedCriteria }],
-      context
+      context,
+      "col-major"
     )) {
       // COUNTIF counts all matching cells, including errors and non-numeric values
       count++;

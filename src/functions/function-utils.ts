@@ -1,3 +1,4 @@
+import type { LookupOrder } from "src/core/managers";
 import { type SingleEvaluationResult } from "src/core/types";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
@@ -18,7 +19,8 @@ import type { FunctionNode } from "src/parser/ast";
 export function* createArgumentIterator(
   evaluator: FormulaEvaluator,
   node: FunctionNode,
-  context: EvaluationContext
+  context: EvaluationContext,
+  lookupOrder: LookupOrder
 ): Generator<SingleEvaluationResult, void, unknown> {
   for (const arg of node.args) {
     const result = evaluator.evaluateNode(arg, context);
@@ -33,6 +35,7 @@ export function* createArgumentIterator(
         context,
         evaluate: result.evaluate,
         origin: context.originCell.cellAddress,
+        lookupOrder,
       });
 
       for (const cellValue of cellValues) {

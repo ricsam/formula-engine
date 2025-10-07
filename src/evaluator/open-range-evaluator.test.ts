@@ -59,7 +59,7 @@ describe("OpenRangeEvaluator", () => {
       );
 
       // Test SUM(B10:B) - open ended row (infinite rows)
-      const result = cell("A1");
+      const result = cell("A1", true);
       expect(result).toBe(100);
     });
 
@@ -229,9 +229,9 @@ describe("OpenRangeEvaluator", () => {
 
       // SUM(B10:D) should evaluate both candidates
       const result = cell("A1", true);
-      // C10 from top spill (value 3) + B10:C10 from left spill (values 2,3)
-      expect(result).toBe(3);
-      expect(cell("A10")).toBe(FormulaError.SPILL);
+      // A10 spill values 2,3 into the range
+      expect(result).toBe(5);
+      expect(cell("C8")).toBe(FormulaError.SPILL);
     });
   });
 

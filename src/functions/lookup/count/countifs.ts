@@ -54,7 +54,8 @@ export const COUNTIFS: FunctionDefinition = {
       this,
       countRangeResult,
       criteriaPairsResult,
-      context
+      context,
+      "col-major"
     )) {
       // COUNTIFS counts all matching cells, including errors and non-numeric values
       count++;

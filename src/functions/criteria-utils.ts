@@ -16,6 +16,7 @@ import {
 } from "./criteria-parser";
 import { flags } from "src/debug/flags";
 import { getRelativeRange } from "src/core/utils";
+import type { LookupOrder } from "src/core/managers";
 
 /**
  * Criteria pair for criteria-based functions
@@ -127,7 +128,8 @@ export function* processMultiCriteriaValues(
   evaluator: FormulaEvaluator,
   valueRangeResult: FunctionEvaluationResult,
   criteriaPairs: CriteriaPair[],
-  context: EvaluationContext
+  context: EvaluationContext,
+  lookupOrder: LookupOrder
 ): Generator<SingleEvaluationResult, void, unknown> {
   // Check if this is an empty criteria case
   if (
@@ -166,12 +168,16 @@ export function* processMultiCriteriaValues(
       console.time("criteriaValueArrays");
     }
     // Range case - first validate dimensions using spillArea for efficiency
-    const valueSpillArea = valueRangeResult.spillArea(context.originCell.cellAddress);
+    const valueSpillArea = valueRangeResult.spillArea(
+      context.originCell.cellAddress
+    );
 
     // Check that all criteria ranges have compatible dimensions
     for (const { rangeResult } of criteriaPairs) {
       if (rangeResult.type === "spilled-values") {
-        const criteriaSpillArea = rangeResult.spillArea(context.originCell.cellAddress);
+        const criteriaSpillArea = rangeResult.spillArea(
+          context.originCell.cellAddress
+        );
 
         // Compare dimensions using relative ranges to get width/height
         const valueRelRange = getRelativeRange(
@@ -217,6 +223,7 @@ export function* processMultiCriteriaValues(
       context,
       evaluate: valueRangeResult.evaluate,
       origin: context.originCell.cellAddress,
+      lookupOrder,
     });
 
     const criteriaIterators = criteriaPairs.map(({ rangeResult }) => {
@@ -225,6 +232,7 @@ export function* processMultiCriteriaValues(
           context,
           evaluate: rangeResult.evaluate,
           origin: context.originCell.cellAddress,
+          lookupOrder,
         });
       } else {
         // Single value - create a repeating iterator
@@ -267,23 +275,40 @@ export function* processMultiCriteriaValues(
 
       const criteriaDurations: number[] = [];
       // Get corresponding criteria values for this position
-      const criteriaNextResults = criteriaIteratorResults.map(function criteriaNextResults(iter, innerIndex) {
-        const duration = performance.now();
-        if (flags.isProfiling && i === 1 && innerIndex === 0 && !flags.profilingNamespaces["criteria-utils-profiled"]) {
-          flags.profilingNamespaces["criteria-utils"] = true;
-          // console.profile("What is going on here?");
+      const criteriaNextResults = criteriaIteratorResults.map(
+        function criteriaNextResults(iter, innerIndex) {
+          const duration = performance.now();
+          if (
+            flags.isProfiling &&
+            i === 1 &&
+            innerIndex === 0 &&
+            !flags.profilingNamespaces["criteria-utils-profiled"]
+          ) {
+            flags.profilingNamespaces["criteria-utils"] = true;
+            // console.profile("What is going on here?");
+          }
+          const result = iter.next();
+          if (
+            flags.isProfiling &&
+            i === 1 &&
+            innerIndex === 0 &&
+            !flags.profilingNamespaces["criteria-utils-profiled"]
+          ) {
+            flags.profilingNamespaces["criteria-utils"] = false;
+            // console.profileEnd("What is going on here?");
+          }
+          if (
+            flags.isProfiling &&
+            i === 1 &&
+            innerIndex === 0 &&
+            !flags.profilingNamespaces["criteria-utils-profiled"]
+          ) {
+            flags.profilingNamespaces["criteria-utils-profiled"] = true;
+          }
+          criteriaDurations.push(performance.now() - duration);
+          return result;
         }
-        const result = iter.next();
-        if (flags.isProfiling && i === 1 && innerIndex === 0 && !flags.profilingNamespaces["criteria-utils-profiled"]) {
-          flags.profilingNamespaces["criteria-utils"] = false;
-          // console.profileEnd("What is going on here?");
-        }
-        if (flags.isProfiling && i === 1 && innerIndex === 0 && !flags.profilingNamespaces["criteria-utils-profiled"]) {
-          flags.profilingNamespaces["criteria-utils-profiled"] = true;
-        }
-        criteriaDurations.push(performance.now() - duration);
-        return result;
-      });
+      );
 
       if (flags.isProfiling && i === 1) {
         console.log("@criteriaDurations", criteriaDurations);
@@ -457,7 +482,9 @@ function* handleEmptyCriteriaSpilledValues(
   ) {
     throw new Error("Not an empty criteria case");
   }
-  const valueSpillArea = valueRangeResult.spillArea(context.originCell.cellAddress);
+  const valueSpillArea = valueRangeResult.spillArea(
+    context.originCell.cellAddress
+  );
 
   // Check if this is an infinite range - yield error
   if (

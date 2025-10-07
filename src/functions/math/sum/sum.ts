@@ -9,7 +9,12 @@ export const SUM: FunctionDefinition = {
   name: "SUM",
   evaluate: function (node, context) {
     // Create iterator from all arguments
-    const argumentIterator = createArgumentIterator(this, node, context);
+    const argumentIterator = createArgumentIterator(
+      this,
+      node,
+      context,
+      "col-major"
+    );
 
     // Perform summation with error propagation (SUM propagates errors from direct arguments)
     return performSummation(argumentIterator);

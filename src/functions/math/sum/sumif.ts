@@ -86,7 +86,8 @@ export const SUMIF: FunctionDefinition = {
       this,
       sumRangeResult,
       [{ rangeResult: criteriaRangeResult, parsedCriteria }],
-      context
+      context,
+      "col-major"
     );
 
     return performSummation(matchingValues);

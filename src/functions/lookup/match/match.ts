@@ -189,6 +189,7 @@ export const MATCH: FunctionDefinition = {
         context,
         evaluate: lookupArrayResult.evaluate,
         origin: context.originCell.cellAddress,
+        lookupOrder: "col-major",
       });
       flags.profilingNamespaces["lookup/match"] = false;
     }

@@ -63,7 +63,8 @@ export const MAXIFS: FunctionDefinition = {
       this,
       maxRangeResult,
       criteriaPairs,
-      context
+      context,
+      "col-major"
     );
 
     return performMaximum(matchingValues);

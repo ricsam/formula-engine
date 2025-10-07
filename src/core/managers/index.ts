@@ -4,3 +4,8 @@ export { TableManager } from "./table-manager";
 export { EventManager } from "./event-manager";
 export { EvaluationManager } from "./evaluation-manager";
 export { DependencyManager } from "./dependency-manager";
+export {
+  buildRangeEvalOrder,
+  type LookupOrder,
+  type RangeEvalOrderEntry,
+} from "./range-eval-order-builder";

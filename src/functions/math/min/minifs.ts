@@ -64,7 +64,8 @@ export const MINIFS: FunctionDefinition = {
       this,
       minRangeResult,
       criteriaPairs,
-      context
+      context,
+      "col-major"
     );
 
     return performMinimum(matchingValues);

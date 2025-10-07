@@ -11,6 +11,7 @@ import type { CellEvalNode } from "src/evaluator/cell-eval-node";
 import type { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
 import type { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
 import type { DependencyNode } from "./managers/dependency-node";
+import type { LookupOrder } from "./managers/range-eval-order-builder";
 
 // Cell addressing types
 export interface CellAddress {
@@ -223,6 +224,8 @@ export type SpilledValuesEvaluationResult = {
        * e.g. in A3=B2:B4 the origin is A3
        */
       origin: CellAddress;
+
+      lookupOrder: LookupOrder;
     }
   ) => IterableIterator<
     EvaluateAllCellsResult,

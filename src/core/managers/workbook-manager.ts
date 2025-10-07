@@ -10,6 +10,7 @@ import type {
 import { getCellReference, parseCellReference } from "../utils";
 
 import type { RangeAddress } from "src/core/types";
+import { buildRangeEvalOrder } from "./range-eval-order-builder";
 
 interface IndexEntry {
   number: number;
@@ -596,9 +597,7 @@ export class WorkbookManager {
    * OPTIMIZED: Uses indexes to only process cells that actually exist.
    * ENHANCED: Now supports infinite ranges.
    */
-  clearSpreadsheetRange(
-    address: RangeAddress,
-  ) {
+  clearSpreadsheetRange(address: RangeAddress) {
     const sheet = this.getSheet(address);
 
     if (!sheet) {
@@ -637,9 +636,7 @@ export class WorkbookManager {
    * Optimized generator to iterate over cells defined in the content within a range
    * Uses indexes to efficiently find and yield only cells that exist within the range
    */
-  *iterateCellsInRange(
-    address: RangeAddress,
-  ): Generator<CellAddress> {
+  *iterateCellsInRange(address: RangeAddress): Generator<CellAddress> {
     // First check if the sheet exists
     const sheet = this.getSheet(address);
     if (!sheet) {
@@ -1068,8 +1065,19 @@ export class WorkbookManager {
   public isCellEmpty(cellAddress: CellAddress): boolean {
     const content = this.getCellContent(cellAddress);
     return (
-      content === undefined ||
-      (typeof content === "string" && content === "")
+      content === undefined || (typeof content === "string" && content === "")
     );
+  }
+
+  /**
+   * Build evaluation order for a range
+   * Delegates to the buildRangeEvalOrder function
+   */
+  public buildRangeEvalOrder(
+    lookupOrder: "row-major" | "col-major",
+    lookupRange: RangeAddress
+  ) {
+    // Import and call the function
+    return buildRangeEvalOrder.call(this, lookupOrder, lookupRange);
   }
 }

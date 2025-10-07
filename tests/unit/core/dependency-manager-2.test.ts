@@ -1078,9 +1078,8 @@ describe("DependencyManager", () => {
       `);
 
       evaluate();
-      // this will be fixed when we fix the open-range-evaluator and the order retunred from evaluateAllCells
-      // it should be: 24.5
-      expect(cell("C1", true)).toMatchInlineSnapshot(`14.5`);
+
+      expect(cell("C1", true)).toBe(24.5);
     });
 
     test("should detect cycles", () => {
@@ -1202,15 +1201,6 @@ describe("DependencyManager", () => {
               "canResolve": false,
               "directDepsUpdated": true,
               "frontierDependencies": [
-                {
-                  "canResolve": false,
-                  "circular": true,
-                  "directDepsUpdated": true,
-                  "key": "A1",
-                  "resolved": false,
-                  "resultType": "value",
-                  "type": "cell",
-                },
                 {
                   "canResolve": false,
                   "directDepsUpdated": false,
