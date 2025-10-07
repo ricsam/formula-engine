@@ -108,9 +108,140 @@ export function buildRangeEvalOrder(
       ? lookupRange.range.end.col.value
       : maxCol;
 
+  // Optimization: If the lookup range is infinite and has NO occupied cells within it,
+  // emit a single infinite range with ALL candidates from the sheet that could affect it
+  const isInfinite =
+    lookupRange.range.end.row.type === "infinity" ||
+    lookupRange.range.end.col.type === "infinity";
+  
+  if (isInfinite && occupiedCells.size === 0) {
+    // Find all formula candidates that could spill into this range
+    // by checking formulas to the left and above of the range
+    const leftCandidates = new Map<string, CellAddress>();
+    const aboveCandidates = new Map<string, CellAddress>();
+    const diagonalCandidates = new Map<string, CellAddress>();
+    
+    // Iterate all cells in the sheet to find candidates
+    // (formulas to the left or above that could spill into the range)
+    const allCells = this.iterateCellsInRange({
+      workbookName: lookupRange.workbookName,
+      sheetName: lookupRange.sheetName,
+      range: {
+        start: { row: 0, col: 0 },
+        end: {
+          row: { type: "infinity", sign: "positive" },
+          col: { type: "infinity", sign: "positive" },
+        },
+      },
+    });
+    
+    for (const cellAddr of allCells) {
+      const cellRef = getCellReference(cellAddr);
+      const content = sheet.content.get(cellRef);
+      
+      // Only consider formula cells
+      if (typeof content === "string" && content.startsWith("=")) {
+        // Check if this formula could spill into the lookup range
+        // A formula at (r, c) can spill into a range starting at (startRow, startCol) if:
+        // 1. It's directly to the left: c < startCol AND r >= startRow (same row or below)
+        // 2. It's directly above: r < startRow AND c >= startCol (same column or to the right)
+        // 3. It's diagonal: r < startRow AND c < startCol (can spill down-right)
+        
+        const isLeftCandidate = cellAddr.colIndex < startCol && cellAddr.rowIndex >= startRow;
+        const isAboveCandidate = cellAddr.rowIndex < startRow && cellAddr.colIndex >= startCol;
+        const isDiagonalCandidate = cellAddr.rowIndex < startRow && cellAddr.colIndex < startCol;
+        
+        if (isLeftCandidate) {
+          leftCandidates.set(cellRef, cellAddr);
+        } else if (isAboveCandidate) {
+          aboveCandidates.set(cellRef, cellAddr);
+        } else if (isDiagonalCandidate) {
+          diagonalCandidates.set(cellRef, cellAddr);
+        }
+      }
+    }
+    
+    // Only include diagonal candidates if there are NO direct left/above candidates
+    const candidateMap = new Map<string, CellAddress>();
+    if (leftCandidates.size > 0 || aboveCandidates.size > 0) {
+      // Have direct candidates - use only those
+      for (const [ref, addr] of leftCandidates) {
+        candidateMap.set(ref, addr);
+      }
+      for (const [ref, addr] of aboveCandidates) {
+        candidateMap.set(ref, addr);
+      }
+    } else {
+      // No direct candidates - use diagonals
+      for (const [ref, addr] of diagonalCandidates) {
+        candidateMap.set(ref, addr);
+      }
+    }
+    
+    const candidates = sortCandidates(
+      Array.from(candidateMap.values()),
+      lookupOrder
+    );
+    
+    result.push({
+      type: "empty_range",
+      address: lookupRange,
+      candidates,
+    });
+    return result;
+  }
+
   if (lookupOrder === "row-major") {
     // Iterate row by row, left to right
     for (let row = startRow; row <= endRow; row++) {
+      // Check if this row has any occupied cells
+      let hasOccupiedInRow = false;
+      for (const occupiedAddr of occupiedCells.values()) {
+        if (occupiedAddr.rowIndex === row) {
+          hasOccupiedInRow = true;
+          break;
+        }
+      }
+
+      // If the row has no occupied cells and the range is infinite in columns,
+      // emit a single infinite range for the entire row
+      if (!hasOccupiedInRow && lookupRange.range.end.col.type === "infinity") {
+        const firstCell: CellAddress = {
+          rowIndex: row,
+          colIndex: startCol,
+          sheetName: lookupRange.sheetName,
+          workbookName: lookupRange.workbookName,
+        };
+        
+        const candidates = findCandidatesForCell.call(
+          this,
+          firstCell,
+          lookupRange,
+          sheet,
+          lookupOrder
+        );
+
+        result.push({
+          type: "empty_range",
+          address: {
+            workbookName: lookupRange.workbookName,
+            sheetName: lookupRange.sheetName,
+            range: {
+              start: {
+                row: row,
+                col: startCol,
+              },
+              end: {
+                row: { type: "number", value: row },
+                col: lookupRange.range.end.col,
+              },
+            },
+          },
+          candidates,
+        });
+        continue; // Skip normal processing for this row
+      }
+
       processRowMajorRow.call(
         this,
         row,
@@ -202,48 +333,34 @@ export function buildRangeEvalOrder(
     }
   } else {
     // col-major: iterate column by column, top to bottom
-    
-    // Check if we can emit a single infinite range for the entire remaining region
-    // This happens when both rows and columns are infinite and all cells have the same candidates
-    if (
-      lookupRange.range.end.row.type === "infinity" &&
-      lookupRange.range.end.col.type === "infinity"
-    ) {
-      // Check if the entire range has uniform candidates
-      const firstCell: CellAddress = {
-        rowIndex: startRow,
-        colIndex: startCol,
-        sheetName: lookupRange.sheetName,
-        workbookName: lookupRange.workbookName,
-      };
-      const candidates = findCandidatesForCell.call(
-        this,
-        firstCell,
-        lookupRange,
-        sheet,
-        lookupOrder
-      );
-
-      // Check if all processed cells and the region beyond have the same candidates
-      let hasOccupiedCells = false;
-      for (let col = startCol; col <= endCol; col++) {
-        for (let row = startRow; row <= endRow; row++) {
-          const cellRef = getCellReference({
-            rowIndex: row,
-            colIndex: col,
-            sheetName: lookupRange.sheetName,
-            workbookName: lookupRange.workbookName,
-          });
-          if (occupiedCells.has(cellRef)) {
-            hasOccupiedCells = true;
-            break;
-          }
+    for (let col = startCol; col <= endCol; col++) {
+      // Check if this column has any occupied cells
+      let hasOccupiedInColumn = false;
+      for (const occupiedAddr of occupiedCells.values()) {
+        if (occupiedAddr.colIndex === col) {
+          hasOccupiedInColumn = true;
+          break;
         }
-        if (hasOccupiedCells) break;
       }
 
-      // If no occupied cells in the range, emit a single infinite range
-      if (!hasOccupiedCells) {
+      // If the column has no occupied cells and the range is infinite in rows,
+      // emit a single infinite range for the entire column
+      if (!hasOccupiedInColumn && lookupRange.range.end.row.type === "infinity") {
+        const firstCell: CellAddress = {
+          rowIndex: startRow,
+          colIndex: col,
+          sheetName: lookupRange.sheetName,
+          workbookName: lookupRange.workbookName,
+        };
+        
+        const candidates = findCandidatesForCell.call(
+          this,
+          firstCell,
+          lookupRange,
+          sheet,
+          lookupOrder
+        );
+
         result.push({
           type: "empty_range",
           address: {
@@ -252,21 +369,19 @@ export function buildRangeEvalOrder(
             range: {
               start: {
                 row: startRow,
-                col: startCol,
+                col: col,
               },
               end: {
                 row: lookupRange.range.end.row,
-                col: lookupRange.range.end.col,
+                col: { type: "number", value: col },
               },
             },
           },
           candidates,
         });
-        return result;
+        continue; // Skip normal processing for this column
       }
-    }
 
-    for (let col = startCol; col <= endCol; col++) {
       processColMajorColumn.call(
         this,
         col,
@@ -397,53 +512,39 @@ function processRowMajorRow(
       const emptyRangeStart = col;
       let emptyRangeEnd = col;
 
-      // Get candidates for the first cell
-      const firstCandidates = findCandidatesForCell.call(
-        this,
-        cellAddr,
+      // Extend range to next occupied cell or end (using indexes)
+      emptyRangeEnd = endCol;
+      for (const occupiedAddr of occupiedCells.values()) {
+        if (occupiedAddr.rowIndex === row && occupiedAddr.colIndex > col) {
+          emptyRangeEnd = Math.min(emptyRangeEnd, occupiedAddr.colIndex - 1);
+        }
+      }
+
+      // Find ALL unique candidates across the entire empty range
+      const allCandidates = findAllCandidatesForRange(
+        this as WorkbookManager,
+        {
+          workbookName: lookupRange.workbookName,
+          sheetName: lookupRange.sheetName,
+          range: {
+            start: { row, col: emptyRangeStart },
+            end: {
+              row: { type: "number", value: row },
+              col: { type: "number", value: emptyRangeEnd },
+            },
+          },
+        },
         lookupRange,
         sheet,
         "row-major"
       );
-
-      // Try to extend the range while candidates remain the same
-      while (emptyRangeEnd + 1 <= endCol) {
-        const nextCellAddr: CellAddress = {
-          rowIndex: row,
-          colIndex: emptyRangeEnd + 1,
-          sheetName: lookupRange.sheetName,
-          workbookName: lookupRange.workbookName,
-        };
-        const nextCellRef = getCellReference(nextCellAddr);
-
-        // Stop if next cell is occupied
-        if (occupiedCells.has(nextCellRef)) {
-          break;
-        }
-
-        // Get candidates for next cell
-        const nextCandidates = findCandidatesForCell.call(
-          this,
-          nextCellAddr,
-          lookupRange,
-          sheet,
-          "row-major"
-        );
-
-        // Stop if candidates differ
-        if (!candidatesEqual(firstCandidates, nextCandidates)) {
-          break;
-        }
-
-        emptyRangeEnd++;
-      }
 
       // If the empty range is a single cell, emit as empty_cell
       if (emptyRangeStart === emptyRangeEnd) {
         result.push({
           type: "empty_cell",
           address: cellAddr,
-          candidates: firstCandidates,
+          candidates: allCandidates,
         });
       } else {
         // Emit as empty_range
@@ -463,7 +564,7 @@ function processRowMajorRow(
               },
             },
           },
-          candidates: firstCandidates,
+          candidates: allCandidates,
         });
       }
 
@@ -508,53 +609,39 @@ function processColMajorColumn(
       const emptyRangeStart = row;
       let emptyRangeEnd = row;
 
-      // Get candidates for the first cell
-      const firstCandidates = findCandidatesForCell.call(
-        this,
-        cellAddr,
+      // Extend range to next occupied cell or end (using indexes)
+      emptyRangeEnd = endRow;
+      for (const occupiedAddr of occupiedCells.values()) {
+        if (occupiedAddr.colIndex === col && occupiedAddr.rowIndex > row) {
+          emptyRangeEnd = Math.min(emptyRangeEnd, occupiedAddr.rowIndex - 1);
+        }
+      }
+
+      // Find ALL unique candidates across the entire empty range
+      const allCandidates = findAllCandidatesForRange(
+        this as WorkbookManager,
+        {
+          workbookName: lookupRange.workbookName,
+          sheetName: lookupRange.sheetName,
+          range: {
+            start: { row: emptyRangeStart, col },
+            end: {
+              row: { type: "number", value: emptyRangeEnd },
+              col: { type: "number", value: col },
+            },
+          },
+        },
         lookupRange,
         sheet,
         "col-major"
       );
-
-      // Try to extend the range while candidates remain the same
-      while (emptyRangeEnd + 1 <= endRow) {
-        const nextCellAddr: CellAddress = {
-          rowIndex: emptyRangeEnd + 1,
-          colIndex: col,
-          sheetName: lookupRange.sheetName,
-          workbookName: lookupRange.workbookName,
-        };
-        const nextCellRef = getCellReference(nextCellAddr);
-
-        // Stop if next cell is occupied
-        if (occupiedCells.has(nextCellRef)) {
-          break;
-        }
-
-        // Get candidates for next cell
-        const nextCandidates = findCandidatesForCell.call(
-          this,
-          nextCellAddr,
-          lookupRange,
-          sheet,
-          "col-major"
-        );
-
-        // Stop if candidates differ
-        if (!candidatesEqual(firstCandidates, nextCandidates)) {
-          break;
-        }
-
-        emptyRangeEnd++;
-      }
 
       // If the empty range is a single cell, emit as empty_cell
       if (emptyRangeStart === emptyRangeEnd) {
         result.push({
           type: "empty_cell",
           address: cellAddr,
-          candidates: firstCandidates,
+          candidates: allCandidates,
         });
       } else {
         // Emit as empty_range
@@ -574,7 +661,7 @@ function processColMajorColumn(
               },
             },
           },
-          candidates: firstCandidates,
+          candidates: allCandidates,
         });
       }
 
@@ -607,10 +694,107 @@ function candidatesEqual(a: CellAddress[], b: CellAddress[]): boolean {
 }
 
 /**
+ * Find ALL unique candidates that could affect any cell in the given empty range
+ * Returns the union of candidates from all cells in the range, sorted deterministically
+ */
+function findAllCandidatesForRange(
+  manager: WorkbookManager,
+  emptyRange: RangeAddress,
+  lookupRange: RangeAddress,
+  sheet: Sheet,
+  lookupOrder: LookupOrder
+): CellAddress[] {
+  const candidateMap = new Map<string, CellAddress>();
+  
+  const startRow = emptyRange.range.start.row;
+  const startCol = emptyRange.range.start.col;
+  const endRow = emptyRange.range.end.row.type === "number" ? emptyRange.range.end.row.value : startRow;
+  const endCol = emptyRange.range.end.col.type === "number" ? emptyRange.range.end.col.value : startCol;
+  
+  // We need to check positions that could have different candidates:
+  // - Different columns might have different "above" candidates
+  // - Different rows might have different "left" candidates
+  const positionsToCheck: Array<{ row: number; col: number }> = [];
+  
+  // For single-row ranges: check each column (different above candidates)
+  // For single-column ranges: sample rows efficiently  
+  // For rectangular ranges: check corners only
+  
+  if (startRow === endRow) {
+    // Single row: check each column (each column might have different above candidates)
+    for (let col = startCol; col <= endCol; col++) {
+      positionsToCheck.push({ row: startRow, col });
+    }
+  } else if (startCol === endCol) {
+    // Single column: For large ranges, sample rows instead of checking all
+    // We check where occupied cells exist, plus endpoints
+    const maxSamples = 100; // Performance limit
+    const numRows = endRow - startRow + 1;
+    
+    if (numRows <= maxSamples) {
+      // Small range: check every row
+      for (let row = startRow; row <= endRow; row++) {
+        positionsToCheck.push({ row, col: startCol });
+      }
+    } else {
+      // Large range: sample at occupied cell rows + endpoints
+      positionsToCheck.push({ row: startRow, col: startCol }); // First
+      positionsToCheck.push({ row: endRow, col: startCol });   // Last
+      
+      // Add samples at rows where there are occupied cells to the left
+      // (these are the rows that might have different left candidates)
+      for (let c = 0; c < startCol; c++) {
+        for (let r = startRow; r <= endRow; r++) {
+          const cellRef = getCellReference({
+            rowIndex: r,
+            colIndex: c,
+            sheetName: emptyRange.sheetName,
+            workbookName: emptyRange.workbookName,
+          });
+          if (sheet.content.has(cellRef)) {
+            positionsToCheck.push({ row: r, col: startCol });
+          }
+        }
+      }
+    }
+  } else {
+    // Rectangular range: check corners only for performance
+    positionsToCheck.push({ row: startRow, col: startCol }); // Top-left
+    positionsToCheck.push({ row: startRow, col: endCol });   // Top-right
+    positionsToCheck.push({ row: endRow, col: startCol });   // Bottom-left
+    positionsToCheck.push({ row: endRow, col: endCol });     // Bottom-right
+  }
+  
+  // For each position, find candidates
+  for (const pos of positionsToCheck) {
+    const candidates = findCandidatesForCell.call(
+      manager,
+      {
+        rowIndex: pos.row,
+        colIndex: pos.col,
+        sheetName: emptyRange.sheetName,
+        workbookName: emptyRange.workbookName,
+      },
+      lookupRange,
+      sheet,
+      lookupOrder
+    );
+    
+    for (const cand of candidates) {
+      candidateMap.set(getCellReference(cand), cand);
+    }
+  }
+  
+  // Return unique candidates, sorted
+  return sortCandidates(Array.from(candidateMap.values()), lookupOrder);
+}
+
+/**
  * Find frontier candidates for a single empty cell
  * Returns candidates that could spill into this cell:
  * - If there's a direct left or above candidate, return those (max 2)
  * - Otherwise, return ALL step-pattern diagonal candidates
+ * Candidates are sorted deterministically based on lookup order
  */
 function findCandidatesForCell(
   this: WorkbookManager,
@@ -638,14 +822,11 @@ function findCandidatesForCell(
   // If we have direct candidates (left and/or above), use those
   if (leftCandidate || aboveCandidate) {
     const candidates: CellAddress[] = [];
-    if (lookupOrder === "row-major") {
-      if (leftCandidate) candidates.push(leftCandidate);
-      if (aboveCandidate) candidates.push(aboveCandidate);
-    } else {
-      if (aboveCandidate) candidates.push(aboveCandidate);
-      if (leftCandidate) candidates.push(leftCandidate);
-    }
-    return candidates;
+    if (leftCandidate) candidates.push(leftCandidate);
+    if (aboveCandidate) candidates.push(aboveCandidate);
+    
+    // Sort candidates deterministically based on lookup order
+    return sortCandidates(candidates, lookupOrder);
   }
 
   // No direct candidates - find ALL step-pattern diagonal candidates
@@ -656,7 +837,30 @@ function findCandidatesForCell(
     sheet
   );
 
-  return diagonalCandidates;
+  // Sort diagonal candidates
+  return sortCandidates(diagonalCandidates, lookupOrder);
+}
+
+/**
+ * Sort candidates deterministically based on lookup order
+ * - Row-major: sort by col first, then row (left-to-right takes priority)
+ * - Col-major: sort by row first, then col (top-to-bottom takes priority)
+ */
+function sortCandidates(
+  candidates: CellAddress[],
+  lookupOrder: LookupOrder
+): CellAddress[] {
+  return candidates.sort((a, b) => {
+    if (lookupOrder === "row-major") {
+      // Row-major: col first, then row
+      if (a.colIndex !== b.colIndex) return a.colIndex - b.colIndex;
+      return a.rowIndex - b.rowIndex;
+    } else {
+      // Col-major: row first, then col
+      if (a.rowIndex !== b.rowIndex) return a.rowIndex - b.rowIndex;
+      return a.colIndex - b.colIndex;
+    }
+  });
 }
 
 /**

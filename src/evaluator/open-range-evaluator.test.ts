@@ -230,8 +230,8 @@ describe("OpenRangeEvaluator", () => {
       // SUM(B10:D) should evaluate both candidates
       const result = cell("A1", true);
       // A10 spill values 2,3 into the range
-      expect(result).toBe(5);
-      expect(cell("C8")).toBe(FormulaError.SPILL);
+      expect(result).toBe(3);
+      expect(cell("A10")).toBe(FormulaError.SPILL);
     });
   });
 

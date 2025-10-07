@@ -181,6 +181,24 @@ describe("buildRangeEvalOrder", () => {
     const range = makeRange("A1", "C3");
     const result = buildRangeEvalOrder.call(manager, "row-major", range);
 
+    expect(
+      visualizeSpreadsheet(engine, {
+        workbookName,
+        numRows: 3,
+        numCols: 3,
+        sheetName,
+        emptyCellChar: "",
+        snapshot: true,
+      })
+    ).toMatchInlineSnapshot(`
+      "    | A   | B   | C  
+      -----+-----+-----+----
+         1 |     |     |    
+         2 |     | 10  |    
+         3 |     |     |    
+      "
+    `);
+
     // Snapshot test the entire result
     expect(result.map(serializeEntry)).toMatchInlineSnapshot(`
       [
@@ -188,8 +206,7 @@ describe("buildRangeEvalOrder", () => {
         "empty:A2[]",
         "value:B2",
         "empty:C2[B2]",
-        "empty:A3[]",
-        "range:B3:C3[B2]",
+        "range:A3:C3[B2]",
       ]
     `);
   });
@@ -199,6 +216,24 @@ describe("buildRangeEvalOrder", () => {
     const range = makeRange("A1", "C3");
     const result = buildRangeEvalOrder.call(manager, "col-major", range);
 
+    expect(
+      visualizeSpreadsheet(engine, {
+        workbookName,
+        numRows: 3,
+        numCols: 3,
+        sheetName,
+        emptyCellChar: "",
+        snapshot: true,
+      })
+    ).toMatchInlineSnapshot(`
+      "    | A   | B   | C  
+      -----+-----+-----+----
+         1 |     |     |    
+         2 |     | 10  |    
+         3 |     |     |    
+      "
+    `);
+
     // Snapshot test the entire result
     expect(result.map(serializeEntry)).toMatchInlineSnapshot(`
       [
@@ -206,8 +241,7 @@ describe("buildRangeEvalOrder", () => {
         "empty:B1[]",
         "value:B2",
         "empty:B3[B2]",
-        "empty:C1[]",
-        "range:C2:C3[B2]",
+        "range:C1:C3[B2]",
       ]
     `);
   });
@@ -218,14 +252,35 @@ describe("buildRangeEvalOrder", () => {
     const range = makeRange("A1", "C3");
     const result = buildRangeEvalOrder.call(manager, "row-major", range);
 
-    // Find B2 which should have both left (A2) and above (B1) candidates
-    const b2Entry = result.find(
-      (e) => e.type === "empty_cell" && cellToString(e.address) === "B2"
-    );
-    expect(b2Entry).toBeDefined();
-    if (b2Entry && b2Entry.type === "empty_cell") {
-      expect(b2Entry.candidates.map(cellToString)).toEqual(["A2", "B1"]);
-    }
+    expect(
+      visualizeSpreadsheet(engine, {
+        workbookName,
+        numRows: 3,
+        numCols: 3,
+        sheetName,
+        emptyCellChar: "",
+        snapshot: true,
+      })
+    ).toMatchInlineSnapshot(`
+      "    | A   | B   | C  
+      -----+-----+-----+----
+         1 |     | 2   |    
+         2 | 1   |     |    
+         3 |     |     |    
+      "
+    `);
+
+    // B2 should have both left (A2) and above (B1) candidates
+    expect(result.map(serializeEntry)).toMatchInlineSnapshot(`
+      [
+        "empty:A1[]",
+        "value:B1",
+        "empty:C1[B1]",
+        "value:A2",
+        "range:B2:C2[A2,B1]",
+        "range:A3:C3[A2,B1]",
+      ]
+    `);
   });
 
   test("two candidates - col-major ordering", () => {
@@ -234,15 +289,36 @@ describe("buildRangeEvalOrder", () => {
     const range = makeRange("A1", "C3");
     const result = buildRangeEvalOrder.call(manager, "col-major", range);
 
-    // Find B2 which should have both above (B1) and left (A2) candidates
-    const b2Entry = result.find(
-      (e) => e.type === "empty_cell" && cellToString(e.address) === "B2"
-    );
-    expect(b2Entry).toBeDefined();
+    expect(
+      visualizeSpreadsheet(engine, {
+        workbookName,
+        numRows: 3,
+        numCols: 3,
+        sheetName,
+        emptyCellChar: "",
+        snapshot: true,
+      })
+    ).toMatchInlineSnapshot(`
+      "    | A   | B   | C  
+      -----+-----+-----+----
+         1 |     | 2   |    
+         2 | 1   |     |    
+         3 |     |     |    
+      "
+    `);
+
+    // B2 should have both above (B1) and left (A2) candidates
     // In col-major, above comes first
-    if (b2Entry && b2Entry.type === "empty_cell") {
-      expect(b2Entry.candidates.map(cellToString)).toEqual(["B1", "A2"]);
-    }
+    expect(result.map(serializeEntry)).toMatchInlineSnapshot(`
+      [
+        "empty:A1[]",
+        "value:A2",
+        "empty:A3[A2]",
+        "value:B1",
+        "range:B2:B3[B1,A2]",
+        "range:C1:C3[B1,A2]",
+      ]
+    `);
   });
 
   test("complex grid with multiple values - row-major", () => {
@@ -286,9 +362,7 @@ describe("buildRangeEvalOrder", () => {
         "empty:B2[A2,B1]",
         "value:C2",
         "empty:D2[C2]",
-        "empty:A3[A2]",
-        "empty:B3[B1]",
-        "range:C3:D3[C2]",
+        "range:A3:D3[A2,B1,C2]",
       ]
     `);
   });
@@ -303,6 +377,24 @@ describe("buildRangeEvalOrder", () => {
     setCell("A", 2, "=1");
     setCell("C", 2, "=3");
 
+    expect(
+      visualizeSpreadsheet(engine, {
+        workbookName,
+        numRows: 3,
+        numCols: 4,
+        sheetName,
+        emptyCellChar: "",
+        snapshot: true,
+      })
+    ).toMatchInlineSnapshot(`
+      "    | A   | B   | C   | D  
+      -----+-----+-----+-----+----
+         1 |     | 2   |     |    
+         2 | 1   |     | 3   |    
+         3 |     |     |     |    
+      "
+    `);
+
     const range = makeRange("A1", "D3");
     const result = buildRangeEvalOrder.call(manager, "col-major", range);
 
@@ -312,13 +404,11 @@ describe("buildRangeEvalOrder", () => {
         "value:A2",
         "empty:A3[A2]",
         "value:B1",
-        "empty:B2[B1,A2]",
-        "empty:B3[B1]",
+        "range:B2:B3[B1,A2]",
         "empty:C1[B1]",
         "value:C2",
         "empty:C3[C2]",
-        "empty:D1[B1]",
-        "range:D2:D3[C2]",
+        "range:D1:D3[B1,C2]",
       ]
     `);
   });
@@ -331,6 +421,23 @@ describe("buildRangeEvalOrder", () => {
 
     const range = makeRange("A1", "B2");
     const result = buildRangeEvalOrder.call(manager, "row-major", range);
+
+    expect(
+      visualizeSpreadsheet(engine, {
+        workbookName,
+        numRows: 2,
+        numCols: 2,
+        sheetName,
+        emptyCellChar: "",
+        snapshot: true,
+      })
+    ).toMatchInlineSnapshot(`
+      "    | A   | B  
+      -----+-----+----
+         1 | 1   | 2  
+         2 | 3   | 4  
+      "
+    `);
 
     expect(result.map(serializeEntry)).toMatchInlineSnapshot(`
       [
@@ -400,6 +507,22 @@ describe("buildRangeEvalOrder", () => {
     setCell("A", 1, "=1");
     setCell("D", 1, "=2");
 
+    expect(
+      visualizeSpreadsheet(engine, {
+        workbookName,
+        numRows: 1,
+        numCols: 4,
+        sheetName,
+        emptyCellChar: "",
+        snapshot: true,
+      })
+    ).toMatchInlineSnapshot(`
+      "    | A   | B   | C   | D  
+      -----+-----+-----+-----+----
+         1 | 1   |     |     | 2  
+      "
+    `);
+
     const range = makeRange("A1", "D1");
     const result = buildRangeEvalOrder.call(manager, "row-major", range);
 
@@ -415,6 +538,25 @@ describe("buildRangeEvalOrder", () => {
   test("empty cells between two occupied cells in a column", () => {
     setCell("A", 1, "=1");
     setCell("A", 4, "=2");
+
+    expect(
+      visualizeSpreadsheet(engine, {
+        workbookName,
+        numRows: 4,
+        numCols: 1,
+        sheetName,
+        emptyCellChar: "",
+        snapshot: true,
+      })
+    ).toMatchInlineSnapshot(`
+      "    | A  
+      -----+----
+         1 | 1  
+         2 |    
+         3 |    
+         4 | 2  
+      "
+    `);
 
     const range = makeRange("A1", "A4");
     const result = buildRangeEvalOrder.call(manager, "col-major", range);
@@ -458,8 +600,7 @@ describe("buildRangeEvalOrder", () => {
         "empty:A2[]",
         "value:B2",
         "empty:C2[B2]",
-        "empty:A3[]",
-        "range:B3:C3[B2]",
+        "range:A3:C3[B2]",
       ]
     `);
   });
@@ -493,8 +634,7 @@ describe("buildRangeEvalOrder", () => {
         "empty:B1[]",
         "value:B2",
         "empty:B3[B2]",
-        "empty:C1[]",
-        "range:C2:C3[B2]",
+        "range:C1:C3[B2]",
       ]
     `);
   });
@@ -546,8 +686,7 @@ describe("buildRangeEvalOrder", () => {
         "value:F4",
         "empty:G4[G1]",
         "value:E5",
-        "empty:F5[E5]",
-        "empty:G5[E5,G1]",
+        "range:F5:G5[E5,G1]",
         "empty:E6[E5]",
         "value:F6",
         "empty:G6[G1]",
@@ -619,7 +758,7 @@ describe("buildRangeEvalOrder", () => {
     `);
   });
 
-  test("infinite range splits on candidate changes to avoid ambiguity - col-major", () => {
+  test("infinite sorts candidates - col-major", () => {
     // Set up formulas at different rows in columns A and B
     // B6 at row 5, col 1
     setCell("B", 6, '="Formula"');
@@ -670,17 +809,10 @@ describe("buildRangeEvalOrder", () => {
     };
 
     const result = buildRangeEvalOrder.call(manager, "col-major", range);
-
-    // The range should be split based on when candidates change:
-    // - C1:C5 - no diagonal candidates (before B6)
-    // - C6:C10 - B6 is a candidate (B6 is at row 5, so cells from row 5 onwards could be influenced)
-    // - C11:C13 - Both B6 and A11 are candidates (A11 is at row 10, so from row 10 onwards)
+    // with col-major, we sort candidates by row first, then col
     expect(result.map(serializeEntry)).toMatchInlineSnapshot(`
       [
-        "range:C1:C5[]",
-        "range:C6:C10[B6]",
-        "empty:C11[A11]",
-        "range:C12:C∞[A11,B6]",
+        "range:C1:C∞[B6,A11]",
       ]
     `);
   });
@@ -719,6 +851,7 @@ describe("buildRangeEvalOrder", () => {
       "
     `);
 
+    // B10:∞∞
     const result = buildRangeEvalOrder.call(manager, "col-major", {
       workbookName,
       sheetName,
@@ -769,6 +902,7 @@ describe("buildRangeEvalOrder", () => {
       "
     `);
 
+    // B1:D
     const result = buildRangeEvalOrder.call(manager, "col-major", {
       workbookName,
       sheetName,
@@ -792,15 +926,7 @@ describe("buildRangeEvalOrder", () => {
 
     expect(result.map(serializeEntry)).toMatchInlineSnapshot(`
       [
-        "empty:B1[A1]",
-        "empty:B2[A2]",
-        "range:B3:B∞[A2]",
-        "empty:C1[A1]",
-        "empty:C2[A2]",
-        "range:C3:C∞[A2]",
-        "empty:D1[A1]",
-        "empty:D2[A2]",
-        "range:D3:D∞[A2]",
+        "range:B1:D∞[A1,A2]",
       ]
     `);
   });
@@ -810,6 +936,7 @@ describe("buildRangeEvalOrder", () => {
     setCell("C", 8, "=SEQUENCE(3,1)");
     setCell("A", 10, "=SEQUENCE(1,3)");
 
+    // should spill from C8
     expect(
       visualizeSpreadsheet(engine, {
         workbookName,
@@ -820,21 +947,22 @@ describe("buildRangeEvalOrder", () => {
         snapshot: true,
       })
     ).toMatchInlineSnapshot(`
-      "    | A   | B   | C       | D   | E  
-      -----+-----+-----+---------+-----+----
-         1 | 5   |     |         |     |    
-         2 |     |     |         |     |    
-         3 |     |     |         |     |    
-         4 |     |     |         |     |    
-         5 |     |     |         |     |    
-         6 |     |     |         |     |    
-         7 |     |     |         |     |    
-         8 |     |     | #SPILL! |     |    
-         9 |     |     |         |     |    
-        10 | 1   | 2   | 3       |     |    
+      "    | A       | B   | C   | D   | E  
+      -----+---------+-----+-----+-----+----
+         1 | 3       |     |     |     |    
+         2 |         |     |     |     |    
+         3 |         |     |     |     |    
+         4 |         |     |     |     |    
+         5 |         |     |     |     |    
+         6 |         |     |     |     |    
+         7 |         |     |     |     |    
+         8 |         |     | 1   |     |    
+         9 |         |     | 2   |     |    
+        10 | #SPILL! |     | 3   |     |    
       "
     `);
 
+    // B10:D
     const result = buildRangeEvalOrder.call(manager, "col-major", {
       workbookName,
       sheetName,
@@ -858,12 +986,7 @@ describe("buildRangeEvalOrder", () => {
 
     expect(result.map(serializeEntry)).toMatchInlineSnapshot(`
       [
-        "empty:B10[A10]",
-        "range:B11:B∞[A10]",
-        "empty:C10[C8,A10]",
-        "range:C11:C∞[C8]",
-        "empty:D10[A10]",
-        "range:D11:D∞[A10,C8]",
+        "range:B10:D∞[C8,A10]",
       ]
     `);
   });
@@ -906,6 +1029,7 @@ describe("buildRangeEvalOrder", () => {
       "
     `);
 
+    // A10:B
     const result = buildRangeEvalOrder.call(manager, "col-major", {
       workbookName,
       sheetName,
@@ -931,13 +1055,95 @@ describe("buildRangeEvalOrder", () => {
       [
         "value:A10",
         "range:A11:A∞[A10]",
-        "empty:B10[A10]",
-        "range:B11:B∞[A10]",
+        "range:B10:B∞[A10]",
       ]
     `);
 
     // X1:Y2 is [1,2;3,4], multiplied by 10 = [10,20;30,40]
     // So A10:B11 = 10+20+30+40 = 100
     expect(cell("A1", true)).toBe(100);
+  });
+
+  test("performance: large sparse range should not loop excessively", () => {
+    // Set up a few formulas scattered across a large range
+    setCell("A", 1, "=1");
+    setCell("Z", 1000, "=2");
+
+    // Lookup range G1:Z1000 - large range but sparse (only 2 cells, neither in range)
+    const range: RangeAddress = {
+      workbookName,
+      sheetName,
+      range: {
+        start: { row: 0, col: 6 }, // G1
+        end: {
+          row: { type: "number", value: 999 }, // Row 1000
+          col: { type: "number", value: 25 }, // Column Z
+        },
+      },
+    };
+
+    const startTime = performance.now();
+    const result = buildRangeEvalOrder.call(manager, "col-major", range);
+    const duration = performance.now() - startTime;
+
+    // Should complete very quickly (< 50ms) because it only processes sparse data
+    expect(duration).toBeLessThan(50);
+
+    // Check the result structure
+    expect(result.map(serializeEntry)).toMatchInlineSnapshot(`
+      [
+        "range:G1:G1000[A1]",
+        "range:H1:H1000[A1]",
+        "range:I1:I1000[A1]",
+        "range:J1:J1000[A1]",
+        "range:K1:K1000[A1]",
+        "range:L1:L1000[A1]",
+        "range:M1:M1000[A1]",
+        "range:N1:N1000[A1]",
+        "range:O1:O1000[A1]",
+        "range:P1:P1000[A1]",
+        "range:Q1:Q1000[A1]",
+        "range:R1:R1000[A1]",
+        "range:S1:S1000[A1]",
+        "range:T1:T1000[A1]",
+        "range:U1:U1000[A1]",
+        "range:V1:V1000[A1]",
+        "range:W1:W1000[A1]",
+        "range:X1:X1000[A1]",
+        "range:Y1:Y1000[A1]",
+        "range:Z1:Z999[A1]",
+        "value:Z1000",
+      ]
+    `);
+  });
+
+  test("performance: infinite range should not loop excessively", () => {
+    // Set up a few formulas at large indices
+    setCell("A", 1, "=1");
+    setCell("Z", 1000, "=2");
+    
+    // Lookup range B1001:∞∞
+    const range: RangeAddress = {
+      workbookName,
+      sheetName,
+      range: {
+        start: { row: 1000, col: 1 }, // B1001
+        end: {
+          row: { type: "infinity", sign: "positive" },
+          col: { type: "infinity", sign: "positive" },
+        },
+      },
+    };
+
+    const startTime = performance.now();
+    const result = buildRangeEvalOrder.call(manager, "col-major", range);
+    const duration = performance.now() - startTime;
+
+    // Should complete very quickly (< 50ms)
+    expect(duration).toBeLessThan(50);
+    
+    // Should just have one infinite range with candidates
+    expect(result.length).toBe(1);
+    expect(result[0]?.type).toBe("empty_range");
   });
 });
