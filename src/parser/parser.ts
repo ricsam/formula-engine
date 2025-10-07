@@ -331,9 +331,10 @@ export class Parser {
 
     // Use a blacklist approach: consume all tokens until we hit a token that definitely ends a column name
     // These are tokens that have special meaning in structured references and should not be part of column names
+    // Note: COLON is NOT in this list because colons can be part of column names (e.g., "CAR:ERC ratio")
+    // Column ranges must use explicit double-bracket syntax: Table[[Col1]:[Col2]]
     const endTokens = new Set([
       "RBRACKET",  // ] - ends the column reference
-      "COLON",     // : - indicates column range
       "COMMA",     // , - separates elements in complex structured references
       "EOF"        // End of input
     ]);
@@ -1270,7 +1271,7 @@ export class Parser {
         this.tokens.match("NUMBER") ||
         this.tokens.match("OPERATOR")
       ) {
-        // Handle [[Column1]:[Column2]] syntax
+        // Handle [[Column]] or [[Column1]:[Column2]] syntax
         const colStart = this.parseColumnName();
 
         if (!this.tokens.match("RBRACKET")) {
@@ -1281,44 +1282,55 @@ export class Parser {
         }
         this.tokens.consume(); // ]
 
-        if (!this.tokens.match("COLON")) {
-          throw new ParseError(
-            "Expected : after first column in [[Column1]:[Column2]]",
-            this.tokens.peek().position
-          );
+        // Check if this is a column range [[Column1]:[Column2]] or single column [[Column]]
+        if (this.tokens.match("COLON")) {
+          this.tokens.consume(); // :
+
+          if (!this.tokens.match("LBRACKET")) {
+            throw new ParseError(
+              "Expected [ before second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // [
+
+          const colEnd = this.parseColumnName();
+
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] after second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // ]
+
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] to close table reference",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // outer ]
+
+          cols = {
+            startCol: colStart,
+            endCol: colEnd,
+          };
+        } else {
+          // Single column with double brackets [[Column]]
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] to close table reference",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // outer ]
+
+          cols = {
+            startCol: colStart,
+            endCol: colStart,
+          };
         }
-        this.tokens.consume(); // :
-
-        if (!this.tokens.match("LBRACKET")) {
-          throw new ParseError(
-            "Expected [ before second column name",
-            this.tokens.peek().position
-          );
-        }
-        this.tokens.consume(); // [
-
-        const colEnd = this.parseColumnName();
-
-        if (!this.tokens.match("RBRACKET")) {
-          throw new ParseError(
-            "Expected ] after second column name",
-            this.tokens.peek().position
-          );
-        }
-        this.tokens.consume(); // ]
-
-        if (!this.tokens.match("RBRACKET")) {
-          throw new ParseError(
-            "Expected ] to close table reference",
-            this.tokens.peek().position
-          );
-        }
-        this.tokens.consume(); // outer ]
-
-        cols = {
-          startCol: colStart,
-          endCol: colEnd,
-        };
       }
     } else if (this.tokens.match("AT")) {
       // Current row reference like Table1[@Column]
@@ -1597,7 +1609,7 @@ export class Parser {
         this.tokens.match("NUMBER") ||
         this.tokens.match("OPERATOR")
       ) {
-        // Handle [[Column1]:[Column2]] syntax
+        // Handle [[Column]] or [[Column1]:[Column2]] syntax
         const colStart = this.parseColumnName();
 
         if (!this.tokens.match("RBRACKET")) {
@@ -1608,44 +1620,55 @@ export class Parser {
         }
         this.tokens.consume(); // ]
 
-        if (!this.tokens.match("COLON")) {
-          throw new ParseError(
-            "Expected : after first column in [[Column1]:[Column2]]",
-            this.tokens.peek().position
-          );
+        // Check if this is a column range [[Column1]:[Column2]] or single column [[Column]]
+        if (this.tokens.match("COLON")) {
+          this.tokens.consume(); // :
+
+          if (!this.tokens.match("LBRACKET")) {
+            throw new ParseError(
+              "Expected [ before second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // [
+
+          const colEnd = this.parseColumnName();
+
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] after second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // ]
+
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] to close table reference",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // outer ]
+
+          cols = {
+            startCol: colStart,
+            endCol: colEnd,
+          };
+        } else {
+          // Single column with double brackets [[Column]]
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] to close table reference",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // outer ]
+
+          cols = {
+            startCol: colStart,
+            endCol: colStart,
+          };
         }
-        this.tokens.consume(); // :
-
-        if (!this.tokens.match("LBRACKET")) {
-          throw new ParseError(
-            "Expected [ before second column name",
-            this.tokens.peek().position
-          );
-        }
-        this.tokens.consume(); // [
-
-        const colEnd = this.parseColumnName();
-
-        if (!this.tokens.match("RBRACKET")) {
-          throw new ParseError(
-            "Expected ] after second column name",
-            this.tokens.peek().position
-          );
-        }
-        this.tokens.consume(); // ]
-
-        if (!this.tokens.match("RBRACKET")) {
-          throw new ParseError(
-            "Expected ] to close table reference",
-            this.tokens.peek().position
-          );
-        }
-        this.tokens.consume(); // outer ]
-
-        cols = {
-          startCol: colStart,
-          endCol: colEnd,
-        };
       }
     } else if (this.tokens.match("AT")) {
       // Current row reference like Table1[@Column]
@@ -1935,10 +1958,10 @@ export class Parser {
 
       let columnName: string;
 
-      // Check if we have double brackets [@[Column Name]]
+      // Check if we have double brackets [@[Column Name]] or [@[Column1]:[Column2]]
       if (this.tokens.match("LBRACKET")) {
         this.tokens.consume(); // [
-        columnName = this.parseColumnName();
+        const colStart = this.parseColumnName();
 
         if (!this.tokens.match("RBRACKET")) {
           throw new ParseError(
@@ -1947,18 +1970,32 @@ export class Parser {
           );
         }
         this.tokens.consume(); // ]
-      } else {
-        // Single bracket format [@Column] or [@Column1:Column2]
-        const colStart = this.parseColumnName();
 
-        // Check if this is a column range [@Column1:Column2]
+        // Check if this is a column range [@[Column1]:[Column2]]
         if (this.tokens.match("COLON")) {
           this.tokens.consume(); // :
+
+          if (!this.tokens.match("LBRACKET")) {
+            throw new ParseError(
+              "Expected [ before second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // [
+
           const colEnd = this.parseColumnName();
 
           if (!this.tokens.match("RBRACKET")) {
             throw new ParseError(
-              "Expected ] after column range",
+              "Expected ] after second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // ]
+
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] to close column range",
               this.tokens.peek().position
             );
           }
@@ -1977,9 +2014,31 @@ export class Parser {
             },
           });
         } else {
-          // Single column [@Column]
-          columnName = colStart;
+          // Single column [@[Column]]
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] after column reference",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // ]
+
+          return createStructuredReferenceNode({
+            tableName: undefined,
+            cols: {
+              startCol: colStart,
+              endCol: colStart,
+            },
+            isCurrentRow: true,
+            position: {
+              start: this.tokens.getTokens()[start]?.position?.start ?? 0,
+              end: this.tokens.peek().position?.end ?? 0,
+            },
+          });
         }
+      } else {
+        // Single bracket format [@Column] - colons in column names are preserved
+        columnName = this.parseColumnName();
       }
 
       if (!this.tokens.match("RBRACKET")) {

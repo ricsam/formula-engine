@@ -546,18 +546,20 @@ describe("Parser - Structured References", () => {
   });
 
   test("should parse column range references", () => {
-    const ast = parseFormula("Table1[Sales:Quantity]");
+    // Use explicit double-bracket syntax for column ranges
+    const ast = parseFormula("Table1[[Sales]:[Quantity]]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.tableName).toBe("Table1");
     expect(ast.cols).toEqual({ startCol: "Sales", endCol: "Quantity" });
     expect(ast.isCurrentRow).toBe(false);
   });
 
-  test("should parse selector with column range", () => {
+  test("should parse selector with column name containing colon", () => {
+    // In selector context [[#Data],[ColumnName]], colons in ColumnName are part of the name
     const ast = parseFormula("Table1[[#Data],[Sales:Quantity]]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.tableName).toBe("Table1");
-    expect(ast.cols).toEqual({ startCol: "Sales", endCol: "Quantity" });
+    expect(ast.cols).toEqual({ startCol: "Sales:Quantity", endCol: "Sales:Quantity" });
     expect(ast.selector).toBe("#Data");
   });
 
@@ -584,7 +586,8 @@ describe("Parser - Structured References", () => {
   });
 
   test("should parse simple current row column range syntax", () => {
-    const ast = parseFormula("Table1[@num:result]");
+    // Use explicit double-bracket syntax for column ranges
+    const ast = parseFormula("Table1[@[num]:[result]]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.tableName).toBe("Table1");
     expect(ast.cols).toEqual({
@@ -702,6 +705,38 @@ describe("Parser - Structured References", () => {
     expect(ast.isCurrentRow).toBe(true);
   });
 
+  test("should parse double-bracketed single column syntax", () => {
+    // [[Column]] syntax is valid for single columns (Excel compatibility)
+    const ast = parseFormula("DataTable[[CAR MAP ]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("DataTable");
+    expect(ast.cols).toEqual({
+      startCol: "CAR MAP ",
+      endCol: "CAR MAP ",
+    });
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse complex formula with double-bracketed column reference", () => {
+    // Real-world formula with [[Column]] syntax
+    const ast = parseFormula("INDEX(DataTable[[CAR MAP ]],MATCH([@Identifier],DataTable[MAP identifier],0))");
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("INDEX");
+    expect(ast.args.length).toBe(2);
+    
+    // First arg: DataTable[[CAR MAP ]]
+    expect(ast.args[0].type).toBe("structured-reference");
+    expect(ast.args[0].tableName).toBe("DataTable");
+    expect(ast.args[0].cols).toEqual({
+      startCol: "CAR MAP ",
+      endCol: "CAR MAP ",
+    });
+    
+    // Second arg: MATCH function
+    expect(ast.args[1].type).toBe("function");
+    expect(ast.args[1].name).toBe("MATCH");
+  });
+
   test("should parse column names with trailing spaces", () => {
     const ast = parseFormula("[@[Cars needed (M) ]]");
     expect(ast.type).toBe("structured-reference");
@@ -755,7 +790,8 @@ describe("Parser - Structured References", () => {
   });
 
   test("should parse column range with dashed column names", () => {
-    const ast = parseFormula("Table1[ORDER-ID:CUSTOMER-ID]");
+    // Use explicit double-bracket syntax for column ranges
+    const ast = parseFormula("Table1[[ORDER-ID]:[CUSTOMER-ID]]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.tableName).toBe("Table1");
     expect(ast.cols).toEqual({
@@ -777,13 +813,14 @@ describe("Parser - Structured References", () => {
     expect(ast.isCurrentRow).toBe(false);
   });
 
-  test("should parse bare column range reference", () => {
+  test("should parse bare column name with colon as single column", () => {
+    // Single-bracket syntax with colon is treated as a single column name
     const ast = parseFormula("[num:result]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.tableName).toBeUndefined();
     expect(ast.cols).toEqual({
-      startCol: "num",
-      endCol: "result",
+      startCol: "num:result",
+      endCol: "num:result",
     });
     expect(ast.isCurrentRow).toBe(false);
   });
@@ -885,7 +922,8 @@ describe("Parser - Structured References", () => {
   });
 
   test("should parse column range with mixed spaces and dashes", () => {
-    const ast = parseFormula("Table1[CAR ID:ORDER-ID]");
+    // Use explicit double-bracket syntax for column ranges
+    const ast = parseFormula("Table1[[CAR ID]:[ORDER-ID]]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.tableName).toBe("Table1");
     expect(ast.cols).toEqual({
@@ -1117,8 +1155,8 @@ describe("Parser - Complex Formulas with New Syntax", () => {
       endCol: "Gross Profit",
     });
 
-    // Test simple current row range with spaces
-    const ast4 = parseFormula("[@Net Sales:Gross Profit]");
+    // Test simple current row range with spaces - use double-bracket syntax
+    const ast4 = parseFormula("[@[Net Sales]:[Gross Profit]]");
     expect(ast4.type).toBe("structured-reference");
     expect(ast4.tableName).toBeUndefined();
     expect(ast4.isCurrentRow).toBe(true);

@@ -335,7 +335,9 @@ function formatThreeDRange(ast: ThreeDRangeNode): string {
  */
 function needsColumnBrackets(columnName: string): boolean {
   // Column names need extra brackets if they contain spaces or special characters
-  return /[\s\[\]#@,:=/]/.test(columnName);
+  // Note: Colons are NOT included here since they can be part of column names
+  // Column ranges must use explicit double-bracket syntax: [[Col1]:[Col2]]
+  return /[\s\[\]#@,=/]/.test(columnName);
 }
 
 function formatStructuredReference(ast: StructuredReferenceNode): string {
@@ -356,9 +358,6 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
       return `[${selector}]`;
     } else if (cols) {
       const startNeedsBrackets = needsColumnBrackets(cols.startCol);
-      const endNeedsBrackets =
-        cols.startCol !== cols.endCol && needsColumnBrackets(cols.endCol);
-      const anyNeedsBrackets = startNeedsBrackets || endNeedsBrackets;
 
       if (cols.startCol === cols.endCol) {
         // Single column
@@ -368,12 +367,9 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
           return `[${cols.startCol}]`;
         }
       } else {
-        // Column range
-        if (anyNeedsBrackets) {
-          return `[[${cols.startCol}]:[${cols.endCol}]]`;
-        } else {
-          return `[${cols.startCol}:${cols.endCol}]`;
-        }
+        // Column range - always use double-bracket syntax to avoid ambiguity
+        // with column names that contain colons
+        return `[[${cols.startCol}]:[${cols.endCol}]]`;
       }
     }
     return "[]"; // Empty bare reference (shouldn't happen)
@@ -411,19 +407,13 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
     if (isCurrentRow) {
       // Current row references
       if (cols.startCol === cols.endCol) {
-        // Single column
-        if (startNeedsBrackets) {
-          result += `[@[${cols.startCol}]]`;
-        } else {
-          result += `[@${cols.startCol}]`;
-        }
+        // Single column - always use simple format [@ColumnName]
+        // No need for double brackets even if column name has spaces
+        result += `[@${cols.startCol}]`;
       } else {
-        // Column range
-        if (anyNeedsBrackets) {
-          result += `[@[${cols.startCol}]:[${cols.endCol}]]`;
-        } else {
-          result += `[@${cols.startCol}:${cols.endCol}]`;
-        }
+        // Column range - always use double-bracket syntax to avoid ambiguity
+        // with column names that contain colons
+        result += `[@[${cols.startCol}]:[${cols.endCol}]]`;
       }
     } else {
       // Regular column references
@@ -431,12 +421,9 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
         // Single column - always use single brackets for table references
         result += `[${cols.startCol}]`;
       } else {
-        // Column range
-        if (anyNeedsBrackets) {
-          result += `[[${cols.startCol}]:[${cols.endCol}]]`;
-        } else {
-          result += `[${cols.startCol}:${cols.endCol}]`;
-        }
+        // Column range - always use double-bracket syntax to avoid ambiguity
+        // with column names that contain colons
+        result += `[[${cols.startCol}]:[${cols.endCol}]]`;
       }
     }
   }

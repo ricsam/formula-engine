@@ -8,6 +8,10 @@ import {
   Copy,
   Download,
   Edit2,
+  File,
+  Files,
+  FileText,
+  FolderOpen,
   Plus,
   Save,
   Trash2,
@@ -37,77 +41,113 @@ interface SavedState {
   viewport?: ViewportState;
 }
 
-const STORAGE_KEY = "formula-engine-excel-demo";
+// OPFS (Origin Private File System) helper functions
+const OPFS_DIRECTORY = "formula-engine";
+const DEFAULT_FILE = "workbook.json";
 
-const loadFromLocalStorage = (): undefined | SavedState => {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (!saved) return undefined;
+async function getOPFSRoot(): Promise<FileSystemDirectoryHandle> {
+  return await navigator.storage.getDirectory();
+}
+
+async function getOPFSDirectory(): Promise<FileSystemDirectoryHandle> {
+  const root = await getOPFSRoot();
+  return await root.getDirectoryHandle(OPFS_DIRECTORY, { create: true });
+}
+
+async function listOPFSFiles(): Promise<string[]> {
   try {
-    const data = deserialize(saved) as SavedState;
-    return data;
+    const dir = await getOPFSDirectory();
+    const files: string[] = [];
+    // @ts-ignore - AsyncIterator not fully typed
+    for await (const [name, handle] of dir.entries()) {
+      if (handle.kind === "file" && name.endsWith(".json")) {
+        files.push(name);
+      }
+    }
+    return files.sort();
   } catch (error) {
-    console.error("Failed to load from localStorage:", error);
-    return undefined;
+    console.error("Failed to list OPFS files:", error);
+    return [];
   }
-};
+}
+
+async function saveToOPFS(filename: string, data: SavedState): Promise<void> {
+  const dir = await getOPFSDirectory();
+  const fileHandle = await dir.getFileHandle(filename, { create: true });
+  const writable = await fileHandle.createWritable();
+  await writable.write(serialize(data));
+  await writable.close();
+}
+
+async function loadFromOPFS(filename: string): Promise<SavedState | null> {
+  try {
+    const dir = await getOPFSDirectory();
+    const fileHandle = await dir.getFileHandle(filename);
+    const file = await fileHandle.getFile();
+    const contents = await file.text();
+    return deserialize(contents) as SavedState;
+  } catch (error) {
+    console.error(`Failed to load ${filename} from OPFS:`, error);
+    return null;
+  }
+}
+
+async function deleteFromOPFS(filename: string): Promise<void> {
+  try {
+    const dir = await getOPFSDirectory();
+    await dir.removeEntry(filename);
+  } catch (error) {
+    console.error(`Failed to delete ${filename} from OPFS:`, error);
+    throw error;
+  }
+}
+
+async function renameInOPFS(oldName: string, newName: string): Promise<void> {
+  try {
+    const dir = await getOPFSDirectory();
+    const oldHandle = await dir.getFileHandle(oldName);
+    const file = await oldHandle.getFile();
+    const contents = await file.text();
+    
+    // Create new file with new name
+    const newHandle = await dir.getFileHandle(newName, { create: true });
+    const writable = await newHandle.createWritable();
+    await writable.write(contents);
+    await writable.close();
+    
+    // Delete old file
+    await dir.removeEntry(oldName);
+  } catch (error) {
+    console.error(`Failed to rename ${oldName} to ${newName}:`, error);
+    throw error;
+  }
+}
 
 const createEngine = () => {
   const engine = FormulaEngine.buildEmpty();
-  const savedData = loadFromLocalStorage();
+  
+  // Create first workbook and sheet with sample data
+  const workbookName = "Workbook1";
+  engine.addWorkbook(workbookName);
+  const sheetName = engine.addSheet({
+    workbookName,
+    sheetName: "Sheet1",
+  }).name;
 
-  if (savedData && savedData.engineState) {
-    // Reset the engine using the deserialized state
-    engine._workbookManager.resetWorkbooks(savedData.engineState.workbooks);
+  const defaultWorkbookItem: WorkbookGridItem = {
+    name: workbookName,
+    x: 100,
+    y: 100,
+    width: 800,
+    height: 600,
+    activeSheet: sheetName,
+  };
 
-    savedData.engineState.workbooks.forEach((workbook) => {
-      engine._namedExpressionManager.addWorkbook(workbook.name);
-      engine._tableManager.addWorkbook(workbook.name);
-      workbook.sheets.forEach((sheet) => {
-        engine._namedExpressionManager.addSheet({
-          workbookName: workbook.name,
-          sheetName: sheet.name,
-        });
-      });
-    });
-
-    engine._namedExpressionManager.resetNamedExpressions(
-      savedData.engineState.namedExpressions
-    );
-    engine._tableManager.resetTables(savedData.engineState.tables);
-
-    // Re-evaluate all sheets to ensure all dependencies are resolved correctly
-    engine.reevaluate();
-    engine._eventManager.emitUpdate();
-
-    return {
-      engine,
-      workbookGridItems: savedData.workbookGridItems,
-      viewport: savedData.viewport,
-    };
-  } else {
-    // Create first workbook and sheet with sample data
-    const workbookName = "Workbook1";
-    engine.addWorkbook(workbookName);
-    const sheetName = engine.addSheet({
-      workbookName,
-      sheetName: "Sheet1",
-    }).name;
-
-    const defaultWorkbookItem: WorkbookGridItem = {
-      name: workbookName,
-      x: 100,
-      y: 100,
-      width: 800,
-      height: 600,
-      activeSheet: sheetName,
-    };
-
-    return {
-      engine,
-      workbookGridItems: [defaultWorkbookItem],
-      viewport: undefined,
-    };
-  }
+  return {
+    engine,
+    workbookGridItems: [defaultWorkbookItem],
+    viewport: undefined,
+  };
 };
 
 const {
@@ -125,6 +165,10 @@ export function ExcelDemo() {
   const [viewport, _setViewport] = useState<ViewportState | undefined>(
     initialViewport
   );
+  const [currentFileName, setCurrentFileName] = useState<string>(DEFAULT_FILE);
+  const [opfsFiles, setOpfsFiles] = useState<string[]>([]);
+  const [showFileManager, setShowFileManager] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   const setViewport: typeof _setViewport = useCallback(
     (viewport) => {
@@ -155,8 +199,62 @@ export function ExcelDemo() {
 
   const engineState = useEngine(engine);
 
-  // Save to localStorage
-  const saveToLocalStorage = () => {
+  // Load from OPFS on mount
+  useEffect(() => {
+    const loadInitialFile = async () => {
+      try {
+        const files = await listOPFSFiles();
+        setOpfsFiles(files);
+
+        // Try to load the default file or the first available file
+        const fileToLoad = files.includes(DEFAULT_FILE) ? DEFAULT_FILE : files[0];
+        
+        if (fileToLoad) {
+          const data = await loadFromOPFS(fileToLoad);
+          if (data && data.engineState && data.workbookGridItems) {
+            // Reset the engine using the loaded state
+            engine._workbookManager.resetWorkbooks(data.engineState.workbooks);
+
+            data.engineState.workbooks.forEach((workbook) => {
+              engine._namedExpressionManager.addWorkbook(workbook.name);
+              engine._tableManager.addWorkbook(workbook.name);
+              workbook.sheets.forEach((sheet) => {
+                engine._namedExpressionManager.addSheet({
+                  workbookName: workbook.name,
+                  sheetName: sheet.name,
+                });
+              });
+            });
+
+            engine._namedExpressionManager.resetNamedExpressions(
+              data.engineState.namedExpressions
+            );
+            engine._tableManager.resetTables(data.engineState.tables);
+
+            engine.reevaluate();
+            engine._eventManager.emitUpdate();
+
+            setWorkbookGridItems(data.workbookGridItems);
+            if (data.viewport) {
+              _setViewport(data.viewport);
+            }
+            setCurrentFileName(fileToLoad);
+            setHasUnsavedChanges(false);
+            console.log(`Loaded ${fileToLoad} from OPFS`);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to load from OPFS:", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadInitialFile();
+  }, [engine, _setViewport]);
+
+  // Auto-save to OPFS
+  const saveToOPFSAuto = useCallback(async () => {
     try {
       const dataToSave: SavedState = {
         workbookGridItems,
@@ -164,24 +262,180 @@ export function ExcelDemo() {
         viewport,
       };
 
-      localStorage.setItem(STORAGE_KEY, serialize(dataToSave));
+      await saveToOPFS(currentFileName, dataToSave);
       setHasUnsavedChanges(false);
-      console.log("Spreadsheet saved to localStorage");
-      console.log(
-        "Viewport data saved:",
-        workbookGridItems.map((item) => ({
-          name: item.name,
-          position: { x: item.x, y: item.y },
-          size: { width: item.width, height: item.height },
-        }))
-      );
+      console.log(`Auto-saved to OPFS: ${currentFileName}`);
+      
+      // Refresh file list
+      const files = await listOPFSFiles();
+      setOpfsFiles(files);
     } catch (error) {
-      console.error("Failed to save to localStorage:", error);
+      console.error("Failed to auto-save to OPFS:", error);
     }
-  };
+  }, [workbookGridItems, engine, viewport, currentFileName]);
 
-  // Export state to JSON file
-  const exportState = useCallback(() => {
+  // Manual save (for immediate feedback)
+  const saveFile = useCallback(async () => {
+    await saveToOPFSAuto();
+  }, [saveToOPFSAuto]);
+
+  // Load a file from OPFS
+  const loadFile = useCallback(async (filename: string) => {
+    try {
+      const data = await loadFromOPFS(filename);
+      if (!data || !data.engineState || !data.workbookGridItems) {
+        throw new Error("Invalid file format");
+      }
+
+      // Reset the engine using the loaded state
+      engine._workbookManager.resetWorkbooks(data.engineState.workbooks);
+
+      data.engineState.workbooks.forEach((workbook) => {
+        engine._namedExpressionManager.addWorkbook(workbook.name);
+        engine._tableManager.addWorkbook(workbook.name);
+        workbook.sheets.forEach((sheet) => {
+          engine._namedExpressionManager.addSheet({
+            workbookName: workbook.name,
+            sheetName: sheet.name,
+          });
+        });
+      });
+
+      engine._namedExpressionManager.resetNamedExpressions(
+        data.engineState.namedExpressions
+      );
+      engine._tableManager.resetTables(data.engineState.tables);
+
+      engine.reevaluate();
+      engine._eventManager.emitUpdate();
+
+      setWorkbookGridItems(data.workbookGridItems);
+      if (data.viewport) {
+        _setViewport(data.viewport);
+      }
+      setCurrentFileName(filename);
+      setHasUnsavedChanges(false);
+      console.log(`Loaded ${filename} from OPFS`);
+    } catch (error) {
+      console.error(`Failed to load ${filename}:`, error);
+      alert(`Failed to load file: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  }, [engine, _setViewport]);
+
+  // Create new file
+  const newFile = useCallback(async () => {
+    if (hasUnsavedChanges) {
+      if (!confirm("You have unsaved changes. Are you sure you want to create a new file?")) {
+        return;
+      }
+    }
+
+    // Prompt for new filename
+    const newFileName = prompt("Enter new file name (without .json extension):", "workbook");
+    if (!newFileName) return;
+
+    const fullFileName = newFileName.endsWith(".json") ? newFileName : `${newFileName}.json`;
+
+    // Check if file already exists
+    if (opfsFiles.includes(fullFileName)) {
+      if (!confirm(`File "${fullFileName}" already exists. Overwrite?`)) {
+        return;
+      }
+    }
+
+    // Reset to initial state
+    engine._workbookManager.resetWorkbooks(new Map());
+    const workbookName = "Workbook1";
+    engine.addWorkbook(workbookName);
+    const sheetName = engine.addSheet({
+      workbookName,
+      sheetName: "Sheet1",
+    }).name;
+
+    const defaultWorkbookItem: WorkbookGridItem = {
+      name: workbookName,
+      x: 100,
+      y: 100,
+      width: 800,
+      height: 600,
+      activeSheet: sheetName,
+    };
+
+    setWorkbookGridItems([defaultWorkbookItem]);
+    _setViewport(undefined);
+    setCurrentFileName(fullFileName);
+    setHasUnsavedChanges(true);
+    
+    engine.reevaluate();
+    engine._eventManager.emitUpdate();
+
+    // Save the new file immediately
+    const dataToSave: SavedState = {
+      workbookGridItems: [defaultWorkbookItem],
+      engineState: engine.getState(),
+      viewport: undefined,
+    };
+    await saveToOPFS(fullFileName, dataToSave);
+    setHasUnsavedChanges(false);
+
+    // Refresh file list
+    const files = await listOPFSFiles();
+    setOpfsFiles(files);
+  }, [engine, hasUnsavedChanges, _setViewport, opfsFiles]);
+
+  // Delete a file from OPFS
+  const deleteFile = useCallback(async (filename: string) => {
+    if (!confirm(`Are you sure you want to delete "${filename}"?`)) {
+      return;
+    }
+
+    try {
+      await deleteFromOPFS(filename);
+      console.log(`Deleted ${filename} from OPFS`);
+
+      // Refresh file list
+      const files = await listOPFSFiles();
+      setOpfsFiles(files);
+
+      // If we deleted the current file, create a new one
+      if (filename === currentFileName) {
+        await newFile();
+      }
+    } catch (error) {
+      console.error(`Failed to delete ${filename}:`, error);
+      alert(`Failed to delete file: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  }, [currentFileName, newFile]);
+
+  // Rename current file
+  const renameFile = useCallback(async () => {
+    const newName = prompt("Enter new file name (without .json extension):", currentFileName.replace(".json", ""));
+    if (!newName) return;
+
+    const fullNewName = newName.endsWith(".json") ? newName : `${newName}.json`;
+    
+    if (opfsFiles.includes(fullNewName)) {
+      alert(`File "${fullNewName}" already exists.`);
+      return;
+    }
+
+    try {
+      await renameInOPFS(currentFileName, fullNewName);
+      setCurrentFileName(fullNewName);
+      
+      // Refresh file list
+      const files = await listOPFSFiles();
+      setOpfsFiles(files);
+      
+      console.log(`Renamed ${currentFileName} to ${fullNewName}`);
+    } catch (error) {
+      console.error("Failed to rename file:", error);
+      alert(`Failed to rename file: ${error instanceof Error ? error.message : "Unknown error"}`);
+    }
+  }, [currentFileName, opfsFiles]);
+
+  // Export current file to file system
+  const exportToFileSystem = useCallback(() => {
     try {
       const dataToExport: SavedState = {
         workbookGridItems,
@@ -195,31 +449,31 @@ export function ExcelDemo() {
 
       const link = document.createElement("a");
       link.href = url;
-      link.download = `formula-engine-export-${new Date().toISOString().slice(0, 19).replace(/:/g, "-")}.json`;
+      link.download = currentFileName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
 
-      console.log("State exported successfully");
+      console.log(`Exported ${currentFileName} to file system`);
     } catch (error) {
-      console.error("Failed to export state:", error);
-      alert("Failed to export state. Please try again.");
+      console.error("Failed to export to file system:", error);
+      alert("Failed to export. Please try again.");
     }
-  }, [workbookGridItems, engine, viewport]);
+  }, [workbookGridItems, engine, viewport, currentFileName]);
 
-  // Import state from JSON file
-  const importState = useCallback(() => {
+  // Import file from file system to OPFS
+  const importFromFileSystem = useCallback(async () => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".json";
 
-    input.onchange = (event) => {
+    input.onchange = async (event) => {
       const file = (event.target as HTMLInputElement).files?.[0];
       if (!file) return;
 
       const reader = new FileReader();
-      reader.onload = (e) => {
+      reader.onload = async (e) => {
         try {
           const jsonString = e.target?.result as string;
           const importedData: SavedState = deserialize(
@@ -231,50 +485,35 @@ export function ExcelDemo() {
             throw new Error("Invalid file format: missing required fields");
           }
 
-          // Reset the engine using the deserialized state
-          engine._workbookManager.resetWorkbooks(
-            importedData.engineState.workbooks
-          );
-
-          importedData.engineState.workbooks.forEach((workbook) => {
-            engine._namedExpressionManager.addWorkbook(workbook.name);
-            engine._tableManager.addWorkbook(workbook.name);
-            workbook.sheets.forEach((sheet) => {
-              engine._namedExpressionManager.addSheet({
-                workbookName: workbook.name,
-                sheetName: sheet.name,
-              });
-            });
-          });
-
-          engine._namedExpressionManager.resetNamedExpressions(
-            importedData.engineState.namedExpressions
-          );
-          engine._tableManager.resetTables(importedData.engineState.tables);
-
-          // Re-evaluate all sheets to ensure all dependencies are resolved correctly
-          engine.reevaluate();
-          engine._eventManager.emitUpdate();
-
-          // Update workbook grid items
-          setWorkbookGridItems(importedData.workbookGridItems);
-
-          // Update viewport if available
-          if (importedData.viewport) {
-            _setViewport(importedData.viewport);
+          // Save to OPFS with the imported filename
+          let filename = file.name;
+          if (opfsFiles.includes(filename)) {
+            if (!confirm(`File "${filename}" already exists in OPFS. Overwrite?`)) {
+              // Generate a unique name
+              const baseName = filename.replace(".json", "");
+              let counter = 1;
+              while (opfsFiles.includes(`${baseName}-${counter}.json`)) {
+                counter++;
+              }
+              filename = `${baseName}-${counter}.json`;
+            }
           }
 
-          // Mark as having unsaved changes since we haven't saved to localStorage yet
-          setHasUnsavedChanges(true);
+          await saveToOPFS(filename, importedData);
 
-          console.log("State imported successfully");
-          alert(
-            "State imported successfully! Don't forget to save if you want to persist these changes."
-          );
+          // Load the imported file
+          await loadFile(filename);
+
+          // Refresh file list
+          const files = await listOPFSFiles();
+          setOpfsFiles(files);
+
+          console.log(`Imported ${file.name} to OPFS as ${filename}`);
+          alert(`File imported successfully as "${filename}"`);
         } catch (error) {
-          console.error("Failed to import state:", error);
+          console.error("Failed to import file:", error);
           alert(
-            `Failed to import state: ${error instanceof Error ? error.message : "Unknown error"}`
+            `Failed to import file: ${error instanceof Error ? error.message : "Unknown error"}`
           );
         }
       };
@@ -283,7 +522,7 @@ export function ExcelDemo() {
     };
 
     input.click();
-  }, [engine, _setViewport]);
+  }, [engine, _setViewport, opfsFiles, loadFile]);
 
   // Mark as having unsaved changes when sheets change
   const markUnsavedChanges = useCallback(() => {
@@ -295,6 +534,17 @@ export function ExcelDemo() {
     const unsubscribe = engine.onUpdate(markUnsavedChanges);
     return unsubscribe;
   }, [engine, markUnsavedChanges]);
+
+  // Auto-save effect (debounced)
+  useEffect(() => {
+    if (!hasUnsavedChanges || isLoading) return;
+
+    const timeoutId = setTimeout(() => {
+      saveToOPFSAuto();
+    }, 2000); // Auto-save after 2 seconds of inactivity
+
+    return () => clearTimeout(timeoutId);
+  }, [hasUnsavedChanges, saveToOPFSAuto, isLoading]);
 
   // Add new workbook
   const addWorkbook = useCallback(() => {
@@ -916,15 +1166,40 @@ export function ExcelDemo() {
     .values()
     .reduce((sum, wb) => sum + wb.size, 0);
 
+  // Show loading spinner while initializing
+  if (isLoading) {
+    return (
+      <div className="h-full flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+          <p className="text-sm text-gray-600">Loading workbook from OPFS...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="h-full flex flex-col">
       {/* Grid-based header */}
       <div className="border-b border-gray-200 bg-gray-50">
         <div className="p-3 border-b border-gray-200">
           <div className="flex items-center justify-between">
-            <h1 className="text-lg font-semibold text-gray-800">
-              FormulaEngine Multi-Workbook Demo
-            </h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-lg font-semibold text-gray-800">
+                FormulaEngine Multi-Workbook Demo
+              </h1>
+              {currentFileName && (
+                <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 rounded border border-blue-200">
+                  <FileText className="h-4 w-4 text-blue-600" />
+                  <span className="text-sm font-medium text-blue-800" data-testid="current-filename">
+                    {currentFileName}
+                  </span>
+                  {hasUnsavedChanges && (
+                    <span className="text-xs text-orange-600">●</span>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="flex items-center gap-4 text-sm text-gray-600">
               <span data-testid="total-workbooks-count">
                 Workbooks: {workbookGridItems.length}
@@ -940,6 +1215,87 @@ export function ExcelDemo() {
                 </span>
               )}
               <div className="flex items-center gap-2">
+                {/* File Operations */}
+                <div className="flex items-center gap-1 border-r border-gray-300 pr-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-gray-300 text-gray-700"
+                    onClick={() => setShowFileManager(!showFileManager)}
+                    data-testid="file-manager-button"
+                    title="File Manager"
+                  >
+                    <Files className="h-4 w-4 mr-1" />
+                    Files ({opfsFiles.length})
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-gray-300 text-gray-700"
+                    onClick={newFile}
+                    data-testid="new-file-button"
+                    title="New File in OPFS"
+                  >
+                    <File className="h-4 w-4 mr-1" />
+                    New
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={hasUnsavedChanges ? "default" : "outline"}
+                    className={`
+                      ${
+                        hasUnsavedChanges
+                          ? "bg-blue-600 hover:bg-blue-700 text-white"
+                          : "border-gray-300 text-gray-700"
+                      }
+                    `}
+                    onClick={saveFile}
+                    data-testid="save-button"
+                    title="Save to OPFS (auto-saves after 2s)"
+                  >
+                    <Save className="h-4 w-4 mr-1" />
+                    {hasUnsavedChanges ? "Save" : "Saved"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-gray-300 text-gray-700"
+                    onClick={renameFile}
+                    data-testid="rename-file-button"
+                    title="Rename current file"
+                  >
+                    <Edit2 className="h-4 w-4 mr-1" />
+                    Rename
+                  </Button>
+                </div>
+
+                {/* Import/Export to/from File System */}
+                <div className="flex items-center gap-1 border-r border-gray-300 pr-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-gray-300 text-gray-700"
+                    onClick={exportToFileSystem}
+                    data-testid="export-button"
+                    title="Export current file to your file system"
+                  >
+                    <Download className="h-4 w-4 mr-1" />
+                    Export
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-gray-300 text-gray-700"
+                    onClick={importFromFileSystem}
+                    data-testid="import-button"
+                    title="Import file from your file system to OPFS"
+                  >
+                    <Upload className="h-4 w-4 mr-1" />
+                    Import
+                  </Button>
+                </div>
+
+                {/* Workbook Operations */}
                 <Button
                   size="sm"
                   variant="outline"
@@ -950,6 +1306,8 @@ export function ExcelDemo() {
                   <Plus className="h-4 w-4 mr-1" />
                   Add Workbook
                 </Button>
+                
+                {/* Tools */}
                 <Button
                   size="sm"
                   variant="outline"
@@ -965,28 +1323,7 @@ export function ExcelDemo() {
                     <ChevronDown className="h-3 w-3 ml-1" />
                   )}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-gray-300 text-gray-700"
-                  onClick={exportState}
-                  data-testid="export-button"
-                  title="Export state to JSON file"
-                >
-                  <Download className="h-4 w-4 mr-1" />
-                  Export
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="border-gray-300 text-gray-700"
-                  onClick={importState}
-                  data-testid="import-button"
-                  title="Import state from JSON file"
-                >
-                  <Upload className="h-4 w-4 mr-1" />
-                  Import
-                </Button>
+                
                 <Button
                   size="sm"
                   variant={verboseErrors ? "default" : "outline"}
@@ -1003,35 +1340,101 @@ export function ExcelDemo() {
                   <AlertTriangle className="h-4 w-4 mr-1" />
                   Verbose Errors
                 </Button>
-                <Button
-                  size="sm"
-                  variant={hasUnsavedChanges ? "default" : "outline"}
-                  className={`
-                    ${
-                      hasUnsavedChanges
-                        ? "bg-blue-600 hover:bg-blue-700 text-white"
-                        : "border-gray-300 text-gray-700"
-                    }
-                  `}
-                  onClick={saveToLocalStorage}
-                  data-testid="save-button"
-                >
-                  <Save className="h-4 w-4 mr-1" />
-                  {hasUnsavedChanges ? "Save Changes" : "Saved"}
-                </Button>
-                {hasUnsavedChanges && (
-                  <span
-                    className="text-xs text-orange-600 font-medium"
-                    data-testid="unsaved-changes-indicator"
-                  >
-                    Unsaved changes
-                  </span>
-                )}
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* File Manager Panel */}
+      {showFileManager && (
+        <div
+          className="border-b border-gray-200 bg-gray-50 p-4"
+          data-testid="file-manager-panel"
+        >
+          <div className="bg-white p-3 rounded border border-gray-200">
+            <h3 className="text-sm font-semibold text-gray-800 mb-3">
+              OPFS Files ({opfsFiles.length})
+            </h3>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {opfsFiles.length === 0 ? (
+                <p className="text-xs text-gray-500 italic">
+                  No files in OPFS. Create a new file to get started.
+                </p>
+              ) : (
+                opfsFiles.map((filename) => (
+                  <div
+                    key={filename}
+                    className={`
+                      flex items-center justify-between p-2 rounded cursor-pointer transition-colors
+                      ${
+                        filename === currentFileName
+                          ? "bg-blue-100 border border-blue-300"
+                          : "bg-gray-50 hover:bg-gray-100 border border-gray-200"
+                      }
+                    `}
+                    data-testid={`opfs-file-${filename}`}
+                  >
+                    <div
+                      className="flex items-center gap-2 flex-1"
+                      onClick={() => {
+                        if (filename !== currentFileName) {
+                          if (
+                            hasUnsavedChanges &&
+                            !confirm(
+                              "You have unsaved changes. Switch files anyway?"
+                            )
+                          ) {
+                            return;
+                          }
+                          loadFile(filename);
+                        }
+                      }}
+                    >
+                      <FileText
+                        className={`h-4 w-4 ${
+                          filename === currentFileName
+                            ? "text-blue-600"
+                            : "text-gray-600"
+                        }`}
+                      />
+                      <span
+                        className={`text-sm ${
+                          filename === currentFileName
+                            ? "font-semibold text-blue-800"
+                            : "text-gray-700"
+                        }`}
+                      >
+                        {filename}
+                      </span>
+                      {filename === currentFileName && (
+                        <span className="text-xs px-2 py-0.5 bg-blue-500 text-white rounded">
+                          Current
+                        </span>
+                      )}
+                    </div>
+                    {filename !== currentFileName && opfsFiles.length > 1 && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteFile(filename);
+                        }}
+                        title="Delete File"
+                        data-testid={`delete-opfs-file-${filename}`}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Named Expressions & Tables Panel */}
       {showNamedExpressions && (

@@ -232,9 +232,10 @@ describe("Formula Formatter", () => {
         "Table1[[#Headers],[Column1:Column2]]"
       );
     });
-    test("should format complex table references with range resolving to single column", () => {
+    test("should format complex table references with column name containing colon", () => {
+      // If the column name itself contains a colon, it's treated as a single column
       expect(formatFormula("Table1[[#Headers],[Column1:Column1]]")).toBe(
-        "Table1[[#Headers],[Column1]]"
+        "Table1[[#Headers],[Column1:Column1]]"
       );
     });
 
@@ -268,18 +269,28 @@ describe("Formula Formatter", () => {
       });
 
       test("should format column ranges with special characters (double brackets)", () => {
-        // Column ranges should use double brackets when any column has special chars
-        expect(formatFormula("Table1[CAR ID:ORDER ID]")).toBe("Table1[[CAR ID]:[ORDER ID]]");
-        expect(formatFormula("Table1[Net Sales:Gross Profit]")).toBe("Table1[[Net Sales]:[Gross Profit]]");
+        // Column ranges must use explicit double-bracket syntax
+        expect(formatFormula("Table1[[CAR ID]:[ORDER ID]]")).toBe("Table1[[CAR ID]:[ORDER ID]]");
+        expect(formatFormula("Table1[[Net Sales]:[Gross Profit]]")).toBe("Table1[[Net Sales]:[Gross Profit]]");
         
-        // Mixed: one with spaces, one without - should still use double brackets
-        expect(formatFormula("Table1[Column1:CAR ID]")).toBe("Table1[[Column1]:[CAR ID]]");
-        expect(formatFormula("Table1[CAR ID:Column2]")).toBe("Table1[[CAR ID]:[Column2]]");
+        // Mixed: one with spaces, one without
+        expect(formatFormula("Table1[[Column1]:[CAR ID]]")).toBe("Table1[[Column1]:[CAR ID]]");
+        expect(formatFormula("Table1[[CAR ID]:[Column2]]")).toBe("Table1[[CAR ID]:[Column2]]");
+      });
+
+      test("should format single column names containing colons", () => {
+        // Single-bracket syntax with colons should be treated as column names, not ranges
+        expect(formatFormula("Table1[CAR ID:ORDER ID]")).toBe("Table1[CAR ID:ORDER ID]");
+        expect(formatFormula("Table1[Net Sales:Gross Profit]")).toBe("Table1[Net Sales:Gross Profit]");
+        expect(formatFormula("Table1[CAR:ERC ratio]")).toBe("Table1[CAR:ERC ratio]");
+        expect(formatFormula("DataTable[CAR:ERC ratio]")).toBe("DataTable[CAR:ERC ratio]");
       });
 
       test("should format current row column ranges with special characters", () => {
+        // Double-bracket syntax for ranges
         expect(formatFormula("Table1[@[CAR ID]:[ORDER ID]]")).toBe("Table1[@[CAR ID]:[ORDER ID]]");
-        expect(formatFormula("Table1[@CAR ID:ORDER ID]")).toBe("Table1[@[CAR ID]:[ORDER ID]]");
+        // Single-bracket syntax treated as single column name
+        expect(formatFormula("Table1[@CAR ID:ORDER ID]")).toBe("Table1[@CAR ID:ORDER ID]");
       });
     });
 
@@ -291,7 +302,8 @@ describe("Formula Formatter", () => {
       });
 
       test("should format VLOOKUP with table references", () => {
-        const formula = "VLOOKUP([@Customer Name], CustomerTable[Customer Name:Phone Number], 3, FALSE)";
+        // Use explicit double-bracket syntax for column ranges
+        const formula = "VLOOKUP([@Customer Name], CustomerTable[[Customer Name]:[Phone Number]], 3, FALSE)";
         const expected = "VLOOKUP([@Customer Name],CustomerTable[[Customer Name]:[Phone Number]],3,FALSE)";
         expect(formatFormula(formula)).toBe(expected);
       });
@@ -315,7 +327,8 @@ describe("Formula Formatter", () => {
         expect(formatFormula("[result]")).toBe("[result]");
       });
 
-      test("should format bare column ranges", () => {
+      test("should format bare column names with colons", () => {
+        // Single-bracket syntax with colons are treated as column names, not ranges
         expect(formatFormula("[Column1:Column2]")).toBe("[Column1:Column2]");
         expect(formatFormula("[num:result]")).toBe("[num:result]");
       });
@@ -705,9 +718,13 @@ describe("Formula Formatter", () => {
 
     test("should preserve double brackets only when required for ranges", () => {
       const testCases = [
-        // Double brackets should be used for column ranges with special chars
-        { input: "Table1[Car Name:Order Date]", expected: "Table1[[Car Name]:[Order Date]]" },
-        { input: "Table1[Column A:Column B]", expected: "Table1[[Column A]:[Column B]]" },
+        // Single-bracket syntax with colons are now treated as column names, not ranges
+        { input: "Table1[Car Name:Order Date]", expected: "Table1[Car Name:Order Date]" },
+        { input: "Table1[Column A:Column B]", expected: "Table1[Column A:Column B]" },
+        
+        // Double-bracket syntax is required for actual column ranges
+        { input: "Table1[[Car Name]:[Order Date]]", expected: "Table1[[Car Name]:[Order Date]]" },
+        { input: "Table1[[Column A]:[Column B]]", expected: "Table1[[Column A]:[Column B]]" },
         
         // Double brackets should be used for selector + column combinations
         { input: "Table1[[#Data],[Car Name]]", expected: "Table1[[#Data],[Car Name]]" },
