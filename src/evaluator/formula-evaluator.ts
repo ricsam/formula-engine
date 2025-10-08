@@ -56,7 +56,7 @@ import { concatenate } from "./concatenation/concatenate";
 import type { NamedExpressionManager } from "src/core/managers/named-expression-manager";
 import type { EvaluationContext } from "./evaluation-context";
 import { flags } from "src/debug/flags";
-import { EvaluationError } from "./evaluation-error";
+import { AwaitingEvaluationError, EvaluationError } from "./evaluation-error";
 
 function isFormulaError(value: string): value is FormulaError {
   if (typeof value !== "string") return false;
@@ -184,7 +184,13 @@ export class FormulaEvaluator {
           type: "error",
           err: error.type,
           message: error.message,
-          errAddress: context.originCell.cellAddress,
+          errAddress: error.errAddress,
+        };
+      }
+      if (error instanceof AwaitingEvaluationError) {
+        return {
+          type: "awaiting-evaluation",
+          cellAddress: error.cellAddress,
         };
       }
 

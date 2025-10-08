@@ -389,12 +389,12 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
   result += tableName;
 
   if (selector && cols) {
-    // Complex syntax like Table1[[#Headers],[Column1]] or Table1[[#Headers],[Col1:Col2]]
+    // Complex syntax like Table1[[#Headers],[Column1]] or Table1[[#Headers],[Col1]:[Col2]]
     const colRef =
       cols.startCol === cols.endCol
-        ? cols.startCol
-        : `${cols.startCol}:${cols.endCol}`;
-    result += `[[${selector}],[${colRef}]]`;
+        ? `[${cols.startCol}]`  // Single column: [Column]
+        : `[${cols.startCol}]:[${cols.endCol}]`;  // Range: [Col1]:[Col2]
+    result += `[[${selector}],${colRef}]`;
   } else if (selector) {
     // Simple selector like Table1[#Data]
     result += `[${selector}]`;

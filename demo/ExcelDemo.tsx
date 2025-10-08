@@ -108,13 +108,13 @@ async function renameInOPFS(oldName: string, newName: string): Promise<void> {
     const oldHandle = await dir.getFileHandle(oldName);
     const file = await oldHandle.getFile();
     const contents = await file.text();
-    
+
     // Create new file with new name
     const newHandle = await dir.getFileHandle(newName, { create: true });
     const writable = await newHandle.createWritable();
     await writable.write(contents);
     await writable.close();
-    
+
     // Delete old file
     await dir.removeEntry(oldName);
   } catch (error) {
@@ -125,7 +125,7 @@ async function renameInOPFS(oldName: string, newName: string): Promise<void> {
 
 const createEngine = () => {
   const engine = FormulaEngine.buildEmpty();
-  
+
   // Create first workbook and sheet with sample data
   const workbookName = "Workbook1";
   engine.addWorkbook(workbookName);
@@ -155,6 +155,7 @@ const {
   workbookGridItems: initialWorkbookGridItems,
   viewport: initialViewport,
 } = createEngine();
+console.log("engine", engine);
 export function ExcelDemo() {
   const [workbookGridItems, setWorkbookGridItems] = useState<
     WorkbookGridItem[]
@@ -207,8 +208,10 @@ export function ExcelDemo() {
         setOpfsFiles(files);
 
         // Try to load the default file or the first available file
-        const fileToLoad = files.includes(DEFAULT_FILE) ? DEFAULT_FILE : files[0];
-        
+        const fileToLoad = files.includes(DEFAULT_FILE)
+          ? DEFAULT_FILE
+          : files[0];
+
         if (fileToLoad) {
           const data = await loadFromOPFS(fileToLoad);
           if (data && data.engineState && data.workbookGridItems) {
@@ -265,72 +268,88 @@ export function ExcelDemo() {
       await saveToOPFS(currentFileName, dataToSave);
       setHasUnsavedChanges(false);
       console.log(`Saved to OPFS: ${currentFileName}`);
-      
+
       // Refresh file list
       const files = await listOPFSFiles();
       setOpfsFiles(files);
     } catch (error) {
       console.error("Failed to save to OPFS:", error);
-      alert(`Failed to save: ${error instanceof Error ? error.message : "Unknown error"}`);
+      alert(
+        `Failed to save: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }, [workbookGridItems, engine, viewport, currentFileName]);
 
   // Load a file from OPFS
-  const loadFile = useCallback(async (filename: string) => {
-    try {
-      const data = await loadFromOPFS(filename);
-      if (!data || !data.engineState || !data.workbookGridItems) {
-        throw new Error("Invalid file format");
-      }
+  const loadFile = useCallback(
+    async (filename: string) => {
+      try {
+        const data = await loadFromOPFS(filename);
+        if (!data || !data.engineState || !data.workbookGridItems) {
+          throw new Error("Invalid file format");
+        }
 
-      // Reset the engine using the loaded state
-      engine._workbookManager.resetWorkbooks(data.engineState.workbooks);
+        // Reset the engine using the loaded state
+        engine._workbookManager.resetWorkbooks(data.engineState.workbooks);
 
-      data.engineState.workbooks.forEach((workbook) => {
-        engine._namedExpressionManager.addWorkbook(workbook.name);
-        engine._tableManager.addWorkbook(workbook.name);
-        workbook.sheets.forEach((sheet) => {
-          engine._namedExpressionManager.addSheet({
-            workbookName: workbook.name,
-            sheetName: sheet.name,
+        data.engineState.workbooks.forEach((workbook) => {
+          engine._namedExpressionManager.addWorkbook(workbook.name);
+          engine._tableManager.addWorkbook(workbook.name);
+          workbook.sheets.forEach((sheet) => {
+            engine._namedExpressionManager.addSheet({
+              workbookName: workbook.name,
+              sheetName: sheet.name,
+            });
           });
         });
-      });
 
-      engine._namedExpressionManager.resetNamedExpressions(
-        data.engineState.namedExpressions
-      );
-      engine._tableManager.resetTables(data.engineState.tables);
+        engine._namedExpressionManager.resetNamedExpressions(
+          data.engineState.namedExpressions
+        );
+        engine._tableManager.resetTables(data.engineState.tables);
 
-      engine.reevaluate();
-      engine._eventManager.emitUpdate();
+        engine.reevaluate();
+        engine._eventManager.emitUpdate();
 
-      setWorkbookGridItems(data.workbookGridItems);
-      if (data.viewport) {
-        _setViewport(data.viewport);
+        setWorkbookGridItems(data.workbookGridItems);
+        if (data.viewport) {
+          _setViewport(data.viewport);
+        }
+        setCurrentFileName(filename);
+        setHasUnsavedChanges(false);
+        console.log(`Loaded ${filename} from OPFS`);
+      } catch (error) {
+        console.error(`Failed to load ${filename}:`, error);
+        alert(
+          `Failed to load file: ${error instanceof Error ? error.message : "Unknown error"}`
+        );
       }
-      setCurrentFileName(filename);
-      setHasUnsavedChanges(false);
-      console.log(`Loaded ${filename} from OPFS`);
-    } catch (error) {
-      console.error(`Failed to load ${filename}:`, error);
-      alert(`Failed to load file: ${error instanceof Error ? error.message : "Unknown error"}`);
-    }
-  }, [engine, _setViewport]);
+    },
+    [engine, _setViewport]
+  );
 
   // Create new file
   const newFile = useCallback(async () => {
     if (hasUnsavedChanges) {
-      if (!confirm("You have unsaved changes. Are you sure you want to create a new file?")) {
+      if (
+        !confirm(
+          "You have unsaved changes. Are you sure you want to create a new file?"
+        )
+      ) {
         return;
       }
     }
 
     // Prompt for new filename
-    const newFileName = prompt("Enter new file name (without .json extension):", "workbook");
+    const newFileName = prompt(
+      "Enter new file name (without .json extension):",
+      "workbook"
+    );
     if (!newFileName) return;
 
-    const fullFileName = newFileName.endsWith(".json") ? newFileName : `${newFileName}.json`;
+    const fullFileName = newFileName.endsWith(".json")
+      ? newFileName
+      : `${newFileName}.json`;
 
     // Check if file already exists
     if (opfsFiles.includes(fullFileName)) {
@@ -361,7 +380,7 @@ export function ExcelDemo() {
     _setViewport(undefined);
     setCurrentFileName(fullFileName);
     setHasUnsavedChanges(true);
-    
+
     engine.reevaluate();
     engine._eventManager.emitUpdate();
 
@@ -380,36 +399,44 @@ export function ExcelDemo() {
   }, [engine, hasUnsavedChanges, _setViewport, opfsFiles]);
 
   // Delete a file from OPFS
-  const deleteFile = useCallback(async (filename: string) => {
-    if (!confirm(`Are you sure you want to delete "${filename}"?`)) {
-      return;
-    }
-
-    try {
-      await deleteFromOPFS(filename);
-      console.log(`Deleted ${filename} from OPFS`);
-
-      // Refresh file list
-      const files = await listOPFSFiles();
-      setOpfsFiles(files);
-
-      // If we deleted the current file, create a new one
-      if (filename === currentFileName) {
-        await newFile();
+  const deleteFile = useCallback(
+    async (filename: string) => {
+      if (!confirm(`Are you sure you want to delete "${filename}"?`)) {
+        return;
       }
-    } catch (error) {
-      console.error(`Failed to delete ${filename}:`, error);
-      alert(`Failed to delete file: ${error instanceof Error ? error.message : "Unknown error"}`);
-    }
-  }, [currentFileName, newFile]);
+
+      try {
+        await deleteFromOPFS(filename);
+        console.log(`Deleted ${filename} from OPFS`);
+
+        // Refresh file list
+        const files = await listOPFSFiles();
+        setOpfsFiles(files);
+
+        // If we deleted the current file, create a new one
+        if (filename === currentFileName) {
+          await newFile();
+        }
+      } catch (error) {
+        console.error(`Failed to delete ${filename}:`, error);
+        alert(
+          `Failed to delete file: ${error instanceof Error ? error.message : "Unknown error"}`
+        );
+      }
+    },
+    [currentFileName, newFile]
+  );
 
   // Rename current file
   const renameFile = useCallback(async () => {
-    const newName = prompt("Enter new file name (without .json extension):", currentFileName.replace(".json", ""));
+    const newName = prompt(
+      "Enter new file name (without .json extension):",
+      currentFileName.replace(".json", "")
+    );
     if (!newName) return;
 
     const fullNewName = newName.endsWith(".json") ? newName : `${newName}.json`;
-    
+
     if (opfsFiles.includes(fullNewName)) {
       alert(`File "${fullNewName}" already exists.`);
       return;
@@ -418,15 +445,17 @@ export function ExcelDemo() {
     try {
       await renameInOPFS(currentFileName, fullNewName);
       setCurrentFileName(fullNewName);
-      
+
       // Refresh file list
       const files = await listOPFSFiles();
       setOpfsFiles(files);
-      
+
       console.log(`Renamed ${currentFileName} to ${fullNewName}`);
     } catch (error) {
       console.error("Failed to rename file:", error);
-      alert(`Failed to rename file: ${error instanceof Error ? error.message : "Unknown error"}`);
+      alert(
+        `Failed to rename file: ${error instanceof Error ? error.message : "Unknown error"}`
+      );
     }
   }, [currentFileName, opfsFiles]);
 
@@ -484,7 +513,9 @@ export function ExcelDemo() {
           // Save to OPFS with the imported filename
           let filename = file.name;
           if (opfsFiles.includes(filename)) {
-            if (!confirm(`File "${filename}" already exists in OPFS. Overwrite?`)) {
+            if (
+              !confirm(`File "${filename}" already exists in OPFS. Overwrite?`)
+            ) {
               // Generate a unique name
               const baseName = filename.replace(".json", "");
               let counter = 1;
@@ -563,13 +594,13 @@ export function ExcelDemo() {
     (workbookName: string, sheetName: string) => {
       setWorkbookGridItems((prev) => {
         // Find the workbook item
-        const workbookItem = prev.find(item => item.name === workbookName);
-        
+        const workbookItem = prev.find((item) => item.name === workbookName);
+
         // If workbook not found or sheet is already active, no update needed
         if (!workbookItem || workbookItem.activeSheet === sheetName) {
           return prev;
         }
-        
+
         // Only update if there's an actual change
         return prev.map((item) =>
           item.name === workbookName
@@ -577,9 +608,11 @@ export function ExcelDemo() {
             : item
         );
       });
-      
+
       // Only mark as unsaved if we found the workbook and it's a different sheet
-      const workbookItem = workbookGridItems.find(item => item.name === workbookName);
+      const workbookItem = workbookGridItems.find(
+        (item) => item.name === workbookName
+      );
       if (workbookItem && workbookItem.activeSheet !== sheetName) {
         markUnsavedChanges();
       }
@@ -977,7 +1010,10 @@ export function ExcelDemo() {
           </div>
 
           {/* Sheet Tabs at Bottom (Excel-style) */}
-          <div className="h-8 bg-gray-50 border-t border-gray-200 flex items-center px-2 flex-shrink-0">
+          <div
+            className="h-14 bg-gray-50 border-t border-gray-200 flex items-center px-2 flex-shrink-0 w-full overflow-x-auto"
+            style={{ scrollbarGutter: "stable" }}
+          >
             <div className="flex items-center gap-1">
               {sheetNames.map((sheetName) => {
                 const isRenaming =
@@ -1176,7 +1212,10 @@ export function ExcelDemo() {
               {currentFileName && (
                 <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 rounded border border-blue-200">
                   <FileText className="h-4 w-4 text-blue-600" />
-                  <span className="text-sm font-medium text-blue-800" data-testid="current-filename">
+                  <span
+                    className="text-sm font-medium text-blue-800"
+                    data-testid="current-filename"
+                  >
                     {currentFileName}
                   </span>
                   {hasUnsavedChanges && (
@@ -1291,7 +1330,7 @@ export function ExcelDemo() {
                   <Plus className="h-4 w-4 mr-1" />
                   Add Workbook
                 </Button>
-                
+
                 {/* Tools */}
                 <Button
                   size="sm"
@@ -1308,7 +1347,7 @@ export function ExcelDemo() {
                     <ChevronDown className="h-3 w-3 ml-1" />
                   )}
                 </Button>
-                
+
                 <Button
                   size="sm"
                   variant={verboseErrors ? "default" : "outline"}

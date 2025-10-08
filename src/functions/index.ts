@@ -37,6 +37,8 @@ import { AND } from "./logical/and/and";
 import { IF } from "./logical/if/if";
 import { IFERROR } from "./logical/iferror/iferror";
 import { XLOOKUP } from "./lookup/xlookup/xlookup";
+import { OR } from "./logical/or/or";
+import { TEXTJOIN } from "./text/textjoin/textjoin";
 
 const buildFunctionIndex = (functions: Record<string, FunctionDefinition>) => {
   return Object.fromEntries(
@@ -78,11 +80,13 @@ export const functions: Record<string, FunctionDefinition> = buildFunctionIndex(
     MIN,
     MINIF,
     MINIFS,
+    OR,
     RIGHT,
     SEQUENCE,
     SUM,
     SUMIF,
     SUMIFS,
+    TEXTJOIN,
     XLOOKUP,
   }
 );

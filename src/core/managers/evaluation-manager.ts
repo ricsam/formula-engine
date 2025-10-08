@@ -497,47 +497,53 @@ export class EvaluationManager {
   }
 
   // todo optimize using workbook manager
-  canSpill(originCellAddress: CellAddress, range: SpreadsheetRange): boolean {
-    const sheet = this.workbookManager.getSheet(originCellAddress);
+  canSpill(spillCandidate: CellAddress, spillArea: SpreadsheetRange): boolean {
+    const sheet = this.workbookManager.getSheet(spillCandidate);
     if (!sheet) {
       throw new Error("Sheet not found");
     }
-    const cellId = getCellReference(originCellAddress);
+    const cellId = getCellReference(spillCandidate);
     const content = sheet.content.get(cellId);
     if (!content) {
       throw new Error(`Cell not found: ${cellId}`);
     }
     for (const spilledValue of this.dependencyManager.spilledValues.values()) {
       if (
-        spilledValue.origin.workbookName === originCellAddress.workbookName &&
-        spilledValue.origin.sheetName === originCellAddress.sheetName &&
-        spilledValue.origin.colIndex === originCellAddress.colIndex &&
-        spilledValue.origin.rowIndex === originCellAddress.rowIndex
+        spilledValue.origin.workbookName !== spillCandidate.workbookName ||
+        spilledValue.origin.sheetName !== spillCandidate.sheetName
       ) {
         continue;
       }
-      if (checkRangeIntersection(range, spilledValue.spillOnto)) {
+      if (
+        spilledValue.origin.colIndex === spillCandidate.colIndex &&
+        spilledValue.origin.rowIndex === spillCandidate.rowIndex
+      ) {
+        // we are already have a spill, this one will be replaced
+        continue;
+      }
+
+      if (checkRangeIntersection(spillArea, spilledValue.spillOnto)) {
         return false;
       }
     }
     // let's just check the raw data if there is something in the range
     for (const key of sheet.content.keys()) {
       const cellAddress = parseCellReference(key);
-      const endCol = range.end.col;
-      const endRow = range.end.row;
+      const endCol = spillArea.end.col;
+      const endRow = spillArea.end.row;
 
       if (
-        cellAddress.colIndex === originCellAddress.colIndex &&
-        cellAddress.rowIndex === originCellAddress.rowIndex
+        cellAddress.colIndex === spillCandidate.colIndex &&
+        cellAddress.rowIndex === spillCandidate.rowIndex
       ) {
         continue;
       }
 
       if (endCol.type === "number" && endRow.type === "number") {
         if (
-          cellAddress.colIndex >= range.start.col &&
+          cellAddress.colIndex >= spillArea.start.col &&
           cellAddress.colIndex <= endCol.value &&
-          cellAddress.rowIndex >= range.start.row &&
+          cellAddress.rowIndex >= spillArea.start.row &&
           cellAddress.rowIndex <= endRow.value
         ) {
           if (

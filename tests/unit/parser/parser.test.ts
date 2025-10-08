@@ -563,6 +563,32 @@ describe("Parser - Structured References", () => {
     expect(ast.selector).toBe("#Data");
   });
 
+  test("should parse Excel-style selector with column range [[#Headers],[Col1]:[Col2]]", () => {
+    // Excel uses [[#Selector],[Col1]:[Col2]] syntax with separate brackets for each column
+    const ast = parseFormula("Table1[[#Headers],[Col1]:[Col2]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({ startCol: "Col1", endCol: "Col2" });
+    expect(ast.selector).toBe("#Headers");
+  });
+
+  test("should parse Excel-style selector with numeric column names", () => {
+    const ast = parseFormula("Summary1_RFP[[#Headers],[10uM]:[null]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Summary1_RFP");
+    expect(ast.cols).toEqual({ startCol: "10uM", endCol: "null" });
+    expect(ast.selector).toBe("#Headers");
+  });
+
+  test("should parse Excel-style selector with sheet qualification", () => {
+    const ast = parseFormula("Sheet1!Table1[[#All],[Start]:[End]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.sheetName).toBe("Sheet1");
+    expect(ast.cols).toEqual({ startCol: "Start", endCol: "End" });
+    expect(ast.selector).toBe("#All");
+  });
+
   test("should parse bracketed column range syntax", () => {
     const ast = parseFormula("Table1[[num]:[result]]");
     expect(ast.type).toBe("structured-reference");
@@ -1101,6 +1127,33 @@ describe("Parser - Structured References", () => {
     expect(ifTrueArg.left.left.args[0].type).toBe("structured-reference");
     expect(ifTrueArg.left.left.args[0].tableName).toBe("DataTable");
     expect(ifTrueArg.left.left.args[0].cols?.startCol).toBe("%Ethanol+ AP3 extra AD1+TRP-");
+  });
+
+  test("should parse complex INDEX formula with Excel-style selector column range", () => {
+    const formula = "INDEX(Summary1_RFP[[10uM]:[null]],MATCH([@[grouping_key]],Summary1_RFP[Identifier],0),MATCH([@[pea_concentration]],Summary1_RFP[[#Headers],[10uM]:[null]],0))";
+    
+    expect(() => parseFormula(formula)).not.toThrow();
+    
+    const ast = parseFormula(formula);
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("INDEX");
+    expect(ast.args).toHaveLength(3);
+    
+    // First argument: Summary1_RFP[[10uM]:[null]]
+    expect(ast.args[0].type).toBe("structured-reference");
+    expect(ast.args[0].tableName).toBe("Summary1_RFP");
+    expect(ast.args[0].cols).toEqual({ startCol: "10uM", endCol: "null" });
+    
+    // Third argument: MATCH function with selector + column range
+    expect(ast.args[2].type).toBe("function");
+    expect(ast.args[2].name).toBe("MATCH");
+    expect(ast.args[2].args).toHaveLength(3);
+    
+    // Second arg of third MATCH: Summary1_RFP[[#Headers],[10uM]:[null]]
+    expect(ast.args[2].args[1].type).toBe("structured-reference");
+    expect(ast.args[2].args[1].tableName).toBe("Summary1_RFP");
+    expect(ast.args[2].args[1].selector).toBe("#Headers");
+    expect(ast.args[2].args[1].cols).toEqual({ startCol: "10uM", endCol: "null" });
   });
 });
 

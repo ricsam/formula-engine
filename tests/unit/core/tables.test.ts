@@ -268,14 +268,12 @@ describe("Tables", () => {
     expect(cell("C2")).toBe(135); // Should still work
 
     // Verify that named expressions were updated
-    const globalExpr = engine
-      ._namedExpressionManager.getNamedExpressions()
-      .globalExpressions
-      .get("TOTAL_PRICE");
-    const sheetExpr = engine
-      ._namedExpressionManager.getNamedExpressions()
-      .sheetExpressions
-      .get(workbookName)
+    const globalExpr = engine._namedExpressionManager
+      .getNamedExpressions()
+      .globalExpressions.get("TOTAL_PRICE");
+    const sheetExpr = engine._namedExpressionManager
+      .getNamedExpressions()
+      .sheetExpressions.get(workbookName)
       ?.get(sheetName)
       ?.get("DISCOUNTED_PRICE");
 
@@ -1174,5 +1172,213 @@ describe("Tables", () => {
     // Test reference to column with percentage
     setCellContent("D3", "=INDEX(ScientificData[2.5% solution], 1)");
     expect(cell("D3")).toBe("Ready");
+  });
+
+  test("should parse Excel-style column header range syntax [[#Headers],[Col1]:[Col2]]", () => {
+    // Set up data with multiple columns for testing header ranges
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map<string, SerializedCellValue>([
+        ["A1", "10uM"],
+        ["B1", "20uM"],
+        ["C1", "50uM"],
+        ["D1", "100uM"],
+        ["E1", "null"],
+        ["A2", 100],
+        ["B2", 200],
+        ["C2", 300],
+        ["D2", 400],
+        ["E2", 500],
+        ["A3", 150],
+        ["B3", 250],
+        ["C3", 350],
+        ["D3", 450],
+        ["E3", 550],
+      ])
+    );
+
+    // Create table
+    engine.addTable({
+      tableName: "Summary1_RFP",
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
+      start: "A1",
+      numRows: { type: "number", value: 2 },
+      numCols: 5,
+    });
+
+    // Test that the Excel-style syntax parses without syntax errors (main goal)
+    setCellContent("G1", "=Summary1_RFP[[#Headers],[10uM]:[null]]");
+    const parseTest = cell("G1");
+    // Should NOT be a parse/syntax error
+    expect(
+      typeof parseTest === "string" &&
+        parseTest.toLowerCase().includes("syntax")
+    ).toBe(false);
+    expect(parseTest).toBe("10uM"); // Currently returns first value
+
+    // Test that single column with #Headers works
+    setCellContent("G2", "=Summary1_RFP[[#Headers],[50uM]]");
+    expect(cell("G2")).toBe("50uM");
+
+    // Test with #Data selector and single column
+    setCellContent("G3", "=Summary1_RFP[[#Data],[50uM]]");
+    expect(cell("G3")).toBe(300); // First data value from 50uM column
+
+    // Test column range (without selector)
+    setCellContent("G4", "=Summary1_RFP[[10uM]:[null]]");
+    // Should parse and return the first value (currently returns scalar)
+    expect(
+      cell("G4")
+    ).toBe(100);
+
+    // Test using INDEX with column range to access specific columns
+    setCellContent("H1", "=INDEX(Summary1_RFP[[10uM]:[null]], 1, 1)");
+    expect(cell("H1")).toBe(100); // First data row, first column (10uM)
+
+    setCellContent("H2", "=INDEX(Summary1_RFP[[10uM]:[null]], 1, 3)");
+    expect(cell("H2")).toBe(300); // First data row, third column (50uM)
+
+    setCellContent("H3", "=INDEX(Summary1_RFP[[10uM]:[null]], 2, 5)");
+    expect(cell("H3")).toBe(550); // Second data row, fifth column (null)
+
+    // Verify that the key syntax components work independently
+    setCellContent("J1", "=Summary1_RFP[[#Headers],[10uM]:[null]]");
+    expect(cell("J1")).toBe("10uM");
+    expect(cell("K1")).toBe("20uM");
+
+    setCellContent("J2", "=Summary1_RFP[[#Data],[20uM]:[100uM]]");
+    expect(cell("J2")).toBe(200);
+
+    setCellContent("J3", "=Summary1_RFP[[#All],[50uM]:[null]]");
+    expect(cell("J3")).toBe("50uM");
+  });
+
+  test("should match vertical spill range against horizontal header range", () => {
+    // Set up a table with concentration headers and measurement data
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map<string, SerializedCellValue>([
+        // Table headers (concentrations)
+        ["B1", "Identifier"],
+        ["C1", "10uM"],
+        ["D1", "20uM"],
+        ["E1", "50uM"],
+        ["F1", "100uM"],
+        ["G1", "null"],
+        // Data rows with identifier and measurements
+        ["B2", "Sample_A"],
+        ["C2", 5.2],
+        ["D2", 8.1],
+        ["E2", 12.5],
+        ["F2", 18.3],
+        ["G2", 22.0],
+        ["B3", "Sample_B"],
+        ["C3", 6.1],
+        ["D3", 9.4],
+        ["E3", 14.2],
+        ["F3", 20.1],
+        ["G3", 25.8],
+        // Lookup criteria (vertical list of concentrations)
+        ["A5", "pea_concentration"],
+        ["B5", "expected_value"],
+        ["C5", "lookup_result"], // Header for lookup formula column
+        ["A6", "20uM"],
+        ["B6", 8.1],   // Sample_A at 20uM
+        ["A7", "100uM"],
+        ["B7", 18.3],  // Sample_A at 100uM
+        ["A8", "50uM"],
+        ["B8", 12.5],  // Sample_A at 50uM
+        ["A9", "null"],
+        ["B9", 22.0],  // Sample_A at null
+      ])
+    );
+
+    // Create the main data table
+    engine.addTable({
+      tableName: "RFP_Data",
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
+      start: "B1",
+      numRows: { type: "number", value: 2 },
+      numCols: 6,
+    });
+
+    // Create a lookup table for the concentrations (vertical)
+    // Include column C so formulas there can use [@[pea_concentration]]
+    engine.addTable({
+      tableName: "Lookup",
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
+      start: "A5",
+      numRows: { type: "number", value: 4 },
+      numCols: 3, // Extended to include column C for formulas
+    });
+
+    // Test 1-4: First verify that MATCH works with explicit values against header range
+    setCellContent("H5", '=MATCH("20uM", RFP_Data[[#Headers],[10uM]:[null]], 0)');
+    expect(cell("H5")).toBe(2); // "20uM" is the 2nd column in the range [10uM:null]
+
+    setCellContent("H6", '=MATCH("100uM", RFP_Data[[#Headers],[10uM]:[null]], 0)');
+    expect(cell("H6")).toBe(4); // "100uM" is the 4th column
+
+    setCellContent("H7", '=MATCH("50uM", RFP_Data[[#Headers],[10uM]:[null]], 0)');
+    expect(cell("H7")).toBe(3); // "50uM" is the 3rd column
+
+    setCellContent("H8", '=MATCH("null", RFP_Data[[#Headers],[10uM]:[null]], 0)');
+    expect(cell("H8")).toBe(5); // "null" is the 5th column
+
+    // Test 5-8: NOW demonstrate the key feature - vertical spill range matching horizontal headers
+    // 
+    // The vertical values in Lookup[pea_concentration] (A6, A7, A8, A9) contain: "20uM", "100uM", "50uM", "null"
+    // We use MATCH with [@[pea_concentration]] to find which column each concentration maps to
+    // Then INDEX retrieves the corresponding data value from RFP_Data
+    //
+    // This pattern allows a vertical list of criteria to match against horizontal headers!
+    // Put formulas IN the Lookup table (column C) so [@[pea_concentration]] works
+    setCellContent(
+      "C6",
+      '=INDEX(RFP_Data[[10uM]:[null]], MATCH("Sample_A", RFP_Data[Identifier], 0), MATCH([@[pea_concentration]], RFP_Data[[#Headers],[10uM]:[null]], 0))'
+    );
+    expect(cell("C6")).toBe(8.1); // Sample_A, 20uM (A6) → D2
+
+    setCellContent(
+      "C7",
+      '=INDEX(RFP_Data[[10uM]:[null]], MATCH("Sample_A", RFP_Data[Identifier], 0), MATCH([@[pea_concentration]], RFP_Data[[#Headers],[10uM]:[null]], 0))'
+    );
+    expect(cell("C7")).toBe(18.3); // Sample_A, 100uM (A7) → F2
+
+    setCellContent(
+      "C8",
+      '=INDEX(RFP_Data[[10uM]:[null]], MATCH("Sample_A", RFP_Data[Identifier], 0), MATCH([@[pea_concentration]], RFP_Data[[#Headers],[10uM]:[null]], 0))'
+    );
+    expect(cell("C8")).toBe(12.5); // Sample_A, 50uM (A8) → E2
+
+    setCellContent(
+      "C9",
+      '=INDEX(RFP_Data[[10uM]:[null]], MATCH("Sample_A", RFP_Data[Identifier], 0), MATCH([@[pea_concentration]], RFP_Data[[#Headers],[10uM]:[null]], 0))'
+    );
+    expect(cell("C9")).toBe(22.0); // Sample_A, null (A9) → G2
+
+    // Verify that each lookup result matches the expected value in column B
+    // This proves the vertical spill (Lookup[pea_concentration] in column A)
+    // is correctly matching against the horizontal header range
+    expect(cell("C6")).toBe(cell("B6")!); // Both should be 8.1
+    expect(cell("C7")).toBe(cell("B7")!); // Both should be 18.3
+    expect(cell("C8")).toBe(cell("B8")!); // Both should be 12.5
+    expect(cell("C9")).toBe(cell("B9")!); // Both should be 22.0
+    
+    // Test 9-10: Verify it works for Sample_B too (different row in data table)
+    setCellContent(
+      "D6",
+      '=INDEX(RFP_Data[[10uM]:[null]], MATCH("Sample_B", RFP_Data[Identifier], 0), MATCH(A6, RFP_Data[[#Headers],[10uM]:[null]], 0))'
+    );
+    expect(cell("D6")).toBe(9.4); // Sample_B, 20uM (A6) → D3
+    
+    setCellContent(
+      "D7",
+      '=INDEX(RFP_Data[[10uM]:[null]], MATCH("Sample_B", RFP_Data[Identifier], 0), MATCH(A7, RFP_Data[[#Headers],[10uM]:[null]], 0))'
+    );
+    expect(cell("D7")).toBe(20.1); // Sample_B, 100uM (A7) → F3
   });
 });

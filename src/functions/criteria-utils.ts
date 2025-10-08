@@ -404,7 +404,7 @@ function* handleEmptyCriteriaSpilledValues(
   ) {
     throw new EvaluationError(
       FormulaError.VALUE,
-      "Cannot process infinite ranges with empty cell criteria"
+      "Can not process infinite ranges with empty cell criteria"
     );
   }
 
