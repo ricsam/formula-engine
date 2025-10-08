@@ -33,7 +33,7 @@ export const COUNTIFS: FunctionDefinition = {
   name: "COUNTIFS",
   evaluate: function (node, context): FunctionEvaluationResult {
     // Validate arguments
-    const argError = validateCountifsArgs(node.args.length);
+    const argError = validateCountifsArgs(node.args.length, context);
     if (argError) {
       return argError;
     }

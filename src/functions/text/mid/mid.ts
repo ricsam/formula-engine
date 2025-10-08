@@ -31,24 +31,25 @@ export const MID: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "MID function takes exactly 3 arguments",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
     // Evaluate the text argument
     const textResult = this.evaluateNode(node.args[0]!, context);
-    if (textResult.type === "error") {
+    if (textResult.type === "error" || textResult.type === "awaiting-evaluation") {
       return textResult;
     }
 
     // Evaluate the start_num argument
     const startNumResult = this.evaluateNode(node.args[1]!, context);
-    if (startNumResult.type === "error") {
+    if (startNumResult.type === "error" || startNumResult.type === "awaiting-evaluation") {
       return startNumResult;
     }
 
     // Evaluate the num_chars argument
     const numCharsResult = this.evaluateNode(node.args[2]!, context);
-    if (numCharsResult.type === "error") {
+    if (numCharsResult.type === "error" || numCharsResult.type === "awaiting-evaluation") {
       return numCharsResult;
     }
 
@@ -72,6 +73,7 @@ export const MID: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid text argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -80,6 +82,7 @@ export const MID: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid start_num argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -88,6 +91,7 @@ export const MID: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid num_chars argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -97,6 +101,7 @@ export const MID: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Text argument must be a string",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -105,6 +110,7 @@ export const MID: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Start_num argument must be a number",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -113,10 +119,11 @@ export const MID: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Num_chars argument must be a number",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
-    const result = midOperation(textResult, startNumResult, numCharsResult);
+    const result = midOperation(textResult, startNumResult, numCharsResult, context);
     if (result.type === "error" || result.type === "awaiting-evaluation") {
       return result;
     }

@@ -1,7 +1,7 @@
 import type { ArethmeticEvaluator } from "src/core/types";
 import { FormulaError } from "src/core/types";
 
-export const divide: ArethmeticEvaluator = (left, right) => {
+export const divide: ArethmeticEvaluator = (left, right, errAddress) => {
   // Only allow number and infinity types
   if ((left.type !== "number" && left.type !== "infinity") ||
       (right.type !== "number" && right.type !== "infinity")) {
@@ -9,6 +9,7 @@ export const divide: ArethmeticEvaluator = (left, right) => {
       type: "error",
       err: FormulaError.VALUE,
       message: `Cannot divide ${left.type} and ${right.type}`,
+      errAddress: errAddress,
     };
   }
 
@@ -21,6 +22,7 @@ export const divide: ArethmeticEvaluator = (left, right) => {
         type: "error",
         err: FormulaError.NUM,
         message: "Cannot divide infinity by infinity",
+        errAddress: errAddress,
       };
     }
     
@@ -31,6 +33,7 @@ export const divide: ArethmeticEvaluator = (left, right) => {
           type: "error",
           err: FormulaError.NUM,
           message: "Cannot divide infinity by zero",
+          errAddress: errAddress,
         };
       }
       
@@ -58,6 +61,7 @@ export const divide: ArethmeticEvaluator = (left, right) => {
           type: "error",
           err: FormulaError.NUM,
           message: "0 / 0 is undefined",
+          errAddress: errAddress,
         };
       }
       
@@ -87,5 +91,6 @@ export const divide: ArethmeticEvaluator = (left, right) => {
     type: "error",
     err: FormulaError.VALUE,
     message: `Cannot divide ${left.type} and ${right.type}`,
+    errAddress: errAddress,
   };
 };

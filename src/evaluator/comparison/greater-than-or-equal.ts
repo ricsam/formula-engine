@@ -6,7 +6,7 @@ import { lessThan } from "./less-than";
  * Greater than or equal operator (>=) - Returns TRUE if left >= right
  * Implemented as NOT (left < right)
  */
-export const greaterThanOrEqual: ArethmeticEvaluator = (left, right) => {
+export const greaterThanOrEqual: ArethmeticEvaluator = (left, right, errAddress) => {
   // Only allow number and infinity types
   if ((left.type !== "number" && left.type !== "infinity") ||
       (right.type !== "number" && right.type !== "infinity")) {
@@ -14,10 +14,11 @@ export const greaterThanOrEqual: ArethmeticEvaluator = (left, right) => {
       type: "error",
       err: FormulaError.VALUE,
       message: `Cannot compare ${left.type} and ${right.type}`,
+      errAddress: errAddress,
     };
   }
 
-  const ltResult = lessThan(left, right);
+  const ltResult = lessThan(left, right, errAddress);
   if (ltResult.type === "error") {
     return ltResult;
   }
@@ -30,5 +31,6 @@ export const greaterThanOrEqual: ArethmeticEvaluator = (left, right) => {
     type: "error",
     err: FormulaError.VALUE,
     message: "Invalid comparison result",
+    errAddress: errAddress,
   };
 };

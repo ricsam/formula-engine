@@ -84,6 +84,7 @@ export class OpenRangeEvaluator {
               type: "error",
               err: FormulaError.CYCLE,
               message: "Cycle detected",
+              errAddress: options.context.originCell.cellAddress,
             },
             relativePos: {
               x:
@@ -126,6 +127,7 @@ export class OpenRangeEvaluator {
                   type: "error",
                   err: FormulaError.REF,
                   message: `Error evaluating cell ${cellKey} #2`,
+                  errAddress: options.context.originCell.cellAddress,
                 },
                 relativePos,
               };

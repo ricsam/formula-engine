@@ -36,7 +36,7 @@ export const AVERAGEIF: FunctionDefinition = {
   name: "AVERAGEIF",
   evaluate: function (node, context): FunctionEvaluationResult {
     // Validate arguments
-    const argError = validateSingleCriteriaArgs("AVERAGEIF", node.args.length);
+    const argError = validateSingleCriteriaArgs("AVERAGEIF", node.args.length, context);
     if (argError) {
       return argError;
     }
@@ -58,6 +58,7 @@ export const AVERAGEIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "AVERAGEIF criteria must be a single value",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -68,6 +69,7 @@ export const AVERAGEIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: parsedCriteria.message,
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -89,6 +91,6 @@ export const AVERAGEIF: FunctionDefinition = {
       "col-major"
     );
 
-    return performAverage(matchingValues);
+    return performAverage(matchingValues, context);
   },
 };

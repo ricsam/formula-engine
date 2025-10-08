@@ -23,7 +23,8 @@ export type ProcessInfinityResult<T> =
  * @returns FunctionEvaluationResult with the minimum, infinity, or error
  */
 export function performMinimum(
-  results: Iterable<SingleEvaluationResult>
+  results: Iterable<SingleEvaluationResult>,
+  context: EvaluationContext
 ): FunctionEvaluationResult {
   let minValue = Infinity;
   let hasValues = false;
@@ -57,6 +58,7 @@ export function performMinimum(
       type: "error",
       err: FormulaError.VALUE,
       message: "No numeric values found",
+      errAddress: context.originCell.cellAddress,
     };
   }
 

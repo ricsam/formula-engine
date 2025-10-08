@@ -30,6 +30,7 @@ export const LEFT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "LEFT function takes 1 or 2 arguments",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -75,6 +76,7 @@ export const LEFT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid text argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -83,6 +85,7 @@ export const LEFT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid numChars argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -92,6 +95,7 @@ export const LEFT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Text argument must be a string",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -100,11 +104,12 @@ export const LEFT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "NumChars argument must be a number",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
     // Use MID operation: LEFT(text, num_chars) = MID(text, 1, num_chars)
-    const result = midOperation(textResult, startNumResult, numCharsResult);
+    const result = midOperation(textResult, startNumResult, numCharsResult, context);
     if (result.type === "error" || result.type === "awaiting-evaluation") {
       return result;
     }

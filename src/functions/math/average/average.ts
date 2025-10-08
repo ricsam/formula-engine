@@ -33,6 +33,6 @@ export const AVERAGE: FunctionDefinition = {
     );
 
     // Use shared averaging utility (now with unified error propagation)
-    return performAverage(argumentValues);
+    return performAverage(argumentValues, context);
   },
 };

@@ -6,8 +6,8 @@ import { equals } from "./equals";
  * Not equals operator (<>) - Returns TRUE if values are not equal
  * Uses the equals operator and negates the result
  */
-export const notEquals: ArethmeticEvaluator = (left, right) => {
-  const equalsResult = equals(left, right);
+export const notEquals: ArethmeticEvaluator = (left, right, errAddress) => {
+  const equalsResult = equals(left, right, errAddress);
   
   if (equalsResult.type === "error") {
     return equalsResult;
@@ -21,5 +21,6 @@ export const notEquals: ArethmeticEvaluator = (left, right) => {
     type: "error",
     err: FormulaError.VALUE,
     message: "Invalid result from equals comparison",
+    errAddress: errAddress,
   };
 };

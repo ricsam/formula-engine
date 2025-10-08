@@ -136,8 +136,7 @@ describe("OpenRangeEvaluator", () => {
       // SUM(B10:D) should detect the infinite spill and return INFINITY
       const result = cell("A1", true);
       expect(result).toMatchInlineSnapshot(
-        `"#REF! Can not evaluate all cells over an infinite range"`
-      );
+        `"#REF! Can not evaluate all cells over an infinite range"`);
     });
 
     it("should handle partial spill intersections", () => {

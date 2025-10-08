@@ -15,7 +15,7 @@ import type { EvaluationContext } from "src/evaluator/evaluation-context";
 /**
  * Strictly extracts string value without type coercion
  */
-export function convertToString(result: FunctionEvaluationResult): string | ErrorEvaluationResult {
+export function convertToString(result: FunctionEvaluationResult, context: EvaluationContext): string | ErrorEvaluationResult {
   if (result.type === "awaiting-evaluation") {
     return result;
   }
@@ -25,6 +25,7 @@ export function convertToString(result: FunctionEvaluationResult): string | Erro
       type: "error",
       err: FormulaError.VALUE,
       message: "Expected a value result",
+      errAddress: context.originCell.cellAddress,
     };
   }
 
@@ -36,6 +37,7 @@ export function convertToString(result: FunctionEvaluationResult): string | Erro
       type: "error",
       err: FormulaError.VALUE,
       message: "Expected a string value",
+      errAddress: context.originCell.cellAddress,
     };
   }
 }
@@ -43,7 +45,7 @@ export function convertToString(result: FunctionEvaluationResult): string | Erro
 /**
  * Strictly extracts numeric value without type coercion
  */
-export function extractNumericValue(result: FunctionEvaluationResult): number | ErrorEvaluationResult {
+export function extractNumericValue(result: FunctionEvaluationResult, context: EvaluationContext): number | ErrorEvaluationResult {
   if (result.type === "awaiting-evaluation") {
     return result;
   }
@@ -53,6 +55,7 @@ export function extractNumericValue(result: FunctionEvaluationResult): number | 
       type: "error",
       err: FormulaError.VALUE,
       message: "Expected a value result",
+      errAddress: context.originCell.cellAddress,
     };
   }
 
@@ -64,6 +67,7 @@ export function extractNumericValue(result: FunctionEvaluationResult): number | 
       type: "error",
       err: FormulaError.VALUE,
       message: "Expected a number value",
+      errAddress: context.originCell.cellAddress,
     };
   }
 }
@@ -74,11 +78,12 @@ export function extractNumericValue(result: FunctionEvaluationResult): number | 
 export function midOperation(
   textResult: FunctionEvaluationResult,
   startNumResult: FunctionEvaluationResult,
-  numCharsResult: FunctionEvaluationResult
+  numCharsResult: FunctionEvaluationResult,
+  context: EvaluationContext
 ): { type: "value"; result: CellString } | ErrorEvaluationResult {
-  const textStr = convertToString(textResult);
-  const startNum = extractNumericValue(startNumResult);
-  const numChars = extractNumericValue(numCharsResult);
+  const textStr = convertToString(textResult, context);
+  const startNum = extractNumericValue(startNumResult, context);
+  const numChars = extractNumericValue(numCharsResult, context);
 
   // Check if any of the results are awaiting evaluation or errors
   if (typeof textStr === "object" && (textStr.type === "awaiting-evaluation" || textStr.type === "error")) {
@@ -102,6 +107,7 @@ export function midOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: "StartNum argument must be a positive number",
+      errAddress: context.originCell.cellAddress,
     };
   }
   if (numCharsValue < 0) {
@@ -109,6 +115,7 @@ export function midOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: "NumChars argument must be a positive number",
+      errAddress: context.originCell.cellAddress,
     };
   }
 
@@ -217,7 +224,7 @@ export function createMidSpilledResult(
         return spillNumResult;
       }
 
-      return midOperation(spillTextResult, spillStartResult, spillNumResult);
+      return midOperation(spillTextResult, spillStartResult, spillNumResult, evalContext);
     },
     evaluateAllCells: (intersectingRange) => {
       throw new Error("WIP: evaluateAllCells for MID is not implemented");

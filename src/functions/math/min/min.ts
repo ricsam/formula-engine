@@ -9,9 +9,14 @@ export const MIN: FunctionDefinition = {
   name: "MIN",
   evaluate: function (node, context) {
     // Create iterator from all arguments
-    const argumentIterator = createArgumentIterator(this, node, context, "col-major");
+    const argumentIterator = createArgumentIterator(
+      this,
+      node,
+      context,
+      "col-major"
+    );
 
     // Perform minimum calculation (now with unified error propagation)
-    return performMinimum(argumentIterator);
+    return performMinimum(argumentIterator, context);
   },
 };

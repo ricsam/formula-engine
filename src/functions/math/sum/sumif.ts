@@ -36,7 +36,7 @@ export const SUMIF: FunctionDefinition = {
   name: "SUMIF",
   evaluate: function (node, context): FunctionEvaluationResult {
     // Validate arguments
-    const argError = validateSingleCriteriaArgs("SUMIF", node.args.length);
+    const argError = validateSingleCriteriaArgs("SUMIF", node.args.length, context);
     if (argError) {
       return argError;
     }
@@ -58,6 +58,7 @@ export const SUMIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "SUMIF criteria must be a single value",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -68,6 +69,7 @@ export const SUMIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: parsedCriteria.message,
+        errAddress: context.originCell.cellAddress,
       };
     }
 

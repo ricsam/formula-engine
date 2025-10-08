@@ -5,7 +5,6 @@ import {
   type CellInfinity,
 } from "src/core/types";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 
 /**
  * Result type for processInfinity in max functions
@@ -22,7 +21,8 @@ export type ProcessInfinityResult<T> =
  * @returns FunctionEvaluationResult with the maximum, infinity, or error
  */
 export function performMaximum(
-  results: Iterable<SingleEvaluationResult>
+  results: Iterable<SingleEvaluationResult>,
+  context: EvaluationContext
 ): FunctionEvaluationResult {
   let maxValue = -Infinity;
   let hasValues = false;
@@ -56,6 +56,7 @@ export function performMaximum(
       type: "error",
       err: FormulaError.VALUE,
       message: "No numeric values found",
+      errAddress: context.originCell.cellAddress,
     };
   }
 

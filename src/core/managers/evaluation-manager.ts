@@ -52,6 +52,7 @@ export class EvaluationManager {
 
   evaluationResultToSerializedValue(
     evaluation: SingleEvaluationResult,
+    cellAddress: CellAddress,
     debug?: boolean
   ): SerializedCellValue {
     if (
@@ -74,7 +75,17 @@ export class EvaluationManager {
     }
 
     if (debug) {
-      return evaluation.err + " " + evaluation.message;
+      const errAddress = cellAddressToKey(evaluation.errAddress);
+      if (errAddress === cellAddressToKey(cellAddress)) {
+        return evaluation.err + " " + evaluation.message;
+      }
+      return (
+        evaluation.err +
+        " in " +
+        cellAddressToKey(evaluation.errAddress) +
+        " " +
+        evaluation.message
+      );
     }
 
     return evaluation.err;
@@ -284,6 +295,7 @@ export class EvaluationManager {
         type: "error",
         err: FormulaError.ERROR,
         message: "Syntax error",
+        errAddress: nodeAddress,
       };
       currentDepNode.setEvaluationResult(evaluationResult);
       return;
@@ -316,6 +328,7 @@ export class EvaluationManager {
             type: "error",
             err: FormulaError.SPILL,
             message: "Can't spill",
+            errAddress: nodeAddress,
           };
         }
       } else {
@@ -335,6 +348,7 @@ export class EvaluationManager {
       type: "error",
       err: FormulaError.ERROR,
       message: "Evaluation failed",
+      errAddress: nodeAddress,
     };
 
     currentDepNode.setEvaluationResult(
@@ -400,12 +414,16 @@ export class EvaluationManager {
           message: Array.from(evaluationPlan.cycleNodes ?? [])
             .map((node) => node.key)
             .join(" -> "),
+          errAddress: cellAddress,
         };
         // cycle detected
         if (evaluationPlan.cycleNodes) {
           for (const node of evaluationPlan.cycleNodes) {
             if (!(node instanceof RangeEvaluationNode)) {
-              node.setEvaluationResult(evaluationResult);
+              node.setEvaluationResult({
+                ...evaluationResult,
+                errAddress: node.cellAddress,
+              });
             }
           }
         }
@@ -423,6 +441,7 @@ export class EvaluationManager {
         type: "error",
         err: FormulaError.ERROR,
         message: "Evaluation failed",
+        errAddress: cellAddress,
       };
 
       /**
@@ -460,6 +479,7 @@ export class EvaluationManager {
       type: "error",
       err: FormulaError.ERROR,
       message: "Evaluation failed",
+      errAddress: cellAddress,
     };
   }
 

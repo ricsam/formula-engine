@@ -33,7 +33,7 @@ export const AVERAGEIFS: FunctionDefinition = {
   name: "AVERAGEIFS",
   evaluate: function (node, context): FunctionEvaluationResult {
     // Validate arguments using utility
-    const argError = validateMultiCriteriaArgs("AVERAGEIFS", node.args.length);
+    const argError = validateMultiCriteriaArgs("AVERAGEIFS", node.args.length, context);
     if (argError) {
       return argError;
     }
@@ -66,6 +66,6 @@ export const AVERAGEIFS: FunctionDefinition = {
       "col-major"
     );
 
-    return performAverage(matchingValues);
+    return performAverage(matchingValues, context);
   },
 };

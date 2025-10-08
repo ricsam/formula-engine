@@ -34,7 +34,7 @@ export const MAXIFS: FunctionDefinition = {
   name: "MAXIFS",
   evaluate: function (node, context): FunctionEvaluationResult {
     // Validate arguments using utility
-    const argError = validateMultiCriteriaArgs("MAXIFS", node.args.length);
+    const argError = validateMultiCriteriaArgs("MAXIFS", node.args.length, context);
     if (argError) {
       return argError;
     }
@@ -67,6 +67,6 @@ export const MAXIFS: FunctionDefinition = {
       "col-major"
     );
 
-    return performMaximum(matchingValues);
+    return performMaximum(matchingValues, context);
   },
 };

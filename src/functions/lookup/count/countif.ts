@@ -45,6 +45,7 @@ export const COUNTIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "COUNTIF function takes exactly 2 arguments",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -65,6 +66,7 @@ export const COUNTIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "COUNTIF criteria must be a single value",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -75,6 +77,7 @@ export const COUNTIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: parsedCriteria.message,
+        errAddress: context.originCell.cellAddress,
       };
     }
 

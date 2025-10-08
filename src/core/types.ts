@@ -34,8 +34,9 @@ export interface LocalCellAddress {
 
 export type ArethmeticEvaluator = (
   left: CellValue,
-  right: CellValue
-) => CellValue | { type: "error"; err: FormulaError; message: string };
+  right: CellValue,
+  errAddress: CellAddress
+) => CellValue | ErrorEvaluationResult;
 
 export type PositiveInfinity = {
   type: "infinity";
@@ -162,6 +163,7 @@ export type ErrorEvaluationResult =
   | {
       type: "error";
       err: FormulaError;
+      errAddress: CellAddress;
       message: string;
     }
   | AwaitingEvaluationResult;

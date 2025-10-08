@@ -16,11 +16,12 @@ import type { EvaluationContext } from "src/evaluator/evaluation-context";
 function findOperation(
   findTextResult: FunctionEvaluationResult,
   withinTextResult: FunctionEvaluationResult,
-  startNumResult: FunctionEvaluationResult
+  startNumResult: FunctionEvaluationResult,
+  context: EvaluationContext
 ): CellNumber | ErrorEvaluationResult {
-  const findStr = convertToString(findTextResult);
-  const withinStr = convertToString(withinTextResult);
-  const startNum = extractNumericValue(startNumResult);
+  const findStr = convertToString(findTextResult, context);
+  const withinStr = convertToString(withinTextResult, context);
+  const startNum = extractNumericValue(startNumResult, context);
 
   // Check if any of the results are awaiting evaluation or errors
   if (
@@ -53,6 +54,7 @@ function findOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: "Text not found #2",
+      errAddress: context.originCell.cellAddress,
     };
   }
 
@@ -63,6 +65,7 @@ function findOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: "Text not found #2",
+      errAddress: context.originCell.cellAddress,
     };
   }
 
@@ -72,6 +75,7 @@ function findOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: "Text not found #2",
+      errAddress: context.originCell.cellAddress,
     };
   }
 
@@ -153,7 +157,8 @@ function createFindSpilledResult(
         const result = findOperation(
           spillFindResult,
           spillWithinResult,
-          startNumArg
+          startNumArg,
+          evalContext
         );
         // Handle error or awaiting evaluation results
         if (result.type === "error" || result.type === "awaiting-evaluation") {
@@ -189,7 +194,8 @@ function createFindSpilledResult(
         const result = findOperation(
           spillResult,
           withinTextResult,
-          startNumResult
+          startNumResult,
+          evalContext
         );
 
         // Handle error or awaiting evaluation results
@@ -224,7 +230,8 @@ function createFindSpilledResult(
         const result = findOperation(
           findTextResult,
           spillResult,
-          startNumResult
+          startNumResult,
+          evalContext
         );
 
         // Handle error or awaiting evaluation results
@@ -252,6 +259,7 @@ function createFindSpilledResult(
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid withinText argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -261,6 +269,7 @@ function createFindSpilledResult(
         type: "error",
         err: FormulaError.VALUE,
         message: "WithinText argument must be a string",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -296,7 +305,8 @@ function createFindSpilledResult(
         const result = findOperation(
           spillFindResult,
           withinTextResult,
-          spillStartNumResult
+          spillStartNumResult,
+          evalContext
         );
 
         // Handle error or awaiting evaluation results
@@ -324,6 +334,7 @@ function createFindSpilledResult(
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid findText argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -333,6 +344,7 @@ function createFindSpilledResult(
         type: "error",
         err: FormulaError.VALUE,
         message: "FindText argument must be a string",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -368,7 +380,8 @@ function createFindSpilledResult(
         const result = findOperation(
           findTextResult,
           spillWithinResult,
-          spillStartNumResult
+          spillStartNumResult,
+          evalContext
         );
 
         // Handle error or awaiting evaluation results
@@ -396,6 +409,7 @@ function createFindSpilledResult(
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid findText or withinText argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -405,6 +419,7 @@ function createFindSpilledResult(
         type: "error",
         err: FormulaError.VALUE,
         message: "FindText argument must be a string",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -413,6 +428,7 @@ function createFindSpilledResult(
         type: "error",
         err: FormulaError.VALUE,
         message: "WithinText argument must be a string",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -438,7 +454,8 @@ function createFindSpilledResult(
         const result = findOperation(
           findTextResult,
           withinTextResult,
-          startNumArg
+          startNumArg,
+          evalContext
         );
 
         // Handle error or awaiting evaluation results
@@ -459,6 +476,7 @@ function createFindSpilledResult(
     type: "error",
     err: FormulaError.VALUE,
     message: "Invalid arguments for FIND",
+    errAddress: context.originCell.cellAddress,
   };
 }
 
@@ -488,6 +506,7 @@ export const FIND: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "FIND function takes 2 or 3 arguments",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -534,6 +553,7 @@ export const FIND: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid findText or withinText argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -543,6 +563,7 @@ export const FIND: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "FindText argument must be a string",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -551,13 +572,15 @@ export const FIND: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "WithinText argument must be a string",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
     const result = findOperation(
       findTextResult,
       withinTextResult,
-      startNumResult
+      startNumResult,
+      context
     );
 
     // Handle error or awaiting evaluation results

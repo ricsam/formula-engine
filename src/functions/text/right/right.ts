@@ -41,16 +41,23 @@ import type { EvaluationContext } from "src/evaluator/evaluation-context";
  */
 function rightOperation(
   textResult: FunctionEvaluationResult,
-  numCharsResult: FunctionEvaluationResult
+  numCharsResult: FunctionEvaluationResult,
+  context: EvaluationContext
 ): { type: "value"; result: CellString } | ErrorEvaluationResult {
-  const textStr = convertToString(textResult);
-  const numChars = extractNumericValue(numCharsResult);
+  const textStr = convertToString(textResult, context);
+  const numChars = extractNumericValue(numCharsResult, context);
 
   // Check if any of the results are awaiting evaluation or errors
-  if (typeof textStr === "object" && (textStr.type === "awaiting-evaluation" || textStr.type === "error")) {
+  if (
+    typeof textStr === "object" &&
+    (textStr.type === "awaiting-evaluation" || textStr.type === "error")
+  ) {
     return textStr;
   }
-  if (typeof numChars === "object" && (numChars.type === "awaiting-evaluation" || numChars.type === "error")) {
+  if (
+    typeof numChars === "object" &&
+    (numChars.type === "awaiting-evaluation" || numChars.type === "error")
+  ) {
     return numChars;
   }
 
@@ -64,6 +71,7 @@ function rightOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: "NumChars argument must be a positive number",
+      errAddress: context.originCell.cellAddress,
     };
   }
 
@@ -78,7 +86,7 @@ function rightOperation(
   };
 
   // Use MID operation
-  return midOperation(textResult, startNumResult, numCharsResult);
+  return midOperation(textResult, startNumResult, numCharsResult, context);
 }
 
 export const RIGHT: FunctionDefinition = {
@@ -89,12 +97,16 @@ export const RIGHT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "RIGHT function takes 1 or 2 arguments",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
     // Evaluate the text argument
     const textResult = this.evaluateNode(node.args[0]!, context);
-    if (textResult.type === "error" || textResult.type === "awaiting-evaluation") {
+    if (
+      textResult.type === "error" ||
+      textResult.type === "awaiting-evaluation"
+    ) {
       return textResult;
     }
 
@@ -102,7 +114,10 @@ export const RIGHT: FunctionDefinition = {
     let numCharsResult: FunctionEvaluationResult;
     if (node.args.length > 1) {
       numCharsResult = this.evaluateNode(node.args[1]!, context);
-      if (numCharsResult.type === "error") {
+      if (
+        numCharsResult.type === "error" ||
+        numCharsResult.type === "awaiting-evaluation"
+      ) {
         return numCharsResult;
       }
     } else {
@@ -132,6 +147,7 @@ export const RIGHT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid text argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -140,6 +156,7 @@ export const RIGHT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid numChars argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -149,6 +166,7 @@ export const RIGHT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Text argument must be a string",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -157,11 +175,12 @@ export const RIGHT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "NumChars argument must be a number",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
     // Use RIGHT operation: RIGHT(text, num_chars) = MID(text, LEN(text) - num_chars + 1, num_chars)
-    return rightOperation(textResult, numCharsResult);
+    return rightOperation(textResult, numCharsResult, context);
   },
 };
 
@@ -229,6 +248,7 @@ function createRightSpilledResult(
           type: "error",
           err: FormulaError.REF,
           message: "The spilled results have not been evaluated",
+          errAddress: context.originCell.cellAddress,
         };
       }
       if (spillNumResult.type === "error") {
@@ -238,7 +258,7 @@ function createRightSpilledResult(
         return spillTextResult;
       }
 
-      return rightOperation(spillTextResult, spillNumResult);
+      return rightOperation(spillTextResult, spillNumResult, context);
     },
     evaluateAllCells: (intersectingRange) => {
       throw new Error("WIP: evaluateAllCells for RIGHT is not implemented");

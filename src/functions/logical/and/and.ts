@@ -66,6 +66,7 @@ export const AND: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "AND function requires at least one argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -112,6 +113,7 @@ export const AND: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Invalid argument type for AND function",
+          errAddress: context.originCell.cellAddress,
         };
       }
     }

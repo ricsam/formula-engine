@@ -113,6 +113,7 @@ export class FormulaEngine {
 
     return this.evaluationManager.evaluationResultToSerializedValue(
       result,
+      cellAddress,
       debug
     );
   }

@@ -36,6 +36,7 @@ import { CONCATENATE } from "./text/concatenate/concatenate";
 import { AND } from "./logical/and/and";
 import { IF } from "./logical/if/if";
 import { IFERROR } from "./logical/iferror/iferror";
+import { XLOOKUP } from "./lookup/xlookup/xlookup";
 
 const buildFunctionIndex = (functions: Record<string, FunctionDefinition>) => {
   return Object.fromEntries(
@@ -82,5 +83,6 @@ export const functions: Record<string, FunctionDefinition> = buildFunctionIndex(
     SUM,
     SUMIF,
     SUMIFS,
+    XLOOKUP,
   }
 );

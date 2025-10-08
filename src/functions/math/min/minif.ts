@@ -36,7 +36,7 @@ export const MINIF: FunctionDefinition = {
   name: "MINIF",
   evaluate: function (node, context): FunctionEvaluationResult {
     // Validate arguments
-    const argError = validateSingleCriteriaArgs("MINIF", node.args.length);
+    const argError = validateSingleCriteriaArgs("MINIF", node.args.length, context);
     if (argError) {
       return argError;
     }
@@ -58,6 +58,7 @@ export const MINIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "MINIF criteria must be a single value",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -68,6 +69,7 @@ export const MINIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: parsedCriteria.message,
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -90,6 +92,6 @@ export const MINIF: FunctionDefinition = {
       "col-major"
     );
 
-    return performMinimum(matchingValues);
+    return performMinimum(matchingValues, context);
   },
 };

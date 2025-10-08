@@ -162,7 +162,7 @@ describe("MATCH function", () => {
       setCellContent("A3", "Cherry");
       setCellContent("B1", '=MATCH("Banana", A1:A3)');
 
-      expect(cell("B1", true)).toStartWith("#ERROR! Error: MATCH: approximate match not fully implemented");
+      expect(cell("B1", true)).toInclude("approximate match not fully implemented");
     });
 
     test("should return #N/A when not found", () => {

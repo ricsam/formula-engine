@@ -34,7 +34,7 @@ export const SUMIFS: FunctionDefinition = {
   name: "SUMIFS",
   evaluate: function (node, context): FunctionEvaluationResult {
     // Validate arguments
-    const argError = validateMultiCriteriaArgs("SUMIFS", node.args.length);
+    const argError = validateMultiCriteriaArgs("SUMIFS", node.args.length, context);
     if (argError) {
       return argError;
     }

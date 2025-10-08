@@ -184,6 +184,7 @@ export class FormulaEvaluator {
           type: "error",
           err: error.type,
           message: error.message,
+          errAddress: context.originCell.cellAddress,
         };
       }
 
@@ -197,6 +198,7 @@ export class FormulaEvaluator {
         type: "error",
         err: formulaError,
         message: (error as any)?.stack || "An error was thrown",
+        errAddress: context.originCell.cellAddress,
       };
     }
   }
@@ -251,6 +253,7 @@ export class FormulaEvaluator {
           type: "error",
           err: FormulaError.ERROR,
           message: "WIP: unimplemented support for " + node.type,
+          errAddress: context.originCell.cellAddress,
         };
     }
   }
@@ -276,6 +279,7 @@ export class FormulaEvaluator {
         type: "error",
         err: FormulaError.REF,
         message: `Table ${node.tableName} not found`,
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -305,6 +309,7 @@ export class FormulaEvaluator {
             type: "error",
             err: FormulaError.REF,
             message: `Unknown table selector: ${node.selector}`,
+            errAddress: context.originCell.cellAddress,
           };
       }
 
@@ -317,6 +322,7 @@ export class FormulaEvaluator {
             type: "error",
             err: FormulaError.REF,
             message: `Column ${node.cols.startCol} or ${node.cols.endCol} not found in table ${table.name}`,
+            errAddress: context.originCell.cellAddress,
           };
         }
         const startColIndex = tableStart.colIndex + startCol.index;
@@ -397,6 +403,7 @@ export class FormulaEvaluator {
           type: "error",
           err: FormulaError.REF,
           message: `Column ${node.cols.startCol} or ${node.cols.endCol} not found in table ${table.name}`,
+          errAddress: context.originCell.cellAddress,
         };
       }
       const startColIndex = tableStart.colIndex + startCol.index;
@@ -438,6 +445,7 @@ export class FormulaEvaluator {
       type: "error",
       err: FormulaError.REF,
       message: "Structured reference must specify either a selector or columns",
+      errAddress: context.originCell.cellAddress,
     };
   }
 
@@ -576,6 +584,7 @@ export class FormulaEvaluator {
             rowIndex,
             colIndex,
           })}`,
+          errAddress: context.originCell.cellAddress,
         };
       },
       evaluateAllCells: function* ({
@@ -636,6 +645,7 @@ export class FormulaEvaluator {
         type: "error",
         err: FormulaError.REF,
         message: "Array is empty",
+        errAddress: context.originCell.cellAddress,
       };
     }
     const firstCell = firstRow[0];
@@ -644,6 +654,7 @@ export class FormulaEvaluator {
         type: "error",
         err: FormulaError.REF,
         message: "Array is empty",
+        errAddress: context.originCell.cellAddress,
       };
     }
     const originResult = this.evaluateNode(firstCell, context);
@@ -676,6 +687,7 @@ export class FormulaEvaluator {
             type: "error",
             err: FormulaError.REF,
             message: "Array is empty",
+            errAddress: context.originCell.cellAddress,
           };
         }
         const cell = row[spillOffset.x];
@@ -684,6 +696,7 @@ export class FormulaEvaluator {
             type: "error",
             err: FormulaError.REF,
             message: "Array is empty",
+            errAddress: context.originCell.cellAddress,
           };
         }
         const result = this.evaluateNode(cell, context);
@@ -692,6 +705,7 @@ export class FormulaEvaluator {
             type: "error",
             err: FormulaError.VALUE,
             message: "Arrays cannot contain spilled values",
+            errAddress: context.originCell.cellAddress,
           };
         }
         return result;
@@ -730,9 +744,10 @@ export class FormulaEvaluator {
               type: "error",
               err: FormulaError.VALUE,
               message: "Invalid spilled result for unary operation",
+              errAddress: context.originCell.cellAddress,
             };
           }
-          return this.evaluateUnaryScalar(node.operator, spillResult.result);
+          return this.evaluateUnaryScalar(node.operator, spillResult.result, context);
         },
         evaluateAllCells: function* (options) {
           for (const cellValue of operandResult.evaluateAllCells.call(
@@ -748,7 +763,8 @@ export class FormulaEvaluator {
               yield {
                 result: this.evaluateUnaryScalar(
                   node.operator,
-                  cellValue.result.result
+                  cellValue.result.result,
+                  context
                 ),
                 relativePos: cellValue.relativePos,
               };
@@ -759,13 +775,14 @@ export class FormulaEvaluator {
     }
 
     if (operandResult.type === "value") {
-      return this.evaluateUnaryScalar(node.operator, operandResult.result);
+      return this.evaluateUnaryScalar(node.operator, operandResult.result, context);
     }
 
     return {
       type: "error",
       err: FormulaError.VALUE,
       message: "Invalid operand for unary operation",
+      errAddress: context.originCell.cellAddress,
     };
   }
 
@@ -774,13 +791,15 @@ export class FormulaEvaluator {
    */
   private evaluateUnaryScalar(
     operator: "+" | "-" | "%",
-    operand: CellValue
+    operand: CellValue,
+    context: EvaluationContext
   ): SingleEvaluationResult {
     if (operand.type !== "number" && operand.type !== "infinity") {
       return {
         type: "error",
         err: FormulaError.VALUE,
         message: `Cannot apply unary ${operator} to non-number`,
+        errAddress: context.originCell.cellAddress,
       };
     }
     if (operand.type === "infinity") {
@@ -789,6 +808,7 @@ export class FormulaEvaluator {
           type: "error",
           err: FormulaError.NUM,
           message: "Cannot apply % to infinity",
+          errAddress: context.originCell.cellAddress,
         };
       }
       return {
@@ -823,6 +843,7 @@ export class FormulaEvaluator {
           type: "error",
           err: FormulaError.VALUE,
           message: `Unknown unary operator: ${operator}`,
+          errAddress: context.originCell.cellAddress,
         };
     }
   }
@@ -870,6 +891,7 @@ export class FormulaEvaluator {
         type: "error",
         err: FormulaError.REF,
         message: `Cell ${getCellReference(cellAddress)} not found`,
+        errAddress: context.originCell.cellAddress,
       };
     }
     return result;
@@ -892,6 +914,7 @@ export class FormulaEvaluator {
         type: "error",
         err: FormulaError.NAME,
         message: `Named expression ${node.name} not found`,
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -938,6 +961,7 @@ export class FormulaEvaluator {
           type: "error",
           err: FormulaError.ERROR,
           message: `Unknown binary operator: ${operator}`,
+          errAddress: context.originCell.cellAddress,
         };
     }
   }
@@ -952,6 +976,7 @@ export class FormulaEvaluator {
         type: "error",
         err: FormulaError.NAME,
         message: `Function ${node.name} not found`,
+        errAddress: context.originCell.cellAddress,
       };
     }
     return func.evaluate.call(this, node, context);

@@ -1,11 +1,22 @@
 import { describe, expect, test } from "bun:test";
 import { divide } from "./divide";
-import { FormulaError } from "src/core/types";
+import { FormulaError, type CellAddress } from "src/core/types";
+
+const errAddress: CellAddress = {
+  sheetName: "Sheet1",
+  workbookName: "Workbook1",
+  colIndex: 1,
+  rowIndex: 1,
+};
 
 describe("divide function", () => {
   test("basic number division", () => {
     expect(
-      divide({ type: "number", value: 12 }, { type: "number", value: 3 })
+      divide(
+        { type: "number", value: 12 },
+        { type: "number", value: 3 },
+        errAddress
+      )
     ).toEqual({
       type: "number",
       value: 4,
@@ -14,7 +25,11 @@ describe("divide function", () => {
 
   test("division with decimal result", () => {
     expect(
-      divide({ type: "number", value: 7 }, { type: "number", value: 2 })
+      divide(
+        { type: "number", value: 7 },
+        { type: "number", value: 2 },
+        errAddress
+      )
     ).toEqual({
       type: "number",
       value: 3.5,
@@ -23,7 +38,11 @@ describe("divide function", () => {
 
   test("negative dividend", () => {
     expect(
-      divide({ type: "number", value: -15 }, { type: "number", value: 3 })
+      divide(
+        { type: "number", value: -15 },
+        { type: "number", value: 3 },
+        errAddress
+      )
     ).toEqual({
       type: "number",
       value: -5,
@@ -32,7 +51,11 @@ describe("divide function", () => {
 
   test("negative divisor", () => {
     expect(
-      divide({ type: "number", value: 20 }, { type: "number", value: -4 })
+      divide(
+        { type: "number", value: 20 },
+        { type: "number", value: -4 },
+        errAddress
+      )
     ).toEqual({
       type: "number",
       value: -5,
@@ -41,7 +64,11 @@ describe("divide function", () => {
 
   test("negative by negative", () => {
     expect(
-      divide({ type: "number", value: -18 }, { type: "number", value: -6 })
+      divide(
+        { type: "number", value: -18 },
+        { type: "number", value: -6 },
+        errAddress
+      )
     ).toEqual({
       type: "number",
       value: 3,
@@ -50,7 +77,11 @@ describe("divide function", () => {
 
   test("division by one", () => {
     expect(
-      divide({ type: "number", value: 42 }, { type: "number", value: 1 })
+      divide(
+        { type: "number", value: 42 },
+        { type: "number", value: 1 },
+        errAddress
+      )
     ).toEqual({
       type: "number",
       value: 42,
@@ -59,7 +90,11 @@ describe("divide function", () => {
 
   test("zero dividend", () => {
     expect(
-      divide({ type: "number", value: 0 }, { type: "number", value: 5 })
+      divide(
+        { type: "number", value: 0 },
+        { type: "number", value: 5 },
+        errAddress
+      )
     ).toEqual({
       type: "number",
       value: 0,
@@ -69,7 +104,11 @@ describe("divide function", () => {
   describe("division by zero", () => {
     test("positive number / zero", () => {
       expect(
-        divide({ type: "number", value: 5 }, { type: "number", value: 0 })
+        divide(
+          { type: "number", value: 5 },
+          { type: "number", value: 0 },
+          errAddress
+        )
       ).toEqual({
         type: "infinity",
         sign: "positive",
@@ -78,7 +117,11 @@ describe("divide function", () => {
 
     test("negative number / zero", () => {
       expect(
-        divide({ type: "number", value: -3 }, { type: "number", value: 0 })
+        divide(
+          { type: "number", value: -3 },
+          { type: "number", value: 0 },
+          errAddress
+        )
       ).toEqual({
         type: "infinity",
         sign: "negative",
@@ -87,11 +130,16 @@ describe("divide function", () => {
 
     test("zero / zero (indeterminate)", () => {
       expect(
-        divide({ type: "number", value: 0 }, { type: "number", value: 0 })
+        divide(
+          { type: "number", value: 0 },
+          { type: "number", value: 0 },
+          errAddress
+        )
       ).toEqual({
         type: "error",
         err: FormulaError.NUM,
         message: "0 / 0 is undefined",
+        errAddress: errAddress,
       });
     });
   });
@@ -101,7 +149,8 @@ describe("divide function", () => {
       expect(
         divide(
           { type: "infinity", sign: "positive" },
-          { type: "number", value: 5 }
+          { type: "number", value: 5 },
+          errAddress
         )
       ).toEqual({
         type: "infinity",
@@ -113,7 +162,8 @@ describe("divide function", () => {
       expect(
         divide(
           { type: "infinity", sign: "positive" },
-          { type: "number", value: -3 }
+          { type: "number", value: -3 },
+          errAddress
         )
       ).toEqual({
         type: "infinity",
@@ -125,7 +175,8 @@ describe("divide function", () => {
       expect(
         divide(
           { type: "infinity", sign: "negative" },
-          { type: "number", value: 7 }
+          { type: "number", value: 7 },
+          errAddress
         )
       ).toEqual({
         type: "infinity",
@@ -137,7 +188,8 @@ describe("divide function", () => {
       expect(
         divide(
           { type: "infinity", sign: "negative" },
-          { type: "number", value: -2 }
+          { type: "number", value: -2 },
+          errAddress
         )
       ).toEqual({
         type: "infinity",
@@ -149,7 +201,8 @@ describe("divide function", () => {
       expect(
         divide(
           { type: "number", value: 100 },
-          { type: "infinity", sign: "positive" }
+          { type: "infinity", sign: "positive" },
+          errAddress
         )
       ).toEqual({
         type: "number",
@@ -161,7 +214,8 @@ describe("divide function", () => {
       expect(
         divide(
           { type: "number", value: -50 },
-          { type: "infinity", sign: "positive" }
+          { type: "infinity", sign: "positive" },
+          errAddress
         )
       ).toEqual({
         type: "number",
@@ -173,7 +227,8 @@ describe("divide function", () => {
       expect(
         divide(
           { type: "number", value: 25 },
-          { type: "infinity", sign: "negative" }
+          { type: "infinity", sign: "negative" },
+          errAddress
         )
       ).toEqual({
         type: "number",
@@ -185,12 +240,14 @@ describe("divide function", () => {
       expect(
         divide(
           { type: "infinity", sign: "positive" },
-          { type: "infinity", sign: "positive" }
+          { type: "infinity", sign: "positive" },
+          errAddress
         )
       ).toEqual({
         type: "error",
         err: FormulaError.NUM,
         message: "Cannot divide infinity by infinity",
+        errAddress: errAddress,
       });
     });
 
@@ -198,12 +255,14 @@ describe("divide function", () => {
       expect(
         divide(
           { type: "infinity", sign: "positive" },
-          { type: "infinity", sign: "negative" }
+          { type: "infinity", sign: "negative" },
+          errAddress
         )
       ).toEqual({
         type: "error",
         err: FormulaError.NUM,
         message: "Cannot divide infinity by infinity",
+        errAddress: errAddress,
       });
     });
 
@@ -211,12 +270,14 @@ describe("divide function", () => {
       expect(
         divide(
           { type: "infinity", sign: "positive" },
-          { type: "number", value: 0 }
+          { type: "number", value: 0 },
+          errAddress
         )
       ).toEqual({
         type: "error",
         err: FormulaError.NUM,
         message: "Cannot divide infinity by zero",
+        errAddress: errAddress,
       });
     });
   });
@@ -226,7 +287,8 @@ describe("divide function", () => {
       expect(
         divide(
           { type: "number", value: Number.MAX_VALUE },
-          { type: "number", value: Number.MIN_VALUE }
+          { type: "number", value: Number.MIN_VALUE },
+          errAddress
         )
       ).toEqual({
         type: "infinity",
@@ -238,7 +300,8 @@ describe("divide function", () => {
       expect(
         divide(
           { type: "number", value: 1 },
-          { type: "number", value: Number.MIN_VALUE }
+          { type: "number", value: Number.MIN_VALUE },
+          errAddress
         )
       ).toEqual({
         type: "infinity",
@@ -250,31 +313,46 @@ describe("divide function", () => {
   describe("error cases", () => {
     test("number / string", () => {
       expect(
-        divide({ type: "number", value: 5 }, { type: "string", value: "hello" })
+        divide(
+          { type: "number", value: 5 },
+          { type: "string", value: "hello" },
+          errAddress
+        )
       ).toEqual({
         type: "error",
         err: FormulaError.VALUE,
         message: "Cannot divide number and string",
+        errAddress: errAddress,
       });
     });
 
     test("string / number", () => {
       expect(
-        divide({ type: "string", value: "world" }, { type: "number", value: 10 })
+        divide(
+          { type: "string", value: "world" },
+          { type: "number", value: 10 },
+          errAddress
+        )
       ).toEqual({
         type: "error",
         err: FormulaError.VALUE,
         message: "Cannot divide string and number",
+        errAddress: errAddress,
       });
     });
 
     test("boolean / number", () => {
       expect(
-        divide({ type: "boolean", value: true }, { type: "number", value: 5 })
+        divide(
+          { type: "boolean", value: true },
+          { type: "number", value: 5 },
+          errAddress
+        )
       ).toEqual({
         type: "error",
         err: FormulaError.VALUE,
         message: "Cannot divide boolean and number",
+        errAddress: errAddress,
       });
     });
 
@@ -282,12 +360,14 @@ describe("divide function", () => {
       expect(
         divide(
           { type: "infinity", sign: "positive" },
-          { type: "string", value: "text" }
+          { type: "string", value: "text" },
+          errAddress
         )
       ).toEqual({
         type: "error",
         err: FormulaError.VALUE,
         message: "Cannot divide infinity and string",
+        errAddress: errAddress,
       });
     });
 
@@ -295,12 +375,14 @@ describe("divide function", () => {
       expect(
         divide(
           { type: "infinity", sign: "negative" },
-          { type: "boolean", value: true }
+          { type: "boolean", value: true },
+          errAddress
         )
       ).toEqual({
         type: "error",
         err: FormulaError.VALUE,
         message: "Cannot divide infinity and boolean",
+        errAddress: errAddress,
       });
     });
   });
@@ -310,7 +392,8 @@ describe("divide function", () => {
       expect(
         divide(
           { type: "number", value: Number.MIN_VALUE },
-          { type: "number", value: 2 }
+          { type: "number", value: 2 },
+          errAddress
         )
       ).toEqual({
         type: "number",
@@ -320,7 +403,11 @@ describe("divide function", () => {
 
     test("NaN handling", () => {
       expect(
-        divide({ type: "number", value: NaN }, { type: "number", value: 5 })
+        divide(
+          { type: "number", value: NaN },
+          { type: "number", value: 5 },
+          errAddress
+        )
       ).toEqual({
         type: "number",
         value: NaN,
@@ -329,7 +416,11 @@ describe("divide function", () => {
 
     test("dividing by NaN", () => {
       expect(
-        divide({ type: "number", value: 10 }, { type: "number", value: NaN })
+        divide(
+          { type: "number", value: 10 },
+          { type: "number", value: NaN },
+          errAddress
+        )
       ).toEqual({
         type: "number",
         value: NaN,

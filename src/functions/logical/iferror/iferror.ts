@@ -93,6 +93,7 @@ function createIfErrorSpilledResult(
           type: "error",
           err: FormulaError.REF,
           message: "The spilled value has not been evaluated",
+          errAddress: context.originCell.cellAddress,
         };
       }
 
@@ -101,6 +102,7 @@ function createIfErrorSpilledResult(
           type: "error",
           err: FormulaError.REF,
           message: "The spilled error value has not been evaluated",
+          errAddress: context.originCell.cellAddress,
         };
       }
 
@@ -129,6 +131,7 @@ export const IFERROR: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "IFERROR function takes exactly 2 arguments",
+        errAddress: context.originCell.cellAddress,
       };
     }
 

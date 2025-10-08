@@ -22,10 +22,11 @@ export type EvaluateScalarOperatorOptions = {
 function evaluateSingleScalarOperator(
   leftValue: CellValue,
   rightValue: CellValue,
-  evaluateScalar: ArethmeticEvaluator
+  evaluateScalar: ArethmeticEvaluator,
+  errAddress: CellAddress,
 ): SingleEvaluationResult {
-  const result = evaluateScalar(leftValue, rightValue);
-  if (result.type === "error") {
+  const result = evaluateScalar(leftValue, rightValue, errAddress);
+  if (result.type === "error" || result.type === "awaiting-evaluation") {
     return result;
   }
   return { type: "value", result };
@@ -48,8 +49,8 @@ export function evaluateScalarOperator(
   if (left.type === "value" && right.type === "value") {
     const leftValue = left.result;
     const rightValue = right.result;
-    const result = evaluateScalar(leftValue, rightValue);
-    if (result.type === "error") {
+    const result = evaluateScalar(leftValue, rightValue, options.context.originCell.cellAddress);
+    if (result.type === "error" || result.type === "awaiting-evaluation") {
       return result;
     }
     if (result) {
@@ -72,7 +73,8 @@ export function evaluateScalarOperator(
         return evaluateSingleScalarOperator(
           evaledLeft.result,
           right.result,
-          evaluateScalar
+          evaluateScalar,
+          options.context.originCell.cellAddress
         );
       },
       evaluateAllCells: function* (options) {
@@ -87,7 +89,8 @@ export function evaluateScalarOperator(
               result: evaluateSingleScalarOperator(
                 cellValue.result.result,
                 right.result,
-                evaluateScalar
+                evaluateScalar,
+                options.context.originCell.cellAddress
               ),
               relativePos: cellValue.relativePos,
             };
@@ -112,7 +115,8 @@ export function evaluateScalarOperator(
         return evaluateSingleScalarOperator(
           left.result,
           evaledRight.result,
-          evaluateScalar
+          evaluateScalar,
+          options.context.originCell.cellAddress
         );
       },
       evaluateAllCells: function* (options) {
@@ -126,7 +130,8 @@ export function evaluateScalarOperator(
             const result = evaluateSingleScalarOperator(
               left.result,
               cellValue.result.result,
-              evaluateScalar
+              evaluateScalar,
+              options.context.originCell.cellAddress
             );
             yield {
               result: result,
@@ -176,13 +181,15 @@ export function evaluateScalarOperator(
             type: "error",
             err: FormulaError.NA,
             message: "Empty cell in scalar operation",
+            errAddress: options.context.originCell.cellAddress,
           };
         }
 
         return evaluateSingleScalarOperator(
           evaledLeft.result,
           evaledRight.result,
-          evaluateScalar
+          evaluateScalar,
+          options.context.originCell.cellAddress
         );
       },
       evaluateAllCells: function* (options) {
@@ -233,6 +240,7 @@ export function evaluateScalarOperator(
                   type: "error",
                   err: FormulaError.NA,
                   message: "Left operand is empty",
+                  errAddress: options.context.originCell.cellAddress,
                 },
                 relativePos,
               };
@@ -250,6 +258,7 @@ export function evaluateScalarOperator(
                   type: "error",
                   err: FormulaError.NA,
                   message: "Right operand is empty",
+                  errAddress: options.context.originCell.cellAddress,
                 },
                 relativePos,
               };
@@ -270,7 +279,8 @@ export function evaluateScalarOperator(
                 result: evaluateSingleScalarOperator(
                   leftResult.result.result,
                   rightResult.result.result,
-                  evaluateScalar
+                  evaluateScalar,
+                  options.context.originCell.cellAddress
                 ),
                 relativePos: leftResult.relativePos,
               };
@@ -281,6 +291,7 @@ export function evaluateScalarOperator(
                   type: "error",
                   err: FormulaError.VALUE,
                   message: "Cannot evaluate scalar operator on non-value results",
+                  errAddress: options.context.originCell.cellAddress,
                 },
                 relativePos,
               };
@@ -295,5 +306,6 @@ export function evaluateScalarOperator(
     type: "error",
     err: FormulaError.VALUE,
     message: `Can't evaluate (${left.type}, ${right.type}) in scalar operator ${name}`,
+    errAddress: options.context.originCell.cellAddress,
   };
 }

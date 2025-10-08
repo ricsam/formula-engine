@@ -5,6 +5,7 @@ import {
   type SingleEvaluationResult,
   type CellInfinity,
   type ValueEvaluationResult,
+  type ErrorEvaluationResult,
 } from "src/core/types";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
@@ -44,7 +45,7 @@ export function parseCriteriaPairs(
     context: EvaluationContext
   ) => FunctionEvaluationResult,
   startIndex: number = 1
-): CriteriaPair[] | { type: "error"; err: FormulaError; message: string } {
+): CriteriaPair[] | ErrorEvaluationResult {
   const criteriaPairs: CriteriaPair[] = [];
 
   for (let i = startIndex; i < node.args.length; i += 2) {
@@ -87,6 +88,7 @@ export function parseCriteriaPairs(
         type: "error",
         err: FormulaError.VALUE,
         message: parsedCriteria.message,
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -205,6 +207,7 @@ export function* processMultiCriteriaValues(
             err: FormulaError.VALUE,
             message:
               "Criteria range dimensions do not match value range dimensions",
+            errAddress: context.originCell.cellAddress,
           };
           return;
         }
@@ -311,13 +314,15 @@ export function* processMultiCriteriaValues(
  */
 export function validateMultiCriteriaArgs(
   functionName: string,
-  argCount: number
-): { type: "error"; err: FormulaError; message: string } | null {
+  argCount: number,
+  context: EvaluationContext
+): ErrorEvaluationResult | null {
   if (argCount < 3 || (argCount - 1) % 2 !== 0) {
     return {
       type: "error",
       err: FormulaError.VALUE,
       message: `${functionName} function requires an odd number of arguments (min 3): value_range, criteria_range1, criteria1, [criteria_range2, criteria2], ...`,
+      errAddress: context.originCell.cellAddress,
     };
   }
   return null;
@@ -327,14 +332,16 @@ export function validateMultiCriteriaArgs(
  * Validate COUNTIFS function arguments (even number, min 2)
  */
 export function validateCountifsArgs(
-  argCount: number
-): { type: "error"; err: FormulaError; message: string } | null {
+  argCount: number,
+  context: EvaluationContext
+): ErrorEvaluationResult | null {
   if (argCount < 2 || argCount % 2 !== 0) {
     return {
       type: "error",
       err: FormulaError.VALUE,
       message:
         "COUNTIFS function requires an even number of arguments (min 2): criteria_range1, criteria1, [criteria_range2, criteria2], ...",
+      errAddress: context.originCell.cellAddress,
     };
   }
   return null;
@@ -345,13 +352,15 @@ export function validateCountifsArgs(
  */
 export function validateSingleCriteriaArgs(
   functionName: string,
-  argCount: number
-): { type: "error"; err: FormulaError; message: string } | null {
+  argCount: number,
+  context: EvaluationContext
+): ErrorEvaluationResult | null {
   if (argCount < 2 || argCount > 3) {
     return {
       type: "error",
       err: FormulaError.VALUE,
       message: `${functionName} function takes 2 or 3 arguments`,
+      errAddress: context.originCell.cellAddress,
     };
   }
   return null;

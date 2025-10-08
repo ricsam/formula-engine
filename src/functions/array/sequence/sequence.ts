@@ -28,6 +28,7 @@ export const SEQUENCE: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "SEQUENCE function takes 1 to 4 arguments",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -88,6 +89,7 @@ export const SEQUENCE: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Missing rows argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -107,6 +109,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Rows argument must be a number or INFINITY",
+          errAddress: context.originCell.cellAddress,
         };
       }
     } else {
@@ -114,6 +117,7 @@ export const SEQUENCE: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Rows argument must be a number or INFINITY",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -123,6 +127,7 @@ export const SEQUENCE: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Rows must be greater than 0",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -136,6 +141,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Missing columns argument",
+          errAddress: context.originCell.cellAddress,
         };
       }
 
@@ -152,6 +158,7 @@ export const SEQUENCE: FunctionDefinition = {
             type: "error",
             err: FormulaError.VALUE,
             message: "Columns argument must be a number or INFINITY",
+            errAddress: context.originCell.cellAddress,
           };
         }
       } else {
@@ -159,6 +166,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Columns argument must be a number or INFINITY",
+          errAddress: context.originCell.cellAddress,
         };
       }
       if (!isColumnsInfinite && columns < 1) {
@@ -166,6 +174,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Columns must be greater than 0",
+          errAddress: context.originCell.cellAddress,
         };
       }
     }
@@ -179,6 +188,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Missing start argument",
+          errAddress: context.originCell.cellAddress,
         };
       }
 
@@ -194,6 +204,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Start argument must be a number",
+          errAddress: context.originCell.cellAddress,
         };
       }
     }
@@ -207,6 +218,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Missing step argument",
+          errAddress: context.originCell.cellAddress,
         };
       }
 
@@ -222,6 +234,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Step argument must be a number",
+          errAddress: context.originCell.cellAddress,
         };
       }
     }
@@ -283,6 +296,7 @@ export const SEQUENCE: FunctionDefinition = {
               type: "error",
               err: FormulaError.ERROR,
               message: "Error evaluating SEQUENCE",
+              errAddress: context.originCell.cellAddress,
             };
           }
 
@@ -312,6 +326,7 @@ export const SEQUENCE: FunctionDefinition = {
               type: "error",
               err: FormulaError.ERROR,
               message: "Error evaluating SEQUENCE",
+              errAddress: context.originCell.cellAddress,
             };
           }
 
@@ -368,6 +383,7 @@ export const SEQUENCE: FunctionDefinition = {
               type: "error",
               err: FormulaError.REF,
               message: `Can not evaluate all cells over an infinite range`,
+              errAddress: context.originCell.cellAddress,
             },
             relativePos: { x: 0, y: 0 },
           };
@@ -388,6 +404,7 @@ export const SEQUENCE: FunctionDefinition = {
                     type: "error",
                     err: FormulaError.REF,
                     message: "Error evaluating SEQUENCE",
+                    errAddress: context.originCell.cellAddress,
                   },
                   relativePos,
                 };

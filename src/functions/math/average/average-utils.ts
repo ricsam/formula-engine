@@ -3,9 +3,7 @@ import {
   type FunctionEvaluationResult,
   type SingleEvaluationResult,
 } from "src/core/types";
-import { flags } from "src/debug/flags";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 
 /**
  * Performs averaging of an iterable of SingleEvaluationResult values
@@ -15,7 +13,8 @@ import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
  * @returns FunctionEvaluationResult with the average or appropriate error
  */
 export function performAverage(
-  results: Iterable<SingleEvaluationResult>
+  results: Iterable<SingleEvaluationResult>,
+  context: EvaluationContext
 ): FunctionEvaluationResult {
   let sum = 0;
   let count = 0;
@@ -49,6 +48,7 @@ export function performAverage(
       type: "error",
       err: FormulaError.DIV0,
       message: "Cannot calculate average of empty range",
+      errAddress: context.originCell.cellAddress,
     };
   }
 

@@ -125,6 +125,7 @@ function createIfSpilledResult(
           type: "error",
           err: FormulaError.REF,
           message: "The spilled logical test has not been evaluated",
+          errAddress: context.originCell.cellAddress,
         };
       }
       if (spillLogicalResult.type === "error") {
@@ -136,6 +137,7 @@ function createIfSpilledResult(
           type: "error",
           err: FormulaError.REF,
           message: "The spilled true value has not been evaluated",
+          errAddress: context.originCell.cellAddress,
         };
       }
       if (spillTrueResult.type === "error") {
@@ -147,6 +149,7 @@ function createIfSpilledResult(
           type: "error",
           err: FormulaError.REF,
           message: "The spilled false value has not been evaluated",
+          errAddress: context.originCell.cellAddress,
         };
       }
       if (spillFalseResult.type === "error") {
@@ -159,6 +162,7 @@ function createIfSpilledResult(
           type: "error",
           err: FormulaError.VALUE,
           message: "Invalid logical test result",
+          errAddress: context.originCell.cellAddress,
         };
       }
 
@@ -182,6 +186,7 @@ export const IF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "IF function takes 2 or 3 arguments",
+        errAddress: context.originCell.cellAddress,
       };
     }
 

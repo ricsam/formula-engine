@@ -36,7 +36,7 @@ export const MAXIF: FunctionDefinition = {
   name: "MAXIF",
   evaluate: function (node, context): FunctionEvaluationResult {
     // Validate arguments
-    const argError = validateSingleCriteriaArgs("MAXIF", node.args.length);
+    const argError = validateSingleCriteriaArgs("MAXIF", node.args.length, context);
     if (argError) {
       return argError;
     }
@@ -58,6 +58,7 @@ export const MAXIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "MAXIF criteria must be a single value",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -68,6 +69,7 @@ export const MAXIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: parsedCriteria.message,
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -90,6 +92,6 @@ export const MAXIF: FunctionDefinition = {
       "col-major"
     );
 
-    return performMaximum(matchingValues);
+    return performMaximum(matchingValues, context);
   },
 };

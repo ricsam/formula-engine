@@ -32,12 +32,16 @@ export const LEN: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "LEN function takes exactly 1 argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
     // Evaluate the text argument
     const textResult = this.evaluateNode(node.args[0]!, context);
-    if (textResult.type === "error") {
+    if (
+      textResult.type === "error" ||
+      textResult.type === "awaiting-evaluation"
+    ) {
       return textResult;
     }
 
@@ -55,6 +59,7 @@ export const LEN: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid text argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -64,6 +69,7 @@ export const LEN: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Text argument must be a string",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -78,6 +84,7 @@ export const LEN: FunctionDefinition = {
       type: "error",
       err: FormulaError.VALUE,
       message: "LEN operation failed",
+      errAddress: context.originCell.cellAddress,
     };
   },
 };
@@ -100,6 +107,7 @@ function createLenSpilledResult(
       type: "error",
       err: FormulaError.VALUE,
       message: "createLenSpilledResult called without spilled values",
+      errAddress: context.originCell.cellAddress,
     };
   }
 
@@ -109,7 +117,11 @@ function createLenSpilledResult(
     source: "LEN with spilled text values",
     evaluate: (spillOffset, evalContext) => {
       const spillTextResult = textResult.evaluate(spillOffset, evalContext);
-      if (!spillTextResult || spillTextResult.type === "error") {
+      if (
+        !spillTextResult ||
+        spillTextResult.type === "error" ||
+        spillTextResult.type === "awaiting-evaluation"
+      ) {
         return spillTextResult;
       }
 
@@ -121,6 +133,7 @@ function createLenSpilledResult(
           type: "error",
           err: FormulaError.VALUE,
           message: "LEN operation failed",
+          errAddress: context.originCell.cellAddress,
         };
       }
 

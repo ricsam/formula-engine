@@ -23,7 +23,7 @@ export type ProcessInfinityResult<T> =
  * @returns FunctionEvaluationResult with the sum, infinity, or first error encountered
  */
 export function performSummation(
-  results: Iterable<SingleEvaluationResult>
+  results: Iterable<SingleEvaluationResult>,
 ): FunctionEvaluationResult {
   let sum = 0;
   let hasValues = false;

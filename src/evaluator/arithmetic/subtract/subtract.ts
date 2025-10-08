@@ -1,7 +1,7 @@
 import type { ArethmeticEvaluator } from "src/core/types";
 import { FormulaError } from "src/core/types";
 
-export const subtract: ArethmeticEvaluator = (left, right) => {
+export const subtract: ArethmeticEvaluator = (left, right, errAddress) => {
   // Only allow number and infinity types
   if ((left.type !== "number" && left.type !== "infinity") ||
       (right.type !== "number" && right.type !== "infinity")) {
@@ -9,6 +9,7 @@ export const subtract: ArethmeticEvaluator = (left, right) => {
       type: "error",
       err: FormulaError.VALUE,
       message: `Cannot subtract ${left.type} and ${right.type}`,
+      errAddress: errAddress,
     };
   }
 
@@ -23,6 +24,7 @@ export const subtract: ArethmeticEvaluator = (left, right) => {
           type: "error",
           err: FormulaError.NUM,
           message: "Cannot subtract infinity from same-signed infinity",
+          errAddress: errAddress,
         };
       } else {
         // +∞ - -∞ = +∞, -∞ - +∞ = -∞
@@ -62,5 +64,6 @@ export const subtract: ArethmeticEvaluator = (left, right) => {
     type: "error",
     err: FormulaError.VALUE,
     message: `Cannot subtract ${left.type} and ${right.type}`,
+    errAddress: errAddress,
   };
 };

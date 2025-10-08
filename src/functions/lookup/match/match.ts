@@ -31,7 +31,8 @@ import { flags } from "src/debug/flags";
 function matchOperation(
   lookupValue: CellValue,
   lookupArray: Iterable<EvaluateAllCellsResult>,
-  matchType: number
+  matchType: number,
+  context: EvaluationContext
 ): FunctionEvaluationResult {
   // Strict type checking for lookup_value
   if (lookupValue.type !== "string" && lookupValue.type !== "number") {
@@ -39,6 +40,7 @@ function matchOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: `MATCH lookup_value must be string or number, got ${lookupValue.type}`,
+      errAddress: context.originCell.cellAddress,
     };
   }
 
@@ -48,6 +50,7 @@ function matchOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: `MATCH match_type must be -1, 0, or 1, got ${matchType}`,
+      errAddress: context.originCell.cellAddress,
     };
   }
 
@@ -87,6 +90,7 @@ function matchOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: "MATCH lookup_array cannot be empty",
+      errAddress: context.originCell.cellAddress,
     };
   }
 
@@ -94,6 +98,7 @@ function matchOperation(
     type: "error",
     err: FormulaError.NA,
     message: "MATCH: lookup_value not found in lookup_array",
+    errAddress: context.originCell.cellAddress,
   };
 }
 
@@ -105,6 +110,7 @@ export const MATCH: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "MATCH function takes 2 or 3 arguments",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -142,6 +148,7 @@ export const MATCH: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "MATCH: Spilled array arguments not yet implemented",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -151,6 +158,7 @@ export const MATCH: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "MATCH: Invalid lookup_value result type",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -159,6 +167,7 @@ export const MATCH: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "MATCH: Invalid match_type result type",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -168,6 +177,7 @@ export const MATCH: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: `MATCH match_type must be number, got ${matchTypeResult.result.type}`,
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -196,7 +206,8 @@ export const MATCH: FunctionDefinition = {
     return matchOperation(
       lookupValueResult.result,
       lookupArray,
-      Math.floor(matchTypeResult.result.value) // Floor to handle decimal inputs
+      Math.floor(matchTypeResult.result.value), // Floor to handle decimal inputs
+      context
     );
   },
 };

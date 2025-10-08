@@ -17,17 +17,17 @@ import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 /**
  * CEILING function - Rounds a number up to the nearest multiple of significance
- * 
+ *
  * Usage: CEILING(number, significance)
- * 
+ *
  * number: The number to round up (required)
  * significance: The multiple to round up to (required)
- * 
+ *
  * Examples:
  *   CEILING(4.3) returns 5 (rounds up to nearest integer)
  *   CEILING(4.3, 0.5) returns 4.5 (rounds up to nearest 0.5)
  *   CEILING(-2.1, -1) returns -3 (rounds away from zero)
- * 
+ *
  * Note:
  * - Both arguments are required and must be numbers (no type coercion)
  * - Positive number with negative significance returns #NUM! error
@@ -40,57 +40,62 @@ import type { EvaluationContext } from "src/evaluator/evaluation-context";
  */
 function ceilingOperation(
   numberValue: CellNumber | CellInfinity,
-  significanceValue: CellNumber | CellInfinity
+  significanceValue: CellNumber | CellInfinity,
+  errAddress: CellAddress
 ): CellNumber | CellInfinity | ErrorEvaluationResult {
   // Handle infinity cases
   if (numberValue.type === "infinity") {
     return numberValue; // Infinity remains infinity
   }
-  
+
   if (significanceValue.type === "infinity") {
     return {
       type: "error",
       err: FormulaError.VALUE,
       message: "Cannot use infinity as significance",
+      errAddress: errAddress,
     };
   }
-  
+
   // Both are numbers
   const num = numberValue.value;
   const sig = significanceValue.value;
-  
+
   // Significance cannot be zero
   if (sig === 0) {
     return {
       type: "error",
       err: FormulaError.DIV0,
       message: "Significance cannot be zero",
+      errAddress: errAddress,
     };
   }
-  
+
   // Excel CEILING behavior based on testing:
   // - Always rounds away from zero
   // - Positive number with negative significance gives #NUM! error
-  
+
   if (num > 0 && sig < 0) {
     return {
       type: "error",
       err: FormulaError.NUM,
       message: "Positive number cannot be used with negative significance",
+      errAddress: errAddress,
     };
   }
-  
+
   if (num < 0 && sig > 0) {
     return {
       type: "error",
       err: FormulaError.NUM,
       message: "Negative number cannot be used with positive significance",
+      errAddress: errAddress,
     };
   }
-  
+
   // Calculate result - always rounds away from zero
   let result: number;
-  
+
   if (sig > 0) {
     // Positive significance with positive/zero number
     result = Math.ceil(num / sig) * sig;
@@ -99,7 +104,7 @@ function ceilingOperation(
     // Round away from zero: -2.1/-1 = 2.1, ceil(2.1) = 3, 3*-1 = -3
     result = Math.ceil(num / sig) * sig;
   }
-  
+
   return { type: "number", value: result };
 }
 
@@ -131,14 +136,20 @@ function createCeilingSpilledResult(
       // Calculate spill area (union of spilled ranges)
       if (hasSpilledNumber && numberResult.type === "spilled-values") {
         const spillArea = numberResult.spillArea(origin);
-        if (hasSpilledSignificance && significanceResult.type === "spilled-values") {
+        if (
+          hasSpilledSignificance &&
+          significanceResult.type === "spilled-values"
+        ) {
           return this.unionRanges(
             this.projectRange(spillArea, origin),
             this.projectRange(significanceResult.spillArea(origin), origin)
           );
         }
         return spillArea;
-      } else if (hasSpilledSignificance && significanceResult.type === "spilled-values") {
+      } else if (
+        hasSpilledSignificance &&
+        significanceResult.type === "spilled-values"
+      ) {
         return significanceResult.spillArea(origin);
       } else {
         throw new Error("No spilled values found");
@@ -159,9 +170,10 @@ function createCeilingSpilledResult(
           type: "error",
           err: FormulaError.REF,
           message: "The spilled results have not been evaluated",
+          errAddress: context.originCell.cellAddress,
         };
       }
-      
+
       if (spillNumberResult.type === "error") {
         return spillNumberResult;
       }
@@ -169,32 +181,48 @@ function createCeilingSpilledResult(
         return spillSigResult;
       }
 
-      if (spillNumberResult.type !== "value" || spillSigResult.type !== "value") {
+      if (
+        spillNumberResult.type !== "value" ||
+        spillSigResult.type !== "value"
+      ) {
         return {
           type: "error",
           err: FormulaError.VALUE,
           message: "Invalid spilled result for CEILING",
+          errAddress: context.originCell.cellAddress,
         };
       }
 
       // Type checking
-      if (spillNumberResult.result.type !== "number" && spillNumberResult.result.type !== "infinity") {
+      if (
+        spillNumberResult.result.type !== "number" &&
+        spillNumberResult.result.type !== "infinity"
+      ) {
         return {
           type: "error",
           err: FormulaError.VALUE,
           message: "Number argument must be a number",
+          errAddress: context.originCell.cellAddress,
         };
       }
-      
-      if (spillSigResult.result.type !== "number" && spillSigResult.result.type !== "infinity") {
+
+      if (
+        spillSigResult.result.type !== "number" &&
+        spillSigResult.result.type !== "infinity"
+      ) {
         return {
           type: "error",
           err: FormulaError.VALUE,
           message: "Significance argument must be a number",
+          errAddress: context.originCell.cellAddress,
         };
       }
 
-      const result = ceilingOperation(spillNumberResult.result, spillSigResult.result);
+      const result = ceilingOperation(
+        spillNumberResult.result,
+        spillSigResult.result,
+        context.originCell.cellAddress
+      );
       if (result.type === "error" || result.type === "awaiting-evaluation") {
         return result;
       }
@@ -217,23 +245,24 @@ export const CEILING: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "CEILING function takes exactly 2 arguments",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
     // Evaluate number argument
     const numberResult = this.evaluateNode(node.args[0]!, context);
-    if (numberResult.type === "error") {
+    if (numberResult.type === "error" || numberResult.type === "awaiting-evaluation") {
       return numberResult;
     }
 
     // Evaluate significance argument (required)
     const significanceResult = this.evaluateNode(node.args[1]!, context);
-    if (significanceResult.type === "error") {
+    if (significanceResult.type === "error" || significanceResult.type === "awaiting-evaluation") {
       return significanceResult;
     }
 
     // Handle spilled values
-    const hasSpilledValues = 
+    const hasSpilledValues =
       numberResult.type === "spilled-values" ||
       significanceResult.type === "spilled-values";
 
@@ -251,28 +280,41 @@ export const CEILING: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid argument type",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
     // Type checking - only numbers and infinity allowed
-    if (numberResult.result.type !== "number" && numberResult.result.type !== "infinity") {
+    if (
+      numberResult.result.type !== "number" &&
+      numberResult.result.type !== "infinity"
+    ) {
       return {
         type: "error",
         err: FormulaError.VALUE,
         message: "Number argument must be a number",
+        errAddress: context.originCell.cellAddress,
       };
     }
-    
-    if (significanceResult.result.type !== "number" && significanceResult.result.type !== "infinity") {
+
+    if (
+      significanceResult.result.type !== "number" &&
+      significanceResult.result.type !== "infinity"
+    ) {
       return {
         type: "error",
         err: FormulaError.VALUE,
         message: "Significance argument must be a number",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
     // Perform CEILING operation
-    const result = ceilingOperation(numberResult.result, significanceResult.result);
+    const result = ceilingOperation(
+      numberResult.result,
+      significanceResult.result,
+      context.originCell.cellAddress
+    );
     if (result.type === "error" || result.type === "awaiting-evaluation") {
       return result;
     }

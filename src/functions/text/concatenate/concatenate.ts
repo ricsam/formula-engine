@@ -35,13 +35,15 @@ import type { EvaluationContext } from "src/evaluator/evaluation-context";
  * Helper function to convert a cell value to string with type coercion
  */
 function coerceToString(
-  result: FunctionEvaluationResult
+  result: FunctionEvaluationResult,
+  context: EvaluationContext
 ): string | ErrorEvaluationResult {
   if (result.type !== "value") {
     return {
       type: "error",
       err: FormulaError.VALUE,
       message: "Invalid argument type",
+      errAddress: context.originCell.cellAddress,
     };
   }
 
@@ -67,6 +69,7 @@ function coerceToString(
         type: "error",
         err: FormulaError.VALUE,
         message: "Cannot convert argument to string",
+        errAddress: context.originCell.cellAddress,
       };
   }
 }
@@ -75,11 +78,12 @@ function coerceToString(
  * Helper function to perform CONCATENATE operation on evaluated arguments
  */
 function concatenateOperation(
-  textResults: FunctionEvaluationResult[]
+  textResults: FunctionEvaluationResult[],
+  context: EvaluationContext
 ): { type: "value"; result: CellString } | ErrorEvaluationResult {
   let result = "";
   for (const textResult of textResults) {
-    const stringValue = coerceToString(textResult);
+    const stringValue = coerceToString(textResult, context);
     if (typeof stringValue === "object" && stringValue.type === "error") {
       return stringValue;
     }
@@ -149,6 +153,7 @@ function createConcatenateSpilledResult(
               type: "error",
               err: FormulaError.REF,
               message: "The spilled results have not been evaluated",
+              errAddress: context.originCell.cellAddress,
             };
           }
           if (spillResult.type === "error") {
@@ -160,7 +165,7 @@ function createConcatenateSpilledResult(
         }
       }
 
-      return concatenateOperation(spilledTextResults);
+      return concatenateOperation(spilledTextResults, context);
     },
     evaluateAllCells: (intersectingRange) => {
       throw new Error(
@@ -184,6 +189,7 @@ export const CONCATENATE: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "CONCATENATE function requires at least 1 argument",
+        errAddress: context.originCell.cellAddress,
       };
     }
 
@@ -191,7 +197,7 @@ export const CONCATENATE: FunctionDefinition = {
     const textResults: FunctionEvaluationResult[] = [];
     for (const arg of node.args) {
       const result = this.evaluateNode(arg, context);
-      if (result.type === "error") {
+      if (result.type === "error" || result.type === "awaiting-evaluation") {
         return result;
       }
       textResults.push(result);
@@ -212,7 +218,7 @@ export const CONCATENATE: FunctionDefinition = {
     // All arguments are single values - type coercion will be handled in concatenateOperation
 
     // Perform concatenation
-    return concatenateOperation(textResults);
+    return concatenateOperation(textResults, context);
   },
-  aliases: ["CONCAT"]
+  aliases: ["CONCAT"],
 };

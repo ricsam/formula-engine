@@ -35,7 +35,7 @@ export const MINIFS: FunctionDefinition = {
   name: "MINIFS",
   evaluate: function (node, context): FunctionEvaluationResult {
     // Validate arguments using utility
-    const argError = validateMultiCriteriaArgs("MINIFS", node.args.length);
+    const argError = validateMultiCriteriaArgs("MINIFS", node.args.length, context);
     if (argError) {
       return argError;
     }
@@ -68,6 +68,6 @@ export const MINIFS: FunctionDefinition = {
       "col-major"
     );
 
-    return performMinimum(matchingValues);
+    return performMinimum(matchingValues, context);
   },
 };
