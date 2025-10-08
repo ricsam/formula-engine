@@ -305,10 +305,6 @@ export class DependencyManager {
       return this.cacheManager.getEvaluationOrder(nodeKey)!;
     }
 
-    if (flags.isProfiling) {
-      console.time("buildEvaluationOrder");
-    }
-
     // Single-pass algorithm that:
     // 1. Collects all transitive dependencies
     // 2. Identifies which are frontier vs regular
@@ -356,13 +352,8 @@ export class DependencyManager {
         hash: this.computeHash(new Set([node])),
       };
 
-      // if (node && node.resolved) {
-      //   this.cacheManager.setEvaluationOrder(nodeKey, result);
-      // }
-
-      if (flags.isProfiling) {
-        console.timeEnd("buildEvaluationOrder");
-        console.log(`Nodes: 0 (target node was resolved)`);
+      if (node && node.resolved) {
+        this.cacheManager.setEvaluationOrder(nodeKey, result);
       }
 
       return result;
@@ -451,11 +442,6 @@ export class DependencyManager {
         this.cacheManager.setEvaluationOrder(nodeKey, result);
       }
 
-      if (flags.isProfiling) {
-        console.timeEnd("buildEvaluationOrder");
-        console.log(`Nodes: ${allNodes.size}`);
-      }
-
       return result;
     }
 
@@ -507,11 +493,6 @@ export class DependencyManager {
 
     if (node && node.resolved) {
       this.cacheManager.setEvaluationOrder(nodeKey, result);
-    }
-
-    if (flags.isProfiling) {
-      console.timeEnd("buildEvaluationOrder");
-      console.log(`Nodes: ${allNodes.size}`);
     }
 
     return result;

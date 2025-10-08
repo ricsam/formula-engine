@@ -611,15 +611,6 @@ export class FormulaEvaluator {
           }
         }
 
-        if (flags.profilingNamespaces["criteria-utils"]) {
-          console.log(
-            "evaluateAllCells for range",
-            debugRange,
-            "on",
-            node.sheetName ?? context.originCell.cellAddress.sheetName
-          );
-        }
-
         return yield* this.openRangeEvaluator.evaluateCellsInRange({
           context,
           lookupOrder,

@@ -184,14 +184,12 @@ export const MATCH: FunctionDefinition = {
       ];
     } else if (lookupArrayResult.type === "spilled-values") {
       // Extract values from spilled array
-      flags.profilingNamespaces["lookup/match"] = true;
       lookupArray = lookupArrayResult.evaluateAllCells.call(this, {
         context,
         evaluate: lookupArrayResult.evaluate,
         origin: context.originCell.cellAddress,
         lookupOrder: "col-major",
       });
-      flags.profilingNamespaces["lookup/match"] = false;
     }
 
     // Perform MATCH operation
