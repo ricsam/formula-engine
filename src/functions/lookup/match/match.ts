@@ -5,14 +5,16 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
   type ValueEvaluationResult,
-  type EvaluationContext,
   type CellAddress,
   type SpreadsheetRange,
   type SpilledValuesEvaluationResult,
+  type EvaluateAllCellsResult,
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
-import { OpenRangeEvaluator } from "../../math/open-range-evaluator";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
+import { OpenRangeEvaluator } from "../../../evaluator/open-range-evaluator";
+import { flags } from "src/debug/flags";
 
 /**
  * MATCH function - Returns the position of a value in an array
@@ -28,7 +30,7 @@ import { OpenRangeEvaluator } from "../../math/open-range-evaluator";
 // Helper function to perform MATCH operation
 function matchOperation(
   lookupValue: CellValue,
-  lookupArray: Iterable<FunctionEvaluationResult>,
+  lookupArray: Iterable<EvaluateAllCellsResult>,
   matchType: number
 ): FunctionEvaluationResult {
   // Strict type checking for lookup_value
@@ -49,15 +51,38 @@ function matchOperation(
     };
   }
 
-  const values: CellValue[] = [];
+  let foundSomething = false;
 
+  let i = 0;
+  const values: any[] = [];
   for (const value of lookupArray) {
-    if (value.type === "value") {
-      values.push(value.result);
+    i++;
+    values.push(value.result);
+    if (value.result.type === "value") {
+      foundSomething = true;
+      if (matchType === 0) {
+        // Exact match
+        const arrayValue = value.result.result;
+
+        if (
+          arrayValue.type === lookupValue.type &&
+          arrayValue.value === lookupValue.value
+        ) {
+          return {
+            type: "value",
+            result: { type: "number", value: value.relativePos.y + 1 },
+          }; // 1-based index
+        }
+      } else {
+        // Approximate match (1 or -1) - requires sorted array
+        // For now, throw an error until we add sorting validation
+        // TODO: Add proper approximate match logic with sorted array validation
+        throw new Error("MATCH: approximate match not fully implemented");
+      }
     }
   }
 
-  if (values.length === 0) {
+  if (!foundSomething) {
     return {
       type: "error",
       err: FormulaError.VALUE,
@@ -65,42 +90,11 @@ function matchOperation(
     };
   }
 
-  if (matchType === 0) {
-    // Exact match
-    for (let i = 0; i < values.length; i++) {
-      const arrayValue = values[i]!;
-      if (
-        arrayValue.type === lookupValue.type &&
-        arrayValue.value === lookupValue.value
-      ) {
-        return { type: "value", result: { type: "number", value: i + 1 } }; // 1-based index
-      }
-    }
-    return {
-      type: "error",
-      err: FormulaError.NA,
-      message: "MATCH: lookup_value not found in lookup_array",
-    };
-  } else {
-    // Approximate match (1 or -1) - requires sorted array
-    // For now, implement exact match behavior until we add sorting validation
-    // TODO: Add proper approximate match logic with sorted array validation
-    for (let i = 0; i < values.length; i++) {
-      const arrayValue = values[i]!;
-      if (
-        arrayValue.type === lookupValue.type &&
-        arrayValue.value === lookupValue.value
-      ) {
-        return { type: "value", result: { type: "number", value: i + 1 } }; // 1-based index
-      }
-    }
-    return {
-      type: "error",
-      err: FormulaError.NA,
-      message:
-        "MATCH: lookup_value not found in lookup_array (approximate match not fully implemented)",
-    };
-  }
+  return {
+    type: "error",
+    err: FormulaError.NA,
+    message: "MATCH: lookup_value not found in lookup_array",
+  };
 }
 
 export const MATCH: FunctionDefinition = {
@@ -178,20 +172,23 @@ export const MATCH: FunctionDefinition = {
     }
 
     // Extract lookup_array values
-    let lookupArray: Iterable<FunctionEvaluationResult> = [];
+    let lookupArray: Iterable<EvaluateAllCellsResult> = [];
 
     // Handle direct range arguments (like A:A) before extracting lookup_array values
 
     // Extract lookup_array values for non-infinite ranges
     if (lookupArrayResult.type === "value") {
       // Single value case - treat as array with one element
-      lookupArray = [lookupArrayResult];
+      lookupArray = [
+        { result: lookupArrayResult, relativePos: { x: 0, y: 0 } },
+      ];
     } else if (lookupArrayResult.type === "spilled-values") {
       // Extract values from spilled array
       lookupArray = lookupArrayResult.evaluateAllCells.call(this, {
         context,
         evaluate: lookupArrayResult.evaluate,
-        origin: context.currentCell,
+        origin: context.originCell.cellAddress,
+        lookupOrder: "col-major",
       });
     }
 

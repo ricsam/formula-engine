@@ -546,18 +546,20 @@ describe("Parser - Structured References", () => {
   });
 
   test("should parse column range references", () => {
-    const ast = parseFormula("Table1[Sales:Quantity]");
+    // Use explicit double-bracket syntax for column ranges
+    const ast = parseFormula("Table1[[Sales]:[Quantity]]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.tableName).toBe("Table1");
     expect(ast.cols).toEqual({ startCol: "Sales", endCol: "Quantity" });
     expect(ast.isCurrentRow).toBe(false);
   });
 
-  test("should parse selector with column range", () => {
+  test("should parse selector with column name containing colon", () => {
+    // In selector context [[#Data],[ColumnName]], colons in ColumnName are part of the name
     const ast = parseFormula("Table1[[#Data],[Sales:Quantity]]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.tableName).toBe("Table1");
-    expect(ast.cols).toEqual({ startCol: "Sales", endCol: "Quantity" });
+    expect(ast.cols).toEqual({ startCol: "Sales:Quantity", endCol: "Sales:Quantity" });
     expect(ast.selector).toBe("#Data");
   });
 
@@ -584,7 +586,8 @@ describe("Parser - Structured References", () => {
   });
 
   test("should parse simple current row column range syntax", () => {
-    const ast = parseFormula("Table1[@num:result]");
+    // Use explicit double-bracket syntax for column ranges
+    const ast = parseFormula("Table1[@[num]:[result]]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.tableName).toBe("Table1");
     expect(ast.cols).toEqual({
@@ -649,6 +652,26 @@ describe("Parser - Structured References", () => {
     expect(ast.isCurrentRow).toBe(true);
   });
 
+  test("should parse column names with forward slashes", () => {
+    const ast = parseFormula("Table1[FTE Concentration (M/ml)]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({
+      startCol: "FTE Concentration (M/ml)",
+      endCol: "FTE Concentration (M/ml)",
+    });
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse complex formula with forward slash in column name", () => {
+    const formula = "IFERROR(AVERAGEIF(cTADCount[Car ID],[@[Car factory ID]],eTADCount[FTE Concentration (M/ml)]),\"\")";
+    expect(() => parseFormula(formula)).not.toThrow();
+    
+    const ast = parseFormula(formula);
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("IFERROR");
+  });
+
   test("should parse column names with Unicode symbols", () => {
     const testCases = [
       { formula: "[@[Final Stock Concentration (µM)]]", expected: "Final Stock Concentration (µM)" },
@@ -682,6 +705,68 @@ describe("Parser - Structured References", () => {
     expect(ast.isCurrentRow).toBe(true);
   });
 
+  test("should parse double-bracketed single column syntax", () => {
+    // [[Column]] syntax is valid for single columns (Excel compatibility)
+    const ast = parseFormula("DataTable[[CAR MAP ]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBe("DataTable");
+    expect(ast.cols).toEqual({
+      startCol: "CAR MAP ",
+      endCol: "CAR MAP ",
+    });
+    expect(ast.isCurrentRow).toBe(false);
+  });
+
+  test("should parse complex formula with double-bracketed column reference", () => {
+    // Real-world formula with [[Column]] syntax
+    const ast = parseFormula("INDEX(DataTable[[CAR MAP ]],MATCH([@Identifier],DataTable[MAP identifier],0))");
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("INDEX");
+    expect(ast.args.length).toBe(2);
+    
+    // First arg: DataTable[[CAR MAP ]]
+    expect(ast.args[0].type).toBe("structured-reference");
+    expect(ast.args[0].tableName).toBe("DataTable");
+    expect(ast.args[0].cols).toEqual({
+      startCol: "CAR MAP ",
+      endCol: "CAR MAP ",
+    });
+    
+    // Second arg: MATCH function
+    expect(ast.args[1].type).toBe("function");
+    expect(ast.args[1].name).toBe("MATCH");
+  });
+
+  test("should parse column names with trailing spaces", () => {
+    const ast = parseFormula("[@[Cars needed (M) ]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.tableName).toBeUndefined();
+    expect(ast.cols).toEqual({
+      startCol: "Cars needed (M) ",
+      endCol: "Cars needed (M) ",
+    });
+    expect(ast.isCurrentRow).toBe(true);
+  });
+
+  test("should parse formula with column names containing trailing spaces", () => {
+    const formula = "[@[Cars needed (M) ]]+[@[Cars needed (M) ]]*20/100";
+    const ast = parseFormula(formula);
+    expect(ast.type).toBe("binary-op");
+    expect(ast.operator).toBe("+");
+    
+    // Left side: [@[Cars needed (M) ]]
+    expect(ast.left.type).toBe("structured-reference");
+    expect(ast.left.cols?.startCol).toBe("Cars needed (M) ");
+    
+    // Right side: [@[Cars needed (M) ]]*20/100 - due to operator precedence, this is ([@[Cars needed (M) ]]*20)/100
+    expect(ast.right.type).toBe("binary-op");
+    expect(ast.right.operator).toBe("/");
+    expect(ast.right.left.type).toBe("binary-op");
+    expect(ast.right.left.operator).toBe("*");
+    expect(ast.right.left.left.type).toBe("structured-reference");
+    expect(ast.right.left.left.cols?.startCol).toBe("Cars needed (M) ");
+  });
+
   test("should parse current row reference with column names containing dashes", () => {
     const ast = parseFormula("[@CUSTOMER-ID]");
     expect(ast.type).toBe("structured-reference");
@@ -705,7 +790,8 @@ describe("Parser - Structured References", () => {
   });
 
   test("should parse column range with dashed column names", () => {
-    const ast = parseFormula("Table1[ORDER-ID:CUSTOMER-ID]");
+    // Use explicit double-bracket syntax for column ranges
+    const ast = parseFormula("Table1[[ORDER-ID]:[CUSTOMER-ID]]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.tableName).toBe("Table1");
     expect(ast.cols).toEqual({
@@ -727,13 +813,14 @@ describe("Parser - Structured References", () => {
     expect(ast.isCurrentRow).toBe(false);
   });
 
-  test("should parse bare column range reference", () => {
+  test("should parse bare column name with colon as single column", () => {
+    // Single-bracket syntax with colon is treated as a single column name
     const ast = parseFormula("[num:result]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.tableName).toBeUndefined();
     expect(ast.cols).toEqual({
-      startCol: "num",
-      endCol: "result",
+      startCol: "num:result",
+      endCol: "num:result",
     });
     expect(ast.isCurrentRow).toBe(false);
   });
@@ -835,7 +922,8 @@ describe("Parser - Structured References", () => {
   });
 
   test("should parse column range with mixed spaces and dashes", () => {
-    const ast = parseFormula("Table1[CAR ID:ORDER-ID]");
+    // Use explicit double-bracket syntax for column ranges
+    const ast = parseFormula("Table1[[CAR ID]:[ORDER-ID]]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.tableName).toBe("Table1");
     expect(ast.cols).toEqual({
@@ -877,6 +965,142 @@ describe("Parser - Structured References", () => {
     // MATCH third argument: 0
     expect(ast.args[1].args[2].type).toBe("value");
     expect(ast.args[1].args[2].value.value).toBe(0);
+  });
+
+  test("should parse column names with plus signs and other operators", () => {
+    const testCases = [
+      { formula: "Table1[CAR count TIER3+SNG-]", expected: "CAR count TIER3+SNG-" },
+      { formula: "[@[TIER3+SNG-]]", expected: "TIER3+SNG-" },
+      { formula: "Table1[Column+]", expected: "Column+" },
+      { formula: "Table1[Column-]", expected: "Column-" },
+      { formula: "Table1[Column*]", expected: "Column*" },
+      { formula: "Table1[Column/]", expected: "Column/" },
+      { formula: "Table1[Column^]", expected: "Column^" },
+      { formula: "Table1[Column&]", expected: "Column&" },
+      { formula: "Table1[Column%]", expected: "Column%" },
+      { formula: "Table1[Column=]", expected: "Column=" },
+      { formula: "[@Column+]", expected: "Column+" },
+      { formula: "[@Column-]", expected: "Column-" },
+      { formula: "[@Column*]", expected: "Column*" },
+      { formula: "[@Column/]", expected: "Column/" },
+      { formula: "[@Column^]", expected: "Column^" },
+      { formula: "[@Column&]", expected: "Column&" },
+      { formula: "[@Column%]", expected: "Column%" },
+      { formula: "[@Column=]", expected: "Column=" },
+    ];
+
+    testCases.forEach(({ formula, expected }) => {
+      const ast = parseFormula(formula);
+      expect(ast.type).toBe("structured-reference");
+      expect(ast.cols).toEqual({
+        startCol: expected,
+        endCol: expected,
+      });
+    });
+  });
+
+  test("should parse complex formula with operators in column names", () => {
+    const formula = "IFERROR(AVERAGEIFS(DataTable[CAR count TIER3+SNG-],DataTable[Condition],\"10uT\",DataTable[CAR],[@CAR],DataTable[Fuel],[@Fuel]),\"\")";
+    
+    expect(() => parseFormula(formula)).not.toThrow();
+    
+    const ast = parseFormula(formula);
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("IFERROR");
+    expect(ast.args).toHaveLength(2);
+    
+    // First argument should be AVERAGEIFS function
+    expect(ast.args[0].type).toBe("function");
+    expect(ast.args[0].name).toBe("AVERAGEIFS");
+    
+    // First argument of AVERAGEIFS should be DataTable[CAR count TIER3+SNG-]
+    expect(ast.args[0].args[0].type).toBe("structured-reference");
+    expect(ast.args[0].args[0].tableName).toBe("DataTable");
+    expect(ast.args[0].args[0].cols?.startCol).toBe("CAR count TIER3+SNG-");
+  });
+
+  test("should parse column names with multiple operators", () => {
+    const testCases = [
+      "Table1[A+B-C]",
+      "Table1[X*Y/Z]", 
+      "Table1[P^Q&R]",
+      "Table1[M=N%O]",
+      "[@[A+B-C*D/E]]",
+      "Table1[Formula: A+B=C]",
+      "[@[Rate ($/hr) + Tax]]",
+    ];
+
+    testCases.forEach(formula => {
+      expect(() => parseFormula(formula)).not.toThrow();
+      const ast = parseFormula(formula);
+      expect(ast.type).toBe("structured-reference");
+      expect(ast.cols).toBeDefined();
+    });
+  });
+
+  test("should parse column names starting with operators", () => {
+    const testCases = [
+      { formula: "Table1[%Ethanol+ AP3 extra AD1+TRP-]", expected: "%Ethanol+ AP3 extra AD1+TRP-" },
+      { formula: "Table1[%RPP+ AP3 mid of AP8+ERC-]", expected: "%RPP+ AP3 mid of AP8+ERC-" },
+      { formula: "[@[%Purity Ethanol of AP8 ERC-]]", expected: "%Purity Ethanol of AP8 ERC-" },
+      { formula: "Table1[+Column]", expected: "+Column" },
+      { formula: "Table1[-Column]", expected: "-Column" },
+      { formula: "Table1[*Column]", expected: "*Column" },
+      { formula: "Table1[/Column]", expected: "/Column" },
+      { formula: "Table1[^Column]", expected: "^Column" },
+      { formula: "Table1[&Column]", expected: "&Column" },
+      { formula: "Table1[%Column]", expected: "%Column" },
+      { formula: "Table1[=Column]", expected: "=Column" },
+      { formula: "[@+Column]", expected: "+Column" },
+      { formula: "[@-Column]", expected: "-Column" },
+      { formula: "[@*Column]", expected: "*Column" },
+      { formula: "[@/Column]", expected: "/Column" },
+      { formula: "[@^Column]", expected: "^Column" },
+      { formula: "[@&Column]", expected: "&Column" },
+      { formula: "[@%Column]", expected: "%Column" },
+      { formula: "[@=Column]", expected: "=Column" },
+    ];
+
+    testCases.forEach(({ formula, expected }) => {
+      const ast = parseFormula(formula);
+      expect(ast.type).toBe("structured-reference");
+      expect(ast.cols).toEqual({
+        startCol: expected,
+        endCol: expected,
+      });
+    });
+  });
+
+  test("should parse complex formula with operators at start of column names", () => {
+    const formula = "IFERROR(IF($D$10=\"yes\",AVERAGEIFS(DataTable[%Ethanol+ AP3 extra AD1+TRP-],DataTable[Condition],Summary1_AP3lowTRP[[#Headers],[10uT]],DataTable[TRP],[@TRP],DataTable[Car],[@[Serviced Car]])/[@[Purity %Ethanol of AP8 ERC-]]*100,AVERAGEIFS(DataTable[%RPP+ AP3 mid of AP8+ERC-],DataTable[Condition],Summary1_AP3midTRP[[#Headers],[10uT]],DataTable[TRP],[@TRP],DataTable[Car],[@[Servied car]])),'')";
+    
+    expect(() => parseFormula(formula)).not.toThrow();
+    
+    const ast = parseFormula(formula);
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("IFERROR");
+    expect(ast.args).toHaveLength(2);
+    
+    // First argument should be IF function
+    expect(ast.args[0].type).toBe("function");
+    expect(ast.args[0].name).toBe("IF");
+    expect(ast.args[0].args).toHaveLength(3);
+    
+    // Second argument of IF should be a complex expression with AVERAGEIFS
+    const ifTrueArg = ast.args[0].args[1];
+    expect(ifTrueArg.type).toBe("binary-op");
+    expect(ifTrueArg.operator).toBe("*");
+    
+    // Left side should be a division with AVERAGEIFS in numerator
+    expect(ifTrueArg.left.type).toBe("binary-op");
+    expect(ifTrueArg.left.operator).toBe("/");
+    expect(ifTrueArg.left.left.type).toBe("function");
+    expect(ifTrueArg.left.left.name).toBe("AVERAGEIFS");
+    
+    // First argument of AVERAGEIFS should be DataTable[%Ethanol+ AP3 extra AD1+TRP-]
+    expect(ifTrueArg.left.left.args[0].type).toBe("structured-reference");
+    expect(ifTrueArg.left.left.args[0].tableName).toBe("DataTable");
+    expect(ifTrueArg.left.left.args[0].cols?.startCol).toBe("%Ethanol+ AP3 extra AD1+TRP-");
   });
 });
 
@@ -931,8 +1155,8 @@ describe("Parser - Complex Formulas with New Syntax", () => {
       endCol: "Gross Profit",
     });
 
-    // Test simple current row range with spaces
-    const ast4 = parseFormula("[@Net Sales:Gross Profit]");
+    // Test simple current row range with spaces - use double-bracket syntax
+    const ast4 = parseFormula("[@[Net Sales]:[Gross Profit]]");
     expect(ast4.type).toBe("structured-reference");
     expect(ast4.tableName).toBeUndefined();
     expect(ast4.isCurrentRow).toBe(true);
@@ -1127,6 +1351,162 @@ describe("Parser - Open-Ended Ranges", () => {
     expect(ast2.type).toBe("range");
     expect(ast2.range.end.col.type).toBe("number");
     expect(ast2.range.end.row.type).toBe("number");
+  });
+});
+
+describe("Parser - Workbook References", () => {
+  test("should parse workbook sheet alias", () => {
+    const ast = parseFormula("[MyWorkbook]Sheet1");
+    expect(ast.type).toBe("range");
+    expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.sheetName).toBe("Sheet1");
+    // Should be equivalent to [MyWorkbook]Sheet1!A1:INFINITY
+    expect(ast.range.start).toEqual({ col: 0, row: 0 });
+    expect(ast.range.end.col.type).toBe("infinity");
+    expect(ast.range.end.row.type).toBe("infinity");
+  });
+
+  test("should parse workbook sheet alias with spaces", () => {
+    const ast = parseFormula("[My Workbook]'Sheet With Spaces'");
+    expect(ast.type).toBe("range");
+    expect(ast.workbookName).toBe("My Workbook");
+    expect(ast.sheetName).toBe("Sheet With Spaces");
+  });
+
+  test("should parse workbook cell reference", () => {
+    const ast = parseFormula("[MyWorkbook]Sheet1!A1");
+    expect(ast.type).toBe("reference");
+    expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.sheetName).toBe("Sheet1");
+    expect(ast.address).toEqual({ colIndex: 0, rowIndex: 0 });
+  });
+
+  test("should parse workbook absolute cell reference", () => {
+    const ast = parseFormula("[MyWorkbook]'Sheet With Spaces'!$A$1");
+    expect(ast.type).toBe("reference");
+    expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.sheetName).toBe("Sheet With Spaces");
+    expect(ast.address).toEqual({ colIndex: 0, rowIndex: 0 });
+    expect(ast.isAbsolute).toEqual({ col: true, row: true });
+  });
+
+  test("should parse workbook range reference", () => {
+    const ast = parseFormula("[MyWorkbook]Sheet1!A1:C5");
+    expect(ast.type).toBe("range");
+    expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.sheetName).toBe("Sheet1");
+    expect(ast.range.start).toEqual({ col: 0, row: 0 });
+    expect(ast.range.end.col.value).toBe(2); // Column C
+    expect(ast.range.end.row.value).toBe(4); // Row 5 (0-based)
+  });
+
+  test("should parse workbook 3D range reference", () => {
+    const ast = parseFormula("[MyWorkbook]Sheet1:Sheet3!A1:C5");
+    expect(ast.type).toBe("3d-range");
+    expect(ast.startSheet).toBe("Sheet1");
+    expect(ast.endSheet).toBe("Sheet3");
+    expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.reference.type).toBe("range");
+    // The inner reference should not have the workbook name (it's on the 3D range node)
+    expect(ast.reference.workbookName).toBeUndefined();
+  });
+
+  test("should parse workbook named expression", () => {
+    const ast = parseFormula("[MyWorkbook]Sheet1!TaxRate");
+    expect(ast.type).toBe("named-expression");
+    expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.sheetName).toBe("Sheet1");
+    expect(ast.name).toBe("TaxRate");
+  });
+
+  test("should parse workbook table reference", () => {
+    const ast = parseFormula("[MyWorkbook]Sheet1!Table1[Column1]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.tableName).toBe("Table1");
+    expect(ast.cols).toEqual({ startCol: "Column1", endCol: "Column1" });
+  });
+
+  test("should parse workbook infinite ranges", () => {
+    // Column range
+    const ast1 = parseFormula("[MyWorkbook]Sheet1!A:A");
+    expect(ast1.type).toBe("range");
+    expect(ast1.workbookName).toBe("MyWorkbook");
+    expect(ast1.sheetName).toBe("Sheet1");
+    expect(ast1.range.end.row.type).toBe("infinity");
+
+    // Row range
+    const ast2 = parseFormula("[MyWorkbook]Sheet1!1:1");
+    expect(ast2.type).toBe("range");
+    expect(ast2.workbookName).toBe("MyWorkbook");
+    expect(ast2.sheetName).toBe("Sheet1");
+    expect(ast2.range.end.col.type).toBe("infinity");
+
+    // Open-ended range
+    const ast3 = parseFormula("[MyWorkbook]Sheet1!A1:INFINITY");
+    expect(ast3.type).toBe("range");
+    expect(ast3.workbookName).toBe("MyWorkbook");
+    expect(ast3.sheetName).toBe("Sheet1");
+    expect(ast3.range.end.col.type).toBe("infinity");
+    expect(ast3.range.end.row.type).toBe("infinity");
+  });
+
+  test("should parse workbook references in functions", () => {
+    const ast = parseFormula("SUM([MyWorkbook]Sheet1!A1:A10)");
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("SUM");
+    expect(ast.args[0].type).toBe("range");
+    expect(ast.args[0].workbookName).toBe("MyWorkbook");
+    expect(ast.args[0].sheetName).toBe("Sheet1");
+  });
+
+  test("should parse complex workbook names", () => {
+    // Workbook name with spaces, numbers, and special characters
+    const testCases = [
+      "[Budget 2024]Sheet1",
+      "[My-Workbook]Sheet1",
+      "[Workbook_v2]Sheet1",
+      "[Report (Final)]Sheet1",
+      "[Data=Analysis]Sheet1",
+      "[50% Complete]Sheet1",
+    ];
+
+    testCases.forEach(formula => {
+      expect(() => parseFormula(formula)).not.toThrow();
+      const ast = parseFormula(formula);
+      expect(ast.type).toBe("range");
+      expect(ast.workbookName).toBeDefined();
+      expect(ast.sheetName).toBe("Sheet1");
+    });
+  });
+
+  test("should distinguish workbook references from bare column references", () => {
+    // This should be parsed as a bare column reference, not a workbook reference
+    const ast1 = parseFormula("[Column1]");
+    expect(ast1.type).toBe("structured-reference");
+    expect(ast1.workbookName).toBeUndefined();
+    expect(ast1.cols?.startCol).toBe("Column1");
+
+    // This should be parsed as a workbook reference
+    const ast2 = parseFormula("[MyWorkbook]Sheet1");
+    expect(ast2.type).toBe("range");
+    expect(ast2.workbookName).toBe("MyWorkbook");
+    expect(ast2.sheetName).toBe("Sheet1");
+  });
+
+  test("should handle mixed workbook and same-workbook references", () => {
+    const ast = parseFormula("SUM([External]Sheet1!A1:A10, 'Local Sheet'!B1:B10)");
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("SUM");
+    expect(ast.args).toHaveLength(2);
+    
+    // First argument: external workbook reference
+    expect(ast.args[0].workbookName).toBe("External");
+    expect(ast.args[0].sheetName).toBe("Sheet1");
+    
+    // Second argument: same-workbook reference (no workbook name)
+    expect(ast.args[1].workbookName).toBeUndefined();
+    expect(ast.args[1].sheetName).toBe("Local Sheet");
   });
 });
 

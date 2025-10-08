@@ -4,11 +4,11 @@ import {
   type FunctionEvaluationResult,
   type CellNumber,
   type CellAddress,
-  type EvaluationContext,
   type SpreadsheetRange,
 } from "src/core/types";
 import { convertToString } from "../text-helpers";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 /**
  * LEN function - Returns the length of a text string

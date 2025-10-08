@@ -6,7 +6,6 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
   type ValueEvaluationResult,
-  type EvaluationContext,
   type CellAddress,
   type SpreadsheetRange,
   type SpilledValuesEvaluationResult,
@@ -14,6 +13,7 @@ import {
   type ErrorEvaluationResult,
 } from "src/core/types";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 /**
  * CEILING function - Rounds a number up to the nearest multiple of significance
@@ -195,7 +195,7 @@ function createCeilingSpilledResult(
       }
 
       const result = ceilingOperation(spillNumberResult.result, spillSigResult.result);
-      if (result.type === "error") {
+      if (result.type === "error" || result.type === "awaiting-evaluation") {
         return result;
       }
       return { type: "value", result };
@@ -273,7 +273,7 @@ export const CEILING: FunctionDefinition = {
 
     // Perform CEILING operation
     const result = ceilingOperation(numberResult.result, significanceResult.result);
-    if (result.type === "error") {
+    if (result.type === "error" || result.type === "awaiting-evaluation") {
       return result;
     }
     return { type: "value", result };

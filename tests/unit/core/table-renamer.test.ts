@@ -59,8 +59,9 @@ describe("Table Renamer", () => {
     test("should handle column range references", () => {
       const formula = "SUM(Products[[Price]:[Quantity]])";
       const result = renameTableInFormula(formula, "Products", "Items");
-      
-      expect(result).toBe("SUM(Items[Price:Quantity])");
+
+      // Column ranges always use double-bracket syntax to avoid ambiguity with colons in column names
+      expect(result).toBe("SUM(Items[[Price]:[Quantity]])");
     });
 
     test("should return original formula if parsing fails", () => {

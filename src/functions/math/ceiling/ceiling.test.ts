@@ -5,20 +5,23 @@ import { parseCellReference } from "src/core/utils";
 
 describe("CEILING function", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) }, debug);
 
   const setCellContent = (ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
   };
 
-  const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
+  const address = (ref: string) => ({ sheetName, workbookName, ...parseCellReference(ref) });
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   describe("basic functionality", () => {
@@ -149,7 +152,7 @@ describe("CEILING function", () => {
 
     test("should handle infinity arguments", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=1/0"], // Positive infinity
           ["B1", "=CEILING(A1, 1)"],
@@ -165,7 +168,7 @@ describe("CEILING function", () => {
   describe("dynamic arrays", () => {
     test("should handle spilled number values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 4.3],
           ["A2", 5.7],
@@ -181,7 +184,7 @@ describe("CEILING function", () => {
 
     test("should handle spilled significance values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 0.5],
           ["A2", 0.25],
@@ -197,7 +200,7 @@ describe("CEILING function", () => {
 
     test("should handle multiple spilled arrays", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 4.3],
           ["A2", 5.7],
@@ -239,7 +242,7 @@ describe("CEILING function", () => {
 
     test("should work with cell references", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 4.3],
           ["B1", 0.5],

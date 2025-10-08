@@ -5,18 +5,21 @@ import { parseCellReference } from "src/core/utils";
 
 describe("LEFT function", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) }, debug);
 
   const setCellContent = (ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
   };
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   describe("basic functionality", () => {
@@ -98,7 +101,7 @@ describe("LEFT function", () => {
   describe("dynamic arrays (spilled values)", () => {
     test("should handle spilled text values with single numChars", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "apple,banana,cherry"],
           ["A2", "dog,cat,bird"],
@@ -114,7 +117,7 @@ describe("LEFT function", () => {
 
     test("should handle single text with spilled numChars values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 1],
           ["A2", 3],
@@ -130,7 +133,7 @@ describe("LEFT function", () => {
 
     test("should handle zipped spilled text and numChars values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "apple,banana,cherry"],
           ["A2", "dog,cat,bird"],
@@ -149,7 +152,7 @@ describe("LEFT function", () => {
 
     test("should work with FIND for comma extraction", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "apple,banana,cherry"],
           ["A2", "dog,cat,bird"],
@@ -165,7 +168,7 @@ describe("LEFT function", () => {
 
     test("should handle mixed spilled values with strict number checking", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello"],
           ["A2", "World"],
@@ -198,7 +201,7 @@ describe("LEFT function", () => {
 
     test("should handle spilled arrays with text values only", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello"],
           ["A2", "Text"],
@@ -227,7 +230,7 @@ describe("LEFT function", () => {
     test("should handle very long strings", () => {
       const longString = "A".repeat(1000);
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", longString],
           ["B1", '=LEFT(A1,500)'],

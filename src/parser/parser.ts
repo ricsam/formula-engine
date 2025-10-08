@@ -53,6 +53,194 @@ export class Parser {
   }
 
   /**
+   * Look ahead to determine if this is a workbook reference [Workbook]Sheet
+   */
+  private lookAheadForWorkbookReference(): { isWorkbookReference: boolean } {
+    let pos = 1; // Start after the opening [
+    
+    // Skip through the workbook name (could be multiple tokens)
+    while (pos < 10) { // Reasonable lookahead limit
+      const token = this.tokens.peekAhead(pos);
+      if (!token || token.type === "EOF") {
+        return { isWorkbookReference: false };
+      }
+      
+      if (token.type === "RBRACKET") {
+        // Found closing bracket, check if next token is an identifier (sheet name)
+        const nextToken = this.tokens.peekAhead(pos + 1);
+        if (nextToken && nextToken.type === "IDENTIFIER") {
+          // Look ahead further to find an exclamation mark or end of tokens
+          // This handles both simple sheet references and 3D ranges
+          let lookPos = pos + 2;
+          while (lookPos < pos + 10) { // Reasonable limit
+            const lookToken = this.tokens.peekAhead(lookPos);
+            if (!lookToken || lookToken.type === "EOF") {
+              // End of tokens - this is a sheet alias
+              return { isWorkbookReference: true };
+            }
+            if (lookToken.type === "EXCLAMATION") {
+              // Found exclamation mark - this is a workbook reference
+              return { isWorkbookReference: true };
+            }
+            // Continue looking for exclamation mark
+            lookPos++;
+          }
+        }
+        return { isWorkbookReference: false };
+      }
+      
+      // Continue if it's part of the workbook name
+      if (token.type === "IDENTIFIER" || token.type === "FUNCTION" || token.type === "NUMBER" || 
+          (token.type === "OPERATOR" && (token.value === "-" || token.value === "=" || token.value === "%")) ||
+          token.type === "LPAREN" || token.type === "RPAREN") {
+        pos++;
+        continue;
+      }
+      
+      // If we hit something unexpected, it's not a workbook reference
+      return { isWorkbookReference: false };
+    }
+    
+    return { isWorkbookReference: false };
+  }
+
+  /**
+   * Parse workbook reference like [Workbook]Sheet or [Workbook]Sheet!A1
+   */
+  private parseWorkbookReference(): ASTNode {
+    const start = this.tokens.peek().position.start;
+    this.tokens.consume(); // [
+
+    // Parse workbook name (similar to parseColumnName but for workbook)
+    const workbookStartPos = this.tokens.peek().position.start;
+    let workbookEndPos = workbookStartPos;
+    
+    // Consume tokens until we hit the closing bracket
+    while (!this.tokens.match("RBRACKET")) {
+      if (this.tokens.isAtEnd()) {
+        throw new ParseError(
+          "Expected ] to close workbook reference",
+          this.tokens.peek().position
+        );
+      }
+      
+      // Make sure we're consuming valid workbook name tokens
+      const token = this.tokens.peek();
+      if (token.type === "IDENTIFIER" || token.type === "FUNCTION" || token.type === "NUMBER" || 
+          (token.type === "OPERATOR" && (token.value === "-" || token.value === "=" || token.value === "%")) ||
+          token.type === "LPAREN" || token.type === "RPAREN") {
+        const consumedToken = this.tokens.consume();
+        workbookEndPos = consumedToken.position.end;
+      } else {
+        throw new ParseError(
+          `Invalid character in workbook name: ${token.value}`,
+          token.position
+        );
+      }
+    }
+    
+    // Extract workbook name from input
+    const workbookName = this.input.substring(workbookStartPos, workbookEndPos);
+    
+    this.tokens.consume(); // ]
+    
+    // Parse sheet name - could be start of 3D range
+    if (!this.tokens.match("IDENTIFIER")) {
+      throw new ParseError(
+        "Expected sheet name after workbook reference",
+        this.tokens.peek().position
+      );
+    }
+    
+    const sheetToken = this.tokens.consume();
+    let sheetName = sheetToken.value;
+    
+    // Handle quoted sheet names
+    if (sheetName.startsWith("'") && sheetName.endsWith("'")) {
+      sheetName = sheetName.slice(1, -1).replace(/''/g, "'");
+    }
+    
+    // Check if this is a 3D range (Sheet1:Sheet3!)
+    if (this.tokens.match("COLON")) {
+      const nextToken = this.tokens.peekAhead(1);
+      const tokenAfterNext = this.tokens.peekAhead(2);
+      
+      if (
+        nextToken?.type === "IDENTIFIER" &&
+        tokenAfterNext?.type === "EXCLAMATION"
+      ) {
+        // This is a 3D range
+        this.tokens.consume(); // :
+        const endSheetToken = this.tokens.consume(); // end sheet name
+        let endSheetName = endSheetToken.value;
+        
+        // Handle quoted end sheet names
+        if (endSheetName.startsWith("'") && endSheetName.endsWith("'")) {
+          endSheetName = endSheetName.slice(1, -1).replace(/''/g, "'");
+        }
+        
+        this.tokens.consume(); // !
+        
+        // Parse the reference after the 3D range
+        const ref = this.parseCellOrRangeAfterSheets();
+        
+        return createThreeDRangeNode(
+          sheetName,
+          endSheetName,
+          ref,
+          {
+            start,
+            end: this.tokens.peek().position?.end ?? 0,
+          },
+          workbookName
+        );
+      }
+    }
+    
+    // Check if there's an exclamation mark (explicit cell/range reference)
+    if (this.tokens.match("EXCLAMATION")) {
+      this.tokens.consume(); // !
+      
+      // Parse the cell/range reference after the !
+      const cellRef = this.parseCellOrRangeWithWorkbookAndSheet(workbookName, sheetName, start);
+      return cellRef;
+    } else {
+      // This is a sheet alias: [Workbook]Sheet = [Workbook]Sheet!A1:INFINITY
+      // Create an infinite range starting from A1
+      const range: SpreadsheetRange = {
+        start: {
+          col: 0, // Column A
+          row: 0, // Row 1 (0-based)
+        },
+        end: {
+          col: {
+            type: "infinity",
+            sign: "positive",
+          },
+          row: {
+            type: "infinity",
+            sign: "positive",
+          },
+        },
+      };
+
+      return createRangeNode({
+        workbookName,
+        sheetName,
+        range,
+        isAbsolute: {
+          start: { col: false, row: false },
+          end: { col: false, row: false },
+        },
+        position: {
+          start,
+          end: this.tokens.peek().position?.start ?? 0,
+        },
+      });
+    }
+  }
+
+  /**
    * Parse bare column reference like [Column] or [Column1:Column2]
    */
   private parseBareColumnReference(): ASTNode {
@@ -128,7 +316,8 @@ export class Parser {
     if (
       !this.tokens.match("IDENTIFIER") &&
       !this.tokens.match("FUNCTION") &&
-      !this.tokens.match("NUMBER")
+      !this.tokens.match("NUMBER") &&
+      !this.tokens.match("OPERATOR")
     ) {
       throw new ParseError("Expected column name", this.tokens.peek().position);
     }
@@ -140,77 +329,44 @@ export class Parser {
     // Consume the first token
     this.tokens.consume();
 
+    // Use a blacklist approach: consume all tokens until we hit a token that definitely ends a column name
+    // These are tokens that have special meaning in structured references and should not be part of column names
+    // Note: COLON is NOT in this list because colons can be part of column names (e.g., "CAR:ERC ratio")
+    // Column ranges must use explicit double-bracket syntax: Table[[Col1]:[Col2]]
+    const endTokens = new Set([
+      "RBRACKET",  // ] - ends the column reference
+      "COMMA",     // , - separates elements in complex structured references
+      "EOF"        // End of input
+    ]);
+
     // Continue consuming tokens that are part of the column name
-    while (
-      this.tokens.match("IDENTIFIER") ||
-      this.tokens.match("FUNCTION") ||
-      this.tokens.match("NUMBER") ||
-      (this.tokens.match("OPERATOR") &&
-        (this.tokens.peek().value === "-" ||
-          this.tokens.peek().value === "=" ||
-          this.tokens.peek().value === "%")) ||
-      this.tokens.match("LPAREN") ||
-      this.tokens.match("RPAREN")
-    ) {
-      if (
-        this.tokens.match("IDENTIFIER") ||
-        this.tokens.match("FUNCTION") ||
-        this.tokens.match("NUMBER")
-      ) {
+    while (!endTokens.has(this.tokens.peek().type)) {
+      // Handle special cases where we need to validate token sequences
+      if (this.tokens.match("OPERATOR")) {
+        // All operators are allowed in column names, including at the end
+        // No special validation needed - just consume the operator
         this.tokens.consume();
-      } else if (
-        this.tokens.match("OPERATOR") &&
-        this.tokens.peek().value === "-"
-      ) {
-        this.tokens.consume(); // dash
-        // After a dash, we expect another identifier, function, or number
-        if (
-          this.tokens.match("IDENTIFIER") ||
-          this.tokens.match("FUNCTION") ||
-          this.tokens.match("NUMBER")
-        ) {
-          this.tokens.consume();
-        } else {
-          throw new ParseError(
-            "Expected identifier after dash in column name",
-            this.tokens.peek().position
-          );
-        }
-      } else if (
-        this.tokens.match("OPERATOR") &&
-        this.tokens.peek().value === "="
-      ) {
-        this.tokens.consume(); // equals sign
-        // After an equals sign, we expect another identifier, function, or number
-        if (
-          this.tokens.match("IDENTIFIER") ||
-          this.tokens.match("FUNCTION") ||
-          this.tokens.match("NUMBER")
-        ) {
-          this.tokens.consume();
-        } else {
-          throw new ParseError(
-            "Expected identifier after equals sign in column name",
-            this.tokens.peek().position
-          );
-        }
-      } else if (
-        this.tokens.match("OPERATOR") &&
-        this.tokens.peek().value === "%"
-      ) {
-        this.tokens.consume(); // percent sign
-        // % can be followed by a space and more text, or it can end the token sequence
-      } else if (this.tokens.match("LPAREN") || this.tokens.match("RPAREN")) {
+      } else {
+        // For all other token types (IDENTIFIER, FUNCTION, NUMBER, LPAREN, RPAREN, etc.)
+        // just consume them as part of the column name
         this.tokens.consume();
       }
     }
 
     // Get the end position from the last consumed token
     const currentPos = this.tokens.getPosition();
-    const endPos =
+    let endPos =
       currentPos > 0
         ? this.tokens.getTokens()[currentPos - 1]?.position?.end || startPos
         : startPos;
+
+    // For structured references, we need to include trailing spaces before the closing bracket
+    // Look ahead to see if we're about to hit a closing bracket, and if so, include any trailing spaces
+    if (this.tokens.match("RBRACKET")) {
+      const nextTokenPos = this.tokens.peek().position.start;
+      // Include any whitespace between the last token and the closing bracket
+      endPos = nextTokenPos;
+    }
 
     // Extract the original column name from the input, preserving all spacing and case
     const columnName = this.input.substring(startPos, endPos);
@@ -421,13 +577,21 @@ export class Parser {
         return this.parseArrayLiteral();
 
       case "LBRACKET":
-        // Could be [@Column], [Column], or [#Selector] syntax
+        // Could be [@Column], [Column], [#Selector], or [Workbook]Sheet syntax
         if (this.tokens.peekAhead(1)?.type === "AT") {
           return this.parseCurrentRowReference();
         } else if (
           this.tokens.peekAhead(1)?.type === "IDENTIFIER" ||
+          this.tokens.peekAhead(1)?.type === "FUNCTION" ||
+          this.tokens.peekAhead(1)?.type === "NUMBER" ||
           this.tokens.peekAhead(1)?.type === "HASH"
         ) {
+          // Check if this is a workbook reference [Workbook]Sheet
+          // Look ahead to see if there's a closing bracket followed by an identifier (sheet name)
+          const lookahead = this.lookAheadForWorkbookReference();
+          if (lookahead.isWorkbookReference) {
+            return this.parseWorkbookReference();
+          }
           // Bare column reference like [result] or [#Data]
           return this.parseBareColumnReference();
         }
@@ -1046,7 +1210,8 @@ export class Parser {
           if (
             !this.tokens.match("IDENTIFIER") &&
             !this.tokens.match("FUNCTION") &&
-            !this.tokens.match("NUMBER")
+            !this.tokens.match("NUMBER") &&
+            !this.tokens.match("OPERATOR")
           ) {
             throw new ParseError(
               "Expected column name",
@@ -1062,7 +1227,8 @@ export class Parser {
             if (
               !this.tokens.match("IDENTIFIER") &&
               !this.tokens.match("FUNCTION") &&
-              !this.tokens.match("NUMBER")
+              !this.tokens.match("NUMBER") &&
+              !this.tokens.match("OPERATOR")
             ) {
               throw new ParseError(
                 "Expected end column name after :",
@@ -1102,9 +1268,10 @@ export class Parser {
       } else if (
         this.tokens.match("IDENTIFIER") ||
         this.tokens.match("FUNCTION") ||
-        this.tokens.match("NUMBER")
+        this.tokens.match("NUMBER") ||
+        this.tokens.match("OPERATOR")
       ) {
-        // Handle [[Column1]:[Column2]] syntax
+        // Handle [[Column]] or [[Column1]:[Column2]] syntax
         const colStart = this.parseColumnName();
 
         if (!this.tokens.match("RBRACKET")) {
@@ -1115,44 +1282,55 @@ export class Parser {
         }
         this.tokens.consume(); // ]
 
-        if (!this.tokens.match("COLON")) {
-          throw new ParseError(
-            "Expected : after first column in [[Column1]:[Column2]]",
-            this.tokens.peek().position
-          );
+        // Check if this is a column range [[Column1]:[Column2]] or single column [[Column]]
+        if (this.tokens.match("COLON")) {
+          this.tokens.consume(); // :
+
+          if (!this.tokens.match("LBRACKET")) {
+            throw new ParseError(
+              "Expected [ before second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // [
+
+          const colEnd = this.parseColumnName();
+
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] after second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // ]
+
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] to close table reference",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // outer ]
+
+          cols = {
+            startCol: colStart,
+            endCol: colEnd,
+          };
+        } else {
+          // Single column with double brackets [[Column]]
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] to close table reference",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // outer ]
+
+          cols = {
+            startCol: colStart,
+            endCol: colStart,
+          };
         }
-        this.tokens.consume(); // :
-
-        if (!this.tokens.match("LBRACKET")) {
-          throw new ParseError(
-            "Expected [ before second column name",
-            this.tokens.peek().position
-          );
-        }
-        this.tokens.consume(); // [
-
-        const colEnd = this.parseColumnName();
-
-        if (!this.tokens.match("RBRACKET")) {
-          throw new ParseError(
-            "Expected ] after second column name",
-            this.tokens.peek().position
-          );
-        }
-        this.tokens.consume(); // ]
-
-        if (!this.tokens.match("RBRACKET")) {
-          throw new ParseError(
-            "Expected ] to close table reference",
-            this.tokens.peek().position
-          );
-        }
-        this.tokens.consume(); // outer ]
-
-        cols = {
-          startCol: colStart,
-          endCol: colEnd,
-        };
       }
     } else if (this.tokens.match("AT")) {
       // Current row reference like Table1[@Column]
@@ -1247,7 +1425,8 @@ export class Parser {
     } else if (
       this.tokens.match("IDENTIFIER") ||
       this.tokens.match("FUNCTION") ||
-      this.tokens.match("NUMBER")
+      this.tokens.match("NUMBER") ||
+      this.tokens.match("OPERATOR")
     ) {
       // Simple column reference like Table1[Column1] or range Table1[Column1:Column2]
       const colStart = this.parseColumnName();
@@ -1369,7 +1548,8 @@ export class Parser {
           if (
             !this.tokens.match("IDENTIFIER") &&
             !this.tokens.match("FUNCTION") &&
-            !this.tokens.match("NUMBER")
+            !this.tokens.match("NUMBER") &&
+            !this.tokens.match("OPERATOR")
           ) {
             throw new ParseError(
               "Expected column name",
@@ -1385,7 +1565,8 @@ export class Parser {
             if (
               !this.tokens.match("IDENTIFIER") &&
               !this.tokens.match("FUNCTION") &&
-              !this.tokens.match("NUMBER")
+              !this.tokens.match("NUMBER") &&
+              !this.tokens.match("OPERATOR")
             ) {
               throw new ParseError(
                 "Expected end column name after :",
@@ -1425,9 +1606,10 @@ export class Parser {
       } else if (
         this.tokens.match("IDENTIFIER") ||
         this.tokens.match("FUNCTION") ||
-        this.tokens.match("NUMBER")
+        this.tokens.match("NUMBER") ||
+        this.tokens.match("OPERATOR")
       ) {
-        // Handle [[Column1]:[Column2]] syntax
+        // Handle [[Column]] or [[Column1]:[Column2]] syntax
         const colStart = this.parseColumnName();
 
         if (!this.tokens.match("RBRACKET")) {
@@ -1438,44 +1620,55 @@ export class Parser {
         }
         this.tokens.consume(); // ]
 
-        if (!this.tokens.match("COLON")) {
-          throw new ParseError(
-            "Expected : after first column in [[Column1]:[Column2]]",
-            this.tokens.peek().position
-          );
+        // Check if this is a column range [[Column1]:[Column2]] or single column [[Column]]
+        if (this.tokens.match("COLON")) {
+          this.tokens.consume(); // :
+
+          if (!this.tokens.match("LBRACKET")) {
+            throw new ParseError(
+              "Expected [ before second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // [
+
+          const colEnd = this.parseColumnName();
+
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] after second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // ]
+
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] to close table reference",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // outer ]
+
+          cols = {
+            startCol: colStart,
+            endCol: colEnd,
+          };
+        } else {
+          // Single column with double brackets [[Column]]
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] to close table reference",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // outer ]
+
+          cols = {
+            startCol: colStart,
+            endCol: colStart,
+          };
         }
-        this.tokens.consume(); // :
-
-        if (!this.tokens.match("LBRACKET")) {
-          throw new ParseError(
-            "Expected [ before second column name",
-            this.tokens.peek().position
-          );
-        }
-        this.tokens.consume(); // [
-
-        const colEnd = this.parseColumnName();
-
-        if (!this.tokens.match("RBRACKET")) {
-          throw new ParseError(
-            "Expected ] after second column name",
-            this.tokens.peek().position
-          );
-        }
-        this.tokens.consume(); // ]
-
-        if (!this.tokens.match("RBRACKET")) {
-          throw new ParseError(
-            "Expected ] to close table reference",
-            this.tokens.peek().position
-          );
-        }
-        this.tokens.consume(); // outer ]
-
-        cols = {
-          startCol: colStart,
-          endCol: colEnd,
-        };
       }
     } else if (this.tokens.match("AT")) {
       // Current row reference like Table1[@Column]
@@ -1570,7 +1763,8 @@ export class Parser {
     } else if (
       this.tokens.match("IDENTIFIER") ||
       this.tokens.match("FUNCTION") ||
-      this.tokens.match("NUMBER")
+      this.tokens.match("NUMBER") ||
+      this.tokens.match("OPERATOR")
     ) {
       // Simple column reference like Table1[Column1] or range Table1[Column1:Column2]
       const colStart = this.parseColumnName();
@@ -1629,6 +1823,7 @@ export class Parser {
 
     return createStructuredReferenceNode({
       tableName,
+      sheetName,
       cols,
       selector,
       isCurrentRow,
@@ -1763,10 +1958,10 @@ export class Parser {
 
       let columnName: string;
 
-      // Check if we have double brackets [@[Column Name]]
+      // Check if we have double brackets [@[Column Name]] or [@[Column1]:[Column2]]
       if (this.tokens.match("LBRACKET")) {
         this.tokens.consume(); // [
-        columnName = this.parseColumnName();
+        const colStart = this.parseColumnName();
 
         if (!this.tokens.match("RBRACKET")) {
           throw new ParseError(
@@ -1775,18 +1970,32 @@ export class Parser {
           );
         }
         this.tokens.consume(); // ]
-      } else {
-        // Single bracket format [@Column] or [@Column1:Column2]
-        const colStart = this.parseColumnName();
 
-        // Check if this is a column range [@Column1:Column2]
+        // Check if this is a column range [@[Column1]:[Column2]]
         if (this.tokens.match("COLON")) {
           this.tokens.consume(); // :
+
+          if (!this.tokens.match("LBRACKET")) {
+            throw new ParseError(
+              "Expected [ before second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // [
+
           const colEnd = this.parseColumnName();
 
           if (!this.tokens.match("RBRACKET")) {
             throw new ParseError(
-              "Expected ] after column range",
+              "Expected ] after second column name",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // ]
+
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] to close column range",
               this.tokens.peek().position
             );
           }
@@ -1805,9 +2014,31 @@ export class Parser {
             },
           });
         } else {
-          // Single column [@Column]
-          columnName = colStart;
+          // Single column [@[Column]]
+          if (!this.tokens.match("RBRACKET")) {
+            throw new ParseError(
+              "Expected ] after column reference",
+              this.tokens.peek().position
+            );
+          }
+          this.tokens.consume(); // ]
+
+          return createStructuredReferenceNode({
+            tableName: undefined,
+            cols: {
+              startCol: colStart,
+              endCol: colStart,
+            },
+            isCurrentRow: true,
+            position: {
+              start: this.tokens.getTokens()[start]?.position?.start ?? 0,
+              end: this.tokens.peek().position?.end ?? 0,
+            },
+          });
         }
+      } else {
+        // Single bracket format [@Column] - colons in column names are preserved
+        columnName = this.parseColumnName();
       }
 
       if (!this.tokens.match("RBRACKET")) {
@@ -1879,6 +2110,37 @@ export class Parser {
       "Table selector must be part of a table reference",
       hashToken.position
     );
+  }
+
+  /**
+   * Parse a range reference with workbook name
+   */
+  private parseRangeWithWorkbook(
+    startRef: string,
+    endRef: string,
+    workbookName: string,
+    startPos: number,
+    endPos: number
+  ): RangeNode {
+    const rangeNode = this.parseRange(startRef, endRef, startPos, endPos);
+    rangeNode.workbookName = workbookName;
+    return rangeNode;
+  }
+
+  /**
+   * Parse table reference with workbook and sheet name
+   */
+  private parseTableReferenceWithWorkbookAndSheet(
+    tableName: string,
+    workbookName: string,
+    sheetName: string,
+    startPos: number
+  ): ASTNode {
+    const tableRef = this.parseTableReferenceWithSheet(tableName, sheetName, startPos);
+    if (tableRef.type === "structured-reference") {
+      tableRef.workbookName = workbookName;
+    }
+    return tableRef;
   }
 
   /**
@@ -2249,6 +2511,128 @@ export class Parser {
         start: startPos,
         end: endPos,
       },
+    });
+  }
+
+  /**
+   * Parse a cell or range reference with a known workbook and sheet name
+   */
+  private parseCellOrRangeWithWorkbookAndSheet(
+    workbookName: string,
+    sheetName: string,
+    startPos: number
+  ): ASTNode {
+    // Build the full reference string for parsing
+    let ref = sheetName.includes(" ") ? `'${sheetName}'!` : sheetName + "!";
+
+    // Check for $ before column
+    if (this.tokens.match("DOLLAR")) {
+      ref += this.tokens.consume().value;
+    }
+
+    // Get the cell reference part
+    if (this.tokens.match("IDENTIFIER")) {
+      const identifier = this.tokens.consume();
+      ref += identifier.value;
+
+      // Check if this is a table reference ([Workbook]Sheet!Table1[...])
+      if (this.tokens.match("LBRACKET")) {
+        // This is a table reference with workbook and sheet name
+        return this.parseTableReferenceWithWorkbookAndSheet(
+          identifier.value,
+          workbookName,
+          sheetName,
+          startPos
+        );
+      }
+
+      // Check if this is an infinite column range ([Workbook]Sheet!A:A)
+      if (this.tokens.match("COLON")) {
+        this.tokens.consume();
+        const endRef = this.parseRangeEnd();
+        return this.parseRangeWithWorkbook(
+          ref,
+          endRef,
+          workbookName,
+          startPos,
+          this.tokens.peek().position.start
+        );
+      }
+
+      // Check for $ before row or just row number
+      if (this.tokens.match("DOLLAR")) {
+        ref += this.tokens.consume().value;
+      }
+
+      if (this.tokens.match("NUMBER")) {
+        ref += this.tokens.consume().value;
+      }
+    } else if (this.tokens.match("NUMBER")) {
+      // Handle infinite row range ([Workbook]Sheet!5:5)
+      const number = this.tokens.consume();
+      ref += number.value;
+
+      // Check for range
+      if (this.tokens.match("COLON")) {
+        this.tokens.consume();
+        const endRef = this.parseRangeEnd();
+        return this.parseRangeWithWorkbook(
+          ref,
+          endRef,
+          workbookName,
+          startPos,
+          this.tokens.peek().position.start
+        );
+      }
+    } else {
+      throw new ParseError(
+        `Expected cell reference after [${workbookName}]${sheetName}!`,
+        this.tokens.peek().position
+      );
+    }
+
+    // Check for range (normal cell range like [Workbook]Sheet!A1:B2)
+    if (this.tokens.match("COLON")) {
+      this.tokens.consume();
+      const endRef = this.parseRangeEnd();
+      return this.parseRangeWithWorkbook(
+        ref,
+        endRef,
+        workbookName,
+        startPos,
+        this.tokens.peek().position.start
+      );
+    }
+
+    // Parse as single cell reference
+    const cellRef = this.parseCellReferenceString(ref);
+    if (cellRef) {
+      cellRef.workbookName = workbookName;
+      return cellRef;
+    }
+
+    // If it's not a cell reference, check if it's a named expression
+    const sheetPrefix = sheetName.includes(" ")
+      ? `'${sheetName}'!`
+      : `${sheetName}!`;
+    const identifier = ref.substring(sheetPrefix.length);
+
+    // Validate it's a valid identifier for a named expression
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(identifier)) {
+      return createNamedExpressionNode(
+        identifier,
+        {
+          start: startPos,
+          end: this.tokens.peek().position.start,
+        },
+        sheetName,
+        workbookName
+      );
+    }
+
+    throw new ParseError(`Invalid cell reference: ${ref}`, {
+      start: startPos,
+      end: this.tokens.peek().position.start,
     });
   }
 

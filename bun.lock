@@ -4,7 +4,7 @@
     "": {
       "name": "formula-engine",
       "devDependencies": {
-        "@anocca-pub/components": "^0.0.31",
+        "@anocca-pub/components": "^0.0.33",
         "@playwright/test": "^1.55.0",
         "@radix-ui/react-label": "^2.1.7",
         "@radix-ui/react-select": "^2.2.5",
@@ -40,7 +40,7 @@
   "packages": {
     "@ampproject/remapping": ["@ampproject/remapping@2.3.0", "", { "dependencies": { "@jridgewell/gen-mapping": "^0.3.5", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-30iZtAPgz+LTIYoeivqYo853f02jBYSd5uGnGpkFV0M3xOt9aN73erkgYAmZU43x4VfqcnLxW9Kpg3R5LC4YYw=="],
 
-    "@anocca-pub/components": ["@anocca-pub/components@0.0.31", "", {}, "sha512-7/HtQbHH/TKIK0OFRB2u5KMqkfPSZDn3Ls8nob2Oa47ldEz7AB7hHNdac2fyZlDzK7UgFwXeRWTjQKSVtK3fHg=="],
+    "@anocca-pub/components": ["@anocca-pub/components@0.0.33", "", {}, "sha512-/BiIjFS+48a4CYQg2i7fD49w+EHZ0Lwyd6a/Jx6I8NdepthRJzPoRQEbohOflrKJxqjZeh7dUi1m5B1oMT7Tbw=="],
 
     "@babel/code-frame": ["@babel/code-frame@7.27.1", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.27.1", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-cjQ7ZlQ0Mv3b47hABuTevyTuYN4i+loJKGeV9flcCgIK37cCXRh+L1bd3iBHlynerhQ7BhCkn2BPbQUL+rGqFg=="],
 

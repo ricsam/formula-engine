@@ -5,18 +5,21 @@ import { parseCellReference } from "src/core/utils";
 
 describe("Concatenation Operator (&)", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) }, debug);
 
   const setCellContent = (ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
   };
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   describe("basic functionality", () => {
@@ -78,7 +81,7 @@ describe("Concatenation Operator (&)", () => {
 
     test("should return error for infinity operands", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=1/0"], // INFINITY
           ["B1", '="Value: "&A1'],
@@ -92,7 +95,7 @@ describe("Concatenation Operator (&)", () => {
   describe("cell references", () => {
     test("should work with cell references", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello"],
           ["B1", " "],
@@ -106,7 +109,7 @@ describe("Concatenation Operator (&)", () => {
 
     test("should work with mixed cell reference types", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Score: "],
           ["B1", 95],
@@ -123,7 +126,7 @@ describe("Concatenation Operator (&)", () => {
   describe("dynamic arrays", () => {
     test("should handle spilled values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello"],
           ["A2", "Good"],
@@ -139,7 +142,7 @@ describe("Concatenation Operator (&)", () => {
 
     test("should handle multiple spilled arrays", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello"],
           ["A2", "Good"],
@@ -159,7 +162,7 @@ describe("Concatenation Operator (&)", () => {
   describe("complex expressions", () => {
     test("should work in complex formulas", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "John"],
           ["B1", 25],

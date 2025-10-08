@@ -76,7 +76,7 @@ function formatValue(value: CellValue): string {
 }
 
 function formatReference(ast: ReferenceNode): string {
-  const { address, isAbsolute, sheetName } = ast;
+  const { address, isAbsolute, sheetName, workbookName } = ast;
   const colLetter = indexToColumn(address.colIndex);
   const rowNumber = address.rowIndex + 1; // Convert from 0-based to 1-based
 
@@ -85,16 +85,22 @@ function formatReference(ast: ReferenceNode): string {
 
   const cellRef = `${colRef}${rowRef}`;
 
+  let result = cellRef;
+
   if (sheetName) {
     const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
-    return `${quotedSheet}!${cellRef}`;
+    result = `${quotedSheet}!${cellRef}`;
   }
 
-  return cellRef;
+  if (workbookName) {
+    result = `[${workbookName}]${result}`;
+  }
+
+  return result;
 }
 
 function formatRange(ast: RangeNode): string {
-  const { range, isAbsolute, sheetName } = ast;
+  const { range, isAbsolute, sheetName, workbookName } = ast;
 
   // Handle infinite ranges
   if (range.end.col.type === "infinity" || range.end.row.type === "infinity") {
@@ -116,16 +122,22 @@ function formatRange(ast: RangeNode): string {
 
   const rangeRef = `${startColRef}${startRowRef}:${endColRef}${endRowRef}`;
 
+  let result = rangeRef;
+
   if (sheetName) {
     const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
-    return `${quotedSheet}!${rangeRef}`;
+    result = `${quotedSheet}!${rangeRef}`;
   }
 
-  return rangeRef;
+  if (workbookName) {
+    result = `[${workbookName}]${result}`;
+  }
+
+  return result;
 }
 
 function formatInfiniteRange(ast: RangeNode): string {
-  const { range, isAbsolute, sheetName } = ast;
+  const { range, isAbsolute, sheetName, workbookName } = ast;
 
   let rangeRef: string;
 
@@ -133,7 +145,7 @@ function formatInfiniteRange(ast: RangeNode): string {
   // 1. Start is always explicit cell (A5, $A$5, etc.)
   // 2. End varies by openness:
   //    - Open→: A5:10 (row-bounded)
-  //    - Open↓: A5:D (column-bounded)  
+  //    - Open↓: A5:D (column-bounded)
   //    - Open both: A5:INFINITY
   // 3. Excel compatibility: whole rows/columns use canonical cell form
   //    - 5:5 → A5:5, A:A → A1:A
@@ -142,7 +154,9 @@ function formatInfiniteRange(ast: RangeNode): string {
   const startRow = range.start.row + 1;
 
   const startColRef = isAbsolute.start.col ? `$${startCol}` : startCol;
-  const startRowRef = isAbsolute.start.row ? `$${startRow}` : startRow.toString();
+  const startRowRef = isAbsolute.start.row
+    ? `$${startRow}`
+    : startRow.toString();
 
   if (range.end.col.type === "infinity" && range.end.row.type === "infinity") {
     // Open both: A5:INFINITY
@@ -152,10 +166,10 @@ function formatInfiniteRange(ast: RangeNode): string {
     if (range.end.row.type !== "number") {
       throw new Error("Expected finite row for infinite column range");
     }
-    
+
     const endRow = range.end.row.value + 1;
     const endRowRef = isAbsolute.end.row ? `$${endRow}` : endRow.toString();
-    
+
     // Always use canonical cell form: A5:10 (not 5:10)
     rangeRef = `${startColRef}${startRowRef}:${endRowRef}`;
   } else if (range.end.row.type === "infinity") {
@@ -166,19 +180,27 @@ function formatInfiniteRange(ast: RangeNode): string {
 
     const endCol = indexToColumn(range.end.col.value);
     const endColRef = isAbsolute.end.col ? `$${endCol}` : endCol;
-    
+
     // Always use canonical cell form: A1:D (not A:D)
     rangeRef = `${startColRef}${startRowRef}:${endColRef}`;
   } else {
-    throw new Error("Expected at least one infinite dimension for infinite range");
+    throw new Error(
+      "Expected at least one infinite dimension for infinite range"
+    );
   }
+
+  let result = rangeRef;
 
   if (sheetName) {
     const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
-    return `${quotedSheet}!${rangeRef}`;
+    result = `${quotedSheet}!${rangeRef}`;
   }
 
-  return rangeRef;
+  if (workbookName) {
+    result = `[${workbookName}]${result}`;
+  }
+
+  return result;
 }
 
 function formatFunction(ast: FunctionNode): string {
@@ -262,28 +284,50 @@ function formatArray(ast: ArrayNode): string {
 }
 
 function formatNamedExpression(ast: NamedExpressionNode): string {
-  const { name, sheetName } = ast;
+  const { name, sheetName, workbookName } = ast;
+
+  let result = name;
+
   if (sheetName !== undefined) {
     // Sheet-scoped named expression
     const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
-    return `${quotedSheet}!${name}`;
+    result = `${quotedSheet}!${name}`;
   }
-  return name;
+
+  if (workbookName) {
+    result = `[${workbookName}]${result}`;
+  }
+
+  return result;
 }
 
 function formatThreeDRange(ast: ThreeDRangeNode): string {
-  const { startSheet, endSheet, reference } = ast;
+  const { startSheet, endSheet, workbookName, reference } = ast;
   const refStr = astToString(reference);
 
-  // Remove sheet name from reference if present (since we're adding the 3D range prefix)
-  const cleanRef = refStr.includes("!") ? refStr.split("!")[1] : refStr;
+  // Remove sheet name and workbook name from reference if present (since we're adding the 3D range prefix)
+  let cleanRef = refStr;
+  if (cleanRef.includes("!")) {
+    cleanRef = cleanRef.split("!")[1]!;
+  }
+  // Remove workbook prefix if present
+  if (cleanRef.startsWith("[") && cleanRef.includes("]")) {
+    const bracketEnd = cleanRef.indexOf("]");
+    cleanRef = cleanRef.substring(bracketEnd + 1);
+  }
 
   const quotedStartSheet = startSheet.includes(" ")
     ? `'${startSheet}'`
     : startSheet;
   const quotedEndSheet = endSheet.includes(" ") ? `'${endSheet}'` : endSheet;
 
-  return `${quotedStartSheet}:${quotedEndSheet}!${cleanRef}`;
+  let result = `${quotedStartSheet}:${quotedEndSheet}!${cleanRef}`;
+
+  if (workbookName) {
+    result = `[${workbookName}]${result}`;
+  }
+
+  return result;
 }
 
 /**
@@ -291,11 +335,14 @@ function formatThreeDRange(ast: ThreeDRangeNode): string {
  */
 function needsColumnBrackets(columnName: string): boolean {
   // Column names need extra brackets if they contain spaces or special characters
-  return /[\s\[\]#@,:=]/.test(columnName);
+  // Note: Colons are NOT included here since they can be part of column names
+  // Column ranges must use explicit double-bracket syntax: [[Col1]:[Col2]]
+  return /[\s\[\]#@,=/]/.test(columnName);
 }
 
 function formatStructuredReference(ast: StructuredReferenceNode): string {
-  const { tableName, cols, selector, isCurrentRow } = ast;
+  const { tableName, sheetName, workbookName, cols, selector, isCurrentRow } =
+    ast;
 
   if (!tableName && isCurrentRow) {
     // Current row reference like [@Column] or @Column
@@ -311,9 +358,7 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
       return `[${selector}]`;
     } else if (cols) {
       const startNeedsBrackets = needsColumnBrackets(cols.startCol);
-      const endNeedsBrackets = cols.startCol !== cols.endCol && needsColumnBrackets(cols.endCol);
-      const anyNeedsBrackets = startNeedsBrackets || endNeedsBrackets;
-      
+
       if (cols.startCol === cols.endCol) {
         // Single column
         if (startNeedsBrackets) {
@@ -322,18 +367,24 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
           return `[${cols.startCol}]`;
         }
       } else {
-        // Column range
-        if (anyNeedsBrackets) {
-          return `[[${cols.startCol}]:[${cols.endCol}]]`;
-        } else {
-          return `[${cols.startCol}:${cols.endCol}]`;
-        }
+        // Column range - always use double-bracket syntax to avoid ambiguity
+        // with column names that contain colons
+        return `[[${cols.startCol}]:[${cols.endCol}]]`;
       }
     }
     return "[]"; // Empty bare reference (shouldn't happen)
   }
 
   let result = "";
+
+  if (workbookName) {
+    result += `[${workbookName}]`;
+  }
+
+  if (sheetName) {
+    const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
+    result += `${quotedSheet}!`;
+  }
 
   result += tableName;
 
@@ -349,25 +400,20 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
     result += `[${selector}]`;
   } else if (cols) {
     const startNeedsBrackets = needsColumnBrackets(cols.startCol);
-    const endNeedsBrackets = cols.startCol !== cols.endCol && needsColumnBrackets(cols.endCol);
+    const endNeedsBrackets =
+      cols.startCol !== cols.endCol && needsColumnBrackets(cols.endCol);
     const anyNeedsBrackets = startNeedsBrackets || endNeedsBrackets;
-    
+
     if (isCurrentRow) {
       // Current row references
       if (cols.startCol === cols.endCol) {
-        // Single column
-        if (startNeedsBrackets) {
-          result += `[@[${cols.startCol}]]`;
-        } else {
-          result += `[@${cols.startCol}]`;
-        }
+        // Single column - always use simple format [@ColumnName]
+        // No need for double brackets even if column name has spaces
+        result += `[@${cols.startCol}]`;
       } else {
-        // Column range
-        if (anyNeedsBrackets) {
-          result += `[@[${cols.startCol}]:[${cols.endCol}]]`;
-        } else {
-          result += `[@${cols.startCol}:${cols.endCol}]`;
-        }
+        // Column range - always use double-bracket syntax to avoid ambiguity
+        // with column names that contain colons
+        result += `[@[${cols.startCol}]:[${cols.endCol}]]`;
       }
     } else {
       // Regular column references
@@ -375,12 +421,9 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
         // Single column - always use single brackets for table references
         result += `[${cols.startCol}]`;
       } else {
-        // Column range
-        if (anyNeedsBrackets) {
-          result += `[[${cols.startCol}]:[${cols.endCol}]]`;
-        } else {
-          result += `[${cols.startCol}:${cols.endCol}]`;
-        }
+        // Column range - always use double-bracket syntax to avoid ambiguity
+        // with column names that contain colons
+        result += `[[${cols.startCol}]:[${cols.endCol}]]`;
       }
     }
   }
@@ -395,7 +438,8 @@ export function formatFormula(formula: string): string {
 export function normalizeSerializedCellValue(
   value: SerializedCellValue
 ): SerializedCellValue {
-  if (value === undefined || value === "") return undefined;
+  if (value === undefined || (typeof value === "string" && value === ""))
+    return "";
 
   if (typeof value === "string" && value.startsWith("=")) {
     return `=${formatFormula(value.slice(1))}`;

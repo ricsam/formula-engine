@@ -5,20 +5,29 @@ import { parseCellReference } from "src/core/utils";
 
 describe("IFERROR function", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      debug
+    );
 
   const setCellContent = (ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      content
+    );
   };
 
   const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   describe("basic functionality", () => {
@@ -37,7 +46,7 @@ describe("IFERROR function", () => {
       setCellContent("A1", '=IFERROR(CEILING(5), "Missing arg error")'); // Missing required arg
       expect(cell("A1")).toBe("Missing arg error");
 
-      setCellContent("A2", '=IFERROR(CEILING(5, 0), "Zero sig error")'); // Zero significance  
+      setCellContent("A2", '=IFERROR(CEILING(5, 0), "Zero sig error")'); // Zero significance
       expect(cell("A2")).toBe("Zero sig error");
 
       setCellContent("A3", '=IFERROR("Hello">5, "Comparison error")'); // Invalid comparison
@@ -46,25 +55,25 @@ describe("IFERROR function", () => {
 
     test("should handle different error types", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
-          ["A1", "=1/0"],           // Results in "INFINITY", not an error
-          ["A2", '="Hello">5'],     // #VALUE! (invalid comparison)
-          ["A3", "=CEILING(5)"],    // #VALUE! (missing argument)
+          ["A1", "=1/0"], // Results in "INFINITY", not an error
+          ["A2", '="Hello">5'], // #VALUE! (invalid comparison)
+          ["A3", "=CEILING(5)"], // #VALUE! (missing argument)
           ["B1", '=IFERROR(A1, "Div by zero")'],
           ["B2", '=IFERROR(A2, "Value error")'],
           ["B3", '=IFERROR(A3, "Ceiling error")'],
         ])
       );
 
-      expect(cell("B1")).toBe("INFINITY");      // A1 is not an error, returns INFINITY
-      expect(cell("B2")).toBe("Value error");   // A2 is an error
+      expect(cell("B1")).toBe("INFINITY"); // A1 is not an error, returns INFINITY
+      expect(cell("B2")).toBe("Value error"); // A2 is an error
       expect(cell("B3")).toBe("Ceiling error"); // A3 is an error
     });
 
     test("should work with cell references", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["B1", 0],
@@ -103,7 +112,7 @@ describe("IFERROR function", () => {
   describe("function integration", () => {
     test("should work with COUNTIF", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["A2", "Banana"],
@@ -117,7 +126,7 @@ describe("IFERROR function", () => {
 
     test("should work with IF function", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["B1", 0],
@@ -129,7 +138,10 @@ describe("IFERROR function", () => {
     });
 
     test("should handle nested IFERROR", () => {
-      setCellContent("A1", '=IFERROR(IFERROR(CEILING(5), CEILING(3)), "Both failed")');
+      setCellContent(
+        "A1",
+        '=IFERROR(IFERROR(CEILING(5), CEILING(3)), "Both failed")'
+      );
       expect(cell("A1")).toBe("Both failed"); // Both CEILING calls have missing args
     });
   });
@@ -137,23 +149,23 @@ describe("IFERROR function", () => {
   describe("dynamic arrays (spilled values)", () => {
     test("should handle spilled values with actual errors", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
-          ["A1", 2],   // Valid
-          ["A2", 0],   // Will cause CEILING error with zero significance
-          ["A3", 1],   // Valid
+          ["A1", 2], // Valid
+          ["A2", 0], // Will cause CEILING error with zero significance
+          ["A3", 1], // Valid
           ["B1", "=IFERROR(CEILING(5, A1:A3), 99)"],
         ])
       );
 
-      expect(cell("B1")).toBe(6);  // CEILING(5, 2) = ceil(5/2)*2 = 3*2 = 6
+      expect(cell("B1")).toBe(6); // CEILING(5, 2) = ceil(5/2)*2 = 3*2 = 6
       expect(cell("B2")).toBe(99); // CEILING(5, 0) -> #DIV/0! -> 99
-      expect(cell("B3")).toBe(5);  // CEILING(5, 1) = 5
+      expect(cell("B3")).toBe(5); // CEILING(5, 1) = 5
     });
 
     test("should handle spilled error values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Default A"],
           ["A2", "Default B"],
@@ -169,7 +181,7 @@ describe("IFERROR function", () => {
 
     test("should handle multiple spilled arrays", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 5],
           ["A2", 3],
@@ -184,9 +196,9 @@ describe("IFERROR function", () => {
         ])
       );
 
-      expect(cell("D1")).toBe(5);        // CEILING(5, 1) = 5
+      expect(cell("D1")).toBe(5); // CEILING(5, 1) = 5
       expect(cell("D2")).toBe("Error B"); // CEILING(3, 0) -> #DIV/0! -> "Error B"
-      expect(cell("D3")).toBe(8);        // CEILING(7, 2) = 8
+      expect(cell("D3")).toBe(8); // CEILING(7, 2) = 8
     });
   });
 
@@ -204,7 +216,7 @@ describe("IFERROR function", () => {
 
     test("should handle valid value_if_error", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Safe value"], // Valid value, not error
           ["B1", "=IFERROR(5, A1)"], // 5 is not error, should return 5
@@ -215,7 +227,7 @@ describe("IFERROR function", () => {
     });
 
     test("should handle error in error handler", () => {
-      setCellContent("A1", '=IFERROR(CEILING(5), CEILING(3))'); // Both missing args
+      setCellContent("A1", "=IFERROR(CEILING(5), CEILING(3))"); // Both missing args
       expect(cell("A1")).toBe("#VALUE!"); // Error in error handler propagates
     });
   });
@@ -229,7 +241,7 @@ describe("IFERROR function", () => {
 
     test("should handle complex expressions", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 5],
           ["B1", 0],
@@ -242,16 +254,16 @@ describe("IFERROR function", () => {
 
     test("should work with text functions", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello"],
-          ["B1", '=IFERROR(LEN(A1), 0)'],
+          ["B1", "=IFERROR(LEN(A1), 0)"],
           ["B2", '=IFERROR(FIND("x", A1), 0)'], // "x" not found in "Hello"
         ])
       );
 
-      expect(cell("B1")).toBe(5);  // LEN("Hello") = 5, no error
-      expect(cell("B2")).toBe(0);  // FIND returns #VALUE! when not found -> 0
+      expect(cell("B1")).toBe(5); // LEN("Hello") = 5, no error
+      expect(cell("B2")).toBe(0); // FIND returns #VALUE! when not found -> 0
     });
 
     test("should handle return type preservation", () => {
@@ -263,6 +275,111 @@ describe("IFERROR function", () => {
 
       setCellContent("A3", "=IFERROR(TRUE, FALSE)");
       expect(cell("A3")).toBe(true);
+    });
+  });
+
+  describe("lazy evaluation", () => {
+    test("should not evaluate error handler when value is not an error", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          // If the error handler was evaluated, CEILING(5) would cause an error
+          ["B1", "=IFERROR(A1, CEILING(5))"],
+        ])
+      );
+
+      expect(cell("B1")).toBe(10); // Returns A1 value without evaluating CEILING(5)
+    });
+
+    test("should evaluate error handler only when value is an error", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "=CEILING(5)"], // Missing argument -> error
+          ["B1", "=IFERROR(A1, 999)"],
+        ])
+      );
+
+      expect(cell("B1")).toBe(999); // Error is caught and handler is evaluated
+    });
+
+    test("should prevent cyclic dependencies when no error", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 100],
+          ["B1", "=IFERROR(A1, C1)"], // If no error, return A1; else return C1
+          ["C1", "=IFERROR(200, B1)"], // If no error, return 200; else return B1
+        ])
+      );
+
+      // B1: A1 is not an error, so return 100 without evaluating C1
+      // C1: 200 is not an error, so return 200 without evaluating B1
+      // No cyclic dependency because error handlers are not evaluated
+      expect(cell("B1")).toBe(100);
+      expect(cell("C1")).toBe(200);
+    });
+
+    test("should handle nested IFERROR with lazy evaluation", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Success"],
+          // Nested IFERROR with errors in unevaluated branches
+          ["B1", "=IFERROR(A1, IFERROR(CEILING(1), CEILING(2)))"],
+        ])
+      );
+
+      expect(cell("B1")).toBe("Success"); // A1 is not an error, so nested IFERROR is never evaluated
+    });
+
+    test("should evaluate nested error handlers when needed", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "=CEILING(5)"], // Error: missing argument
+          ["B1", "=CEILING(3)"], // Error: missing argument
+          // When A1 is error, evaluate first IFERROR handler
+          // When that's also an error, evaluate second IFERROR handler
+          ["C1", "=IFERROR(A1, IFERROR(B1, 888))"],
+        ])
+      );
+
+      expect(cell("C1")).toBe(888); // Both A1 and B1 are errors, so use final handler
+    });
+
+    test("should work with conditional error triggering", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 1],
+          ["B1", 0],
+          // When A1=1, use 100 (no error, don't evaluate handler)
+          // When A1=0, CEILING with 0 significance causes error, evaluate handler
+          ["C1", "=IFERROR(CEILING(5, A1), 999)"],
+          ["D1", "=IFERROR(CEILING(5, B1), 999)"],
+        ])
+      );
+
+      expect(cell("C1")).toBe(5); // CEILING(5, 1) = 5, no error
+      expect(cell("D1")).toBe(999); // CEILING(5, 0) -> error -> 999
+    });
+
+    test("should not evaluate error handler multiple times", () => {
+      // This test ensures that when we have multiple references to the same IFERROR,
+      // we don't unnecessarily evaluate the error handler
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 42],
+          ["B1", "=IFERROR(A1, CEILING(5))"], // A1 is not error
+          ["C1", "=B1 + B1"], // Reference B1 twice
+        ])
+      );
+
+      expect(cell("B1")).toBe(42); // No error, handler not evaluated
+      expect(cell("C1")).toBe(84); // 42 + 42
     });
   });
 });

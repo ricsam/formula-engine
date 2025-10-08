@@ -3,7 +3,6 @@ import {
   type CellString,
   type FunctionEvaluationResult,
   type ValueEvaluationResult,
-  type EvaluationContext,
   type CellAddress,
   type SpreadsheetRange,
   type ErrorEvaluationResult,
@@ -11,36 +10,61 @@ import {
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 /**
  * Strictly extracts string value without type coercion
  */
-export function convertToString(result: FunctionEvaluationResult): string {
+export function convertToString(result: FunctionEvaluationResult): string | ErrorEvaluationResult {
+  if (result.type === "awaiting-evaluation") {
+    return result;
+  }
+  
   if (result.type !== "value") {
-    throw new Error(FormulaError.VALUE);
+    return {
+      type: "error",
+      err: FormulaError.VALUE,
+      message: "Expected a value result",
+    };
   }
 
   if (result.result.type === "string") {
     return result.result.value;
   } else {
     // No type coercion - only strings are valid
-    throw new Error(FormulaError.VALUE);
+    return {
+      type: "error",
+      err: FormulaError.VALUE,
+      message: "Expected a string value",
+    };
   }
 }
 
 /**
  * Strictly extracts numeric value without type coercion
  */
-export function extractNumericValue(result: FunctionEvaluationResult): number {
+export function extractNumericValue(result: FunctionEvaluationResult): number | ErrorEvaluationResult {
+  if (result.type === "awaiting-evaluation") {
+    return result;
+  }
+  
   if (result.type !== "value") {
-    throw new Error(FormulaError.VALUE);
+    return {
+      type: "error",
+      err: FormulaError.VALUE,
+      message: "Expected a value result",
+    };
   }
 
   if (result.result.type === "number") {
     return result.result.value;
   } else {
     // No type coercion - only numbers are valid
-    throw new Error(FormulaError.VALUE);
+    return {
+      type: "error",
+      err: FormulaError.VALUE,
+      message: "Expected a number value",
+    };
   }
 }
 
@@ -56,15 +80,31 @@ export function midOperation(
   const startNum = extractNumericValue(startNumResult);
   const numChars = extractNumericValue(numCharsResult);
 
+  // Check if any of the results are awaiting evaluation or errors
+  if (typeof textStr === "object" && (textStr.type === "awaiting-evaluation" || textStr.type === "error")) {
+    return textStr;
+  }
+  if (typeof startNum === "object" && (startNum.type === "awaiting-evaluation" || startNum.type === "error")) {
+    return startNum;
+  }
+  if (typeof numChars === "object" && (numChars.type === "awaiting-evaluation" || numChars.type === "error")) {
+    return numChars;
+  }
+
+  // At this point, all values should be primitive types
+  const textValue = textStr as string;
+  const startNumValue = startNum as number;
+  const numCharsValue = numChars as number;
+
   // Validate startNum and numChars
-  if (startNum < 1) {
+  if (startNumValue < 1) {
     return {
       type: "error",
       err: FormulaError.VALUE,
       message: "StartNum argument must be a positive number",
     };
   }
-  if (numChars < 0) {
+  if (numCharsValue < 0) {
     return {
       type: "error",
       err: FormulaError.VALUE,
@@ -73,11 +113,11 @@ export function midOperation(
   }
 
   // Convert to 0-based index (Excel uses 1-based)
-  const startIndex = Math.floor(startNum) - 1;
-  const length = Math.floor(numChars);
+  const startIndex = Math.floor(startNumValue) - 1;
+  const length = Math.floor(numCharsValue);
 
   // Extract substring
-  const result = textStr.substring(startIndex, startIndex + length);
+  const result = textValue.substring(startIndex, startIndex + length);
 
   return { type: "value", result: { type: "string", value: result } };
 }
@@ -155,7 +195,7 @@ export function createMidSpilledResult(
     evaluate: (
       spilledCell,
       evalContext
-    ): SingleEvaluationResult | undefined => {
+    ): SingleEvaluationResult => {
       // Evaluate all arguments at this spilled position
       const spillTextResult = hasSpilledText
         ? textResult.evaluate(spilledCell, evalContext)

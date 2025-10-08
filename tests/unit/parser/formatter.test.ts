@@ -232,9 +232,10 @@ describe("Formula Formatter", () => {
         "Table1[[#Headers],[Column1:Column2]]"
       );
     });
-    test("should format complex table references with range resolving to single column", () => {
+    test("should format complex table references with column name containing colon", () => {
+      // If the column name itself contains a colon, it's treated as a single column
       expect(formatFormula("Table1[[#Headers],[Column1:Column1]]")).toBe(
-        "Table1[[#Headers],[Column1]]"
+        "Table1[[#Headers],[Column1:Column1]]"
       );
     });
 
@@ -268,18 +269,28 @@ describe("Formula Formatter", () => {
       });
 
       test("should format column ranges with special characters (double brackets)", () => {
-        // Column ranges should use double brackets when any column has special chars
-        expect(formatFormula("Table1[CAR ID:ORDER ID]")).toBe("Table1[[CAR ID]:[ORDER ID]]");
-        expect(formatFormula("Table1[Net Sales:Gross Profit]")).toBe("Table1[[Net Sales]:[Gross Profit]]");
+        // Column ranges must use explicit double-bracket syntax
+        expect(formatFormula("Table1[[CAR ID]:[ORDER ID]]")).toBe("Table1[[CAR ID]:[ORDER ID]]");
+        expect(formatFormula("Table1[[Net Sales]:[Gross Profit]]")).toBe("Table1[[Net Sales]:[Gross Profit]]");
         
-        // Mixed: one with spaces, one without - should still use double brackets
-        expect(formatFormula("Table1[Column1:CAR ID]")).toBe("Table1[[Column1]:[CAR ID]]");
-        expect(formatFormula("Table1[CAR ID:Column2]")).toBe("Table1[[CAR ID]:[Column2]]");
+        // Mixed: one with spaces, one without
+        expect(formatFormula("Table1[[Column1]:[CAR ID]]")).toBe("Table1[[Column1]:[CAR ID]]");
+        expect(formatFormula("Table1[[CAR ID]:[Column2]]")).toBe("Table1[[CAR ID]:[Column2]]");
+      });
+
+      test("should format single column names containing colons", () => {
+        // Single-bracket syntax with colons should be treated as column names, not ranges
+        expect(formatFormula("Table1[CAR ID:ORDER ID]")).toBe("Table1[CAR ID:ORDER ID]");
+        expect(formatFormula("Table1[Net Sales:Gross Profit]")).toBe("Table1[Net Sales:Gross Profit]");
+        expect(formatFormula("Table1[CAR:ERC ratio]")).toBe("Table1[CAR:ERC ratio]");
+        expect(formatFormula("DataTable[CAR:ERC ratio]")).toBe("DataTable[CAR:ERC ratio]");
       });
 
       test("should format current row column ranges with special characters", () => {
+        // Double-bracket syntax for ranges
         expect(formatFormula("Table1[@[CAR ID]:[ORDER ID]]")).toBe("Table1[@[CAR ID]:[ORDER ID]]");
-        expect(formatFormula("Table1[@CAR ID:ORDER ID]")).toBe("Table1[@[CAR ID]:[ORDER ID]]");
+        // Single-bracket syntax treated as single column name
+        expect(formatFormula("Table1[@CAR ID:ORDER ID]")).toBe("Table1[@CAR ID:ORDER ID]");
       });
     });
 
@@ -291,7 +302,8 @@ describe("Formula Formatter", () => {
       });
 
       test("should format VLOOKUP with table references", () => {
-        const formula = "VLOOKUP([@Customer Name], CustomerTable[Customer Name:Phone Number], 3, FALSE)";
+        // Use explicit double-bracket syntax for column ranges
+        const formula = "VLOOKUP([@Customer Name], CustomerTable[[Customer Name]:[Phone Number]], 3, FALSE)";
         const expected = "VLOOKUP([@Customer Name],CustomerTable[[Customer Name]:[Phone Number]],3,FALSE)";
         expect(formatFormula(formula)).toBe(expected);
       });
@@ -315,7 +327,8 @@ describe("Formula Formatter", () => {
         expect(formatFormula("[result]")).toBe("[result]");
       });
 
-      test("should format bare column ranges", () => {
+      test("should format bare column names with colons", () => {
+        // Single-bracket syntax with colons are treated as column names, not ranges
         expect(formatFormula("[Column1:Column2]")).toBe("[Column1:Column2]");
         expect(formatFormula("[num:result]")).toBe("[num:result]");
       });
@@ -330,6 +343,74 @@ describe("Formula Formatter", () => {
       // with formatFormula() because they cannot be parsed as standalone formulas.
       // They only exist within table contexts. The formatting behavior is covered
       // by the other structured reference tests.
+    });
+  });
+
+  describe("Workbook References", () => {
+    test("should format workbook cell references", () => {
+      expect(formatFormula("[MyWorkbook]Sheet1!A1")).toBe("[MyWorkbook]Sheet1!A1");
+      expect(formatFormula("[My Workbook]'Sheet With Spaces'!$A$1")).toBe("[My Workbook]'Sheet With Spaces'!$A$1");
+    });
+
+    test("should format workbook range references", () => {
+      expect(formatFormula("[MyWorkbook]Sheet1!A1:C5")).toBe("[MyWorkbook]Sheet1!A1:C5");
+      expect(formatFormula("[My Workbook]Sheet1!$A$1:$C$5")).toBe("[My Workbook]Sheet1!$A$1:$C$5");
+    });
+
+    test("should format workbook sheet aliases", () => {
+      // Sheet alias should format as the canonical infinite range
+      expect(formatFormula("[MyWorkbook]Sheet1")).toBe("[MyWorkbook]Sheet1!A1:INFINITY");
+      expect(formatFormula("[My Workbook]'Sheet With Spaces'")).toBe("[My Workbook]'Sheet With Spaces'!A1:INFINITY");
+    });
+
+    test("should format workbook infinite ranges", () => {
+      expect(formatFormula("[MyWorkbook]Sheet1!A:A")).toBe("[MyWorkbook]Sheet1!A1:A");
+      expect(formatFormula("[MyWorkbook]Sheet1!1:1")).toBe("[MyWorkbook]Sheet1!A1:1");
+      expect(formatFormula("[MyWorkbook]Sheet1!A1:INFINITY")).toBe("[MyWorkbook]Sheet1!A1:INFINITY");
+    });
+
+    test("should format workbook named expressions", () => {
+      expect(formatFormula("[MyWorkbook]Sheet1!TaxRate")).toBe("[MyWorkbook]Sheet1!TaxRate");
+      expect(formatFormula("[My Workbook]'Sheet With Spaces'!TaxRate")).toBe("[My Workbook]'Sheet With Spaces'!TaxRate");
+    });
+
+    test("should format workbook table references", () => {
+      expect(formatFormula("[MyWorkbook]Sheet1!Table1[Column1]")).toBe("[MyWorkbook]Sheet1!Table1[Column1]");
+      expect(formatFormula("[My Workbook]Sheet1!Table1[Column With Spaces]")).toBe("[My Workbook]Sheet1!Table1[Column With Spaces]");
+    });
+
+    test("should format complex workbook names", () => {
+      const testCases = [
+        { input: "[Budget 2024]Sheet1", expected: "[Budget 2024]Sheet1!A1:INFINITY" },
+        { input: "[My-Workbook]Sheet1", expected: "[My-Workbook]Sheet1!A1:INFINITY" },
+        { input: "[Workbook_v2]Sheet1", expected: "[Workbook_v2]Sheet1!A1:INFINITY" },
+        { input: "[Report (Final)]Sheet1", expected: "[Report (Final)]Sheet1!A1:INFINITY" },
+        { input: "[Data=Analysis]Sheet1", expected: "[Data=Analysis]Sheet1!A1:INFINITY" },
+        { input: "[50% Complete]Sheet1", expected: "[50% Complete]Sheet1!A1:INFINITY" },
+      ];
+
+      testCases.forEach(({ input, expected }) => {
+        expect(formatFormula(input)).toBe(expected);
+      });
+    });
+
+    test("should format workbook references in functions", () => {
+      expect(formatFormula("SUM([MyWorkbook]Sheet1!A1:A10)")).toBe("SUM([MyWorkbook]Sheet1!A1:A10)");
+      expect(formatFormula("VLOOKUP(A1,[External]Data!A:D,2,FALSE)")).toBe("VLOOKUP(A1,[External]Data!A1:D,2,FALSE)");
+    });
+
+    test("should format mixed workbook and same-workbook references", () => {
+      expect(formatFormula("SUM([External]Sheet1!A1:A10, 'Local Sheet'!B1:B10)")).toBe(
+        "SUM([External]Sheet1!A1:A10,'Local Sheet'!B1:B10)"
+      );
+    });
+
+    test("should distinguish workbook references from bare column references", () => {
+      // Bare column reference should not have workbook prefix
+      expect(formatFormula("[Column1]")).toBe("[Column1]");
+      
+      // Workbook reference should have workbook prefix and be formatted as infinite range
+      expect(formatFormula("[MyWorkbook]Sheet1")).toBe("[MyWorkbook]Sheet1!A1:INFINITY");
     });
   });
 
@@ -384,6 +465,13 @@ describe("Formula Formatter", () => {
       "A$5:D", // Open↓ range with row absolute
       "A1:A", // Whole column canonical form
       "A5:5", // Whole row canonical form
+      // Workbook references (these will be normalized to canonical forms)
+      "[MyWorkbook]Sheet1!A1",
+      "[My Workbook]'Sheet With Spaces'!$A$1",
+      "[MyWorkbook]Sheet1!A1:C5",
+      "[MyWorkbook]Sheet1!A1:INFINITY",
+      "[MyWorkbook]Sheet1!TaxRate",
+      "[MyWorkbook]Sheet1!Table1[Column1]"
     ];
 
     test.each(testCases)("should round-trip formula: %s", (formula) => {
@@ -630,9 +718,13 @@ describe("Formula Formatter", () => {
 
     test("should preserve double brackets only when required for ranges", () => {
       const testCases = [
-        // Double brackets should be used for column ranges with special chars
-        { input: "Table1[Car Name:Order Date]", expected: "Table1[[Car Name]:[Order Date]]" },
-        { input: "Table1[Column A:Column B]", expected: "Table1[[Column A]:[Column B]]" },
+        // Single-bracket syntax with colons are now treated as column names, not ranges
+        { input: "Table1[Car Name:Order Date]", expected: "Table1[Car Name:Order Date]" },
+        { input: "Table1[Column A:Column B]", expected: "Table1[Column A:Column B]" },
+        
+        // Double-bracket syntax is required for actual column ranges
+        { input: "Table1[[Car Name]:[Order Date]]", expected: "Table1[[Car Name]:[Order Date]]" },
+        { input: "Table1[[Column A]:[Column B]]", expected: "Table1[[Column A]:[Column B]]" },
         
         // Double brackets should be used for selector + column combinations
         { input: "Table1[[#Data],[Car Name]]", expected: "Table1[[#Data],[Car Name]]" },
@@ -753,6 +845,165 @@ describe("Formula Formatter", () => {
           const formatted = formatFormula(formula);
           expect(() => parseFormula(formatted)).not.toThrow();
         });
+      });
+
+      test("should handle column names with forward slashes", () => {
+        const testCases = [
+          "Table1[FTE Concentration (M/ml)]",
+          "[@[Volume (ml/min)]]",
+          "Table1[Rate (units/hour)]",
+          "[@[Ratio (A/B)]]",
+          "SUM(Table1[Price ($/unit)])"
+        ];
+
+        testCases.forEach(formula => {
+          expect(() => parseFormula(formula)).not.toThrow();
+          const formatted = formatFormula(formula);
+          expect(() => parseFormula(formatted)).not.toThrow();
+        });
+      });
+
+      test("should parse and format complex formula with forward slash in column name", () => {
+        const formula = "IFERROR(AVERAGEIF(cTADCount[Car ID],[@[Car factory ID]],eTADCount[FTE Concentration (M/ml)]),\"\")";
+        
+        // First, let's see if we can parse it
+        expect(() => parseFormula(formula)).not.toThrow();
+        
+        // Then format it
+        const formatted = formatFormula(formula);
+        expect(formatted).toBeDefined();
+        
+        // And ensure it round-trips
+        const reparsed = parseFormula(formatted);
+        const reformatted = astToString(reparsed);
+        expect(reformatted).toBe(formatted);
+      });
+
+      test("should handle column names with trailing spaces", () => {
+        const testCases = [
+          "[@[Cars needed (M) ]]",
+          "Table1[Column with space ]",
+          "[@[Trailing space column ]]",
+          "Table1[Multiple trailing spaces  ]"
+        ];
+
+        testCases.forEach(formula => {
+          expect(() => parseFormula(formula)).not.toThrow();
+          const formatted = formatFormula(formula);
+          expect(() => parseFormula(formatted)).not.toThrow();
+          
+          // Verify that trailing spaces are preserved
+          const ast = parseFormula(formula);
+          const formattedAst = parseFormula(formatted);
+          if (ast.type === "structured-reference" && formattedAst.type === "structured-reference" &&
+              ast.cols?.startCol && formattedAst.cols?.startCol) {
+            expect(ast.cols.startCol).toBe(formattedAst.cols.startCol);
+          }
+        });
+      });
+
+      test("should handle column names with operators correctly", () => {
+        const testCases = [
+          // Single columns with operators should use single brackets
+          { input: "Table1[CAR count TIER3+SNG-]", expected: "Table1[CAR count TIER3+SNG-]" },
+          { input: "Table1[Column+]", expected: "Table1[Column+]" },
+          { input: "Table1[Column-]", expected: "Table1[Column-]" },
+          { input: "Table1[Column*]", expected: "Table1[Column*]" },
+          { input: "Table1[Column/]", expected: "Table1[Column/]" },
+          { input: "Table1[Column^]", expected: "Table1[Column^]" },
+          { input: "Table1[Column&]", expected: "Table1[Column&]" },
+          { input: "Table1[Column%]", expected: "Table1[Column%]" },
+          { input: "Table1[Column=]", expected: "Table1[Column=]" },
+          
+          // Current row references should simplify when possible
+          { input: "[@[TIER3+SNG-]]", expected: "[@TIER3+SNG-]" },
+          { input: "[@Column+]", expected: "[@Column+]" },
+          { input: "[@Column-]", expected: "[@Column-]" },
+          
+          // Complex formulas should format correctly
+          { input: "IFERROR(AVERAGEIFS(DataTable[CAR count TIER3+SNG-],DataTable[Condition],\"10uT\"),\"\")", 
+            expected: "IFERROR(AVERAGEIFS(DataTable[CAR count TIER3+SNG-],DataTable[Condition],\"10uT\"),\"\")" },
+        ];
+
+        testCases.forEach(({ input, expected }) => {
+          const formatted = formatFormula(input);
+          expect(formatted).toBe(expected);
+          
+          // Ensure the formatted result is parseable
+          expect(() => parseFormula(formatted)).not.toThrow();
+          
+          // Ensure round-trip stability
+          const reparsed = parseFormula(formatted);
+          const reformatted = astToString(reparsed);
+          expect(reformatted).toBe(formatted);
+        });
+      });
+
+      test("should handle column names starting with operators", () => {
+        const testCases = [
+          // Column names starting with % and other operators
+          { input: "Table1[%Ethanol+ AP3 extra AD1+TRP-]", expected: "Table1[%Ethanol+ AP3 extra AD1+TRP-]" },
+          { input: "Table1[%RPP+ AP3 mid of AP8+ERC-]", expected: "Table1[%RPP+ AP3 mid of AP8+ERC-]" },
+          { input: "[@[%Purity Ethanol of AP8 ERC-]]", expected: "[@%Purity Ethanol of AP8 ERC-]" },
+          { input: "Table1[+Column]", expected: "Table1[+Column]" },
+          { input: "Table1[-Column]", expected: "Table1[-Column]" },
+          { input: "Table1[*Column]", expected: "Table1[*Column]" },
+          { input: "Table1[/Column]", expected: "Table1[/Column]" },
+          { input: "Table1[^Column]", expected: "Table1[^Column]" },
+          { input: "Table1[&Column]", expected: "Table1[&Column]" },
+          { input: "Table1[%Column]", expected: "Table1[%Column]" },
+          { input: "Table1[=Column]", expected: "Table1[=Column]" },
+          { input: "[@+Column]", expected: "[@+Column]" },
+          { input: "[@-Column]", expected: "[@-Column]" },
+          { input: "[@*Column]", expected: "[@*Column]" },
+          { input: "[@/Column]", expected: "[@/Column]" },
+          { input: "[@^Column]", expected: "[@^Column]" },
+          { input: "[@&Column]", expected: "[@&Column]" },
+          { input: "[@%Column]", expected: "[@%Column]" },
+          { input: "[@=Column]", expected: "[@=Column]" },
+          
+          // Complex formula with operators at start of column names
+          { input: "IFERROR(IF($D$10=\"yes\",AVERAGEIFS(DataTable[%Ethanol+ AP3 extra AD1+TRP-],DataTable[Condition],Summary1_AP3lowTRP[[#Headers],[10uT]],DataTable[TRP],[@TRP],DataTable[Car],[@[Serviced Car]])/[@[Purity %Ethanol of AP8 ERC-]]*100,AVERAGEIFS(DataTable[%RPP+ AP3 mid of AP8+ERC-],DataTable[Condition],Summary1_AP3midTRP[[#Headers],[10uT]],DataTable[TRP],[@TRP],DataTable[Car],[@[Serviced car]]),\"\"))",
+            expected: "IFERROR(IF($D$10=\"yes\",AVERAGEIFS(DataTable[%Ethanol+ AP3 extra AD1+TRP-],DataTable[Condition],Summary1_AP3lowTRP[[#Headers],[10uT]],DataTable[TRP],[@TRP],DataTable[Car],[@Serviced Car])/[@Purity %Ethanol of AP8 ERC-]*100,AVERAGEIFS(DataTable[%RPP+ AP3 mid of AP8+ERC-],DataTable[Condition],Summary1_AP3midTRP[[#Headers],[10uT]],DataTable[TRP],[@TRP],DataTable[Car],[@Serviced car]),\"\"))" },
+        ];
+
+        testCases.forEach(({ input, expected }) => {
+          const formatted = formatFormula(input);
+          expect(formatted).toBe(expected);
+          
+          // Ensure the formatted result is parseable
+          expect(() => parseFormula(formatted)).not.toThrow();
+          
+          // Ensure round-trip stability
+          const reparsed = parseFormula(formatted);
+          const reformatted = astToString(reparsed);
+          expect(reformatted).toBe(formatted);
+        });
+      });
+
+      test("should parse and format complex formula with trailing spaces", () => {
+        const formula = "[@[Cars needed (M) ]]+[@[Cars needed (M) ]]*20/100";
+        
+        // First, let's see if we can parse it
+        expect(() => parseFormula(formula)).not.toThrow();
+        
+        // Then format it
+        const formatted = formatFormula(formula);
+        expect(formatted).toBeDefined();
+        
+        // And ensure it round-trips
+        const reparsed = parseFormula(formatted);
+        const reformatted = astToString(reparsed);
+        expect(reformatted).toBe(formatted);
+        
+        // Verify trailing spaces are preserved
+        const originalAst = parseFormula(formula);
+        const formattedAst = parseFormula(formatted);
+        if (originalAst.type === "binary-op" && formattedAst.type === "binary-op" &&
+            originalAst.left.type === "structured-reference" && formattedAst.left.type === "structured-reference") {
+          expect(originalAst.left.cols?.startCol).toBe("Cars needed (M) ");
+          expect(formattedAst.left.cols?.startCol).toBe("Cars needed (M) ");
+        }
       });
     });
   });

@@ -1,33 +1,24 @@
 import { parseFormula } from "src/parser/parser";
-import type {
-  EvaluatedDependencyNode,
-  FormulaEngineEvents,
-  NamedExpression,
-  Sheet,
-  SingleEvaluationResult,
-  SpilledValuesEvaluationResult,
-  ValueEvaluationResult,
-} from "../core/types";
+import type { LocalCellAddress, SingleEvaluationResult } from "../core/types";
 import {
   FormulaError,
   type CellAddress,
   type CellValue,
   type FunctionEvaluationResult,
-  type SerializedCellValue,
-  type SpilledValue,
   type SpreadsheetRange,
   type SpreadsheetRangeEnd,
   type TableDefinition,
 } from "../core/types";
-import { dependencyNodeToKey } from "../core/utils/dependency-node-key";
 
-import { type EvaluationContext } from "../core/types";
-
+import type { DependencyManager } from "src/core/managers/dependency-manager";
+import type { TableManager } from "src/core/managers/table-manager";
+import type { WorkbookManager } from "src/core/managers/workbook-manager";
 import {
   evaluateScalarOperator,
   type EvaluateScalarOperatorOptions,
 } from "src/evaluator/evaluate-scalar-operator";
 import { functions } from "src/functions";
+import { OpenRangeEvaluator } from "src/evaluator/open-range-evaluator";
 import type {
   ArrayNode,
   ASTNode,
@@ -41,24 +32,31 @@ import type {
   UnaryOpNode,
   ValueNode,
 } from "src/parser/ast";
-import { getCellReference } from "../core/utils";
+import {
+  getAbsoluteRange,
+  getCellReference,
+  getRangeIntersection,
+  getRangeKey,
+  getRelativeRange,
+  getRelativeRangeKey,
+  isRangeOneCell,
+} from "../core/utils";
 import { add } from "./arithmetic/add/add";
 import { divide } from "./arithmetic/divide/divide";
 import { multiply } from "./arithmetic/multiply/multiply";
 import { power } from "./arithmetic/power/power";
 import { subtract } from "./arithmetic/subtract/subtract";
 import { equals } from "./comparison/equals";
-import { notEquals } from "./comparison/not-equals";
-import { lessThan } from "./comparison/less-than";
-import { lessThanOrEqual } from "./comparison/less-than-or-equal";
 import { greaterThan } from "./comparison/greater-than";
 import { greaterThanOrEqual } from "./comparison/greater-than-or-equal";
+import { lessThan } from "./comparison/less-than";
+import { lessThanOrEqual } from "./comparison/less-than-or-equal";
+import { notEquals } from "./comparison/not-equals";
 import { concatenate } from "./concatenation/concatenate";
-import {
-  getRangeIntersection,
-  OpenRangeEvaluator,
-} from "src/functions/math/open-range-evaluator";
-import { serializeRange } from "src/core/utils/range-serializer";
+import type { NamedExpressionManager } from "src/core/managers/named-expression-manager";
+import type { EvaluationContext } from "./evaluation-context";
+import { flags } from "src/debug/flags";
+import { EvaluationError } from "./evaluation-error";
 
 function isFormulaError(value: string): value is FormulaError {
   if (typeof value !== "string") return false;
@@ -118,72 +116,18 @@ function mapJSErrorToFormulaError(error: Error): FormulaError {
 }
 
 export class FormulaEvaluator {
-  evaluatedNodes: Map<
-    /**
-     * key is the dependency node key, from dependencyNodeToKey
-     */
-    string,
-    EvaluatedDependencyNode
-  > = new Map();
-
-  spilledValues: Map<
-    /**
-     * key is the dependency node key, from dependencyNodeToKey for the origin cell
-     */
-    string,
-    SpilledValue
-  > = new Map();
-
-  sheets: Map<string, Sheet> = new Map();
-  scopedNamedExpressions: Map<string, Map<string, NamedExpression>> = new Map();
-  globalNamedExpressions: Map<string, NamedExpression> = new Map();
-  tables: Map<string, TableDefinition> = new Map();
-
-  /**
-   * Returns true if the range is a single cell, false otherwise
-   */
-  isRangeOneCell(range: SpreadsheetRange) {
-    if (
-      range.end.col.type === "infinity" ||
-      range.end.row.type === "infinity"
-    ) {
-      return false;
-    }
-    return (
-      range.start.col === range.end.col.value &&
-      range.start.row === range.end.row.value
+  public openRangeEvaluator: OpenRangeEvaluator;
+  constructor(
+    private tableManager: TableManager,
+    private dependencyManager: DependencyManager,
+    private namedExpressionManager: NamedExpressionManager,
+    workbookManager: WorkbookManager
+  ) {
+    this.openRangeEvaluator = new OpenRangeEvaluator(
+      dependencyManager,
+      workbookManager,
+      this
     );
-  }
-
-  isCellInRange(cellAddress: CellAddress, range: SpreadsheetRange) {
-    const endCol = range.end.col;
-    const endRow = range.end.row;
-    if (endCol.type === "number" && endRow.type === "number") {
-      return (
-        cellAddress.colIndex >= range.start.col &&
-        cellAddress.colIndex <= endCol.value &&
-        cellAddress.rowIndex >= range.start.row &&
-        cellAddress.rowIndex <= endRow.value
-      );
-    } else if (endCol.type === "infinity" && endRow.type === "number") {
-      return (
-        cellAddress.colIndex >= range.start.col &&
-        cellAddress.rowIndex >= range.start.row &&
-        cellAddress.rowIndex <= endRow.value
-      );
-    } else if (endCol.type === "number" && endRow.type === "infinity") {
-      return (
-        cellAddress.rowIndex >= range.start.row &&
-        cellAddress.colIndex >= range.start.col &&
-        cellAddress.colIndex <= endCol.value
-      );
-    } else if (endCol.type === "infinity" && endRow.type === "infinity") {
-      return (
-        cellAddress.colIndex >= range.start.col &&
-        cellAddress.rowIndex >= range.start.row
-      );
-    }
-    return false;
   }
 
   isCellInTable(cellAddress: CellAddress): TableDefinition | undefined {
@@ -191,7 +135,9 @@ export class FormulaEvaluator {
 
     // Get all tables for this sheet
 
-    for (const table of this.tables.values()) {
+    for (const table of this.tableManager
+      .getTables(cellAddress.workbookName)
+      .values()) {
       // Check each table to see if the cell is within its bounds
       if (table.sheetName !== cellAddress.sheetName) {
         continue;
@@ -218,73 +164,6 @@ export class FormulaEvaluator {
     return undefined;
   }
 
-  isSpilled(cellAddress: CellAddress): SpilledValue | undefined {
-    for (const spilledValue of this.spilledValues.values()) {
-      if (spilledValue.origin.sheetName !== cellAddress.sheetName) {
-        continue;
-      }
-      if (
-        spilledValue.origin.colIndex === cellAddress.colIndex &&
-        spilledValue.origin.rowIndex === cellAddress.rowIndex
-      ) {
-        return undefined;
-      }
-      if (this.isCellInRange(cellAddress, spilledValue.spillOnto)) {
-        return spilledValue;
-      }
-    }
-    return undefined;
-  }
-
-  evaluateSpilled(
-    cellAddress: CellAddress,
-    context: EvaluationContext
-  ):
-    | { isSpilled: true; result: FunctionEvaluationResult | undefined }
-    | { isSpilled: false } {
-    const spilled = this.isSpilled(cellAddress);
-    if (spilled) {
-      const spillSource = this.getSpilledAddress(cellAddress, spilled);
-      const spillOrigin = this.runtimeSafeEvaluatedNode(
-        spilled.origin,
-        context
-      );
-      if (spillOrigin && spillOrigin.type === "spilled-values") {
-        return {
-          isSpilled: true,
-          result: spillOrigin.evaluate(spillSource.spillOffset, context),
-        };
-      }
-    }
-    return { isSpilled: false };
-  }
-
-  getSpilledAddress(
-    cellAddress: CellAddress,
-    /**
-     * if the spilled value is already available, we can use it to get the source address
-     */
-    passedSpilledValue?: SpilledValue
-  ): { address: CellAddress; spillOffset: { x: number; y: number } } {
-    const spilledValue = passedSpilledValue ?? this.isSpilled(cellAddress);
-    if (!spilledValue) {
-      throw new Error("Cell is not spilled");
-    }
-    const offsetLeft = cellAddress.colIndex - spilledValue.origin.colIndex;
-    const offsetTop = cellAddress.rowIndex - spilledValue.origin.rowIndex;
-    const address: CellAddress = {
-      ...cellAddress,
-      colIndex: spilledValue.origin.colIndex + offsetLeft,
-      rowIndex: spilledValue.origin.rowIndex + offsetTop,
-    };
-    if (offsetLeft === 0 && offsetTop === 0) {
-      throw new Error(
-        "Spilled value is the same as the cell address! The origin has a pre-calculated value that can be used"
-      );
-    }
-    return { address, spillOffset: { x: offsetLeft, y: offsetTop } };
-  }
-
   // evaluator methods
   evaluateFormula(
     /**
@@ -300,6 +179,14 @@ export class FormulaEvaluator {
 
       return result;
     } catch (error) {
+      if (error instanceof EvaluationError) {
+        return {
+          type: "error",
+          err: error.type,
+          message: error.message,
+        };
+      }
+
       // Convert JavaScript errors to formula errors
       const formulaError =
         error instanceof Error
@@ -373,10 +260,16 @@ export class FormulaEvaluator {
     context: EvaluationContext
   ): FunctionEvaluationResult {
     let table: TableDefinition | undefined;
-    if (node.tableName) {
-      table = this.tables.get(node.tableName);
+    if (node.tableName && node.workbookName) {
+      table = this.tableManager
+        .getTables(node.workbookName)
+        .get(node.tableName);
+    } else if (node.tableName) {
+      table = this.tableManager
+        .getTables(context.originCell.cellAddress.workbookName)
+        .get(node.tableName);
     } else {
-      table = this.isCellInTable(context.currentCell);
+      table = this.isCellInTable(context.originCell.cellAddress);
     }
     if (!table) {
       return {
@@ -386,8 +279,116 @@ export class FormulaEvaluator {
       };
     }
 
-    const rowIndex = context.currentCell.rowIndex;
+    const rowIndex = context.originCell.cellAddress.rowIndex;
     const tableStart = table.start;
+
+    // Handle selector-based references
+    if (node.selector) {
+      let startRow: number;
+      let endRow: SpreadsheetRangeEnd;
+
+      switch (node.selector) {
+        case "#Headers":
+          startRow = table.start.rowIndex;
+          endRow = { type: "number", value: table.start.rowIndex };
+          break;
+        case "#Data":
+          startRow = table.start.rowIndex + 1;
+          endRow = table.endRow;
+          break;
+        case "#All":
+          startRow = table.start.rowIndex;
+          endRow = table.endRow;
+          break;
+        default:
+          return {
+            type: "error",
+            err: FormulaError.REF,
+            message: `Unknown table selector: ${node.selector}`,
+          };
+      }
+
+      // If we also have column specification, use those columns
+      if (node.cols) {
+        const startCol = table.headers.get(node.cols.startCol);
+        const endCol = table.headers.get(node.cols.endCol);
+        if (!startCol || !endCol) {
+          return {
+            type: "error",
+            err: FormulaError.REF,
+            message: `Column ${node.cols.startCol} or ${node.cols.endCol} not found in table ${table.name}`,
+          };
+        }
+        const startColIndex = tableStart.colIndex + startCol.index;
+        const endColIndex = tableStart.colIndex + endCol.index;
+
+        const range: SpreadsheetRange = {
+          start: {
+            row: startRow,
+            col: startColIndex,
+          },
+          end: {
+            row: endRow,
+            col: { type: "number", value: endColIndex },
+          },
+        };
+
+        return this.evaluateRange(
+          {
+            type: "range",
+            range,
+            isAbsolute: {
+              start: {
+                col: true,
+                row: true,
+              },
+              end: {
+                col: true,
+                row: true,
+              },
+            },
+            sheetName: table.sheetName,
+          },
+          context
+        );
+      } else {
+        // No column specification, return entire row(s) for the selector
+        const range: SpreadsheetRange = {
+          start: {
+            row: startRow,
+            col: tableStart.colIndex,
+          },
+          end: {
+            row: endRow,
+            col: {
+              type: "number",
+              value: tableStart.colIndex + table.headers.size - 1,
+            },
+          },
+        };
+
+        return this.evaluateRange(
+          {
+            type: "range",
+            range,
+            isAbsolute: {
+              start: {
+                col: true,
+                row: true,
+              },
+              end: {
+                col: true,
+                row: true,
+              },
+            },
+            sheetName: table.sheetName,
+          },
+          context
+        );
+      }
+    }
+
+    // Handle column-only references (no selector)
     if (node.cols) {
       const startCol = table.headers.get(node.cols.startCol);
       const endCol = table.headers.get(node.cols.endCol);
@@ -395,7 +396,7 @@ export class FormulaEvaluator {
         return {
           type: "error",
           err: FormulaError.REF,
-          message: `Column ${node.cols.startCol} or ${node.cols.endCol} not found in table ${node.tableName}`,
+          message: `Column ${node.cols.startCol} or ${node.cols.endCol} not found in table ${table.name}`,
         };
       }
       const startColIndex = tableStart.colIndex + startCol.index;
@@ -432,10 +433,11 @@ export class FormulaEvaluator {
         context
       );
     }
+
     return {
       type: "error",
       err: FormulaError.REF,
-      message: "WIP: unimplemented support for structured reference",
+      message: "Structured reference must specify either a selector or columns",
     };
   }
 
@@ -502,7 +504,7 @@ export class FormulaEvaluator {
         const colIndex = range.start.col + spilledCell.spillOffset.x;
         const rowIndex = range.start.row + spilledCell.spillOffset.y;
         const sheetName = node.sheetName ?? context.currentSheet;
-        return this.runtimeSafeEvaluatedNode(
+        return this.evalTimeSafeEvaluateCell(
           {
             colIndex,
             rowIndex,
@@ -519,7 +521,7 @@ export class FormulaEvaluator {
     node: RangeNode,
     context: EvaluationContext
   ): FunctionEvaluationResult {
-    if (this.isRangeOneCell(node.range)) {
+    if (isRangeOneCell(node.range)) {
       return this.evaluateReference(
         {
           type: "reference",
@@ -537,19 +539,25 @@ export class FormulaEvaluator {
       );
     }
 
+    const debugRange = getRangeKey(node.range);
+
     return {
       type: "spilled-values",
       spillArea: (origin) => this.projectRange(node.range, origin),
-      source: `range`,
+      source: `range ${debugRange}`,
       evaluate: (spillOffset, context) => {
-        const originSheetName = node.sheetName ?? context.currentSheet;
+        const originSheetName =
+          node.sheetName ?? context.originCell.cellAddress.sheetName;
+        const originWorkbookName =
+          node.workbookName ?? context.originCell.cellAddress.workbookName;
         const colIndex = node.range.start.col + spillOffset.x;
         const rowIndex = node.range.start.row + spillOffset.y;
-        const result = this.runtimeSafeEvaluatedNode(
+        const result = this.dependencyManager.evalTimeSafeEvaluateCell(
           {
             colIndex,
             rowIndex,
             sheetName: originSheetName,
+            workbookName: originWorkbookName,
           },
           context
         );
@@ -561,30 +569,57 @@ export class FormulaEvaluator {
           }
           return result;
         }
+        return {
+          type: "error",
+          err: FormulaError.REF,
+          message: `Error evaluating cell ${getCellReference({
+            rowIndex,
+            colIndex,
+          })}`,
+        };
       },
       evaluateAllCells: function* ({
         evaluate,
         intersection,
         context,
+        origin,
+        lookupOrder,
       }) {
-        const openRangeEvaluator = new OpenRangeEvaluator(this);
         let range = node.range;
         if (intersection) {
+          // When we have an intersection, it's defined relative to where the spilled range
+          // will appear (the origin). However, we need to evaluate cells from the source
+          // range (node.range). So we must translate the intersection coordinates back
+          // to the source range's coordinate system.
+          //
+          // Example: If source range A1:C3 spills to D5:F7, and we want intersection E6:F7,
+          // we need to translate E6:F7 (relative to D5) to B2:C3 (relative to A1).
+
+          // Calculate the offset of the intersection from the spill origin
+          const relativeRange = getRelativeRange(intersection, origin);
+          const start: LocalCellAddress = {
+            colIndex: node.range.start.col,
+            rowIndex: node.range.start.row,
+          };
+          const projectedIntersection = getAbsoluteRange(relativeRange, start);
           const calculateIntersection = getRangeIntersection(
             node.range,
-            intersection
+            projectedIntersection
           );
           if (calculateIntersection) {
             range = calculateIntersection;
           }
         }
 
-        return yield* openRangeEvaluator.evaluateCellsInRange({
-          evaluate,
+        return yield* this.openRangeEvaluator.evaluateCellsInRange({
           context,
-          origin: {
+          lookupOrder,
+          address: {
             range,
-            sheetName: node.sheetName ?? context.currentSheet,
+            sheetName:
+              node.sheetName ?? context.originCell.cellAddress.sheetName,
+            workbookName:
+              node.workbookName ?? context.originCell.cellAddress.workbookName,
           },
         });
       },
@@ -653,7 +688,11 @@ export class FormulaEvaluator {
         }
         const result = this.evaluateNode(cell, context);
         if (result.type === "spilled-values") {
-          throw new Error("Arrays cannot contain spilled values");
+          return {
+            type: "error",
+            err: FormulaError.VALUE,
+            message: "Arrays cannot contain spilled values",
+          };
         }
         return result;
       },
@@ -700,10 +739,19 @@ export class FormulaEvaluator {
             this,
             options
           )) {
-            if (cellValue.type === "error") {
+            if (
+              cellValue.result.type === "error" ||
+              cellValue.result.type === "awaiting-evaluation"
+            ) {
               yield cellValue;
             } else {
-              yield this.evaluateUnaryScalar(node.operator, cellValue.result);
+              yield {
+                result: this.evaluateUnaryScalar(
+                  node.operator,
+                  cellValue.result.result
+                ),
+                relativePos: cellValue.relativePos,
+              };
             }
           }
         },
@@ -800,30 +848,6 @@ export class FormulaEvaluator {
     return this.evaluateBinaryScalar(node.operator, left, right, context);
   }
 
-  runtimeSafeEvaluatedNode(
-    cellAddress: CellAddress,
-    context: EvaluationContext
-  ): FunctionEvaluationResult | undefined {
-    const spilled = this.isSpilled(cellAddress);
-    if (spilled) {
-      const spillSource = this.getSpilledAddress(cellAddress, spilled);
-      const spillOrigin = this.runtimeSafeEvaluatedNode(
-        spilled.origin,
-        context
-      );
-      if (spillOrigin && spillOrigin.type === "spilled-values") {
-        return spillOrigin.evaluate(spillSource.spillOffset, context);
-      }
-    }
-    const key = dependencyNodeToKey({
-      type: "cell",
-      address: cellAddress,
-      sheetName: cellAddress.sheetName,
-    });
-    context.dependencies.add(key);
-    return this.evaluatedNodes.get(key)?.evaluationResult;
-  }
-
   /**
    * Evaluates a reference node
    */
@@ -833,9 +857,14 @@ export class FormulaEvaluator {
   ): FunctionEvaluationResult {
     const cellAddress: CellAddress = {
       ...node.address,
-      sheetName: node.sheetName ?? context.currentSheet,
+      sheetName: node.sheetName ?? context.originCell.cellAddress.sheetName,
+      workbookName:
+        node.workbookName ?? context.originCell.cellAddress.workbookName,
     };
-    const result = this.runtimeSafeEvaluatedNode(cellAddress, context);
+    const result = this.dependencyManager.evalTimeSafeEvaluateCell(
+      cellAddress,
+      context
+    );
     if (!result) {
       return {
         type: "error",
@@ -853,19 +882,20 @@ export class FormulaEvaluator {
     node: NamedExpressionNode,
     context: EvaluationContext
   ): FunctionEvaluationResult {
-    const nodeKey = dependencyNodeToKey({
-      type: "named-expression",
-      name: node.name,
-      sheetName: node.sheetName ?? context.currentSheet,
-    });
-    context.dependencies.add(nodeKey);
+    const expression = this.namedExpressionManager.resolveNamedExpression(
+      node,
+      context
+    );
 
-    const value = this.evaluatedNodes.get(nodeKey);
-    if (!value || !value.evaluationResult) {
-      throw new Error(FormulaError.REF);
+    if (!expression) {
+      return {
+        type: "error",
+        err: FormulaError.NAME,
+        message: `Named expression ${node.name} not found`,
+      };
     }
 
-    return value.evaluationResult;
+    return this.evaluateFormula(expression, context);
   }
 
   /**
@@ -904,7 +934,11 @@ export class FormulaEvaluator {
       case ">=":
         return this.greaterThanOrEqualOp(left, right, context);
       default:
-        throw new Error(FormulaError.ERROR);
+        return {
+          type: "error",
+          err: FormulaError.ERROR,
+          message: `Unknown binary operator: ${operator}`,
+        };
     }
   }
 
@@ -914,7 +948,11 @@ export class FormulaEvaluator {
   ): FunctionEvaluationResult {
     const func = functions[node.name];
     if (!func) {
-      throw new Error(FormulaError.NAME);
+      return {
+        type: "error",
+        err: FormulaError.NAME,
+        message: `Function ${node.name} not found`,
+      };
     }
     return func.evaluate.call(this, node, context);
   }
@@ -1078,10 +1116,6 @@ export class FormulaEvaluator {
     range: SpreadsheetRange,
     originCellAddress: CellAddress
   ): SpreadsheetRange {
-    const sheet = this.sheets.get(originCellAddress.sheetName);
-    if (!sheet) {
-      throw new Error("Sheet not found");
-    }
     const offsetLeft = originCellAddress.colIndex - range.start.col;
     const offsetTop = originCellAddress.rowIndex - range.start.row;
     return {

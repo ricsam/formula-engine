@@ -5,12 +5,12 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
   type ValueEvaluationResult,
-  type EvaluationContext,
   type CellAddress,
   type SpreadsheetRange,
   type SpilledValuesEvaluationResult,
   type SingleEvaluationResult,
 } from "src/core/types";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 /**
  * TEMPLATE function implementation

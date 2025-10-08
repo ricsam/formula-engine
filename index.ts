@@ -6,7 +6,7 @@
 export { FormulaEngine } from "./src/core/engine";
 
 // Export React integration (optional - only import if using React)
-export { useSerializedSheet } from "./src/react/hooks";
+export { useEngine as useSerializedSheet } from "./src/react/hooks";
 
 // Version
 export const VERSION = "0.1.0";

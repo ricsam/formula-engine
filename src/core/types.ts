@@ -6,12 +6,25 @@
 import type { ASTNode, FunctionNode } from "src/parser/ast";
 import type { FormulaEngine } from "./engine";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
+import type { CellEvalNode } from "src/evaluator/cell-eval-node";
+import type { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
+import type { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
+import type { DependencyNode } from "./managers/dependency-node";
+import type { LookupOrder } from "./managers/range-eval-order-builder";
 
 // Cell addressing types
 export interface CellAddress {
   sheetName: string;
+  workbookName: string;
   colIndex: number;
   rowIndex: number;
+}
+
+export interface RangeAddress {
+  sheetName: string;
+  workbookName: string;
+  range: SpreadsheetRange;
 }
 
 export interface LocalCellAddress {
@@ -52,6 +65,15 @@ export type SpreadsheetRange = {
   };
 };
 
+export type RelativeRange = {
+  start: {
+    col: number;
+    row: number;
+  };
+  width: SpreadsheetRangeEnd;
+  height: SpreadsheetRangeEnd;
+};
+
 export type FiniteSpreadsheetRange = {
   start: {
     col: number;
@@ -75,13 +97,18 @@ export type CellBoolean = {
 
 // Cell value types
 export type CellValue = CellNumber | CellString | CellBoolean | CellInfinity;
+/**
+ * undefined and "" are considered empty values
+ * undefineds are converted to "" in the engine
+ *
+ * any empty values are deleted from the sheet content
+ */
 export type SerializedCellValue = string | number | boolean | undefined;
 
 // Named expressions
 export interface NamedExpression {
   name: string;
   expression: string;
-  sheetName?: string;
 }
 
 export interface TableDefinition {
@@ -93,6 +120,7 @@ export interface TableDefinition {
   headers: Map<string, { name: string; index: number }>;
   endRow: SpreadsheetRangeEnd;
   sheetName: string;
+  workbookName: string;
 }
 
 // Formula errors
@@ -115,108 +143,28 @@ export interface Sheet {
   content: Map<string, SerializedCellValue>;
 }
 
-// Event types
-export interface FormulaEngineEvents {
-  "sheet-added": {
-    sheetName: string;
-  };
-  "sheet-removed": {
-    sheetName: string;
-  };
-  "sheet-renamed": {
-    oldName: string;
-    newName: string;
-  };
-  "global-named-expressions-updated": Map<string, NamedExpression>;
-  "tables-updated": Map<string, TableDefinition>;
+export interface Workbook {
+  name: string;
+  sheets: Map<string, Sheet>;
 }
-
-/**
- * All dependency nodes are evaluated in the context of the current cell, so therefore it will always have a sheetName
- */
-export type DependencyNode =
-  | {
-      type: "cell";
-      address: LocalCellAddress;
-      sheetName: string;
-    }
-  | {
-      type: "range";
-      range: SpreadsheetRange;
-      sheetName: string;
-    }
-  | {
-      type: "multi-spreadsheet-range";
-      ranges: SpreadsheetRange;
-      sheetNames:
-        | { type: "list"; list: string[] }
-        | {
-            type: "range";
-            startSpreadsheetName: string;
-            endSpreadsheetName: string;
-          };
-    }
-  | {
-      type: "named-expression";
-      name: string;
-      sheetName: string;
-    }
-  | {
-      type: "table";
-      tableName: string;
-      sheetName: string;
-      area:
-        | { kind: "Headers" | "All" | "AllData" }
-        | { kind: "Data"; columns: string[]; isCurrentRow: boolean };
-    };
-
-/**
- * Evaluation context containing necessary information
- */
-export interface EvaluationContext {
-  currentSheet: string;
-  currentCell: CellAddress;
-  evaluationStack: Set<string>; // For cycle detection
-  dependencies: Set<string>;
-  /**
-   * candidates for frontier dependencies that are in the intersection of the spilled range and the target range
-   */
-  frontierDependencies: Set<string>;
-  /**
-   * Frontier dependency candidates that were discarded because they are not in the intersection of the spilled range and the target range
-   */
-  discardedFrontierDependencies: Set<string>;
-}
-
-export type EvaluatedDependencyNode = {
-  /**
-   * deps is the set of dependency node keys
-   */
-  deps?: Set<string>;
-  /**
-   * frontierDependencies is the set of dependency node keys that are frontier dependencies
-   */
-  frontierDependencies?: Set<string>;
-  /**
-   * discardedFrontierDependencies is the set of dependency node keys that were discarded as frontier dependencies
-   */
-  discardedFrontierDependencies?: Set<string>;
-  /**
-   * evaluationResult is the evaluation result
-   */
-  evaluationResult?: FunctionEvaluationResult;
-};
 
 export type ValueEvaluationResult = {
   type: "value";
   result: CellValue;
 };
 
-export type ErrorEvaluationResult = {
-  type: "error";
-  err: FormulaError;
-  message: string;
+export type AwaitingEvaluationResult = {
+  type: "awaiting-evaluation";
+  cellAddress: CellAddress;
 };
+
+export type ErrorEvaluationResult =
+  | {
+      type: "error";
+      err: FormulaError;
+      message: string;
+    }
+  | AwaitingEvaluationResult;
 
 export type SingleEvaluationResult =
   | ValueEvaluationResult
@@ -225,7 +173,7 @@ export type SingleEvaluationResult =
 export type SpilledValuesEvaluator = (
   spillOffset: { x: number; y: number },
   context: EvaluationContext
-) => SingleEvaluationResult | undefined;
+) => SingleEvaluationResult;
 
 export type SpilledValuesEvaluationResult = {
   type: "spilled-values";
@@ -242,7 +190,8 @@ export type SpilledValuesEvaluationResult = {
    * column D should be evaluated and cells producing spilled values that spill onto D:D.
    *
    * In order to evaluate spilled cells in D:D the range evaluateAllCells need to get all cells in the
-   * the intersection of the spilled range and D:D, for that reason evaluateAllCells gets an intersection parameter.
+   * the intersection of the spilled range and D:D, for that reason evaluateAllCells gets an intersection parameter,
+   * where the intersection is relative to the origin.
    *
    * #### Producers:
    * In e.g. SEQUENCE and evaluateRange we have logic for which cells in a spilled range we should evaluate,
@@ -264,21 +213,34 @@ export type SpilledValuesEvaluationResult = {
   evaluateAllCells: (
     this: FormulaEvaluator,
     options: {
+      /**
+       * an intersection relative to the origin
+       */
       intersection?: SpreadsheetRange;
       evaluate: SpilledValuesEvaluator;
       context: EvaluationContext;
+      /**
+       * origin is the cell address that the spilled range is spilled from
+       * e.g. in A3=B2:B4 the origin is A3
+       */
       origin: CellAddress;
+
+      lookupOrder: LookupOrder;
     }
   ) => IterableIterator<
-    SingleEvaluationResult,
+    EvaluateAllCellsResult,
     undefined | void,
-    SingleEvaluationResult | undefined
+    EvaluateAllCellsResult | undefined
   >;
 };
 
+export type EvaluateAllCellsResult = {
+  result: SingleEvaluationResult;
+  relativePos: { x: number; y: number };
+};
+
 export type FunctionEvaluationResult =
-  | ValueEvaluationResult
-  | ErrorEvaluationResult
+  | SingleEvaluationResult
   | SpilledValuesEvaluationResult;
 
 export type SpilledValue = {
@@ -302,6 +264,7 @@ export interface FunctionDefinition {
     node: FunctionNode,
     context: EvaluationContext
   ) => FunctionEvaluationResult;
+  aliases?: string[];
 }
 
 /**
@@ -310,3 +273,10 @@ export interface FunctionDefinition {
 export type EvaluationResult = {
   dependencies: Set<string>;
 } & FunctionEvaluationResult;
+
+export type EvaluationOrder = {
+  evaluationOrder: Set<DependencyNode>;
+  hasCycle: boolean;
+  cycleNodes?: Set<DependencyNode>;
+  hash: string;
+};

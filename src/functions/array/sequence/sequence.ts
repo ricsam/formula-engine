@@ -5,14 +5,8 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
   type SpreadsheetRange,
-  type PositiveInfinity,
-  type ErrorEvaluationResult,
 } from "src/core/types";
-import { getCellReference } from "src/core/utils";
-import {
-  getRangeIntersection,
-  OpenRangeEvaluator,
-} from "src/functions/math/open-range-evaluator";
+import { getRangeIntersection, isRangeOneCell } from "src/core/utils";
 
 /**
  * SEQUENCE(rows, [columns], [start], [step])
@@ -51,7 +45,7 @@ export const SEQUENCE: FunctionDefinition = {
 
       if (result.type === "spilled-values") {
         hasArrayInput = true;
-        const spillArea = result.spillArea(context.currentCell);
+        const spillArea = result.spillArea(context.originCell.cellAddress);
         if (!largestSpillArea) {
           largestSpillArea = spillArea;
         } else {
@@ -259,6 +253,13 @@ export const SEQUENCE: FunctionDefinition = {
       value: start,
     };
 
+    if (isRangeOneCell(spillArea(context.originCell.cellAddress))) {
+      return {
+        type: "value",
+        result: originResult,
+      };
+    }
+
     return {
       type: "spilled-values",
       spillArea,
@@ -278,7 +279,11 @@ export const SEQUENCE: FunctionDefinition = {
             (!isColumnsInfinite && x >= columns) ||
             (!isRowsInfinite && y >= rows)
           ) {
-            return undefined;
+            return {
+              type: "error",
+              err: FormulaError.ERROR,
+              message: "Error evaluating SEQUENCE",
+            };
           }
 
           // Calculate the sequential value for origin cell
@@ -303,7 +308,11 @@ export const SEQUENCE: FunctionDefinition = {
             (!isColumnsInfinite && x >= columns) ||
             (!isRowsInfinite && y >= rows)
           ) {
-            return undefined;
+            return {
+              type: "error",
+              err: FormulaError.ERROR,
+              message: "Error evaluating SEQUENCE",
+            };
           }
 
           // Calculate the sequential value
@@ -335,17 +344,17 @@ export const SEQUENCE: FunctionDefinition = {
           };
         }
       },
-      evaluateAllCells: function* ({ evaluate, intersection, context, origin }) {
+      evaluateAllCells: function* ({
+        evaluate,
+        intersection,
+        context,
+        origin,
+      }) {
         let range = spillArea(origin);
         if (intersection) {
           const newRange = getRangeIntersection(range, intersection);
           if (!newRange) {
-            yield {
-              type: "error",
-              err: FormulaError.REF,
-              message: "Intersection is not valid #2",
-            };
-            return;
+            throw new Error("Intersection is not valid #2");
           }
           range = newRange;
         }
@@ -355,9 +364,12 @@ export const SEQUENCE: FunctionDefinition = {
         ) {
           const hasIntersection = intersection !== undefined;
           yield {
-            type: "error",
-            err: FormulaError.REF,
-            message: `Can not evaluate all cells over an infinite range`,
+            result: {
+              type: "error",
+              err: FormulaError.REF,
+              message: `Can not evaluate all cells over an infinite range`,
+            },
+            relativePos: { x: 0, y: 0 },
           };
           return;
         }
@@ -368,11 +380,17 @@ export const SEQUENCE: FunctionDefinition = {
             const offsetTop = i - origin.rowIndex;
 
             const evaled = evaluate({ x: offsetLeft, y: offsetTop }, context);
-            yield evaled ?? {
-              type: "error",
-              err: FormulaError.REF,
-              message: "Error evaluating SEQUENCE",
-            };
+            const relativePos = { x: offsetLeft, y: offsetTop };
+            yield evaled
+              ? { result: evaled, relativePos }
+              : {
+                  result: {
+                    type: "error",
+                    err: FormulaError.REF,
+                    message: "Error evaluating SEQUENCE",
+                  },
+                  relativePos,
+                };
           }
         }
       },

@@ -8,26 +8,29 @@ import { parseCellReference } from "src/core/utils";
 
 describe("INDEX function", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) }, debug);
 
   const setCellContent = (ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
   };
 
   const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   describe("basic functionality", () => {
     test("should return value from single cell array", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["B1", "=INDEX(A1, 1, 1)"],
@@ -39,7 +42,7 @@ describe("INDEX function", () => {
 
     test("should return value from single cell array with default column", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["B1", "=INDEX(A1, 1)"],
@@ -51,7 +54,7 @@ describe("INDEX function", () => {
 
     test("should return value from row array", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["B1", "Banana"],
@@ -74,7 +77,7 @@ describe("INDEX function", () => {
     test("should return value from 2D array", () => {
       // Set up 2x3 array
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["B1", "Banana"],
@@ -92,7 +95,7 @@ describe("INDEX function", () => {
     test("should handle large array", () => {
       // Set up 3x3 array
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", 1],
           ["B1", 2],
@@ -156,7 +159,7 @@ describe("INDEX function", () => {
 
     test("should return #REF! for column_num out of bounds (too high)", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Apple"],
           ["B1", "Banana"],
@@ -229,7 +232,7 @@ describe("INDEX function", () => {
   describe("edge cases", () => {
     test("should work with mixed data types in array", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Text"],
           ["A2", 42],

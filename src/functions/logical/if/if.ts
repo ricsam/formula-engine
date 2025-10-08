@@ -5,29 +5,29 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
   type ValueEvaluationResult,
-  type EvaluationContext,
   type CellAddress,
   type SpreadsheetRange,
   type SpilledValuesEvaluationResult,
   type SingleEvaluationResult,
   type ErrorEvaluationResult,
 } from "src/core/types";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 
 /**
  * IF function - Returns one value if a condition is true and another value if it's false
- * 
+ *
  * Usage: IF(logical_test, value_if_true, [value_if_false])
- * 
+ *
  * logical_test: The condition to evaluate (required)
  * value_if_true: The value to return if the condition is true (required)
  * value_if_false: The value to return if the condition is false (optional, defaults to FALSE)
- * 
+ *
  * Examples:
  *   IF(A1>10, "High", "Low") - returns "High" if A1>10, otherwise "Low"
  *   IF(B1="", "Empty", B1) - returns "Empty" if B1 is empty, otherwise B1's value
  *   IF(C1<0, "Negative") - returns "Negative" if C1<0, otherwise FALSE
- * 
+ *
  * Note:
  * - Supports spilled values (dynamic arrays) for all arguments
  * - Logical test evaluation: 0 and empty string are FALSE, everything else is TRUE
@@ -187,37 +187,36 @@ export const IF: FunctionDefinition = {
 
     // Evaluate logical test
     const logicalTestResult = this.evaluateNode(node.args[0]!, context);
-    if (logicalTestResult.type === "error") {
+    if (
+      logicalTestResult.type === "awaiting-evaluation" ||
+      logicalTestResult.type === "error"
+    ) {
       return logicalTestResult;
     }
 
-    // Evaluate value_if_true
-    const valueIfTrueResult = this.evaluateNode(node.args[1]!, context);
-    if (valueIfTrueResult.type === "error") {
-      return valueIfTrueResult;
-    }
-
-    // Evaluate value_if_false (optional, defaults to FALSE)
-    let valueIfFalseResult: FunctionEvaluationResult;
-    if (node.args.length > 2) {
-      valueIfFalseResult = this.evaluateNode(node.args[2]!, context);
-      if (valueIfFalseResult.type === "error") {
-        return valueIfFalseResult;
+    // Handle spilled values - we need to evaluate both branches
+    // because different cells might take different paths
+    if (logicalTestResult.type === "spilled-values") {
+      // Evaluate value_if_true
+      const valueIfTrueResult = this.evaluateNode(node.args[1]!, context);
+      if (valueIfTrueResult.type === "error") {
+        return valueIfTrueResult;
       }
-    } else {
-      valueIfFalseResult = {
-        type: "value",
-        result: { type: "boolean", value: false },
-      };
-    }
 
-    // Handle spilled values
-    const hasSpilledValues = 
-      logicalTestResult.type === "spilled-values" ||
-      valueIfTrueResult.type === "spilled-values" ||
-      valueIfFalseResult.type === "spilled-values";
+      // Evaluate value_if_false (optional, defaults to FALSE)
+      let valueIfFalseResult: FunctionEvaluationResult;
+      if (node.args.length > 2) {
+        valueIfFalseResult = this.evaluateNode(node.args[2]!, context);
+        if (valueIfFalseResult.type === "error") {
+          return valueIfFalseResult;
+        }
+      } else {
+        valueIfFalseResult = {
+          type: "value",
+          result: { type: "boolean", value: false },
+        };
+      }
 
-    if (hasSpilledValues) {
       return createIfSpilledResult.call(this, {
         logicalTestResult,
         valueIfTrueResult,
@@ -226,19 +225,25 @@ export const IF: FunctionDefinition = {
       });
     }
 
-    // All arguments are single values
-    if (logicalTestResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Invalid logical test argument",
-      };
-    }
-
     // Evaluate the logical test
     const isTrue = isTruthy(logicalTestResult.result);
 
-    // Return the appropriate value
-    return isTrue ? valueIfTrueResult : valueIfFalseResult;
+    // LAZY EVALUATION: Only evaluate the branch we need
+    if (isTrue) {
+      // Evaluate value_if_true
+      const valueIfTrueResult = this.evaluateNode(node.args[1]!, context);
+      return valueIfTrueResult;
+    } else {
+      // Evaluate value_if_false (optional, defaults to FALSE)
+      if (node.args.length > 2) {
+        const valueIfFalseResult = this.evaluateNode(node.args[2]!, context);
+        return valueIfFalseResult;
+      } else {
+        return {
+          type: "value",
+          result: { type: "boolean", value: false },
+        };
+      }
+    }
   },
 };

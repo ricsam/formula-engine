@@ -2,13 +2,15 @@ import React, { useEffect, useMemo, useState } from "react";
 import { getCellReference, parseCellReference, Spreadsheet } from "@anocca-pub/components";
 import { Input } from "@/components/ui/input";
 import { FormulaEngine } from "../src/core/engine";
-import { useSerializedSheet } from "src/react/hooks";
+import { useEngine } from "src/react/hooks";
 import type { CellAddress } from "src/core/types";
 
 // Create a shared engine instance with rich example data
 const createEngineWithExampleData = () => {
   const engine = FormulaEngine.buildEmpty();
-  const sheetName = engine.addSheet("Sheet1").name;
+  const workbookName = "Workbook1";
+  engine.addWorkbook(workbookName);
+  const sheetName = engine.addSheet({ workbookName, sheetName: "Sheet1" }).name;
 
   // Rich example data with various formulas and data types
   const exampleData = new Map<string, any>([
@@ -144,28 +146,31 @@ const createEngineWithExampleData = () => {
     ['H14', '=INDEX(A2:A5,1)&" (Best)'],
   ]);
 
-  engine.setSheetContent(sheetName, exampleData);
-  return { engine, sheetName };
+  engine.setSheetContent({ sheetName, workbookName }, exampleData);
+  return { engine, sheetName, workbookName };
 };
 
 export function FullSpreadsheetDemo() {
-  const { engine, sheetName } = useMemo(createEngineWithExampleData, []);
+  const { engine, sheetName, workbookName } = useMemo(createEngineWithExampleData, []);
   const [selectedCell, setSelectedCell] = useState<string | null>(null);
-  const spreadsheet = useSerializedSheet(engine, sheetName);
+  const spreadsheet = useEngine(engine);
   const [formulaInput, setFormulaInput] = useState<string>("");
 
 
-  console.log("Selected cell", selectedCell, spreadsheet, spreadsheet.sheet.get(selectedCell || ""));
+  // Get the current sheet data
+  const currentSheet = spreadsheet.workbooks.get(workbookName)?.sheets.get(sheetName);
+  
+  console.log("Selected cell", selectedCell, spreadsheet, currentSheet?.content.get(selectedCell || ""));
   const formula = useMemo(() => {
-    if (!selectedCell) return "";
+    if (!selectedCell || !currentSheet) return "";
     
     try {
-      const cellFormula = spreadsheet.sheet.get(selectedCell);
+      const cellFormula = currentSheet.content.get(selectedCell);
       return cellFormula || "";
     } catch (error) {
       return "";
     }
-  }, [engine, sheetName, selectedCell]);
+  }, [currentSheet, selectedCell]);
 
   // Update formula input when selected cell changes
   useEffect(() => {
@@ -176,7 +181,7 @@ export function FullSpreadsheetDemo() {
     if (e.key === 'Enter' && selectedCell) {
       try {
         const { columnIndex, rowIndex } = parseCellReference(selectedCell);
-        const address: CellAddress = { sheetName, colIndex: columnIndex, rowIndex: rowIndex };
+        const address: CellAddress = { workbookName, sheetName, colIndex: columnIndex, rowIndex: rowIndex };
         
         // If the input starts with =, it's a formula; otherwise it's a value
         const content = formulaInput.startsWith('=') ? formulaInput : formulaInput;
@@ -224,13 +229,14 @@ export function FullSpreadsheetDemo() {
       <div className="relative flex-1">
         <Spreadsheet
           style={{ width: "100%", height: "100%" }}
-          cellData={spreadsheet.sheet as Map<string, string | number>}
+          cellData={currentSheet?.content as Map<string, string | number>}
           onCellDataChange={(updatedSpreadsheet) => {
-            engine.setSheetContent(sheetName, updatedSpreadsheet);
+            engine.setSheetContent({ sheetName, workbookName }, updatedSpreadsheet);
           }}
           customCellRenderer={(cell) => {
            
             const value = engine.getCellValue({
+              workbookName,
               sheetName,
               colIndex: cell.colIndex,
               rowIndex: cell.rowIndex,
@@ -261,10 +267,10 @@ export function FullSpreadsheetDemo() {
       <div className="bg-gray-50 p-3 rounded text-xs">
         <strong>Live Calculations:</strong>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-          <div>Total Items: <span className="font-mono">{spreadsheet.sheet.get('B8') || 0}</span></div>
-          <div>Subtotal: <span className="font-mono">${spreadsheet.sheet.get('B9') || 0}</span></div>
-          <div>Grand Total: <span className="font-mono">${spreadsheet.sheet.get('B11') || 0}</span></div>
-          <div>Avg Price: <span className="font-mono">${spreadsheet.sheet.get('E8') || 0}</span></div>
+          <div>Total Items: <span className="font-mono">{currentSheet?.content.get('B8') || 0}</span></div>
+          <div>Subtotal: <span className="font-mono">${currentSheet?.content.get('B9') || 0}</span></div>
+          <div>Grand Total: <span className="font-mono">${currentSheet?.content.get('B11') || 0}</span></div>
+          <div>Avg Price: <span className="font-mono">${currentSheet?.content.get('E8') || 0}</span></div>
         </div>
       </div>
     </div>

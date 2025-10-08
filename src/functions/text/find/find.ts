@@ -4,44 +4,78 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
   type ValueEvaluationResult,
-  type EvaluationContext,
   type CellAddress,
+  type ErrorEvaluationResult,
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
 import { convertToString, extractNumericValue } from "../text-helpers";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
-// Helper function for FIND operation - returns the result or null if error
+// Helper function for FIND operation - returns the result, error, or null if not found
 function findOperation(
   findTextResult: FunctionEvaluationResult,
   withinTextResult: FunctionEvaluationResult,
   startNumResult: FunctionEvaluationResult
-): CellNumber | null {
-  try {
-    const findStr = convertToString(findTextResult);
-    const withinStr = convertToString(withinTextResult);
-    const startNum = extractNumericValue(startNumResult);
+): CellNumber | ErrorEvaluationResult {
+  const findStr = convertToString(findTextResult);
+  const withinStr = convertToString(withinTextResult);
+  const startNum = extractNumericValue(startNumResult);
 
-    // Validate startNum
-    if (startNum < 1) {
-      return null;
-    }
-
-    const start = Math.floor(startNum) - 1; // Convert to 0-based index
-
-    if (start >= withinStr.length) {
-      return null;
-    }
-
-    const index = withinStr.indexOf(findStr, start);
-    if (index === -1) {
-      return null;
-    }
-
-    return { type: "number", value: index + 1 }; // Convert back to 1-based index
-  } catch (error) {
-    return null;
+  // Check if any of the results are awaiting evaluation or errors
+  if (
+    typeof findStr === "object" &&
+    (findStr.type === "awaiting-evaluation" || findStr.type === "error")
+  ) {
+    return findStr;
   }
+  if (
+    typeof withinStr === "object" &&
+    (withinStr.type === "awaiting-evaluation" || withinStr.type === "error")
+  ) {
+    return withinStr;
+  }
+  if (
+    typeof startNum === "object" &&
+    (startNum.type === "awaiting-evaluation" || startNum.type === "error")
+  ) {
+    return startNum;
+  }
+
+  // At this point, all values should be primitive types
+  const findValue = findStr as string;
+  const withinValue = withinStr as string;
+  const startNumValue = startNum as number;
+
+  // Validate startNum
+  if (startNumValue < 1) {
+    return {
+      type: "error",
+      err: FormulaError.VALUE,
+      message: "Text not found #2",
+    };
+  }
+
+  const start = Math.floor(startNumValue) - 1; // Convert to 0-based index
+
+  if (start >= withinValue.length) {
+    return {
+      type: "error",
+      err: FormulaError.VALUE,
+      message: "Text not found #2",
+    };
+  }
+
+  const index = withinValue.indexOf(findValue, start);
+  if (index === -1) {
+    return {
+      type: "error",
+      err: FormulaError.VALUE,
+      message: "Text not found #2",
+    };
+  }
+
+  return { type: "number", value: index + 1 }; // Convert back to 1-based index
 }
 
 /**
@@ -121,12 +155,9 @@ function createFindSpilledResult(
           spillWithinResult,
           startNumArg
         );
-        if (result === null) {
-          return {
-            type: "error",
-            err: FormulaError.VALUE,
-            message: "Text not found #2",
-          };
+        // Handle error or awaiting evaluation results
+        if (result.type === "error" || result.type === "awaiting-evaluation") {
+          return result;
         }
         return {
           type: "value",
@@ -160,12 +191,10 @@ function createFindSpilledResult(
           withinTextResult,
           startNumResult
         );
-        if (result === null) {
-          return {
-            type: "error",
-            err: FormulaError.VALUE,
-            message: "Text not found #4",
-          };
+
+        // Handle error or awaiting evaluation results
+        if (result.type === "error" || result.type === "awaiting-evaluation") {
+          return result;
         }
         return {
           type: "value",
@@ -197,12 +226,10 @@ function createFindSpilledResult(
           spillResult,
           startNumResult
         );
-        if (result === null) {
-          return {
-            type: "error",
-            err: FormulaError.VALUE,
-            message: "Text not found #6",
-          };
+
+        // Handle error or awaiting evaluation results
+        if (result.type === "error" || result.type === "awaiting-evaluation") {
+          return result;
         }
         return {
           type: "value",
@@ -271,12 +298,10 @@ function createFindSpilledResult(
           withinTextResult,
           spillStartNumResult
         );
-        if (result === null) {
-          return {
-            type: "error",
-            err: FormulaError.VALUE,
-            message: "Text not found #8",
-          };
+
+        // Handle error or awaiting evaluation results
+        if (result.type === "error" || result.type === "awaiting-evaluation") {
+          return result;
         }
         return {
           type: "value",
@@ -310,7 +335,6 @@ function createFindSpilledResult(
         message: "FindText argument must be a string",
       };
     }
-
 
     return {
       type: "spilled-values",
@@ -346,12 +370,10 @@ function createFindSpilledResult(
           spillWithinResult,
           spillStartNumResult
         );
-        if (result === null) {
-          return {
-            type: "error",
-            err: FormulaError.VALUE,
-            message: "Text not found #10",
-          };
+
+        // Handle error or awaiting evaluation results
+        if (result.type === "error" || result.type === "awaiting-evaluation") {
+          return result;
         }
         return {
           type: "value",
@@ -418,12 +440,10 @@ function createFindSpilledResult(
           withinTextResult,
           startNumArg
         );
-        if (result === null) {
-          return {
-            type: "error",
-            err: FormulaError.VALUE,
-            message: "Text not found #12",
-          };
+
+        // Handle error or awaiting evaluation results
+        if (result.type === "error" || result.type === "awaiting-evaluation") {
+          return result;
         }
         return {
           type: "value",
@@ -540,12 +560,9 @@ export const FIND: FunctionDefinition = {
       startNumResult
     );
 
-    if (result === null) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Text not found #13",
-      };
+    // Handle error or awaiting evaluation results
+    if (result.type === "error" || result.type === "awaiting-evaluation") {
+      return result;
     }
 
     return {

@@ -5,18 +5,21 @@ import { parseCellReference } from "src/core/utils";
 
 describe("CONCATENATE function", () => {
   const sheetName = "TestSheet";
+  const workbookName = "TestWorkbook";
+  const sheetAddress = { workbookName, sheetName };
   let engine: FormulaEngine;
 
   const cell = (ref: string, debug?: boolean) =>
-    engine.getCellValue({ sheetName, ...parseCellReference(ref) }, debug);
+    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) }, debug);
 
   const setCellContent = (ref: string, content: SerializedCellValue) => {
-    engine.setCellContent({ sheetName, ...parseCellReference(ref) }, content);
+    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
   };
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addSheet(sheetName);
+    engine.addWorkbook(workbookName);
+    engine.addSheet({ workbookName, sheetName });
   });
 
   describe("basic functionality", () => {
@@ -47,7 +50,7 @@ describe("CONCATENATE function", () => {
 
     test("CONCATENATE should work with cell references", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello"],
           ["B1", " "],
@@ -80,7 +83,7 @@ describe("CONCATENATE function", () => {
 
     test("should handle mixed types", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello"],
           ["B1", 123],
@@ -114,7 +117,7 @@ describe("CONCATENATE function", () => {
   describe("dynamic arrays", () => {
     test("should handle spilled text values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello"],
           ["A2", "Good"],
@@ -136,7 +139,7 @@ describe("CONCATENATE function", () => {
 
     test("should handle mixed spilled and single values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello"],
           ["A2", "Good"],
@@ -152,7 +155,7 @@ describe("CONCATENATE function", () => {
 
     test("should handle single value with spilled values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", " World"],
           ["A2", " Day"],
@@ -168,7 +171,7 @@ describe("CONCATENATE function", () => {
 
     test("should handle multiple spilled arrays", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello"],
           ["A2", "Good"],
@@ -188,7 +191,7 @@ describe("CONCATENATE function", () => {
 
     test("should handle mixed types in spilled arrays", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Value: "],
           ["A2", "Count: "],
@@ -213,7 +216,7 @@ describe("CONCATENATE function", () => {
 
     test("should handle INFINITY string values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "INFINITY"], // String literal
           ["B1", '=CONCATENATE(A1, "Hello")'],
@@ -224,7 +227,7 @@ describe("CONCATENATE function", () => {
 
     test("should handle INFINITY in spilled values", () => {
       engine.setSheetContent(
-        sheetName,
+        sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "Hello"],
           ["A2", "INFINITY"], // String literal

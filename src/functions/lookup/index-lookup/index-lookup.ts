@@ -5,12 +5,13 @@ import {
   type FunctionEvaluationResult,
   type ValueEvaluationResult,
   type SpilledValuesEvaluationResult,
-  type EvaluationContext,
   type CellAddress,
   type SpreadsheetRange,
+  type ErrorEvaluationResult,
 } from "src/core/types";
 import type { FormulaEngine } from "src/core/engine";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 /**
  * INDEX function - Returns a value from a table or array
@@ -37,8 +38,8 @@ function getValueFromArray(
   row: number,
   col: number,
   context: EvaluationContext
-): CellValue | { type: "error"; err: FormulaError; message: string } {
-  const dims = arrayResult.spillArea(context.currentCell);
+): CellValue | ErrorEvaluationResult {
+  const dims = arrayResult.spillArea(context.originCell.cellAddress);
 
   // Convert 1-based indices to 0-based
   const rowIndex = row - 1;
@@ -74,7 +75,8 @@ function getValueFromArray(
   const spilledAddress: CellAddress = {
     colIndex: actualCol,
     rowIndex: actualRow,
-    sheetName: context.currentSheet,
+    sheetName: context.originCell.cellAddress.sheetName,
+    workbookName: context.originCell.cellAddress.workbookName,
   };
 
   const spill = {
@@ -95,7 +97,7 @@ function getValueFromArray(
     };
   }
 
-  if (spillResult.type === "error") {
+  if (spillResult.type === "error" || spillResult.type === "awaiting-evaluation") {
     return spillResult;
   }
 
@@ -139,7 +141,6 @@ export const INDEX: FunctionDefinition = {
       rowNumResult.type === "spilled-values" ||
       (colNumResult && colNumResult.type === "spilled-values")
     ) {
-      // TODO: Implement comprehensive spilled array support like FIND function
       return {
         type: "error",
         err: FormulaError.VALUE,
@@ -174,24 +175,20 @@ export const INDEX: FunctionDefinition = {
       };
     }
 
+    const colNumValue = colNumResult?.result;
+
     // Strict type checking for column_num if provided
-    if (colNumResult && colNumResult.result.type !== "number") {
+    if (colNumValue && colNumValue.type !== "number") {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        message: `INDEX column_num must be number, got ${colNumResult.result.type}`,
+        message: `INDEX column_num must be number, got ${colNumValue.type}`,
       };
     }
 
     // Extract row and column numbers (convert to integers)
-    const rowNum = Math.floor(
-      (rowNumResult.result as { type: "number"; value: number }).value
-    );
-    const colNum = colNumResult
-      ? Math.floor(
-          (colNumResult.result as { type: "number"; value: number }).value
-        )
-      : 1;
+    const rowNum = Math.floor(rowNumResult.result.value);
+    const colNum = colNumValue ? Math.floor(colNumValue.value) : 1;
 
     // Validate that indices are positive
     if (rowNum < 1) {
@@ -234,7 +231,7 @@ export const INDEX: FunctionDefinition = {
         context
       );
 
-      if (result.type === "error") {
+      if (result.type === "error" || result.type === "awaiting-evaluation") {
         return result;
       }
 
