@@ -277,4 +277,109 @@ describe("IFERROR function", () => {
       expect(cell("A3")).toBe(true);
     });
   });
+
+  describe("lazy evaluation", () => {
+    test("should not evaluate error handler when value is not an error", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          // If the error handler was evaluated, CEILING(5) would cause an error
+          ["B1", "=IFERROR(A1, CEILING(5))"],
+        ])
+      );
+
+      expect(cell("B1")).toBe(10); // Returns A1 value without evaluating CEILING(5)
+    });
+
+    test("should evaluate error handler only when value is an error", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "=CEILING(5)"], // Missing argument -> error
+          ["B1", "=IFERROR(A1, 999)"],
+        ])
+      );
+
+      expect(cell("B1")).toBe(999); // Error is caught and handler is evaluated
+    });
+
+    test("should prevent cyclic dependencies when no error", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 100],
+          ["B1", "=IFERROR(A1, C1)"], // If no error, return A1; else return C1
+          ["C1", "=IFERROR(200, B1)"], // If no error, return 200; else return B1
+        ])
+      );
+
+      // B1: A1 is not an error, so return 100 without evaluating C1
+      // C1: 200 is not an error, so return 200 without evaluating B1
+      // No cyclic dependency because error handlers are not evaluated
+      expect(cell("B1")).toBe(100);
+      expect(cell("C1")).toBe(200);
+    });
+
+    test("should handle nested IFERROR with lazy evaluation", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Success"],
+          // Nested IFERROR with errors in unevaluated branches
+          ["B1", "=IFERROR(A1, IFERROR(CEILING(1), CEILING(2)))"],
+        ])
+      );
+
+      expect(cell("B1")).toBe("Success"); // A1 is not an error, so nested IFERROR is never evaluated
+    });
+
+    test("should evaluate nested error handlers when needed", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "=CEILING(5)"], // Error: missing argument
+          ["B1", "=CEILING(3)"], // Error: missing argument
+          // When A1 is error, evaluate first IFERROR handler
+          // When that's also an error, evaluate second IFERROR handler
+          ["C1", "=IFERROR(A1, IFERROR(B1, 888))"],
+        ])
+      );
+
+      expect(cell("C1")).toBe(888); // Both A1 and B1 are errors, so use final handler
+    });
+
+    test("should work with conditional error triggering", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 1],
+          ["B1", 0],
+          // When A1=1, use 100 (no error, don't evaluate handler)
+          // When A1=0, CEILING with 0 significance causes error, evaluate handler
+          ["C1", "=IFERROR(CEILING(5, A1), 999)"],
+          ["D1", "=IFERROR(CEILING(5, B1), 999)"],
+        ])
+      );
+
+      expect(cell("C1")).toBe(5); // CEILING(5, 1) = 5, no error
+      expect(cell("D1")).toBe(999); // CEILING(5, 0) -> error -> 999
+    });
+
+    test("should not evaluate error handler multiple times", () => {
+      // This test ensures that when we have multiple references to the same IFERROR,
+      // we don't unnecessarily evaluate the error handler
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 42],
+          ["B1", "=IFERROR(A1, CEILING(5))"], // A1 is not error
+          ["C1", "=B1 + B1"], // Reference B1 twice
+        ])
+      );
+
+      expect(cell("B1")).toBe(42); // No error, handler not evaluated
+      expect(cell("C1")).toBe(84); // 42 + 42
+    });
+  });
 });

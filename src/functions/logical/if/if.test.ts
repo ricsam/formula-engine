@@ -370,4 +370,88 @@ describe("IF function", () => {
       expect(cell("B1")).toBe("World is longer"); // "Hello" (5) vs "World" (5), equal so not >
     });
   });
+
+  describe("lazy evaluation", () => {
+    test("should not evaluate false branch when condition is true", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          // If both branches were evaluated, this would cause an error
+          // because CEILING with 1 argument is invalid
+          ["B1", '=IF(TRUE, "Success", CEILING(5))'],
+        ])
+      );
+
+      expect(cell("B1")).toBe("Success");
+    });
+
+    test("should not evaluate true branch when condition is false", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          // If both branches were evaluated, this would cause an error
+          ["B1", '=IF(FALSE, CEILING(5), "Success")'],
+        ])
+      );
+
+      expect(cell("B1")).toBe("Success");
+    });
+
+    test("should prevent cyclic dependencies with same logical test", () => {
+      // This is a key use case: two IF cells that would create a cycle
+      // if both branches were evaluated, but the same logical test
+      // ensures only non-cyclic branches are evaluated
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 1], // Control flag: 1 = use B1, 0 = use static value
+          ["B1", "=IF(A1=1, 100, C1)"], // When A1=1, use 100; else use C1
+          ["C1", "=IF(A1=1, B1, 200)"], // When A1=1, use B1; else use 200
+        ])
+      );
+
+      // When A1=1: B1 uses 100, C1 uses B1 (which is 100) -> C1=100
+      expect(cell("B1")).toBe(100);
+      expect(cell("C1")).toBe(100);
+
+      // Change the condition
+      setCellContent("A1", 0);
+
+      // When A1=0: B1 uses C1 (which is 200), C1 uses 200 -> B1=200
+      expect(cell("B1")).toBe(200);
+      expect(cell("C1")).toBe(200);
+    });
+
+    test("should work with nested lazy evaluation", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", true],
+          // Nested IF with errors in unevaluated branches
+          [
+            "B1",
+            '=IF(A1, IF(TRUE, "Nested Success", CEILING(1)), CEILING(2))',
+          ],
+        ])
+      );
+
+      expect(cell("B1")).toBe("Nested Success");
+    });
+
+    test("should evaluate branches with actual errors correctly", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          ["B1", 0],
+          // When condition is true, we should get the error from the true branch
+          ["C1", "=IF(TRUE, CEILING(5), 100)"], // Missing arg -> error
+        ])
+      );
+
+      expect(cell("C1")).toBe("#VALUE!"); // Error is properly returned
+    });
+  });
 });

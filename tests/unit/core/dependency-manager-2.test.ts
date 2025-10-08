@@ -249,7 +249,7 @@ describe("DependencyManager", () => {
           "directDepsUpdated": true,
           "key": "C1",
           "resolved": false,
-          "resultType": "value",
+          "resultType": "error",
           "type": "cell",
         }
       `);
@@ -364,7 +364,7 @@ describe("DependencyManager", () => {
           "directDepsUpdated": false,
           "key": "C1",
           "resolved": false,
-          "resultType": "value",
+          "resultType": "error",
           "type": "cell",
         }
       `);

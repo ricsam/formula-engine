@@ -75,7 +75,7 @@ export class EvaluationManager {
     }
 
     if (debug) {
-      return evaluation.err + ": " + evaluation.message;
+      return evaluation.err + " " + evaluation.message;
     }
 
     return evaluation.err;
@@ -398,7 +398,9 @@ export class EvaluationManager {
         const evaluationResult: ErrorEvaluationResult = {
           type: "error",
           err: FormulaError.CYCLE,
-          message: "Cycle detected",
+          message: Array.from(evaluationPlan.cycleNodes ?? [])
+            .map((node) => node.key)
+            .join(" -> "),
         };
         // cycle detected
         if (evaluationPlan.cycleNodes) {
@@ -414,13 +416,17 @@ export class EvaluationManager {
 
       // Evaluate all dependencies in order
       if (flags.isProfiling) {
-        console.time("evaluate dependencies: " + evaluationPlan.evaluationOrder.size);
+        console.time(
+          "evaluate dependencies: " + evaluationPlan.evaluationOrder.size
+        );
       }
       evaluationPlan.evaluationOrder.forEach((dependency) => {
         this.evaluateDependencyNode(dependency.key);
       });
       if (flags.isProfiling) {
-        console.timeEnd("evaluate dependencies: " + evaluationPlan.evaluationOrder.size);
+        console.timeEnd(
+          "evaluate dependencies: " + evaluationPlan.evaluationOrder.size
+        );
       }
       const evalResult = this.dependencyManager.getCellNode(nodeKey);
       const failedEvaluation: ErrorEvaluationResult = {

@@ -135,21 +135,15 @@ export const IFERROR: FunctionDefinition = {
     // Evaluate the value argument (the expression to check for errors)
     const valueResult = this.evaluateNode(node.args[0]!, context);
 
-    // comment out to debug
-    // return valueResult;
+    // Handle spilled values - we need to evaluate both branches
+    // because different cells might have errors or not
+    if (valueResult.type === "spilled-values") {
+      // Evaluate the value_if_error argument
+      const valueIfErrorResult = this.evaluateNode(node.args[1]!, context);
+      if (valueIfErrorResult.type === "error") {
+        return valueIfErrorResult; // Error in the error handler itself
+      }
 
-    // Evaluate the value_if_error argument
-    const valueIfErrorResult = this.evaluateNode(node.args[1]!, context);
-    if (valueIfErrorResult.type === "error") {
-      return valueIfErrorResult; // Error in the error handler itself
-    }
-
-    // Handle spilled values
-    const hasSpilledValues =
-      valueResult.type === "spilled-values" ||
-      valueIfErrorResult.type === "spilled-values";
-
-    if (hasSpilledValues) {
       return createIfErrorSpilledResult.call(this, {
         valueResult,
         valueIfErrorResult,
@@ -157,12 +151,15 @@ export const IFERROR: FunctionDefinition = {
       });
     }
 
+    // LAZY EVALUATION: Only evaluate error handler if we have an error
     // IFERROR logic: if first argument is error, return second argument
     if (valueResult.type === "error") {
+      const valueIfErrorResult = this.evaluateNode(node.args[1]!, context);
       return valueIfErrorResult;
     }
 
     // If first argument is not an error, return it unchanged
+    // WITHOUT evaluating the error handler
     return valueResult;
   },
 };

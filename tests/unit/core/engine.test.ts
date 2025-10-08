@@ -620,6 +620,45 @@ describe("FormulaEngine", () => {
     expect(cell("D10", true)).toBe(9);
   });
 
+  test("addition of sparse ranges should use position-based pairing", () => {
+    // Test case from user: A1:A7 + B1:B6
+    // A column: 1, 3, empty, 4, empty, empty, 2
+    // B column: empty, 1, empty, empty, empty, 3
+    // Expected: 1, 4, #N/A, 4, #N/A, 3, #N/A
+    engine.setSheetContent(
+      sheetAddress,
+      new Map<string, SerializedCellValue>([
+        ["A1", 1],
+        ["A2", 3],
+        // A3 is empty
+        ["A4", 4],
+        // A5, A6 are empty
+        ["A7", 2],
+        // B1 is empty
+        ["B2", 1],
+        // B3, B4, B5 are empty
+        ["B6", 3],
+        // B7 doesn't exist (beyond B range)
+        ["C1", "=A1:A7+B1:B6"],
+      ])
+    );
+
+    // Row 1: 1 + empty = #N/A (empty within range)
+    expect(cell("C1")).toBe("#N/A");
+    // Row 2: 3 + 1 = 4
+    expect(cell("C2")).toBe(4);
+    // Row 3: empty + empty = #N/A
+    expect(cell("C3")).toBe("#N/A");
+    // Row 4: 4 + empty = #N/A (empty within range)
+    expect(cell("C4")).toBe("#N/A");
+    // Row 5: empty + empty = #N/A
+    expect(cell("C5")).toBe("#N/A");
+    // Row 6: empty + 3 = #N/A (empty within range)
+    expect(cell("C6")).toBe("#N/A");
+    // Row 7: 2 + beyond range = #N/A
+    expect(cell("C7")).toBe("#N/A");
+  });
+
   test("evaluation should handle range inputs as gracefully /3", () => {
     engine.setSheetContent(
       sheetAddress,
@@ -1487,8 +1526,8 @@ describe("FormulaEngine", () => {
       setCellContent("B1", "=A1");
 
       // Both cells should show cycle error
-      expect(cell("A1", true)).toBe("#CYCLE!: Cycle detected");
-      expect(cell("B1", true)).toBe("#CYCLE!: Cycle detected");
+      expect(cell("A1")).toBe(FormulaError.CYCLE);
+      expect(cell("B1")).toBe(FormulaError.CYCLE);
     });
 
     test("should detect and mark all nodes in a complex cycle", () => {
@@ -1498,9 +1537,9 @@ describe("FormulaEngine", () => {
       setCellContent("C1", "=A1");
 
       // All three cells should show cycle error
-      expect(cell("A1", true)).toBe("#CYCLE!: Cycle detected");
-      expect(cell("B1", true)).toBe("#CYCLE!: Cycle detected");
-      expect(cell("C1", true)).toBe("#CYCLE!: Cycle detected");
+      expect(cell("A1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1"`);
+      expect(cell("B1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1"`);
+      expect(cell("C1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1"`);
     });
 
     test("should detect cycles with non-cycle dependencies", () => {
@@ -1511,21 +1550,21 @@ describe("FormulaEngine", () => {
       setCellContent("D1", "=A1"); // Depends on A1 but not part of cycle
 
       // Cycle participants should show cycle error
-      expect(cell("B1", true)).toBe("#CYCLE!: Cycle detected");
-      expect(cell("C1", true)).toBe("#CYCLE!: Cycle detected");
+      expect(cell("B1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`);
+      expect(cell("C1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`);
 
       // A1 should also show cycle error since it depends on the cycle
-      expect(cell("A1", true)).toBe("#CYCLE!: Cycle detected");
+      expect(cell("A1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`);
 
       // D1 should also show cycle error since it depends on A1 which has a cycle
-      expect(cell("D1", true)).toBe("#CYCLE!: Cycle detected");
+      expect(cell("D1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`);
     });
 
     test("should handle self-referencing cell", () => {
       // Create a self-reference: A1 -> A1
       setCellContent("A1", "=A1");
 
-      expect(cell("A1", true)).toBe("#CYCLE!: Cycle detected");
+      expect(cell("A1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:A1"`);
     });
   });
 });

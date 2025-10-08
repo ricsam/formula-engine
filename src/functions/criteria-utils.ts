@@ -17,6 +17,7 @@ import {
 import { flags } from "src/debug/flags";
 import { getRelativeRange } from "src/core/utils";
 import type { LookupOrder } from "src/core/managers";
+import { EvaluationError } from "src/evaluator/evaluation-error";
 
 /**
  * Criteria pair for criteria-based functions
@@ -104,13 +105,9 @@ export function parseCriteriaPairs(
 export function hasEmptyCriteria(criteriaPairs: CriteriaPair[]): boolean {
   return criteriaPairs.some(
     ({ parsedCriteria }) =>
-      (parsedCriteria.type === "exact" &&
-        parsedCriteria.value.type === "string" &&
-        parsedCriteria.value.value === "") ||
-      (parsedCriteria.type === "comparison" &&
-        parsedCriteria.operator === "<>" &&
-        parsedCriteria.value.type === "string" &&
-        parsedCriteria.value.value === "")
+      parsedCriteria.type === "exact" &&
+      parsedCriteria.value.type === "string" &&
+      parsedCriteria.value.value === ""
   );
 }
 
@@ -164,9 +161,6 @@ export function* processMultiCriteriaValues(
       yield valueRangeResult; // Yield the entire result (ValueEvaluationResult)
     }
   } else if (valueRangeResult.type === "spilled-values") {
-    if (flags.isProfiling) {
-      console.time("criteriaValueArrays");
-    }
     // Range case - first validate dimensions using spillArea for efficiency
     const valueSpillArea = valueRangeResult.spillArea(
       context.originCell.cellAddress
@@ -218,125 +212,78 @@ export function* processMultiCriteriaValues(
       // Single values (type === "value") are compatible with any range size
     }
 
-    // Now use efficient iterator-based processing (no Array.from conversion)
+    // Convert iterators to arrays to simplify position-based pairing
     const valueIterator = valueRangeResult.evaluateAllCells.call(evaluator, {
       context,
       evaluate: valueRangeResult.evaluate,
       origin: context.originCell.cellAddress,
       lookupOrder,
     });
+    const valueResults = Array.from(valueIterator);
 
-    const criteriaIterators = criteriaPairs.map(({ rangeResult }) => {
+    // Convert criteria ranges to arrays (or track if single value)
+    const criteriaResultsArrays = criteriaPairs.map(({ rangeResult }) => {
       if (rangeResult.type === "spilled-values") {
-        return rangeResult.evaluateAllCells.call(evaluator, {
+        const criteriaIterator = rangeResult.evaluateAllCells.call(evaluator, {
           context,
           evaluate: rangeResult.evaluate,
           origin: context.originCell.cellAddress,
           lookupOrder,
         });
+        return { type: "array" as const, results: Array.from(criteriaIterator) };
       } else {
-        // Single value - create a repeating iterator
-        const singleValue = rangeResult;
-        return (function* () {
-          while (true) {
-            yield { result: singleValue };
-          }
-        })();
+        // Single value - we'll use it for all positions
+        return { type: "single" as const, value: rangeResult };
       }
     });
 
-    // Create synchronized iteration using a manual approach
-    const valueIteratorResult = valueIterator[Symbol.iterator]();
-    const criteriaIteratorResults = criteriaIterators.map((iter) =>
-      iter[Symbol.iterator]()
-    );
-    let i = 0;
+    // Create maps from position to value for each criteria range
+    const criteriaMaps = criteriaResultsArrays.map((criteriaData) => {
+      if (criteriaData.type === "single") {
+        return null; // Single values don't need a map
+      }
+      const map = new Map<string, SingleEvaluationResult>();
+      for (const { result, relativePos } of criteriaData.results) {
+        const key = `${relativePos.x},${relativePos.y}`;
+        map.set(key, result);
+      }
+      return map;
+    });
 
-    const durations: number[] = [];
-
-    let valueNext = valueIteratorResult.next();
-    while (!valueNext.done) {
-      let duration = performance.now();
-      const valueCell = valueNext.value;
-      i++;
-
+    // Iterate through each value position
+    for (const valueCell of valueResults) {
       if (!valueCell) {
-        valueNext = valueIteratorResult.next();
-        continue; // Skip undefined cells
+        continue;
       }
 
-      if (flags.isProfiling && i === 1) {
-        console.time("step 1");
-      }
-
-      if (flags.isProfiling && i === 1) {
-        console.log("@criteriaIteratorResults", criteriaIteratorResults);
-      }
-
-      const criteriaDurations: number[] = [];
-      // Get corresponding criteria values for this position
-      const criteriaNextResults = criteriaIteratorResults.map(
-        function criteriaNextResults(iter, innerIndex) {
-          const duration = performance.now();
-          if (
-            flags.isProfiling &&
-            i === 1 &&
-            innerIndex === 0 &&
-            !flags.profilingNamespaces["criteria-utils-profiled"]
-          ) {
-            flags.profilingNamespaces["criteria-utils"] = true;
-            // console.profile("What is going on here?");
-          }
-          const result = iter.next();
-          if (
-            flags.isProfiling &&
-            i === 1 &&
-            innerIndex === 0 &&
-            !flags.profilingNamespaces["criteria-utils-profiled"]
-          ) {
-            flags.profilingNamespaces["criteria-utils"] = false;
-            // console.profileEnd("What is going on here?");
-          }
-          if (
-            flags.isProfiling &&
-            i === 1 &&
-            innerIndex === 0 &&
-            !flags.profilingNamespaces["criteria-utils-profiled"]
-          ) {
-            flags.profilingNamespaces["criteria-utils-profiled"] = true;
-          }
-          criteriaDurations.push(performance.now() - duration);
-          return result;
-        }
-      );
-
-      if (flags.isProfiling && i === 1) {
-        console.log("@criteriaDurations", criteriaDurations);
-      }
-
-      if (flags.isProfiling && i === 1) {
-        console.timeEnd("step 1");
-      }
-
-      // Check if any criteria iterator is done (shouldn't happen if dimensions match)
-      if (criteriaNextResults.some((result) => result.done)) {
-        break;
-      }
-
-      if (flags.isProfiling && i === 1) {
-        console.time("step 2");
-      }
+      const posKey = `${valueCell.relativePos.x},${valueCell.relativePos.y}`;
 
       // Check if all criteria match for this position
       let allMatch = true;
       for (let j = 0; j < criteriaPairs.length; j++) {
-        const criteriaCell = criteriaNextResults[j]?.value?.result;
+        let criteriaCell: SingleEvaluationResult | undefined;
 
-        if (criteriaCell?.type === "error") {
+        if (criteriaResultsArrays[j]!.type === "single") {
+          // Single value - use it for all positions
+          criteriaCell = criteriaResultsArrays[j]!.value;
+        } else {
+          // Array - look up by position, treat missing as empty
+          criteriaCell = criteriaMaps[j]?.get(posKey);
+        }
+
+        // If criteriaCell is undefined, treat it as an empty cell
+        if (!criteriaCell) {
+          // Check if the criteria matches empty cells
+          const parsedCriteria = criteriaPairs[j]!.parsedCriteria;
+          const emptyValue = { type: "string" as const, value: "" };
+          if (!matchesParsedCriteria(emptyValue, parsedCriteria)) {
+            allMatch = false;
+            break;
+          }
+        } else if (criteriaCell.type === "error") {
           allMatch = false;
           break;
-        }
-        if (criteriaCell?.type === "value") {
+        } else if (criteriaCell.type === "value") {
           if (
             !matchesParsedCriteria(
               criteriaCell.result,
@@ -352,54 +299,9 @@ export function* processMultiCriteriaValues(
         }
       }
 
-      if (flags.isProfiling && i === 1) {
-        console.timeEnd("step 2");
-      }
-
       if (allMatch) {
-        if (flags.isProfiling) {
-          console.log(
-            "All match for value cell and criteria cells",
-            valueCell.result,
-            criteriaNextResults,
-            i
-          );
-        }
         yield valueCell.result; // Yield the entire SingleEvaluationResult (includes errors and values)
       }
-
-      // Advance to next value
-      if (flags.isProfiling && i === 1) {
-        console.time("step 3");
-      }
-      valueNext = valueIteratorResult.next();
-      durations.push(performance.now() - duration);
-      if (flags.isProfiling && i === 1) {
-        console.timeEnd("step 3");
-      }
-    }
-
-    if (flags.isProfiling) {
-      const averageDuration =
-        durations.reduce((a, b) => a + b, 0) / durations.length;
-      console.log("average duration: " + averageDuration);
-      const maxDurationIndex = durations.indexOf(Math.max(...durations));
-      console.log("min duration: " + Math.min(...durations));
-      console.log("max duration: " + Math.max(...durations));
-      console.log("max duration index: " + maxDurationIndex);
-
-      // Log top 10 slowest indexes
-      const indexedDurations = durations.map((duration, index) => ({
-        duration,
-        index,
-      }));
-      const top10Slowest = indexedDurations
-        .sort((a, b) => b.duration - a.duration)
-        .slice(0, 10);
-      console.log("top 10 slowest indexes:", top10Slowest);
-
-      console.log("processed " + i + " values");
-      console.timeEnd("criteriaValueArrays");
     }
   }
 }
@@ -486,17 +388,15 @@ function* handleEmptyCriteriaSpilledValues(
     context.originCell.cellAddress
   );
 
-  // Check if this is an infinite range - yield error
+  // Check if this is an infinite range and we are counting empty cells - yield error
   if (
     valueSpillArea.end.col.type === "infinity" ||
     valueSpillArea.end.row.type === "infinity"
   ) {
-    yield {
-      type: "error",
-      err: FormulaError.VALUE,
-      message: "Cannot process infinite ranges with empty cell criteria",
-    };
-    return;
+    throw new EvaluationError(
+      FormulaError.VALUE,
+      "Cannot process infinite ranges with empty cell criteria"
+    );
   }
 
   // Finite range - iterate over all cells in spill areas

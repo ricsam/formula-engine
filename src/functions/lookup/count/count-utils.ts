@@ -1,5 +1,5 @@
 import {
-    type CellAddress,
+  type CellAddress,
   type FunctionEvaluationResult,
   type SingleEvaluationResult,
 } from "src/core/types";
@@ -46,7 +46,7 @@ export function performCount(
 export function countEmptyCells(
   criteriaRangeResult: FunctionEvaluationResult,
   parsedCriteria: ParsedCriteria,
-  currentCell: CellAddress,
+  currentCell: CellAddress
 ): FunctionEvaluationResult | undefined {
   // Special case: counting empty cells over infinite ranges
   if (

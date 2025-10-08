@@ -258,9 +258,7 @@ describe("SEQUENCE function", () => {
     // Sum of first 10 values: 1+2+...+10 = 55
     expect(cell("B1", true)).toBe(55);
     // Sum of entire column with infinite sequence should be INFINITY
-    expect(cell("B2", true)).toBe(
-      "#REF!: Can not evaluate all cells over an infinite range"
-    );
+    expect(cell("B2", true)).toMatchInlineSnapshot(`"#REF! Can not evaluate all cells over an infinite range"`);
   });
 
   test("SEQUENCE with intersection", () => {
@@ -303,7 +301,6 @@ describe("SEQUENCE function", () => {
     expect(cell("C3")).toBe(3);
     expect(cell("A3")).toBe(FormulaError.SPILL);
     expect(cell("B3")).toBe("");
-
 
     // reverse the order
     engine.setSheetContent(

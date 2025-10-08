@@ -159,6 +159,26 @@ export function evaluateScalarOperator(
         ) {
           return evaledRight;
         }
+
+        // Check if either value is an empty cell (empty string)
+        const isLeftEmpty =
+          evaledLeft.type === "value" &&
+          evaledLeft.result.type === "string" &&
+          evaledLeft.result.value === "";
+        const isRightEmpty =
+          evaledRight.type === "value" &&
+          evaledRight.result.type === "string" &&
+          evaledRight.result.value === "";
+
+        // If either operand is empty, return #N/A
+        if (isLeftEmpty || isRightEmpty) {
+          return {
+            type: "error",
+            err: FormulaError.NA,
+            message: "Empty cell in scalar operation",
+          };
+        }
+
         return evaluateSingleScalarOperator(
           evaledLeft.result,
           evaledRight.result,
@@ -172,103 +192,101 @@ export function evaluateScalarOperator(
         const rightResults = Array.from(
           right.evaluateAllCells.call(this, options)
         );
-        const forDebug = {
-          leftResult: leftResults.map((result) => result.result),
-          rightResult: rightResults.map((result) => result.result),
-        };
-        for (
-          let i = 0;
-          i < Math.max(leftResults.length, rightResults.length);
-          i++
-        ) {
-          const leftResult = leftResults[i];
-          const rightResult = rightResults[i];
-          if (!leftResult && rightResult) {
-            yield {
-              result: {
-                type: "error",
-                err: FormulaError.REF,
-                message: "Left result is not found",
-              },
-              relativePos: rightResult.relativePos,
-            };
+
+        // Create position-based maps for both left and right results
+        const leftMap = new Map<string, EvaluateAllCellsResult>();
+        const rightMap = new Map<string, EvaluateAllCellsResult>();
+        const allPositions = new Set<string>();
+
+        for (const result of leftResults) {
+          const key = `${result.relativePos.x},${result.relativePos.y}`;
+          leftMap.set(key, result);
+          allPositions.add(key);
+        }
+
+        for (const result of rightResults) {
+          const key = `${result.relativePos.x},${result.relativePos.y}`;
+          rightMap.set(key, result);
+          allPositions.add(key);
+        }
+
+        // Process each unique position
+        for (const posKey of allPositions) {
+          const leftResult = leftMap.get(posKey);
+          const rightResult = rightMap.get(posKey);
+
+          // Extract relative position from the key
+          const [x, y] = posKey.split(",").map(Number);
+          const relativePos = { x: x!, y: y! };
+
+          if (!leftResult && !rightResult) {
+            // Both empty - this shouldn't happen as we only iterate positions that exist
+            continue;
+          } else if (!leftResult && rightResult) {
+            // Left is empty/missing, right has value
+            if (rightResult.result.type === "error") {
+              yield rightResult;
+            } else if (rightResult.result.type === "value") {
+              // Treat missing left as empty, which is handled by the operator
+              yield {
+                result: {
+                  type: "error",
+                  err: FormulaError.NA,
+                  message: "Left operand is empty",
+                },
+                relativePos,
+              };
+            } else {
+              yield rightResult;
+            }
           } else if (!rightResult && leftResult) {
-            yield {
-              result: {
-                type: "error",
-                err: FormulaError.REF,
-                message: "Right result is not found",
-              },
-              relativePos: leftResult.relativePos,
-            };
-          } else if (leftResult && leftResult.result.type === "error") {
-            yield leftResult;
-          } else if (rightResult && rightResult.result.type === "error") {
-            yield rightResult;
-          } else if (
-            leftResult &&
-            rightResult &&
-            leftResult.result.type === "value" &&
-            rightResult.result.type === "value"
-          ) {
-            yield {
-              result: evaluateSingleScalarOperator(
-                leftResult.result.result,
-                rightResult.result.result,
-                evaluateScalar
-              ),
-              relativePos: leftResult.relativePos,
-            };
-          } else {
-            break;
+            // Right is empty/missing, left has value
+            if (leftResult.result.type === "error") {
+              yield leftResult;
+            } else if (leftResult.result.type === "value") {
+              // Treat missing right as empty, which is handled by the operator
+              yield {
+                result: {
+                  type: "error",
+                  err: FormulaError.NA,
+                  message: "Right operand is empty",
+                },
+                relativePos,
+              };
+            } else {
+              yield leftResult;
+            }
+          } else if (leftResult && rightResult) {
+            // Both have values
+            if (leftResult.result.type === "error") {
+              yield leftResult;
+            } else if (rightResult.result.type === "error") {
+              yield rightResult;
+            } else if (
+              leftResult.result.type === "value" &&
+              rightResult.result.type === "value"
+            ) {
+              yield {
+                result: evaluateSingleScalarOperator(
+                  leftResult.result.result,
+                  rightResult.result.result,
+                  evaluateScalar
+                ),
+                relativePos: leftResult.relativePos,
+              };
+            } else {
+              // Both are awaiting-evaluation or some other state
+              yield {
+                result: {
+                  type: "error",
+                  err: FormulaError.VALUE,
+                  message: "Cannot evaluate scalar operator on non-value results",
+                },
+                relativePos,
+              };
+            }
           }
         }
-        // let rightResult: EvaluateAllCellsResult | undefined | void;
-        // let leftResult: EvaluateAllCellsResult | undefined | void;
-        // do {
-        //   rightResult = rightResults.next().value;
-        //   leftResult = leftResults.next().value;
-
-        //   if (!leftResult && rightResult) {
-        //     yield {
-        //       result: {
-        //         type: "error",
-        //         err: FormulaError.REF,
-        //         message: "Left result is not found",
-        //       },
-        //       relativePos: rightResult.relativePos,
-        //     };
-        //   } else if (!rightResult && leftResult) {
-        //     yield {
-        //       result: {
-        //         type: "error",
-        //         err: FormulaError.REF,
-        //         message: "Right result is not found",
-        //       },
-        //       relativePos: leftResult.relativePos,
-        //     };
-        //   } else if (leftResult && leftResult.result.type === "error") {
-        //     yield leftResult;
-        //   } else if (rightResult && rightResult.result.type === "error") {
-        //     yield rightResult;
-        //   } else if (
-        //     leftResult &&
-        //     rightResult &&
-        //     leftResult.result.type === "value" &&
-        //     rightResult.result.type === "value"
-        //   ) {
-        //     yield {
-        //       result: evaluateSingleScalarOperator(
-        //         leftResult.result.result,
-        //         rightResult.result.result,
-        //         evaluateScalar
-        //       ),
-        //       relativePos: leftResult.relativePos,
-        //     };
-        //   } else {
-        //     break;
-        //   }
-        // } while (leftResult || rightResult);
       },
     };
   }

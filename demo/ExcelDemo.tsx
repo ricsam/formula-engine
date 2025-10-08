@@ -253,8 +253,8 @@ export function ExcelDemo() {
     loadInitialFile();
   }, [engine, _setViewport]);
 
-  // Auto-save to OPFS
-  const saveToOPFSAuto = useCallback(async () => {
+  // Save to OPFS
+  const saveFile = useCallback(async () => {
     try {
       const dataToSave: SavedState = {
         workbookGridItems,
@@ -264,20 +264,16 @@ export function ExcelDemo() {
 
       await saveToOPFS(currentFileName, dataToSave);
       setHasUnsavedChanges(false);
-      console.log(`Auto-saved to OPFS: ${currentFileName}`);
+      console.log(`Saved to OPFS: ${currentFileName}`);
       
       // Refresh file list
       const files = await listOPFSFiles();
       setOpfsFiles(files);
     } catch (error) {
-      console.error("Failed to auto-save to OPFS:", error);
+      console.error("Failed to save to OPFS:", error);
+      alert(`Failed to save: ${error instanceof Error ? error.message : "Unknown error"}`);
     }
   }, [workbookGridItems, engine, viewport, currentFileName]);
-
-  // Manual save (for immediate feedback)
-  const saveFile = useCallback(async () => {
-    await saveToOPFSAuto();
-  }, [saveToOPFSAuto]);
 
   // Load a file from OPFS
   const loadFile = useCallback(async (filename: string) => {
@@ -534,17 +530,6 @@ export function ExcelDemo() {
     const unsubscribe = engine.onUpdate(markUnsavedChanges);
     return unsubscribe;
   }, [engine, markUnsavedChanges]);
-
-  // Auto-save effect (debounced)
-  useEffect(() => {
-    if (!hasUnsavedChanges || isLoading) return;
-
-    const timeoutId = setTimeout(() => {
-      saveToOPFSAuto();
-    }, 2000); // Auto-save after 2 seconds of inactivity
-
-    return () => clearTimeout(timeoutId);
-  }, [hasUnsavedChanges, saveToOPFSAuto, isLoading]);
 
   // Add new workbook
   const addWorkbook = useCallback(() => {
@@ -1251,7 +1236,7 @@ export function ExcelDemo() {
                     `}
                     onClick={saveFile}
                     data-testid="save-button"
-                    title="Save to OPFS (auto-saves after 2s)"
+                    title="Save to OPFS"
                   >
                     <Save className="h-4 w-4 mr-1" />
                     {hasUnsavedChanges ? "Save" : "Saved"}

@@ -135,8 +135,8 @@ describe("OpenRangeEvaluator", () => {
 
       // SUM(B10:D) should detect the infinite spill and return INFINITY
       const result = cell("A1", true);
-      expect(result).toBe(
-        "#REF!: Can not evaluate all cells over an infinite range"
+      expect(result).toMatchInlineSnapshot(
+        `"#REF! Can not evaluate all cells over an infinite range"`
       );
     });
 
@@ -450,9 +450,7 @@ describe("OpenRangeEvaluator", () => {
       );
 
       const result = cell("A1", true);
-      expect(result).toBe(
-        "#REF!: Can not evaluate all cells over an infinite range"
-      );
+      expect(result).toMatchInlineSnapshot(`"#REF! Can not evaluate all cells over an infinite range"`);
     });
 
     it("should handle cross-sheet frontier candidates - top frontier", () => {
