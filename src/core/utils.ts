@@ -1,10 +1,16 @@
-import type {
-  CellAddress,
-  LocalCellAddress,
-  RangeAddress,
-  RelativeRange,
-  SpreadsheetRange,
-  SpreadsheetRangeEnd,
+import {
+  AwaitingEvaluationError,
+  EvaluationError,
+} from "src/evaluator/evaluation-error";
+import {
+  FormulaError,
+  type CellAddress,
+  type ErrorEvaluationResult,
+  type LocalCellAddress,
+  type RangeAddress,
+  type RelativeRange,
+  type SpreadsheetRange,
+  type SpreadsheetRangeEnd,
 } from "./types";
 
 // Column utilities
@@ -489,4 +495,100 @@ export function getRangeIntersection(
     start: { row: startRow, col: startCol },
     end: { row: endRow, col: endCol },
   };
+}
+
+export function captureEvaluationErrors<T>(
+  errAddress: CellAddress,
+  fn: () => T
+): T | ErrorEvaluationResult {
+  try {
+    return fn();
+  } catch (error) {
+    if (error instanceof EvaluationError) {
+      return {
+        type: "error",
+        err: error.type,
+        message: error.message,
+        errAddress: error.errAddress,
+      };
+    }
+    if (error instanceof AwaitingEvaluationError) {
+      return {
+        type: "error",
+        err: FormulaError.ERROR,
+        message: error.message,
+        errAddress: error.errAddress, 
+      };
+    }
+
+    // Convert JavaScript errors to formula errors
+    const formulaError =
+      error instanceof Error
+        ? mapJSErrorToFormulaError(error)
+        : FormulaError.ERROR;
+
+    return {
+      type: "error",
+      err: formulaError,
+      message: (error as any)?.stack || "An error was thrown",
+      errAddress,
+    };
+  }
+}
+
+function isFormulaError(value: string): value is FormulaError {
+  if (typeof value !== "string") return false;
+
+  // Check for all known formula errors
+  const errors: FormulaError[] = Object.values(FormulaError);
+
+  return errors.includes(value as FormulaError);
+}
+
+/**
+ * Maps JavaScript errors to formula errors
+ */
+function mapJSErrorToFormulaError(error: Error): FormulaError {
+  const message = error.message.toLowerCase();
+
+  if (isFormulaError(error.message)) {
+    return error.message;
+  }
+
+  if (
+    message.includes("division by zero") ||
+    message.includes("divide by zero")
+  ) {
+    return FormulaError.DIV0;
+  }
+  if (message.includes("circular") || message.includes("cycle")) {
+    return FormulaError.CYCLE;
+  }
+  if (
+    message.includes("invalid reference") ||
+    (message.includes("reference") && !message.includes("circular"))
+  ) {
+    return FormulaError.REF;
+  }
+  if (
+    message.includes("invalid name") ||
+    message.includes("unknown function")
+  ) {
+    return FormulaError.NAME;
+  }
+  if (
+    message.includes("invalid number") ||
+    message.includes("nan") ||
+    message.includes("infinity")
+  ) {
+    return FormulaError.NUM;
+  }
+  if (message.includes("type") || message.includes("invalid argument")) {
+    return FormulaError.VALUE;
+  }
+  if (message.includes("not available") || message.includes("n/a")) {
+    return FormulaError.NA;
+  }
+
+  return FormulaError.ERROR;
 }

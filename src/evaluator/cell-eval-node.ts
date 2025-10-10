@@ -57,11 +57,12 @@ export class CellEvalNode {
     return this._resolved;
   }
 
-  public get evaluationResult() {
+  public get evaluationResult(): FunctionEvaluationResult {
     return (
       this._evaluationResult ?? {
         type: "awaiting-evaluation",
-        cellAddress: this.cellAddress,
+        waitingFor: this.cellAddress,
+        errAddress: this.cellAddress,
       }
     );
   }
@@ -101,7 +102,7 @@ export class CellEvalNode {
    * Just to mirror the method in RangeEvaluationNode
    */
   public getAllDependencies() {
-    return this._dependencies;
+    return this.getDependencies();
   }
 
   /**
@@ -109,5 +110,27 @@ export class CellEvalNode {
    */
   public getFrontierDependencies(): Set<CellEvalNode> {
     return new Set();
+  }
+
+  toJSON(visitor: Set<string> = new Set()): any {
+    const hasVisited = visitor?.has(this.key);
+    if (hasVisited) {
+      return {
+        key: this.key,
+        resolved: this.resolved,
+        cycle: true,
+        dependencies: [],
+      }
+    }
+    visitor?.add(this.key);
+    return {
+      key: this.key,
+      resolved: this.resolved,
+      evaluationResult: this.evaluationResult,
+      originSpillResult: this.originSpillResult,
+      dependencies: Array.from(this.getDependencies()).map((node) =>
+        node.toJSON(visitor)
+      ),
+    };
   }
 }

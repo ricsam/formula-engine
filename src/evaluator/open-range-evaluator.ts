@@ -22,7 +22,7 @@ import { EvaluationContext } from "./evaluation-context";
 import { flags } from "src/debug/flags";
 import type { CellEvalNode } from "./cell-eval-node";
 import { EmptyCellEvaluationNode } from "./empty-cell-evaluation-node";
-import { EvaluationError } from "./evaluation-error";
+import { AwaitingEvaluationError, EvaluationError } from "./evaluation-error";
 
 /**
  * Utility class for evaluating cells within open-ended ranges
@@ -66,6 +66,7 @@ export class OpenRangeEvaluator {
     if (!sheet) {
       throw new EvaluationError(
         FormulaError.REF,
+        options.context.originCell.cellAddress,
         `Sheet ${options.address.sheetName} not found`
       );
     }
@@ -77,36 +78,14 @@ export class OpenRangeEvaluator {
         const entryAddress = entry.address;
         const cellKey = cellAddressToKey(entryAddress);
 
-        if (cellKey === options.context.originCell.key) {
-          // if a cell in range for some reason is the origin, well, that's a cycle
-          yield {
-            result: {
-              type: "error",
-              err: FormulaError.CYCLE,
-              message: "Cycle detected",
-              errAddress: options.context.originCell.cellAddress,
-            },
-            relativePos: {
-              x:
-                options.context.originCell.cellAddress.colIndex -
-                options.address.range.start.col,
-              y:
-                options.context.originCell.cellAddress.rowIndex -
-                options.address.range.start.row,
-            },
-          };
-          return;
-        }
-
         const cellNode = this.dependencyManager.getCellNode(cellKey);
-
-        if (cellNode instanceof EmptyCellEvaluationNode) {
-          throw new Error("A cell in range can not be an empty cell");
-        }
-
-        rangeNode.addDependency(cellNode);
-
         const result = cellNode.evaluationResult;
+        if (!result) {
+          throw new AwaitingEvaluationError(
+            options.context.originCell.cellAddress,
+            entryAddress
+          );
+        }
 
         const relativePos = {
           x: entryAddress.colIndex - options.address.range.start.col,
@@ -120,17 +99,7 @@ export class OpenRangeEvaluator {
             relativePos,
           };
         } else {
-          yield result
-            ? { result: result, relativePos }
-            : {
-                result: {
-                  type: "error",
-                  err: FormulaError.REF,
-                  message: `Error evaluating cell ${cellKey} #2`,
-                  errAddress: options.context.originCell.cellAddress,
-                },
-                relativePos,
-              };
+          yield { result: result, relativePos };
         }
       } else if (entry.type === "empty_cell" || entry.type === "empty_range") {
         for (const candidate of entry.candidates) {
@@ -139,84 +108,87 @@ export class OpenRangeEvaluator {
             this.dependencyManager.getCellNode(candidateKey);
           const result = candidateNode.evaluationResult;
 
-          if (candidateNode instanceof EmptyCellEvaluationNode) {
-            throw new Error("A frontier dependencies can not be an empty cell");
+          if (!result) {
+            throw new AwaitingEvaluationError(
+              options.context.originCell.cellAddress,
+              candidate
+            );
           }
 
-          rangeNode.addFrontierDependency(candidateNode);
+          if (candidateNode instanceof EmptyCellEvaluationNode) {
+            throw new Error("A frontier dependency can not be an empty cell");
+          }
 
-          if (result) {
-            if (result.type === "spilled-values") {
-              const spillArea = result.spillArea(candidate);
-              if (entry.type === "empty_range") {
-                const intersects = checkRangeIntersection(
-                  spillArea,
-                  entry.address.range
+          if (result.type === "spilled-values") {
+            const spillArea = result.spillArea(candidate);
+            if (entry.type === "empty_range") {
+              const intersects = checkRangeIntersection(
+                spillArea,
+                entry.address.range
+              );
+              if (intersects) {
+                rangeNode.maybeUpgradeFrontierDependency(candidateNode); // upgraded!
+                // When a spilled range intersects with our target range, we need to evaluate
+                // only the cells that fall within the intersection area.
+                //
+                // Example: If cell A10 contains a spilled range that covers A10:B11,
+                // and our target range is B10:INFINITY, then we only want to evaluate
+                // the intersection B10:B11 from the spilled range.
+                //
+                // The evaluateAllCells method expects the intersection to be passed
+                // so it can limit evaluation to only the relevant cells.
+
+                const spilledResults = Array.from(
+                  result.evaluateAllCells.call(this.evaluator, {
+                    context: rangeContext,
+                    evaluate: result.evaluate,
+                    intersection: entry.address.range,
+                    origin: candidate,
+                    lookupOrder: options.lookupOrder,
+                  })
                 );
-                if (intersects) {
-                  rangeNode.maybeUpgradeFrontierDependency(candidateNode); // upgraded!
-                  // When a spilled range intersects with our target range, we need to evaluate
-                  // only the cells that fall within the intersection area.
-                  //
-                  // Example: If cell A10 contains a spilled range that covers A10:B11,
-                  // and our target range is B10:INFINITY, then we only want to evaluate
-                  // the intersection B10:B11 from the spilled range.
-                  //
-                  // The evaluateAllCells method expects the intersection to be passed
-                  // so it can limit evaluation to only the relevant cells.
-
-                  const spilledResults = Array.from(
-                    result.evaluateAllCells.call(this.evaluator, {
-                      context: rangeContext,
-                      evaluate: result.evaluate,
-                      intersection: entry.address.range,
-                      origin: candidate,
-                      lookupOrder: options.lookupOrder,
-                    })
-                  );
-                  for (const spilledResult of spilledResults) {
-                    yield spilledResult;
-                  }
-                } else {
-                  rangeNode.maybeDiscardFrontierDependency(candidateNode); // downgraded!
+                for (const spilledResult of spilledResults) {
+                  yield spilledResult;
                 }
               } else {
-                const intersects = isCellInRange(entry.address, spillArea);
-                if (intersects) {
-                  rangeNode.maybeUpgradeFrontierDependency(candidateNode); // upgraded!
-                  // When a spilled range intersects with our target range, we need to evaluate
-                  // only the cells that fall within the intersection area.
-                  //
-                  // Example: If cell A10 contains a spilled range that covers A10:B11,
-                  // and our target range is B10:INFINITY, then we only want to evaluate
-                  // the intersection B10:B11 from the spilled range.
-                  //
-                  // The evaluateAllCells method expects the intersection to be passed
-                  // so it can limit evaluation to only the relevant cells.
-
-                  const relativePos = {
-                    x: entry.address.colIndex - candidate.colIndex,
-                    y: entry.address.rowIndex - candidate.rowIndex,
-                  };
-                  const spilledResult = result.evaluate(
-                    relativePos,
-                    rangeContext
-                  );
-
-                  yield {
-                    relativePos: {
-                      x: entry.address.colIndex - options.address.range.start.col,
-                      y: entry.address.rowIndex - options.address.range.start.row,
-                    },
-                    result: spilledResult,
-                  };
-                } else {
-                  rangeNode.maybeDiscardFrontierDependency(candidateNode); // downgraded!
-                }
+                rangeNode.maybeDiscardFrontierDependency(candidateNode); // downgraded!
               }
             } else {
-              rangeNode.maybeDiscardFrontierDependency(candidateNode); // downgraded!
+              const intersects = isCellInRange(entry.address, spillArea);
+              if (intersects) {
+                rangeNode.maybeUpgradeFrontierDependency(candidateNode); // upgraded!
+                // When a spilled range intersects with our target range, we need to evaluate
+                // only the cells that fall within the intersection area.
+                //
+                // Example: If cell A10 contains a spilled range that covers A10:B11,
+                // and our target range is B10:INFINITY, then we only want to evaluate
+                // the intersection B10:B11 from the spilled range.
+                //
+                // The evaluateAllCells method expects the intersection to be passed
+                // so it can limit evaluation to only the relevant cells.
+
+                const relativePos = {
+                  x: entry.address.colIndex - candidate.colIndex,
+                  y: entry.address.rowIndex - candidate.rowIndex,
+                };
+                const spilledResult = result.evaluate(
+                  relativePos,
+                  rangeContext
+                );
+
+                yield {
+                  relativePos: {
+                    x: entry.address.colIndex - options.address.range.start.col,
+                    y: entry.address.rowIndex - options.address.range.start.row,
+                  },
+                  result: spilledResult,
+                };
+              } else {
+                rangeNode.maybeDiscardFrontierDependency(candidateNode); // downgraded!
+              }
             }
+          } else {
+            rangeNode.maybeDiscardFrontierDependency(candidateNode); // downgraded!
           }
         }
       }

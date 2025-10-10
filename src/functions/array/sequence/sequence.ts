@@ -7,6 +7,7 @@ import {
   type SpreadsheetRange,
 } from "src/core/types";
 import { getRangeIntersection, isRangeOneCell } from "src/core/utils";
+import { EvaluationError } from "src/evaluator/evaluation-error";
 
 /**
  * SEQUENCE(rows, [columns], [start], [step])
@@ -377,17 +378,11 @@ export const SEQUENCE: FunctionDefinition = {
           range.end.row.type === "infinity" ||
           range.end.col.type === "infinity"
         ) {
-          const hasIntersection = intersection !== undefined;
-          yield {
-            result: {
-              type: "error",
-              err: FormulaError.REF,
-              message: `Can not evaluate all cells over an infinite range`,
-              errAddress: context.originCell.cellAddress,
-            },
-            relativePos: { x: 0, y: 0 },
-          };
-          return;
+          throw new EvaluationError(
+            FormulaError.REF,
+            context.originCell.cellAddress,
+            `Can not evaluate all cells over an infinite range`
+          );
         }
 
         for (let i = range.start.row; i <= range.end.row.value; i++) {

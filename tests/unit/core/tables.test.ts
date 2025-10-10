@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { type SerializedCellValue, type TableDefinition } from "src/core/types";
+import { type SerializedCellValue } from "src/core/types";
 import { parseCellReference } from "src/core/utils";
 import { FormulaEngine } from "../../../src/core/engine";
 import { visualizeSpreadsheet } from "../../../src/core/utils/spreadsheet-visualizer";
@@ -153,15 +153,15 @@ describe("Tables", () => {
     });
 
     // Add formula after table is created
-    setCellContent("C1", "=SUM(TempTable[Amount])");
+    setCellContent("C1", "=TempTable[Amount]");
     expect(cell("C1")).toBe(500);
 
     // Remove table
     engine.removeTable({ tableName: "TempTable", workbookName });
 
     // Formula should now show error
-    const result = cell("C1");
-    expect(typeof result === "string" && result.startsWith("#")).toBe(true);
+    const result = cell("C1", true);
+    expect(result).toMatchInlineSnapshot(`"#REF! Table TempTable not found"`);
   });
 
   test("should handle cross-sheet table references", () => {
@@ -1228,9 +1228,7 @@ describe("Tables", () => {
     // Test column range (without selector)
     setCellContent("G4", "=Summary1_RFP[[10uM]:[null]]");
     // Should parse and return the first value (currently returns scalar)
-    expect(
-      cell("G4")
-    ).toBe(100);
+    expect(cell("G4")).toBe(100);
 
     // Test using INDEX with column range to access specific columns
     setCellContent("H1", "=INDEX(Summary1_RFP[[10uM]:[null]], 1, 1)");
@@ -1284,13 +1282,13 @@ describe("Tables", () => {
         ["B5", "expected_value"],
         ["C5", "lookup_result"], // Header for lookup formula column
         ["A6", "20uM"],
-        ["B6", 8.1],   // Sample_A at 20uM
+        ["B6", 8.1], // Sample_A at 20uM
         ["A7", "100uM"],
-        ["B7", 18.3],  // Sample_A at 100uM
+        ["B7", 18.3], // Sample_A at 100uM
         ["A8", "50uM"],
-        ["B8", 12.5],  // Sample_A at 50uM
+        ["B8", 12.5], // Sample_A at 50uM
         ["A9", "null"],
-        ["B9", 22.0],  // Sample_A at null
+        ["B9", 22.0], // Sample_A at null
       ])
     );
 
@@ -1316,20 +1314,32 @@ describe("Tables", () => {
     });
 
     // Test 1-4: First verify that MATCH works with explicit values against header range
-    setCellContent("H5", '=MATCH("20uM", RFP_Data[[#Headers],[10uM]:[null]], 0)');
+    setCellContent(
+      "H5",
+      '=MATCH("20uM", RFP_Data[[#Headers],[10uM]:[null]], 0)'
+    );
     expect(cell("H5")).toBe(2); // "20uM" is the 2nd column in the range [10uM:null]
 
-    setCellContent("H6", '=MATCH("100uM", RFP_Data[[#Headers],[10uM]:[null]], 0)');
+    setCellContent(
+      "H6",
+      '=MATCH("100uM", RFP_Data[[#Headers],[10uM]:[null]], 0)'
+    );
     expect(cell("H6")).toBe(4); // "100uM" is the 4th column
 
-    setCellContent("H7", '=MATCH("50uM", RFP_Data[[#Headers],[10uM]:[null]], 0)');
+    setCellContent(
+      "H7",
+      '=MATCH("50uM", RFP_Data[[#Headers],[10uM]:[null]], 0)'
+    );
     expect(cell("H7")).toBe(3); // "50uM" is the 3rd column
 
-    setCellContent("H8", '=MATCH("null", RFP_Data[[#Headers],[10uM]:[null]], 0)');
+    setCellContent(
+      "H8",
+      '=MATCH("null", RFP_Data[[#Headers],[10uM]:[null]], 0)'
+    );
     expect(cell("H8")).toBe(5); // "null" is the 5th column
 
     // Test 5-8: NOW demonstrate the key feature - vertical spill range matching horizontal headers
-    // 
+    //
     // The vertical values in Lookup[pea_concentration] (A6, A7, A8, A9) contain: "20uM", "100uM", "50uM", "null"
     // We use MATCH with [@[pea_concentration]] to find which column each concentration maps to
     // Then INDEX retrieves the corresponding data value from RFP_Data
@@ -1367,14 +1377,14 @@ describe("Tables", () => {
     expect(cell("C7")).toBe(cell("B7")!); // Both should be 18.3
     expect(cell("C8")).toBe(cell("B8")!); // Both should be 12.5
     expect(cell("C9")).toBe(cell("B9")!); // Both should be 22.0
-    
+
     // Test 9-10: Verify it works for Sample_B too (different row in data table)
     setCellContent(
       "D6",
       '=INDEX(RFP_Data[[10uM]:[null]], MATCH("Sample_B", RFP_Data[Identifier], 0), MATCH(A6, RFP_Data[[#Headers],[10uM]:[null]], 0))'
     );
     expect(cell("D6")).toBe(9.4); // Sample_B, 20uM (A6) → D3
-    
+
     setCellContent(
       "D7",
       '=INDEX(RFP_Data[[10uM]:[null]], MATCH("Sample_B", RFP_Data[Identifier], 0), MATCH(A7, RFP_Data[[#Headers],[10uM]:[null]], 0))'

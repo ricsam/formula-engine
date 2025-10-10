@@ -23,6 +23,7 @@ import { CacheManager } from "./cache-manager";
 import { WorkbookManager } from "./workbook-manager";
 import { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
 import type { DependencyNode } from "./dependency-node";
+import { AwaitingEvaluationError } from "src/evaluator/evaluation-error";
 
 interface NodeInfo {
   isFrontierDep: boolean;
@@ -166,10 +167,17 @@ export class DependencyManager {
     const node = this.getCellNode(key);
     context.dependencyNode.addDependency(node);
     const result = node.evaluationResult;
+    if (!result) {
+      throw new AwaitingEvaluationError(
+        context.originCell.cellAddress,
+        cellAddress
+      );
+    }
     return result;
   }
 
   clearEvaluationCache(): void {
+    this.cacheManager.clear();
     this.evaluatedNodes.clear();
     this.emptyCells.clear();
     this.ranges.clear();
@@ -281,7 +289,7 @@ export class DependencyManager {
   /**
    * Build evaluation order for a cell, handling frontier dependencies specially
    *
-   * Evaluation order:
+   * Evaluation order is a topolocial sorted list of dependencies, where nodeKey is the last element:
    * [A] = frontier dependency
    * {A} = transitive dependency of a frontier dependency
    * (A) = transitive dependency of a regular dependency
@@ -293,35 +301,35 @@ export class DependencyManager {
    * 3. Transitive dependencies of regular dependencies
    * 4. Target cell
    *
-   * e.g: [B1],[B10],[D2],{A1},[B2],{C4},[E4],(B1),(G4),(H1),Y10
+   * e.g: nodeKey is Y10, then the evaluation order is [B1],[B10],[D2],{A1},[B2],{C4},[E4],(B1),(G4),(H1),Y10
+   * 
+   * Only dependencies can cause cycles, frontier dependencies cannot cause cycles.
    */
   buildEvaluationOrder(nodeKey: string): EvaluationOrder {
     const node = this.getCellNode(nodeKey);
     if (
       node &&
       node.resolved &&
-      this.cacheManager.getEvaluationOrder(nodeKey)
+      this.cacheManager.getEvaluationOrder(node.key)
     ) {
-      return this.cacheManager.getEvaluationOrder(nodeKey)!;
+      return this.cacheManager.getEvaluationOrder(node.key)!;
     }
 
-    // Single-pass algorithm that:
-    // 1. Collects all transitive dependencies
-    // 2. Identifies which are frontier vs regular
-    // 3. Detects cycles
-    // 4. Builds evaluation order
+    // Algorithm:
+    // 1. Discover all transitive dependencies (skipping resolved nodes)
+    // 2. Detect cycles using Tarjan's algorithm
+    // 3. Build topologically sorted evaluation order
+    // 4. Return order with cycle information (cyclic nodes are marked but still included)
 
     const allNodes = new Map<string, DependencyNode>();
     const visitedForDiscovery = new Set<DependencyNode>();
     const cycleNodes = new Set<DependencyNode>();
-    const evaluationOrder = new Set<DependencyNode>();
-    const visitedForOrder = new Set<DependencyNode>();
 
-    // Phase 1: Discover all nodes and their types, skipping resolved nodes
+    // Phase 1: Discover all nodes, skipping resolved nodes
     const discoverNodes = (currentNode: DependencyNode) => {
-      // Check if this node is resolved - if so, skip it entirely
+      // Skip resolved nodes completely
       if (currentNode && currentNode.resolved) {
-        return; // Skip resolved nodes completely
+        return;
       }
 
       if (!allNodes.has(currentNode.key)) {
@@ -334,9 +342,9 @@ export class DependencyManager {
 
       visitedForDiscovery.add(currentNode);
 
-      // Get all dependencies (frontier and regular)
-      const regularDeps = currentNode.getAllDependencies();
-      for (const dep of regularDeps) {
+      // Get all dependencies (regular and frontier)
+      const allDeps = currentNode.getAllDependencies();
+      for (const dep of allDeps) {
         discoverNodes(dep);
       }
     };
@@ -344,7 +352,7 @@ export class DependencyManager {
     // Start discovery from the target node
     discoverNodes(node);
 
-    // If the target node itself was resolved, return empty evaluation order
+    // If the target node itself was resolved, return it alone
     if (allNodes.size === 0 && node && node.resolved) {
       const result: EvaluationOrder = {
         evaluationOrder: new Set([node]),
@@ -359,10 +367,8 @@ export class DependencyManager {
       return result;
     }
 
-    // Phase 2: Check for cycles (only considering regular dependencies) using Tarjan's algorithm
+    // Phase 2: Detect cycles using Tarjan's algorithm (only for regular dependencies)
     const getStronglyConnectedComponents = (): Set<DependencyNode>[] => {
-      // Tarjan's algorithm for finding strongly connected components
-      // Note: Phase 1 already discovered all reachable nodes into allNodes
       const index = new Map<DependencyNode, number>();
       const lowlink = new Map<DependencyNode, number>();
       const onStack = new Set<DependencyNode>();
@@ -371,32 +377,28 @@ export class DependencyManager {
       let currentIndex = 0;
 
       const strongConnect = (v: DependencyNode) => {
-        // Set the depth index for v to the smallest unused index
         index.set(v, currentIndex);
         lowlink.set(v, currentIndex);
         currentIndex++;
         stack.push(v);
         onStack.add(v);
 
-        // Consider successors of v (only regular dependencies, not frontier)
+        // Only consider regular dependencies (not frontier) for cycle detection
         const successors = v.getDependencies();
         for (const w of successors) {
-          // Only process nodes that are in our discovered set
           if (!allNodes.has(w.key)) {
             continue;
           }
 
           if (!index.has(w)) {
-            // Successor w has not yet been visited; recurse on it
             strongConnect(w);
             lowlink.set(v, Math.min(lowlink.get(v)!, lowlink.get(w)!));
           } else if (onStack.has(w)) {
-            // Successor w is in stack S and hence in the current SCC
             lowlink.set(v, Math.min(lowlink.get(v)!, index.get(w)!));
           }
         }
 
-        // If v is a root node, pop the stack and generate an SCC
+        // Pop SCC from stack
         if (lowlink.get(v) === index.get(v)) {
           const scc = new Set<DependencyNode>();
           let w: DependencyNode;
@@ -406,15 +408,15 @@ export class DependencyManager {
             scc.add(w);
           } while (w !== v);
 
-          // Only add SCCs with more than one node (cycles) or self-loops
+          // Mark as cycle if: multiple nodes in SCC, or single node with self-loop
           if (scc.size > 1 || (scc.size === 1 && v.getDependencies().has(v))) {
             sccs.push(scc);
           }
         }
       };
 
-      // Run Tarjan's algorithm on all nodes discovered in Phase 1
-      for (const [nodeKey, node] of allNodes) {
+      // Run on all discovered nodes
+      for (const [_, node] of allNodes) {
         if (!index.has(node)) {
           strongConnect(node);
         }
@@ -423,71 +425,75 @@ export class DependencyManager {
       return sccs;
     };
 
-    for (const stronglyConnectedNodes of getStronglyConnectedComponents()) {
-      for (const node of stronglyConnectedNodes) {
+    // Identify all cyclic nodes
+    for (const scc of getStronglyConnectedComponents()) {
+      for (const node of scc) {
         cycleNodes.add(node);
       }
     }
 
-    // If there are cycles, return early
-    if (cycleNodes.size > 0) {
-      const result: EvaluationOrder = {
-        evaluationOrder: new Set([node]),
-        hasCycle: true,
-        cycleNodes,
-        hash: this.computeHash(new Set(allNodes.values().map((node) => node))),
-      };
+    // Phase 3: Build topologically sorted evaluation order using DFS post-order
+    // This creates proper topological order where dependencies come before dependents
+    const evaluationOrderArray: DependencyNode[] = [];
+    const visitedForOrder = new Set<DependencyNode>();
+    const visitingForOrder = new Set<DependencyNode>(); // Track nodes currently being visited
 
-      if (node && node.resolved) {
-        this.cacheManager.setEvaluationOrder(nodeKey, result);
-      }
-
-      return result;
-    }
-
-    // Phase 3: Build evaluation order
-    visitedForOrder.clear();
-    const visitingForCycle = new Set<DependencyNode>();
     const buildOrder = (current: DependencyNode) => {
-      if (visitedForOrder.has(current) || visitingForCycle.has(current)) {
+      // Already processed
+      if (visitedForOrder.has(current)) {
         return;
       }
 
-      visitingForCycle.add(current);
+      // Detect cycles during traversal (shouldn't happen if Tarjan worked correctly)
+      if (visitingForOrder.has(current)) {
+        return; // Skip back edges
+      }
 
-      // First visit regular dependencies
+      visitingForOrder.add(current);
+
+      // Visit all dependencies first (regular dependencies)
       const regularDeps = current.getDependencies();
       for (const dep of regularDeps) {
-        if (allNodes.has(dep.key)) {
+        if (allNodes.has(dep.key) && !cycleNodes.has(dep)) {
+          // Skip cyclic dependencies to avoid infinite recursion
           buildOrder(dep);
+        } else if (allNodes.has(dep.key) && cycleNodes.has(dep)) {
+          // Still try to visit cyclic nodes, but guard against infinite loops
+          if (!visitingForOrder.has(dep)) {
+            buildOrder(dep);
+          }
         }
       }
 
-      // Then visit frontier dependencies (without creating cycles)
-
+      // Visit frontier dependencies
       const frontierDeps = current.getFrontierDependencies();
       for (const dep of frontierDeps) {
-        if (allNodes.has(dep.key) && !visitingForCycle.has(dep)) {
+        if (allNodes.has(dep.key) && !visitingForOrder.has(dep)) {
           buildOrder(dep);
         }
       }
 
-      visitingForCycle.delete(current);
+      visitingForOrder.delete(current);
 
+      // Add to order in post-order (after visiting all dependencies)
       if (!visitedForOrder.has(current)) {
         visitedForOrder.add(current);
-        evaluationOrder.add(current);
+        evaluationOrderArray.push(current);
       }
     };
 
-    // Build order for all nodes
-    for (const [nodeKey, node] of allNodes) {
-      buildOrder(node);
-    }
+    // Build order starting from the target node
+    // This ensures we get a proper topological sort
+    buildOrder(node);
 
+    // Convert array to Set while preserving insertion order (JS Sets maintain insertion order)
+    const evaluationOrder = new Set(evaluationOrderArray);
+
+    const hasCycle = cycleNodes.size > 0;
     const result: EvaluationOrder = {
-      evaluationOrder: evaluationOrder,
-      hasCycle: false,
+      evaluationOrder,
+      hasCycle,
+      ...(hasCycle && { cycleNodes }),
       hash: this.computeHash(new Set(allNodes.values())),
     };
 
@@ -558,7 +564,7 @@ export class DependencyManager {
           resultType:
             node instanceof RangeEvaluationNode
               ? "range"
-              : node.evaluationResult.type,
+              : node.evaluationResult ? node.evaluationResult.type : "awaiting-evaluation",
           canResolve: node.canResolve(),
           key: cellRef,
           directDepsUpdated: node.directDepsUpdated,
@@ -575,7 +581,7 @@ export class DependencyManager {
           resultType:
             node instanceof RangeEvaluationNode
               ? "range"
-              : node.evaluationResult.type,
+              : node.evaluationResult ? node.evaluationResult.type : "awaiting-evaluation",
           canResolve: node.canResolve(),
           key: cellRef,
           directDepsUpdated: node.directDepsUpdated,
@@ -605,7 +611,9 @@ export class DependencyManager {
         resultType:
           node instanceof RangeEvaluationNode
             ? "range"
-            : node.evaluationResult.type,
+            : node.evaluationResult
+              ? node.evaluationResult.type
+              : "awaiting-evaluation",
         canResolve: node.canResolve(),
         key: cellRef,
         directDepsUpdated: node.directDepsUpdated,

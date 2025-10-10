@@ -33,6 +33,7 @@ import type {
   ValueNode,
 } from "src/parser/ast";
 import {
+  captureEvaluationErrors,
   getAbsoluteRange,
   getCellReference,
   getRangeIntersection,
@@ -57,63 +58,6 @@ import type { NamedExpressionManager } from "src/core/managers/named-expression-
 import type { EvaluationContext } from "./evaluation-context";
 import { flags } from "src/debug/flags";
 import { AwaitingEvaluationError, EvaluationError } from "./evaluation-error";
-
-function isFormulaError(value: string): value is FormulaError {
-  if (typeof value !== "string") return false;
-
-  // Check for all known formula errors
-  const errors: FormulaError[] = Object.values(FormulaError);
-
-  return errors.includes(value as FormulaError);
-}
-
-/**
- * Maps JavaScript errors to formula errors
- */
-function mapJSErrorToFormulaError(error: Error): FormulaError {
-  const message = error.message.toLowerCase();
-
-  if (isFormulaError(error.message)) {
-    return error.message;
-  }
-
-  if (
-    message.includes("division by zero") ||
-    message.includes("divide by zero")
-  ) {
-    return FormulaError.DIV0;
-  }
-  if (message.includes("circular") || message.includes("cycle")) {
-    return FormulaError.CYCLE;
-  }
-  if (
-    message.includes("invalid reference") ||
-    (message.includes("reference") && !message.includes("circular"))
-  ) {
-    return FormulaError.REF;
-  }
-  if (
-    message.includes("invalid name") ||
-    message.includes("unknown function")
-  ) {
-    return FormulaError.NAME;
-  }
-  if (
-    message.includes("invalid number") ||
-    message.includes("nan") ||
-    message.includes("infinity")
-  ) {
-    return FormulaError.NUM;
-  }
-  if (message.includes("type") || message.includes("invalid argument")) {
-    return FormulaError.VALUE;
-  }
-  if (message.includes("not available") || message.includes("n/a")) {
-    return FormulaError.NA;
-  }
-
-  return FormulaError.ERROR;
-}
 
 export class FormulaEvaluator {
   public openRangeEvaluator: OpenRangeEvaluator;
@@ -174,39 +118,10 @@ export class FormulaEvaluator {
   ): FunctionEvaluationResult {
     const ast = parseFormula(formula);
 
-    try {
+    return captureEvaluationErrors(context.originCell.cellAddress, () => {
       const result = this.evaluateNode(ast, context);
-
       return result;
-    } catch (error) {
-      if (error instanceof EvaluationError) {
-        return {
-          type: "error",
-          err: error.type,
-          message: error.message,
-          errAddress: error.errAddress,
-        };
-      }
-      if (error instanceof AwaitingEvaluationError) {
-        return {
-          type: "awaiting-evaluation",
-          cellAddress: error.cellAddress,
-        };
-      }
-
-      // Convert JavaScript errors to formula errors
-      const formulaError =
-        error instanceof Error
-          ? mapJSErrorToFormulaError(error)
-          : FormulaError.ERROR;
-
-      return {
-        type: "error",
-        err: formulaError,
-        message: (error as any)?.stack || "An error was thrown",
-        errAddress: context.originCell.cellAddress,
-      };
-    }
+    });
   }
 
   evaluateNode(
@@ -753,7 +668,11 @@ export class FormulaEvaluator {
               errAddress: context.originCell.cellAddress,
             };
           }
-          return this.evaluateUnaryScalar(node.operator, spillResult.result, context);
+          return this.evaluateUnaryScalar(
+            node.operator,
+            spillResult.result,
+            context
+          );
         },
         evaluateAllCells: function* (options) {
           for (const cellValue of operandResult.evaluateAllCells.call(
@@ -781,7 +700,11 @@ export class FormulaEvaluator {
     }
 
     if (operandResult.type === "value") {
-      return this.evaluateUnaryScalar(node.operator, operandResult.result, context);
+      return this.evaluateUnaryScalar(
+        node.operator,
+        operandResult.result,
+        context
+      );
     }
 
     return {

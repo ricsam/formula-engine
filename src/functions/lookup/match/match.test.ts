@@ -454,7 +454,7 @@ describe("MATCH function", () => {
         numCols: 1,
       });
 
-      expect(cell("B1")).toBe("#VALUE!"); // Should return error for empty table
+      expect(cell("B1")).toBe(FormulaError.NA); // Should return error for empty table
     });
   });
 });

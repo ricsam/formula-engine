@@ -55,15 +55,8 @@ function matchOperation(
     };
   }
 
-  let foundSomething = false;
-
-  let i = 0;
-  const values: any[] = [];
   for (const value of lookupArray) {
-    i++;
-    values.push(value.result);
     if (value.result.type === "value") {
-      foundSomething = true;
       if (matchType === 0) {
         // Exact match
         const arrayValue = value.result.result;
@@ -74,10 +67,10 @@ function matchOperation(
         ) {
           // For horizontal arrays (single row), use x position (column index)
           // For vertical arrays (single/multiple columns), use y position (row index)
-          const position = isHorizontal 
-            ? value.relativePos.x + 1 
+          const position = isHorizontal
+            ? value.relativePos.x + 1
             : value.relativePos.y + 1;
-          
+
           return {
             type: "value",
             result: { type: "number", value: position },
@@ -90,15 +83,6 @@ function matchOperation(
         throw new Error("MATCH: approximate match not fully implemented");
       }
     }
-  }
-
-  if (!foundSomething) {
-    return {
-      type: "error",
-      err: FormulaError.VALUE,
-      message: "MATCH lookup_array cannot be empty",
-      errAddress: context.originCell.cellAddress,
-    };
   }
 
   return {
@@ -203,28 +187,31 @@ export const MATCH: FunctionDefinition = {
       isHorizontal = false; // Single value, treat as vertical
     } else if (lookupArrayResult.type === "spilled-values") {
       // Validate that lookup_array is 1D (either single row OR single column)
-      const spillArea = lookupArrayResult.spillArea(context.originCell.cellAddress);
+      const spillArea = lookupArrayResult.spillArea(
+        context.originCell.cellAddress
+      );
       const startRow = spillArea.start.row;
       const endRow = spillArea.end.row;
       const startCol = spillArea.start.col;
       const endCol = spillArea.end.col;
-      
+
       // Check if it's a single row (horizontal)
       const isSingleRow = endRow.type === "number" && startRow === endRow.value;
-      
+
       // Check if it's a single column (vertical)
       const isSingleCol = endCol.type === "number" && startCol === endCol.value;
-      
+
       // MATCH requires a 1D array - either single row OR single column, not both or neither
       if (!isSingleRow && !isSingleCol) {
         return {
           type: "error",
           err: FormulaError.VALUE,
-          message: "MATCH lookup_array must be a single row or single column (1D array)",
+          message:
+            "MATCH lookup_array must be a single row or single column (1D array)",
           errAddress: context.originCell.cellAddress,
         };
       }
-      
+
       // Cannot be both single row AND single column (that would be a single cell, which is handled)
       if (isSingleRow && isSingleCol) {
         // This is actually a single cell, which is fine
@@ -233,7 +220,7 @@ export const MATCH: FunctionDefinition = {
         // Horizontal if it's a single row
         isHorizontal = isSingleRow;
       }
-      
+
       // Extract values from spilled array
       lookupArray = lookupArrayResult.evaluateAllCells.call(this, {
         context,

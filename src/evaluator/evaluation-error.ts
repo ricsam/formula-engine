@@ -1,4 +1,5 @@
 import type { CellAddress, FormulaError } from "src/core/types";
+import { cellAddressToKey } from "src/core/utils";
 
 export class EvaluationError extends Error {
   constructor(
@@ -12,9 +13,13 @@ export class EvaluationError extends Error {
 
 export class AwaitingEvaluationError extends Error {
   constructor(
-    public readonly cellAddress: CellAddress,
-    message: string
+    public readonly errAddress: CellAddress,
+    public readonly waitingFor: CellAddress
   ) {
-    super(message);
+    super(
+      cellAddressToKey(errAddress) +
+        " is awaiting evaluation of " +
+        cellAddressToKey(waitingFor)
+    );
   }
 }

@@ -156,7 +156,8 @@ export type ValueEvaluationResult = {
 
 export type AwaitingEvaluationResult = {
   type: "awaiting-evaluation";
-  cellAddress: CellAddress;
+  waitingFor: CellAddress;
+  errAddress: CellAddress;
 };
 
 export type ErrorEvaluationResult =

@@ -404,6 +404,7 @@ function* handleEmptyCriteriaSpilledValues(
   ) {
     throw new EvaluationError(
       FormulaError.VALUE,
+      context.originCell.cellAddress,
       "Can not process infinite ranges with empty cell criteria"
     );
   }
@@ -434,7 +435,7 @@ function* handleEmptyCriteriaSpilledValues(
         // Check all criteria for this position
         let allMatch = true;
         for (const { rangeResult, parsedCriteria } of criteriaPairs) {
-          let criteriaCell;
+          let criteriaCell: SingleEvaluationResult | undefined;
 
           if (rangeResult.type === "spilled-values") {
             const criteriaSpillArea = rangeResult.spillArea(

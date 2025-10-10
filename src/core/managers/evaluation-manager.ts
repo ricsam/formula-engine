@@ -17,6 +17,7 @@ import {
   type ValueEvaluationResult,
 } from "../types";
 import {
+  captureEvaluationErrors,
   cellAddressToKey,
   checkRangeIntersection,
   getCellReference,
@@ -70,7 +71,9 @@ export class EvaluationManager {
 
     if (evaluation.type === "awaiting-evaluation") {
       return (
-        "AWAITING_EVALUATION of " + cellAddressToKey(evaluation.cellAddress)
+        cellAddressToKey(evaluation.errAddress) +
+        " is awaiting evaluation of " +
+        cellAddressToKey(evaluation.waitingFor)
       );
     }
 
@@ -112,13 +115,15 @@ export class EvaluationManager {
         nodeAddress,
         inSpilled
       );
-      const spillOrigin = this.dependencyManager.evalTimeSafeEvaluateCell(
-        inSpilled.origin,
-        ctx
-      );
-      if (spillOrigin && spillOrigin.type === "spilled-values") {
+      const spillOriginKey = cellAddressToKey(inSpilled.origin);
+      const spillOrigin = this.dependencyManager.getCellNode(spillOriginKey);
+      node.addDependency(spillOrigin);
+      const result = spillOrigin.evaluationResult;
+      if (result && result.type === "spilled-values") {
         // let's evaluate the spilled value to extract dependencies
-        const evaluation = spillOrigin.evaluate(spillTarget.spillOffset, ctx);
+        const evaluation = captureEvaluationErrors(spillTarget.address, () => {
+          return result.evaluate(spillTarget.spillOffset, ctx);
+        });
         node.setEvaluationResult(evaluation);
       }
     } else {
@@ -340,7 +345,9 @@ export class EvaluationManager {
     if (evaluation) {
       if (evaluation.type === "spilled-values") {
         // for the spilled origin we need to evaluate the origin and store the result
-        originSpillResult = evaluation.evaluate({ x: 0, y: 0 }, ctx);
+        originSpillResult = captureEvaluationErrors(nodeAddress, () => {
+          return evaluation.evaluate({ x: 0, y: 0 }, ctx);
+        });
       }
     }
 
@@ -377,9 +384,7 @@ export class EvaluationManager {
   /**
    * Evaluates a cell by building the evaluation order and evaluating the dependencies in order
    */
-  evaluateCell(
-    cellAddress: CellAddress
-  ): ValueEvaluationResult | ErrorEvaluationResult {
+  evaluateCell(cellAddress: CellAddress): void {
     if (this.isEvaluating) {
       throw new Error("Evaluation in progress");
     }
@@ -428,7 +433,7 @@ export class EvaluationManager {
           }
         }
         this.isEvaluating = false;
-        return evaluationResult;
+        return;
       }
 
       // Evaluate all dependencies in order
@@ -471,16 +476,10 @@ export class EvaluationManager {
         requiresReRun = true;
       } else {
         this.isEvaluating = false;
-        return cellResult;
+        return;
       }
     }
     this.isEvaluating = false;
-    return {
-      type: "error",
-      err: FormulaError.ERROR,
-      message: "Evaluation failed",
-      errAddress: cellAddress,
-    };
   }
 
   convertScalarValueToCellValue(val: SerializedCellValue): CellValue {

@@ -259,7 +259,7 @@ describe("FormulaEngine", () => {
         ["C3", "=SUM(Table1[[num]:[result]])"],
         ["C4", "=SUM(Table1[@[num]:[result]])"],
         ["F1", "=Table1[[#Headers],[result]]"],
-        ["F20", "=Table1[#Headers]"]
+        ["F20", "=Table1[#Headers]"],
       ])
     );
 
@@ -1247,7 +1247,7 @@ describe("FormulaEngine", () => {
           ["B1", "Price"],
           ["A2", "Widget"],
           ["B2", 100],
-          ["C1", "=SUM(Products[Price])"],
+          ["C1", "=Products[Price]"],
         ])
       );
 
@@ -1275,8 +1275,8 @@ describe("FormulaEngine", () => {
       expect(cellsUpdateCount).toBe(3); // From removeTable
 
       // Formula should now error
-      const result = cell("C1");
-      expect(typeof result === "string" && result.startsWith("#")).toBe(true);
+      const result = cell("C1", true);
+      expect(result).toMatchInlineSnapshot(`"#REF! Table Products not found"`);
 
       unsubscribe();
     });

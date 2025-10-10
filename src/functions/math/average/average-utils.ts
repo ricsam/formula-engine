@@ -25,7 +25,7 @@ export function performAverage(
       return result;
     }
     if (result.type === "awaiting-evaluation") {
-      return result;
+      continue;
     }
 
     if (result.type === "value") {

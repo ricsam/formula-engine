@@ -36,11 +36,12 @@ export class EmptyCellEvaluationNode extends FrontierDependencyManager {
     this._evaluationResult = result;
   }
 
-  public get evaluationResult() {
+  public get evaluationResult(): FunctionEvaluationResult {
     return (
       this._evaluationResult ?? {
         type: "awaiting-evaluation",
-        cellAddress: this.cellAddress,
+        waitingFor: this.cellAddress,
+        errAddress: this.cellAddress,
       }
     );
   }
@@ -63,5 +64,26 @@ export class EmptyCellEvaluationNode extends FrontierDependencyManager {
    */
   public get originSpillResult(): SingleEvaluationResult | undefined {
     return undefined;
+  }
+
+  toJSON(visitor: Set<string> = new Set()): any {
+    const hasVisited = visitor?.has(this.key);
+    if (hasVisited) {
+      return {
+        key: this.key,
+        resolved: this.resolved,
+        cycle: true,
+        dependencies: [],
+        frontierDependencies: [],
+      }
+    }
+    visitor?.add(this.key);
+    return {
+      key: this.key,
+      resolved: this.resolved,
+      evaluationResult: this.evaluationResult,
+      dependencies: Array.from(this.getDependencies()).map((node) => node.toJSON(visitor)),
+      frontierDependencies: Array.from(this.getFrontierDependencies()).map((node) => node.toJSON(visitor)),
+    };
   }
 }

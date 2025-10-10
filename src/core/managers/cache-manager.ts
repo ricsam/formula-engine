@@ -24,4 +24,9 @@ export class CacheManager {
   getRangeEvalOrder(nodeKey: string): RangeEvalOrderEntry[] | undefined {
     return this._rangeEvalOrderCache.get(nodeKey);
   }
+
+  clear(): void {
+    this._evaluationOrderCache.clear();
+    this._rangeEvalOrderCache.clear();
+  }
 }
