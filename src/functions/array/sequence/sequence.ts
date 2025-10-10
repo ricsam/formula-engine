@@ -40,7 +40,7 @@ export const SEQUENCE: FunctionDefinition = {
 
     for (let i = 0; i < node.args.length; i++) {
       const result = this.evaluateNode(node.args[i]!, context);
-      if (result.type === "error") {
+      if (result.type === "error" || result.type === "awaiting-evaluation") {
         return result;
       }
       argResults.push(result);
@@ -97,6 +97,13 @@ export const SEQUENCE: FunctionDefinition = {
     let rowsValue: number | "infinity";
     let isRowsInfinite = false;
 
+    if (
+      rowsResult.type === "awaiting-evaluation" ||
+      rowsResult.type === "error"
+    ) {
+      return rowsResult;
+    }
+
     if (rowsResult.type === "spilled-values") {
       throw new Error("Sequences cannot contain spilled values");
     } else if (rowsResult.type === "value") {
@@ -113,13 +120,6 @@ export const SEQUENCE: FunctionDefinition = {
           errAddress: context.originCell.cellAddress,
         };
       }
-    } else {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Rows argument must be a number or INFINITY",
-        errAddress: context.originCell.cellAddress,
-      };
     }
 
     const rows = isRowsInfinite ? Infinity : Math.floor(rowsValue as number);

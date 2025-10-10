@@ -49,7 +49,11 @@ export function evaluateScalarOperator(
   if (left.type === "value" && right.type === "value") {
     const leftValue = left.result;
     const rightValue = right.result;
-    const result = evaluateScalar(leftValue, rightValue, options.context.originCell.cellAddress);
+    const result = evaluateScalar(
+      leftValue,
+      rightValue,
+      options.context.originCell.cellAddress
+    );
     if (result.type === "error" || result.type === "awaiting-evaluation") {
       return result;
     }
@@ -231,7 +235,10 @@ export function evaluateScalarOperator(
             continue;
           } else if (!leftResult && rightResult) {
             // Left is empty/missing, right has value
-            if (rightResult.result.type === "error") {
+            if (
+              rightResult.result.type === "error" ||
+              rightResult.result.type === "awaiting-evaluation"
+            ) {
               yield rightResult;
             } else if (rightResult.result.type === "value") {
               // Treat missing left as empty, which is handled by the operator
@@ -249,7 +256,10 @@ export function evaluateScalarOperator(
             }
           } else if (!rightResult && leftResult) {
             // Right is empty/missing, left has value
-            if (leftResult.result.type === "error") {
+            if (
+              leftResult.result.type === "error" ||
+              leftResult.result.type === "awaiting-evaluation"
+            ) {
               yield leftResult;
             } else if (leftResult.result.type === "value") {
               // Treat missing right as empty, which is handled by the operator
@@ -267,9 +277,15 @@ export function evaluateScalarOperator(
             }
           } else if (leftResult && rightResult) {
             // Both have values
-            if (leftResult.result.type === "error") {
+            if (
+              leftResult.result.type === "error" ||
+              leftResult.result.type === "awaiting-evaluation"
+            ) {
               yield leftResult;
-            } else if (rightResult.result.type === "error") {
+            } else if (
+              rightResult.result.type === "error" ||
+              rightResult.result.type === "awaiting-evaluation"
+            ) {
               yield rightResult;
             } else if (
               leftResult.result.type === "value" &&
@@ -290,7 +306,8 @@ export function evaluateScalarOperator(
                 result: {
                   type: "error",
                   err: FormulaError.VALUE,
-                  message: "Cannot evaluate scalar operator on non-value results",
+                  message:
+                    "Cannot evaluate scalar operator on non-value results",
                   errAddress: options.context.originCell.cellAddress,
                 },
                 relativePos,

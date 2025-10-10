@@ -579,7 +579,7 @@ export class FormulaEvaluator {
       };
     }
     const originResult = this.evaluateNode(firstCell, context);
-    if (originResult.type === "error") {
+    if (originResult.type === "error" || originResult.type === "awaiting-evaluation") {
       return originResult;
     }
     return {
@@ -646,7 +646,7 @@ export class FormulaEvaluator {
   ): FunctionEvaluationResult {
     const operandResult = this.evaluateNode(node.operand, context);
 
-    if (operandResult.type === "error") {
+    if (operandResult.type === "error" || operandResult.type === "awaiting-evaluation") {
       return operandResult;
     }
 
@@ -657,7 +657,7 @@ export class FormulaEvaluator {
         source: `unary ${node.operator} operation`,
         evaluate: (spilledCell, context) => {
           const spillResult = operandResult.evaluate(spilledCell, context);
-          if (!spillResult || spillResult.type === "error") {
+          if (!spillResult || spillResult.type === "error" || spillResult.type === "awaiting-evaluation") {
             return spillResult;
           }
           if (spillResult.type !== "value") {
@@ -787,10 +787,10 @@ export class FormulaEvaluator {
     const left = this.evaluateNode(node.left, context);
     const right = this.evaluateNode(node.right, context);
 
-    if (left.type === "error") {
+    if (left.type === "error" || left.type === "awaiting-evaluation") {
       return left;
     }
-    if (right.type === "error") {
+    if (right.type === "error" || right.type === "awaiting-evaluation") {
       return right;
     }
 
@@ -815,14 +815,7 @@ export class FormulaEvaluator {
       cellAddress,
       context
     );
-    if (!result) {
-      return {
-        type: "error",
-        err: FormulaError.REF,
-        message: `Cell ${getCellReference(cellAddress)} not found`,
-        errAddress: context.originCell.cellAddress,
-      };
-    }
+    
     return result;
   }
 

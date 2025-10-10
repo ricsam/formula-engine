@@ -1,6 +1,7 @@
 import type { LookupOrder } from "src/core/managers";
 import { type SingleEvaluationResult } from "src/core/types";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
+import { AwaitingEvaluationError } from "src/evaluator/evaluation-error";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 import type { FunctionNode } from "src/parser/ast";
 
@@ -24,6 +25,10 @@ export function* createArgumentIterator(
 ): Generator<SingleEvaluationResult, void, unknown> {
   for (const arg of node.args) {
     const result = evaluator.evaluateNode(arg, context);
+
+    if (result.type === "awaiting-evaluation") {
+      throw new AwaitingEvaluationError(context.originCell.cellAddress, result.waitingFor);
+    }
 
     if (result.type === "error") {
       yield result;

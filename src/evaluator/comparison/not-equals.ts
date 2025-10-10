@@ -9,7 +9,7 @@ import { equals } from "./equals";
 export const notEquals: ArethmeticEvaluator = (left, right, errAddress) => {
   const equalsResult = equals(left, right, errAddress);
   
-  if (equalsResult.type === "error") {
+  if (equalsResult.type === "error" || equalsResult.type === "awaiting-evaluation") {
     return equalsResult;
   }
   

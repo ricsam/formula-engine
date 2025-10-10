@@ -107,13 +107,19 @@ export const MATCH: FunctionDefinition = {
 
     // Evaluate lookup_value
     const lookupValueResult = this.evaluateNode(node.args[0]!, context);
-    if (lookupValueResult.type === "error") {
+    if (
+      lookupValueResult.type === "error" ||
+      lookupValueResult.type === "awaiting-evaluation"
+    ) {
       return lookupValueResult;
     }
 
     // Evaluate lookup_array
     const lookupArrayResult = this.evaluateNode(node.args[1]!, context);
-    if (lookupArrayResult.type === "error") {
+    if (
+      lookupArrayResult.type === "error" ||
+      lookupArrayResult.type === "awaiting-evaluation"
+    ) {
       return lookupArrayResult;
     }
 
@@ -125,7 +131,10 @@ export const MATCH: FunctionDefinition = {
 
     if (node.args[2]) {
       matchTypeResult = this.evaluateNode(node.args[2], context);
-      if (matchTypeResult.type === "error") {
+      if (
+        matchTypeResult.type === "error" ||
+        matchTypeResult.type === "awaiting-evaluation"
+      ) {
         return matchTypeResult;
       }
     }
@@ -139,25 +148,6 @@ export const MATCH: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "MATCH: Spilled array arguments not yet implemented",
-        errAddress: context.originCell.cellAddress,
-      };
-    }
-
-    // Extract values for normal (non-spilled) case
-    if (lookupValueResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "MATCH: Invalid lookup_value result type",
-        errAddress: context.originCell.cellAddress,
-      };
-    }
-
-    if (matchTypeResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "MATCH: Invalid match_type result type",
         errAddress: context.originCell.cellAddress,
       };
     }

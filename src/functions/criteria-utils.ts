@@ -18,7 +18,10 @@ import {
 import { flags } from "src/debug/flags";
 import { getRelativeRange } from "src/core/utils";
 import type { LookupOrder } from "src/core/managers";
-import { EvaluationError } from "src/evaluator/evaluation-error";
+import {
+  AwaitingEvaluationError,
+  EvaluationError,
+} from "src/evaluator/evaluation-error";
 
 /**
  * Criteria pair for criteria-based functions
@@ -50,17 +53,19 @@ export function parseCriteriaPairs(
 
   for (let i = startIndex; i < node.args.length; i += 2) {
     const criteriaRangeResult = evaluateNode.call(this, node.args[i]!, context);
-    if (criteriaRangeResult.type === "error") {
+    if (
+      criteriaRangeResult.type === "error" ||
+      criteriaRangeResult.type === "awaiting-evaluation"
+    ) {
       return criteriaRangeResult;
     }
 
     const criteriaResult = evaluateNode.call(this, node.args[i + 1]!, context);
-    if (criteriaResult.type === "error") {
+    if (
+      criteriaResult.type === "error" ||
+      criteriaResult.type === "awaiting-evaluation"
+    ) {
       return criteriaResult;
-    }
-
-    if (criteriaResult.type === "awaiting-evaluation") {
-      continue;
     }
 
     let result: ValueEvaluationResult;
@@ -71,10 +76,11 @@ export function parseCriteriaPairs(
         { x: 0, y: 0 },
         context
       );
-      if (firstSpilledValue.type === "error") {
+      if (
+        firstSpilledValue.type === "error" ||
+        firstSpilledValue.type === "awaiting-evaluation"
+      ) {
         return firstSpilledValue;
-      } else if (firstSpilledValue.type === "awaiting-evaluation") {
-        continue;
       } else {
         result = firstSpilledValue;
       }
@@ -296,6 +302,11 @@ export function* processMultiCriteriaValues(
             allMatch = false;
             break;
           }
+        } else if (criteriaCell.type === "awaiting-evaluation") {
+          throw new AwaitingEvaluationError(
+            context.originCell.cellAddress,
+            criteriaCell.waitingFor
+          );
         } else {
           allMatch = false;
           break;

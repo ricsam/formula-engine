@@ -74,7 +74,7 @@ export const AND: FunctionDefinition = {
     for (const arg of node.args) {
       const argResult = this.evaluateNode(arg, context);
 
-      if (argResult.type === "error") {
+      if (argResult.type === "error" || argResult.type === "awaiting-evaluation") {
         return argResult;
       }
 

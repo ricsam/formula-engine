@@ -19,7 +19,7 @@ export const greaterThan: ArethmeticEvaluator = (left, right, errAddress) => {
   }
 
   const lteResult = lessThanOrEqual(left, right, errAddress);
-  if (lteResult.type === "error") {
+  if (lteResult.type === "error" || lteResult.type === "awaiting-evaluation") {
     return lteResult;
   }
   

@@ -20,7 +20,7 @@ export const lessThanOrEqual: ArethmeticEvaluator = (left, right, errAddress) =>
   }
 
   const ltResult = lessThan(left, right, errAddress);
-  if (ltResult.type === "error") {
+  if (ltResult.type === "error" || ltResult.type === "awaiting-evaluation") {
     return ltResult;
   }
   
@@ -30,7 +30,7 @@ export const lessThanOrEqual: ArethmeticEvaluator = (left, right, errAddress) =>
   
   // Check equality
   const eqResult = equals(left, right, errAddress);
-  if (eqResult.type === "error") {
+  if (eqResult.type === "error" || eqResult.type === "awaiting-evaluation") {
     return eqResult;
   }
   

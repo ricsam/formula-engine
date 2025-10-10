@@ -286,7 +286,7 @@ describe("DependencyManager", () => {
                   "directDepsUpdated": true,
                   "key": "A2",
                   "resolved": false,
-                  "resultType": "error",
+                  "resultType": "awaiting-evaluation",
                   "type": "cell",
                 },
                 {
@@ -351,7 +351,7 @@ describe("DependencyManager", () => {
                   "directDepsUpdated": true,
                   "key": "A2",
                   "resolved": false,
-                  "resultType": "error",
+                  "resultType": "awaiting-evaluation",
                   "type": "cell",
                 },
               ],

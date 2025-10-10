@@ -74,7 +74,7 @@ export const OR: FunctionDefinition = {
     for (const arg of node.args) {
       const argResult = this.evaluateNode(arg, context);
 
-      if (argResult.type === "error") {
+      if (argResult.type === "error" || argResult.type === "awaiting-evaluation") {
         return argResult;
       }
 
@@ -97,7 +97,7 @@ export const OR: FunctionDefinition = {
         });
 
         for (const cellValue of cellValues) {
-          if (cellValue.result.type === "error") {
+          if (cellValue.result.type === "error" || cellValue.result.type === "awaiting-evaluation") {
             return cellValue.result;
           }
           if (cellValue.result.type === "value") {

@@ -51,13 +51,13 @@ export const COUNTIF: FunctionDefinition = {
 
     // Evaluate criteria range (first argument)
     const criteriaRangeResult = this.evaluateNode(node.args[0]!, context);
-    if (criteriaRangeResult.type === "error") {
+    if (criteriaRangeResult.type === "error" || criteriaRangeResult.type === "awaiting-evaluation") {
       return criteriaRangeResult;
     }
 
     // Evaluate criteria (second argument)
     const criteriaResult = this.evaluateNode(node.args[1]!, context);
-    if (criteriaResult.type === "error") {
+    if (criteriaResult.type === "error" || criteriaResult.type === "awaiting-evaluation") {
       return criteriaResult;
     }
 

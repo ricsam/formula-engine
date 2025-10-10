@@ -167,12 +167,6 @@ export class DependencyManager {
     const node = this.getCellNode(key);
     context.dependencyNode.addDependency(node);
     const result = node.evaluationResult;
-    if (!result) {
-      throw new AwaitingEvaluationError(
-        context.originCell.cellAddress,
-        cellAddress
-      );
-    }
     return result;
   }
 
