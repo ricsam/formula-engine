@@ -249,7 +249,7 @@ describe("DependencyManager", () => {
           "directDepsUpdated": true,
           "key": "C1",
           "resolved": false,
-          "resultType": "error",
+          "resultType": "value",
           "type": "cell",
         }
       `);
@@ -364,7 +364,7 @@ describe("DependencyManager", () => {
           "directDepsUpdated": false,
           "key": "C1",
           "resolved": false,
-          "resultType": "error",
+          "resultType": "value",
           "type": "cell",
         }
       `);
@@ -471,7 +471,7 @@ describe("DependencyManager", () => {
                           "directDepsUpdated": false,
                           "key": "C1",
                           "resolved": false,
-                          "resultType": "error",
+                          "resultType": "value",
                           "type": "cell",
                         },
                         {
@@ -544,7 +544,7 @@ describe("DependencyManager", () => {
           "directDepsUpdated": false,
           "key": "C1",
           "resolved": false,
-          "resultType": "error",
+          "resultType": "value",
           "type": "cell",
         }
       `);

@@ -433,7 +433,6 @@ export class EvaluationManager {
           }
         }
         this.isEvaluating = false;
-        return;
       }
 
       // Evaluate all dependencies in order
