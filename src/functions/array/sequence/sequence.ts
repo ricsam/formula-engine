@@ -94,7 +94,7 @@ export const SEQUENCE: FunctionDefinition = {
       };
     }
 
-    let rowsValue: number | "infinity";
+    let rowsValue: number | "infinity" = 0;
     let isRowsInfinite = false;
 
     if (
@@ -360,12 +360,13 @@ export const SEQUENCE: FunctionDefinition = {
           };
         }
       },
-      evaluateAllCells: function* ({
+      evaluateAllCells: function ({
         evaluate,
         intersection,
         context,
         origin,
       }) {
+        const results = [];
         let range = spillArea(origin);
         if (intersection) {
           const newRange = getRangeIntersection(range, intersection);
@@ -392,19 +393,21 @@ export const SEQUENCE: FunctionDefinition = {
 
             const evaled = evaluate({ x: offsetLeft, y: offsetTop }, context);
             const relativePos = { x: offsetLeft, y: offsetTop };
-            yield evaled
+            results.push(evaled
               ? { result: evaled, relativePos }
               : {
                   result: {
-                    type: "error",
+                    type: "error" as const,
                     err: FormulaError.REF,
                     message: "Error evaluating SEQUENCE",
                     errAddress: context.originCell.cellAddress,
                   },
                   relativePos,
-                };
+                });
           }
         }
+        
+        return results;
       },
     };
   },

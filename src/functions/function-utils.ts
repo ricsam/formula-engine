@@ -6,8 +6,8 @@ import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 import type { FunctionNode } from "src/parser/ast";
 
 /**
- * Creates an iterator over all arguments of a function node
- * Yields SingleEvaluationResult for each value found in the arguments
+ * Creates an array of all values from arguments of a function node
+ * Returns SingleEvaluationResult for each value found in the arguments
  *
  * This is a shared utility used by all basic aggregation functions (SUM, MIN, MAX, AVERAGE)
  * to iterate over their arguments in a consistent way.
@@ -15,27 +15,32 @@ import type { FunctionNode } from "src/parser/ast";
  * @param evaluator - The formula evaluator instance
  * @param node - The function node containing arguments
  * @param context - The evaluation context
- * @yields SingleEvaluationResult for each value in the arguments
+ * @returns Array of SingleEvaluationResult for each value in the arguments
  */
-export function* createArgumentIterator(
+export function createArgumentIterator(
   evaluator: FormulaEvaluator,
   node: FunctionNode,
   context: EvaluationContext,
   lookupOrder: LookupOrder
-): Generator<SingleEvaluationResult, void, unknown> {
+): SingleEvaluationResult[] {
+  const results: SingleEvaluationResult[] = [];
+
   for (const arg of node.args) {
     const result = evaluator.evaluateNode(arg, context);
 
     if (result.type === "awaiting-evaluation") {
-      throw new AwaitingEvaluationError(context.originCell.cellAddress, result.waitingFor);
+      throw new AwaitingEvaluationError(
+        context.originCell.cellAddress,
+        result.waitingFor
+      );
     }
 
     if (result.type === "error") {
-      yield result;
+      results.push(result);
     } else if (result.type === "value") {
-      yield result;
+      results.push(result);
     } else if (result.type === "spilled-values") {
-      // Iterate over all cells in the spilled range
+      // Get all cells in the spilled range
       const cellValues = result.evaluateAllCells.call(evaluator, {
         context,
         evaluate: result.evaluate,
@@ -44,8 +49,10 @@ export function* createArgumentIterator(
       });
 
       for (const cellValue of cellValues) {
-        yield cellValue.result;
+        results.push(cellValue.result);
       }
     }
   }
+
+  return results;
 }

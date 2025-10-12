@@ -514,10 +514,9 @@ export function captureEvaluationErrors<T>(
     }
     if (error instanceof AwaitingEvaluationError) {
       return {
-        type: "error",
-        err: FormulaError.ERROR,
-        message: error.message,
-        errAddress: error.errAddress, 
+        type: "awaiting-evaluation",
+        waitingFor: error.waitingFor,
+        errAddress: error.errAddress,
       };
     }
 

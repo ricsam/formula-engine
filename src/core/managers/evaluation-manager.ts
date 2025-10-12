@@ -577,8 +577,7 @@ export class EvaluationManager {
 
     if (
       !value ||
-      (value && !value.evaluationResult) ||
-      (value && value.evaluationResult?.type === "awaiting-evaluation") ||
+      value.evaluationResult?.type === "awaiting-evaluation" ||
       (value.evaluationResult &&
         value.evaluationResult.type === "spilled-values" &&
         !value.originSpillResult)

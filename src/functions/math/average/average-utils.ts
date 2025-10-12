@@ -13,7 +13,7 @@ import type { EvaluationContext } from "src/evaluator/evaluation-context";
  * @returns FunctionEvaluationResult with the average or appropriate error
  */
 export function performAverage(
-  results: Iterable<SingleEvaluationResult>,
+  results: SingleEvaluationResult[],
   context: EvaluationContext
 ): FunctionEvaluationResult {
   let sum = 0;
@@ -25,7 +25,7 @@ export function performAverage(
       return result;
     }
     if (result.type === "awaiting-evaluation") {
-      continue;
+      return result;
     }
 
     if (result.type === "value") {

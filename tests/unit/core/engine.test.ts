@@ -1537,9 +1537,15 @@ describe("FormulaEngine", () => {
       setCellContent("C1", "=A1");
 
       // All three cells should show cycle error
-      expect(cell("A1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1"`);
-      expect(cell("B1", true)).toMatchInlineSnapshot(`"#CYCLE! in cell:TestWorkbook:TestSheet:A1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1"`);
-      expect(cell("C1", true)).toMatchInlineSnapshot(`"#CYCLE! in cell:TestWorkbook:TestSheet:A1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1"`);
+      expect(cell("A1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1"`
+      );
+      expect(cell("B1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! in cell:TestWorkbook:TestSheet:A1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1"`
+      );
+      expect(cell("C1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! in cell:TestWorkbook:TestSheet:A1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1"`
+      );
     });
 
     test("should detect cycles with non-cycle dependencies", () => {
@@ -1550,21 +1556,31 @@ describe("FormulaEngine", () => {
       setCellContent("D1", "=A1"); // Depends on A1 but not part of cycle
 
       // Cycle participants should show cycle error
-      expect(cell("B1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`);
-      expect(cell("C1", true)).toMatchInlineSnapshot(`"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`);
+      expect(cell("B1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`
+      );
+      expect(cell("C1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`
+      );
 
       // A1 should also show cycle error since it depends on the cycle
-      expect(cell("A1", true)).toMatchInlineSnapshot(`"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`);
+      expect(cell("A1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`
+      );
 
       // D1 should also show cycle error since it depends on A1 which has a cycle
-      expect(cell("D1", true)).toMatchInlineSnapshot(`"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`);
+      expect(cell("D1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`
+      );
     });
 
     test("should handle self-referencing cell", () => {
       // Create a self-reference: A1 -> A1
       setCellContent("A1", "=A1");
 
-      expect(cell("A1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:A1"`);
+      expect(cell("A1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! cell:TestWorkbook:TestSheet:A1"`
+      );
     });
   });
 });

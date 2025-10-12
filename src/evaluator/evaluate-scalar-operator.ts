@@ -81,15 +81,16 @@ export function evaluateScalarOperator(
           options.context.originCell.cellAddress
         );
       },
-      evaluateAllCells: function* (options) {
-        for (const cellValue of left.evaluateAllCells.call(this, options)) {
+      evaluateAllCells: function (options) {
+        const leftResults = left.evaluateAllCells.call(this, options);
+        return leftResults.map(cellValue => {
           if (
             cellValue.result.type === "error" ||
             cellValue.result.type === "awaiting-evaluation"
           ) {
-            yield cellValue;
+            return cellValue;
           } else {
-            yield {
+            return {
               result: evaluateSingleScalarOperator(
                 cellValue.result.result,
                 right.result,
@@ -99,7 +100,7 @@ export function evaluateScalarOperator(
               relativePos: cellValue.relativePos,
             };
           }
-        }
+        });
       },
     };
   }
@@ -123,13 +124,14 @@ export function evaluateScalarOperator(
           options.context.originCell.cellAddress
         );
       },
-      evaluateAllCells: function* (options) {
-        for (const cellValue of right.evaluateAllCells.call(this, options)) {
+      evaluateAllCells: function (options) {
+        const rightResults = right.evaluateAllCells.call(this, options);
+        return rightResults.map(cellValue => {
           if (
             cellValue.result.type === "error" ||
             cellValue.result.type === "awaiting-evaluation"
           ) {
-            yield cellValue;
+            return cellValue;
           } else {
             const result = evaluateSingleScalarOperator(
               left.result,
@@ -137,12 +139,12 @@ export function evaluateScalarOperator(
               evaluateScalar,
               options.context.originCell.cellAddress
             );
-            yield {
+            return {
               result: result,
               relativePos: cellValue.relativePos,
             };
           }
-        }
+        });
       },
     };
   }
@@ -196,13 +198,9 @@ export function evaluateScalarOperator(
           options.context.originCell.cellAddress
         );
       },
-      evaluateAllCells: function* (options) {
-        const leftResults = Array.from(
-          left.evaluateAllCells.call(this, options)
-        );
-        const rightResults = Array.from(
-          right.evaluateAllCells.call(this, options)
-        );
+      evaluateAllCells: function (options) {
+        const leftResults = left.evaluateAllCells.call(this, options);
+        const rightResults = right.evaluateAllCells.call(this, options);
 
         // Create position-based maps for both left and right results
         const leftMap = new Map<string, EvaluateAllCellsResult>();
@@ -220,6 +218,8 @@ export function evaluateScalarOperator(
           rightMap.set(key, result);
           allPositions.add(key);
         }
+
+        const results: EvaluateAllCellsResult[] = [];
 
         // Process each unique position
         for (const posKey of allPositions) {
@@ -239,10 +239,10 @@ export function evaluateScalarOperator(
               rightResult.result.type === "error" ||
               rightResult.result.type === "awaiting-evaluation"
             ) {
-              yield rightResult;
+              results.push(rightResult);
             } else if (rightResult.result.type === "value") {
               // Treat missing left as empty, which is handled by the operator
-              yield {
+              results.push({
                 result: {
                   type: "error",
                   err: FormulaError.NA,
@@ -250,9 +250,9 @@ export function evaluateScalarOperator(
                   errAddress: options.context.originCell.cellAddress,
                 },
                 relativePos,
-              };
+              });
             } else {
-              yield rightResult;
+              results.push(rightResult);
             }
           } else if (!rightResult && leftResult) {
             // Right is empty/missing, left has value
@@ -260,10 +260,10 @@ export function evaluateScalarOperator(
               leftResult.result.type === "error" ||
               leftResult.result.type === "awaiting-evaluation"
             ) {
-              yield leftResult;
+              results.push(leftResult);
             } else if (leftResult.result.type === "value") {
               // Treat missing right as empty, which is handled by the operator
-              yield {
+              results.push({
                 result: {
                   type: "error",
                   err: FormulaError.NA,
@@ -271,9 +271,9 @@ export function evaluateScalarOperator(
                   errAddress: options.context.originCell.cellAddress,
                 },
                 relativePos,
-              };
+              });
             } else {
-              yield leftResult;
+              results.push(leftResult);
             }
           } else if (leftResult && rightResult) {
             // Both have values
@@ -281,17 +281,17 @@ export function evaluateScalarOperator(
               leftResult.result.type === "error" ||
               leftResult.result.type === "awaiting-evaluation"
             ) {
-              yield leftResult;
+              results.push(leftResult);
             } else if (
               rightResult.result.type === "error" ||
               rightResult.result.type === "awaiting-evaluation"
             ) {
-              yield rightResult;
+              results.push(rightResult);
             } else if (
               leftResult.result.type === "value" &&
               rightResult.result.type === "value"
             ) {
-              yield {
+              results.push({
                 result: evaluateSingleScalarOperator(
                   leftResult.result.result,
                   rightResult.result.result,
@@ -299,10 +299,10 @@ export function evaluateScalarOperator(
                   options.context.originCell.cellAddress
                 ),
                 relativePos: leftResult.relativePos,
-              };
+              });
             } else {
               // Both are awaiting-evaluation or some other state
-              yield {
+              results.push({
                 result: {
                   type: "error",
                   err: FormulaError.VALUE,
@@ -311,10 +311,12 @@ export function evaluateScalarOperator(
                   errAddress: options.context.originCell.cellAddress,
                 },
                 relativePos,
-              };
+              });
             }
           }
         }
+
+        return results;
       },
     };
   }

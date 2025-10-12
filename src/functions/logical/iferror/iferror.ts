@@ -145,6 +145,10 @@ export const IFERROR: FunctionDefinition = {
       () => this.evaluateNode(node.args[0]!, context)
     );
 
+    if (valueResult.type === "awaiting-evaluation") {
+      return valueResult;
+    }
+
     // Handle spilled values - we need to evaluate both branches
     // because different cells might have errors or not
     if (valueResult.type === "spilled-values") {

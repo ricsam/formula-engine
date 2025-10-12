@@ -508,7 +508,7 @@ export class FormulaEvaluator {
           errAddress: context.originCell.cellAddress,
         };
       },
-      evaluateAllCells: function* ({
+      evaluateAllCells: function ({
         evaluate,
         intersection,
         context,
@@ -541,7 +541,7 @@ export class FormulaEvaluator {
           }
         }
 
-        return yield* this.openRangeEvaluator.evaluateCellsInRange({
+        return this.openRangeEvaluator.evaluateCellsInRange({
           context,
           lookupOrder,
           address: {
@@ -674,18 +674,19 @@ export class FormulaEvaluator {
             context
           );
         },
-        evaluateAllCells: function* (options) {
-          for (const cellValue of operandResult.evaluateAllCells.call(
+        evaluateAllCells: function (options) {
+          const cellValues = operandResult.evaluateAllCells.call(
             this,
             options
-          )) {
+          );
+          return cellValues.map(cellValue => {
             if (
               cellValue.result.type === "error" ||
               cellValue.result.type === "awaiting-evaluation"
             ) {
-              yield cellValue;
+              return cellValue;
             } else {
-              yield {
+              return {
                 result: this.evaluateUnaryScalar(
                   node.operator,
                   cellValue.result.result,
@@ -694,7 +695,7 @@ export class FormulaEvaluator {
                 relativePos: cellValue.relativePos,
               };
             }
-          }
+          });
         },
       };
     }

@@ -41,11 +41,12 @@ export class OpenRangeEvaluator {
    * @param context - Evaluation context
    * @returns Array of evaluation results or INFINITY if infinite spill detected
    */
-  *evaluateCellsInRange(options: {
+  evaluateCellsInRange(options: {
     address: RangeAddress;
     context: EvaluationContext;
     lookupOrder: LookupOrder;
-  }): Iterable<EvaluateAllCellsResult> {
+  }): EvaluateAllCellsResult[] {
+    const results: EvaluateAllCellsResult[] = [];
     const rangeNode = this.dependencyManager.getRangeNode(
       rangeAddressToKey(options.address)
     );
@@ -80,7 +81,7 @@ export class OpenRangeEvaluator {
 
         const cellNode = this.dependencyManager.getCellNode(cellKey);
         const result = cellNode.evaluationResult;
-        if (!result) {
+        if (result.type === "awaiting-evaluation") {
           throw new AwaitingEvaluationError(
             options.context.originCell.cellAddress,
             entryAddress
@@ -94,12 +95,12 @@ export class OpenRangeEvaluator {
 
         if (result.type === "spilled-values") {
           const spilledResult = result.evaluate({ x: 0, y: 0 }, rangeContext);
-          yield {
+          results.push({
             result: spilledResult,
             relativePos,
-          };
+          });
         } else {
-          yield { result: result, relativePos };
+          results.push({ result: result, relativePos });
         }
       } else if (entry.type === "empty_cell" || entry.type === "empty_range") {
         for (const candidate of entry.candidates) {
@@ -108,12 +109,6 @@ export class OpenRangeEvaluator {
             this.dependencyManager.getCellNode(candidateKey);
           const result = candidateNode.evaluationResult;
 
-          if (!result) {
-            throw new AwaitingEvaluationError(
-              options.context.originCell.cellAddress,
-              candidate
-            );
-          }
 
           if (candidateNode instanceof EmptyCellEvaluationNode) {
             throw new Error("A frontier dependency can not be an empty cell");
@@ -138,18 +133,17 @@ export class OpenRangeEvaluator {
                 // The evaluateAllCells method expects the intersection to be passed
                 // so it can limit evaluation to only the relevant cells.
 
-                const spilledResults = Array.from(
-                  result.evaluateAllCells.call(this.evaluator, {
+                const spilledResults = result.evaluateAllCells.call(
+                  this.evaluator,
+                  {
                     context: rangeContext,
                     evaluate: result.evaluate,
                     intersection: entry.address.range,
                     origin: candidate,
                     lookupOrder: options.lookupOrder,
-                  })
+                  }
                 );
-                for (const spilledResult of spilledResults) {
-                  yield spilledResult;
-                }
+                results.push(...spilledResults);
               } else {
                 rangeNode.maybeDiscardFrontierDependency(candidateNode); // downgraded!
               }
@@ -176,13 +170,13 @@ export class OpenRangeEvaluator {
                   rangeContext
                 );
 
-                yield {
+                results.push({
                   relativePos: {
                     x: entry.address.colIndex - options.address.range.start.col,
                     y: entry.address.rowIndex - options.address.range.start.row,
                   },
                   result: spilledResult,
-                };
+                });
               } else {
                 rangeNode.maybeDiscardFrontierDependency(candidateNode); // downgraded!
               }
@@ -193,5 +187,7 @@ export class OpenRangeEvaluator {
         }
       }
     }
+
+    return results;
   }
 }

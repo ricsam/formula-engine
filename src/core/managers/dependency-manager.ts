@@ -167,6 +167,7 @@ export class DependencyManager {
     const node = this.getCellNode(key);
     context.dependencyNode.addDependency(node);
     const result = node.evaluationResult;
+
     return result;
   }
 
