@@ -10,7 +10,7 @@ const PROFILED_CALL = 943;
 const MAX_EVALUATION_CALLS = PROFILED_CALL + 1;
 
 export const flags: DebugFlags = {
-  isProfiling: false,
+  isProfiling: true,
   profilingNamespaces: {},
   numEvaluationCalls: 0,
   profiledCall: PROFILED_CALL,

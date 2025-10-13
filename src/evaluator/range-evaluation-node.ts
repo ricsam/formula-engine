@@ -1,6 +1,10 @@
 import { FrontierDependencyManager } from "src/core/managers/frontier-dependency-manager";
 import type { WorkbookManager } from "src/core/managers/workbook-manager";
-import type { RangeAddress, SpreadsheetRange } from "src/core/types";
+import type {
+  CellAddress,
+  RangeAddress,
+  SpreadsheetRange,
+} from "src/core/types";
 import {
   cellAddressToKey,
   keyToRangeAddress,
@@ -10,6 +14,7 @@ import type { DependencyManager } from "src/core/managers/dependency-manager";
 import type { CacheManager } from "src/core/managers/cache-manager";
 import type { LookupOrder } from "src/core/managers";
 import { EmptyCellEvaluationNode } from "./empty-cell-evaluation-node";
+import type { CellEvalNode } from "./cell-eval-node";
 
 export class RangeEvaluationNode extends FrontierDependencyManager {
   public key: string;
@@ -22,7 +27,7 @@ export class RangeEvaluationNode extends FrontierDependencyManager {
     workbookManager: WorkbookManager
   ) {
     const rangeAddress = keyToRangeAddress(rangeKey);
-    super(workbookManager, dependencyManager);
+    super(rangeAddress,workbookManager, dependencyManager);
 
     this.address = rangeAddress;
     this.key = rangeKey;
@@ -53,7 +58,6 @@ export class RangeEvaluationNode extends FrontierDependencyManager {
           if (candidateNode instanceof EmptyCellEvaluationNode) {
             throw new Error("A frontier dependency can not be an empty cell");
           }
-          this.addFrontierDependency(candidateNode);
         }
       }
     }
@@ -70,7 +74,7 @@ export class RangeEvaluationNode extends FrontierDependencyManager {
         cycle: true,
         dependencies: [],
         frontierDependencies: [],
-      }
+      };
     }
     return {
       key: this.key,

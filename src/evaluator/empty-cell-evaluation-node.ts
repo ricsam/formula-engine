@@ -8,16 +8,18 @@ import type {
   SpreadsheetRange,
 } from "src/core/types";
 import {
+  cellAddressToKey,
+  isCellInRange,
   keyToCellAddress,
   keyToRangeAddress,
   rangeAddressToKey,
 } from "src/core/utils";
 import type { DependencyManager } from "src/core/managers/dependency-manager";
+import type { CellEvalNode } from "./cell-eval-node";
 
 export class EmptyCellEvaluationNode extends FrontierDependencyManager {
   public key: string;
   public cellAddress: CellAddress;
-
   private _evaluationResult?: FunctionEvaluationResult;
 
   constructor(
@@ -26,7 +28,22 @@ export class EmptyCellEvaluationNode extends FrontierDependencyManager {
     workbookManager: WorkbookManager
   ) {
     const cellAddress = keyToCellAddress(emptyCellKey);
-    super(workbookManager, evaluationManager);
+    const emptyCellRange: RangeAddress = {
+      range: {
+        start: {
+          col: cellAddress.colIndex,
+          row: cellAddress.rowIndex,
+        },
+        end: {
+          col: { type: "number", value: cellAddress.colIndex },
+          row: { type: "number", value: cellAddress.rowIndex },
+        },
+      },
+      sheetName: cellAddress.sheetName,
+      workbookName: cellAddress.workbookName,
+    };
+
+    super(emptyCellRange, workbookManager, evaluationManager);
 
     this.cellAddress = cellAddress;
     this.key = emptyCellKey.replace(/^cell:/, "empty:");
@@ -75,15 +92,19 @@ export class EmptyCellEvaluationNode extends FrontierDependencyManager {
         cycle: true,
         dependencies: [],
         frontierDependencies: [],
-      }
+      };
     }
     visitor?.add(this.key);
     return {
       key: this.key,
       resolved: this.resolved,
       evaluationResult: this.evaluationResult,
-      dependencies: Array.from(this.getDependencies()).map((node) => node.toJSON(visitor)),
-      frontierDependencies: Array.from(this.getFrontierDependencies()).map((node) => node.toJSON(visitor)),
+      dependencies: Array.from(this.getDependencies()).map((node) =>
+        node.toJSON(visitor)
+      ),
+      frontierDependencies: Array.from(this.getFrontierDependencies()).map(
+        (node) => node.toJSON(visitor)
+      ),
     };
   }
 }

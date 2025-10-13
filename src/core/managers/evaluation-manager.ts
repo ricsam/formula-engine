@@ -111,6 +111,7 @@ export class EvaluationManager {
     const inSpilled = this.dependencyManager.getSpillValue(nodeAddress);
 
     if (inSpilled) {
+      // if we are spilling then we can just add the spill origin as a dependency and evaluate the spilled value
       const spillTarget = this.dependencyManager.getSpilledAddress(
         nodeAddress,
         inSpilled
@@ -127,53 +128,8 @@ export class EvaluationManager {
         node.setEvaluationResult(evaluation);
       }
     } else {
-      const emptyCellRange: RangeAddress = {
-        range: {
-          start: {
-            col: nodeAddress.colIndex,
-            row: nodeAddress.rowIndex,
-          },
-          end: {
-            col: { type: "number", value: nodeAddress.colIndex },
-            row: { type: "number", value: nodeAddress.rowIndex },
-          },
-        },
-        sheetName: nodeAddress.sheetName,
-        workbookName: nodeAddress.workbookName,
-      };
-      // todo can be optimized to not generate the frontier candidates every time
-      // we can cache the frontier candidates for the current cell
-      const frontierCandidates: CellAddress[] =
-        this.workbookManager.getFrontierCandidates(emptyCellRange);
-
-      for (const candidate of frontierCandidates) {
-        const key = cellAddressToKey(candidate);
-
-        const candidateNode = this.dependencyManager.getCellNode(key);
-
-        if (candidateNode instanceof EmptyCellEvaluationNode) {
-          throw new Error("A frontier dependencies can not be an empty cell");
-        }
-
-        node.addFrontierDependency(candidateNode); // register the frontier dependency
-
-        const result = candidateNode.evaluationResult;
-
-        // upgrade or downgrade frontier dependency
-        if (result) {
-          if (result.type === "spilled-values") {
-            const spillArea = result.spillArea(candidate);
-            const intersects = isCellInRange(nodeAddress, spillArea);
-            if (intersects) {
-              node.maybeUpgradeFrontierDependency(candidateNode); // upgraded!
-            } else {
-              node.maybeDiscardFrontierDependency(candidateNode); // downgraded!
-            }
-          } else {
-            node.maybeDiscardFrontierDependency(candidateNode); // downgraded!
-          }
-        }
-      }
+      // upgrade any frontier dependencies that spill into the range
+      node.upgradeFrontierDependencies();
 
       const evaluationResult: SingleEvaluationResult = {
         type: "value",
@@ -191,58 +147,24 @@ export class EvaluationManager {
     }
 
     node.resetDirectDepsUpdated();
-    // this is just about setting up the dependencies for the range node
 
-    // let's setup the dependencies
+    try {
+      // upgrade any frontier dependencies that spill into the range
+      node.upgradeFrontierDependencies();
 
-    //#region frontier dependencies
-    const frontierCandidates: CellAddress[] =
-      this.workbookManager.getFrontierCandidates(node.address);
+      const cellsInRange = this.workbookManager.getCellsInRange(node.address);
 
-    for (const candidate of frontierCandidates) {
-      const key = cellAddressToKey(candidate);
+      // Iterate over all defined cells in the sheet using optimized index-based iterator
+      for (const address of cellsInRange) {
+        const cellKey = cellAddressToKey(address);
 
-      const candidateNode = this.dependencyManager.getCellNode(key);
-
-      if (candidateNode instanceof EmptyCellEvaluationNode) {
-        throw new Error("A frontier dependencies can not be an empty cell");
+        const cellNode = this.dependencyManager.getCellNode(cellKey);
+        node.addDependency(cellNode);
       }
-
-      node.addFrontierDependency(candidateNode); // register the frontier dependency
-
-      const result = candidateNode.evaluationResult;
-
-      // upgrade or downgrade frontier dependency
-      if (result) {
-        if (result.type === "spilled-values") {
-          const spillArea = result.spillArea(candidate);
-          const intersects = checkRangeIntersection(
-            node.address.range,
-            spillArea
-          );
-          if (intersects) {
-            node.maybeUpgradeFrontierDependency(candidateNode); // upgraded!
-          } else {
-            node.maybeDiscardFrontierDependency(candidateNode); // downgraded!
-          }
-        } else {
-          node.maybeDiscardFrontierDependency(candidateNode); // downgraded!
-        }
-      }
+    } catch (err) {
+      // ignore errors, maybe e.g. the sheet wasn't found
+      console.warn(err);
     }
-    //#endregion
-
-    //#region normal dependencies
-    const cellsInRange = this.workbookManager.getCellsInRange(node.address);
-
-    // Iterate over all defined cells in the sheet using optimized index-based iterator
-    for (const address of cellsInRange) {
-      const cellKey = cellAddressToKey(address);
-
-      const cellNode = this.dependencyManager.getCellNode(cellKey);
-      node.addDependency(cellNode);
-    }
-    //#endregion
   }
 
   evaluateCellNode(dependencyKey: string): void {

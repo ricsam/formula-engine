@@ -162,7 +162,7 @@ export function ExcelDemo() {
   >(initialWorkbookGridItems);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
-  const [verboseErrors, setVerboseErrors] = useState(false);
+  const [verboseErrors, setVerboseErrors] = useState(true);
   const [viewport, _setViewport] = useState<ViewportState | undefined>(
     initialViewport
   );
