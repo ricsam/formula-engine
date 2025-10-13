@@ -348,11 +348,7 @@ export class EvaluationManager {
       }
 
       // Evaluate all dependencies in order
-      if (flags.isProfiling) {
-        console.time(
-          "evaluateDependencies: " + evaluationPlan.evaluationOrder.size
-        );
-      }
+      const timeStart = performance.now();
       const durations: { duration: number; key: string }[] = [];
       let numResolved = 0;
       evaluationPlan.evaluationOrder.forEach((dependency) => {
@@ -362,31 +358,24 @@ export class EvaluationManager {
         }
         this.evaluateDependencyNode(dependency.key);
         const end = performance.now();
-        if (flags.isProfiling) {
+        if (flags.isProfiling && evaluationPlan.evaluationOrder.size > 100) {
           durations.push({ duration: end - start, key: dependency.key });
         }
       });
-      if (flags.isProfiling) {
-        console.timeEnd(
-          "evaluateDependencies: " + evaluationPlan.evaluationOrder.size
+      if (flags.isProfiling && evaluationPlan.evaluationOrder.size > 100) {
+        const percentResolved = Math.round(
+          (100 * numResolved) / evaluationPlan.evaluationOrder.size
         );
-      }
-      if (flags.isProfiling) {
+        const avgDuration =
+          durations.reduce((a, b) => a + b.duration, 0) / durations.length || 0;
         console.log(
-          "Percentage resolved: " +
-            Math.round(
-              (100 * numResolved) / evaluationPlan.evaluationOrder.size
-            ) +
-            "%"
+          `%c[Evaluation] %c${evaluationPlan.evaluationOrder.size} deps | %c${(performance.now() - timeStart).toFixed(1)}ms | %c${percentResolved}% resolved | %c${avgDuration.toFixed(2)}ms avg`,
+          "color:#83aaff;font-weight:bold;",
+          "color:#fff;font-weight:bold;",
+          "color:#7fff9e",
+          "color:#85baff",
+          "color:#ffdfa3"
         );
-        console.group("Top 100 slowest durations");
-        durations
-          .sort((a, b) => b.duration - a.duration)
-          .slice(0, 10)
-          .forEach((d) => {
-            console.log(d.key + ": " + d.duration);
-          });
-        console.groupEnd();
       }
 
       const evalResult = this.dependencyManager.getCellNode(nodeKey);

@@ -16,7 +16,6 @@ import {
   rangeAddressToKey,
 } from "../utils";
 
-import { flags } from "src/debug/flags";
 import { CellEvalNode } from "src/evaluator/cell-eval-node";
 import { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
 import { CacheManager } from "./cache-manager";
@@ -300,10 +299,6 @@ export class DependencyManager {
     ) {
       return this.cacheManager.getEvaluationOrder(node.key)!;
     }
-    if (flags.isProfiling) {
-      console.time("buildEvaluationOrder");
-      console.group();
-    }
 
     // Phase 1: Discover all transitive dependencies (skipping resolved nodes)
     const allNodes = new Map<string, DependencyNode>();
@@ -313,7 +308,7 @@ export class DependencyManager {
       // Skip resolved nodes, BUT always include range nodes even if resolved
       // because ranges need to be re-evaluated in different contexts
       const isRangeNode = currentNode instanceof RangeEvaluationNode;
-      
+
       if (currentNode && currentNode.resolved && !isRangeNode) {
         return;
       }
@@ -334,18 +329,7 @@ export class DependencyManager {
       }
     };
 
-    if (flags.isProfiling) {
-      console.time("discoverNodes");
-    }
     discoverNodes(node);
-    if (flags.isProfiling) {
-      console.timeEnd("discoverNodes");
-    }
-
-    if (flags.isProfiling) {
-      console.log("size:", allNodes.size);
-      flags.prevSize = allNodes.size;
-    }
 
     if (allNodes.size === 0 && node && node.resolved) {
       const result: EvaluationOrder = {
@@ -358,31 +342,14 @@ export class DependencyManager {
         this.cacheManager.setEvaluationOrder(nodeKey, result);
       }
 
-      if (flags.isProfiling) {
-        console.groupEnd();
-        console.timeEnd("buildEvaluationOrder");
-      }
-
       return result;
     }
 
     // Phase 2: Find SCCs using Tarjan's algorithm
-    if (flags.isProfiling) {
-      console.time("tarjan");
-    }
-
     // Build SCCs considering ALL dependencies (soft + hard edges)
     const sccs = this.findSCCs(allNodes, true);
-    
-    if (flags.isProfiling) {
-      console.timeEnd("tarjan");
-    }
 
     // Phase 3: Create condensation DAG and check for cached SCCs
-    if (flags.isProfiling) {
-      console.time("condensation");
-    }
-
     const nodeToSCCId = new Map<DependencyNode, number>();
     const sccList: import("../types").SCC[] = [];
 
@@ -413,7 +380,7 @@ export class DependencyManager {
         // Find hard-edge SCCs within this soft-edge SCC
         // Hard-edge SCCs are formed by only regular dependencies
         const hardEdgeSCCs = this.findSCCs(
-          new Map(Array.from(sccNodes).map(n => [n.key, n])),
+          new Map(Array.from(sccNodes).map((n) => [n.key, n])),
           false // Use only hard edges (regular dependencies)
         );
 
@@ -463,15 +430,7 @@ export class DependencyManager {
       }
     }
 
-    if (flags.isProfiling) {
-      console.timeEnd("condensation");
-    }
-
     // Phase 4: Topologically sort SCCs using Kahn's algorithm
-    if (flags.isProfiling) {
-      console.time("kahn");
-    }
-
     const inDegree = new Map<number, number>();
     for (let i = 0; i < sccList.length; i++) {
       inDegree.set(i, 0);
@@ -503,10 +462,6 @@ export class DependencyManager {
           queue.push(depId);
         }
       }
-    }
-
-    if (flags.isProfiling) {  
-      console.timeEnd("kahn");
     }
 
     // Phase 5: Join evaluation orders from sorted SCCs
@@ -552,10 +507,6 @@ export class DependencyManager {
       this.cacheManager.setEvaluationOrder(nodeKey, result);
     }
 
-    if (flags.isProfiling) {
-      console.groupEnd();
-      console.timeEnd("buildEvaluationOrder");
-    }
     return result;
   }
 
@@ -587,7 +538,7 @@ export class DependencyManager {
       const successors = includeFrontier
         ? v.getAllDependencies()
         : v.getDependencies();
-      
+
       for (const w of successors) {
         if (!nodes.has(w.key)) {
           continue;
@@ -672,7 +623,6 @@ export class DependencyManager {
 
     return result;
   }
-
 
   /**
    * Compute hash representing the graph structure including SCC information
@@ -889,9 +839,6 @@ export class DependencyManager {
    */
   private updateResolvedSCCs(startNode: DependencyNode): void {
     // Get evaluation order which contains SCC information
-    if (flags.isProfiling) {
-      console.time("updateResolvedSCCs");
-    }
     const evalOrder = this.buildEvaluationOrder(startNode.key);
 
     if (!evalOrder.sccDAG) {
@@ -917,9 +864,6 @@ export class DependencyManager {
 
         this.cacheManager.setSCC(sccHash, updatedSCC);
       }
-    }
-    if (flags.isProfiling) {
-      console.timeEnd("updateResolvedSCCs");
     }
   }
 }
