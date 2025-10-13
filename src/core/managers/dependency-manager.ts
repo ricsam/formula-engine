@@ -297,7 +297,7 @@ export class DependencyManager {
    * 4. Target cell
    *
    * e.g: nodeKey is Y10, then the evaluation order is [B1],[B10],[D2],{A1},[B2],{C4},[E4],(B1),(G4),(H1),Y10
-   * 
+   *
    * Only dependencies can cause cycles, frontier dependencies cannot cause cycles.
    */
   buildEvaluationOrder(nodeKey: string): EvaluationOrder {
@@ -308,6 +308,17 @@ export class DependencyManager {
       this.cacheManager.getEvaluationOrder(node.key)
     ) {
       return this.cacheManager.getEvaluationOrder(node.key)!;
+    }
+    let profileThis = false;
+    if (flags.isProfiling) {
+      console.time("buildEvaluationOrder");
+    }
+
+    if (flags.isProfiling) {
+      if (flags.prevSize === 5770) {
+        profileThis = true;
+        console.group("Slow evaluation");
+      }
     }
 
     // Algorithm:
@@ -344,8 +355,20 @@ export class DependencyManager {
       }
     };
 
+
     // Start discovery from the target node
+    if (flags.isProfiling) {
+      console.time("discoverNodes");
+    }
     discoverNodes(node);
+    if (flags.isProfiling) {
+      console.timeEnd("discoverNodes");
+    }
+
+    if (flags.isProfiling) {
+      console.log("size:", allNodes.size);
+      flags.prevSize = allNodes.size;
+    }
 
     // If the target node itself was resolved, return it alone
     if (allNodes.size === 0 && node && node.resolved) {
@@ -357,6 +380,13 @@ export class DependencyManager {
 
       if (node && node.resolved) {
         this.cacheManager.setEvaluationOrder(nodeKey, result);
+      }
+
+      if (flags.isProfiling) {
+        if (profileThis) {
+          console.groupEnd();
+        }
+        console.timeEnd("buildEvaluationOrder");
       }
 
       return result;
@@ -421,10 +451,16 @@ export class DependencyManager {
     };
 
     // Identify all cyclic nodes
+    if (profileThis) {
+      console.time("getStronglyConnectedComponents");
+    }
     for (const scc of getStronglyConnectedComponents()) {
       for (const node of scc) {
         cycleNodes.add(node);
       }
+    }
+    if (profileThis) {
+      console.timeEnd("getStronglyConnectedComponents");
     }
 
     // Phase 3: Build topologically sorted evaluation order using DFS post-order
@@ -435,7 +471,7 @@ export class DependencyManager {
 
     const buildOrder = (current: DependencyNode) => {
       // Already processed
-      if (visitedForOrder.has(current)) {
+      if (visitedForOrder.has(current) || current.resolved) {
         return;
       }
 
@@ -479,7 +515,13 @@ export class DependencyManager {
 
     // Build order starting from the target node
     // This ensures we get a proper topological sort
+    if (profileThis) {
+      console.time("buildOrder");
+    }
     buildOrder(node);
+    if (profileThis) {
+      console.timeEnd("buildOrder");
+    }
 
     // Convert array to Set while preserving insertion order (JS Sets maintain insertion order)
     const evaluationOrder = new Set(evaluationOrderArray);
@@ -496,6 +538,12 @@ export class DependencyManager {
       this.cacheManager.setEvaluationOrder(nodeKey, result);
     }
 
+    if (flags.isProfiling) {
+      if (profileThis) {
+        console.groupEnd();
+      }
+      console.timeEnd("buildEvaluationOrder");
+    }
     return result;
   }
 
@@ -559,7 +607,9 @@ export class DependencyManager {
           resultType:
             node instanceof RangeEvaluationNode
               ? "range"
-              : node.evaluationResult ? node.evaluationResult.type : "awaiting-evaluation",
+              : node.evaluationResult
+                ? node.evaluationResult.type
+                : "awaiting-evaluation",
           canResolve: node.canResolve(),
           key: cellRef,
           directDepsUpdated: node.directDepsUpdated,
@@ -576,7 +626,9 @@ export class DependencyManager {
           resultType:
             node instanceof RangeEvaluationNode
               ? "range"
-              : node.evaluationResult ? node.evaluationResult.type : "awaiting-evaluation",
+              : node.evaluationResult
+                ? node.evaluationResult.type
+                : "awaiting-evaluation",
           canResolve: node.canResolve(),
           key: cellRef,
           directDepsUpdated: node.directDepsUpdated,

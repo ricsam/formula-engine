@@ -358,9 +358,46 @@ export class EvaluationManager {
       }
 
       // Evaluate all dependencies in order
+      if (flags.isProfiling) {
+        console.time(
+          "evaluateDependencies: " + evaluationPlan.evaluationOrder.size
+        );
+      }
+      const durations: { duration: number; key: string }[] = [];
+      let numResolved = 0;
       evaluationPlan.evaluationOrder.forEach((dependency) => {
+        const start = performance.now();
+        if (dependency.resolved) {
+          numResolved++;
+        }
         this.evaluateDependencyNode(dependency.key);
+        const end = performance.now();
+        if (flags.isProfiling) {
+          durations.push({ duration: end - start, key: dependency.key });
+        }
       });
+      if (flags.isProfiling) {
+        console.timeEnd(
+          "evaluateDependencies: " + evaluationPlan.evaluationOrder.size
+        );
+      }
+      if (flags.isProfiling) {
+        console.log(
+          "Percentage resolved: " +
+            Math.round(
+              (100 * numResolved) / evaluationPlan.evaluationOrder.size
+            ) +
+            "%"
+        );
+        console.group("Top 100 slowest durations");
+        durations
+          .sort((a, b) => b.duration - a.duration)
+          .slice(0, 10)
+          .forEach((d) => {
+            console.log(d.key + ": " + d.duration);
+          });
+        console.groupEnd();
+      }
 
       const evalResult = this.dependencyManager.getCellNode(nodeKey);
       const failedEvaluation: ErrorEvaluationResult = {
@@ -504,7 +541,19 @@ export class EvaluationManager {
         value.evaluationResult.type === "spilled-values" &&
         !value.originSpillResult)
     ) {
+      if (cellAddressToKey(cellAddress).includes("F10")) {
+        console.group("Evaluation of F10");
+        flags.isProfiling = true;
+        console.time("Evaluation of F10");
+        // console.profile("Evaluation of F10");
+      }
       this.evaluateCell(cellAddress);
+      if (flags.isProfiling) {
+        flags.isProfiling = false;
+        console.timeEnd("Evaluation of F10");
+        // console.profileEnd("Evaluation of F10");
+        console.groupEnd();
+      }
       value = getEvaluatedNode();
     }
 
