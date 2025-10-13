@@ -413,10 +413,17 @@ describe("DependencyManager", () => {
         }
       `);
 
-    expect(directDeps("D11")).toMatchInlineSnapshot(`{}`);
+    expect(directDeps("D11")).toMatchInlineSnapshot(`
+      {
+        "frontierDependencies": [
+          "cell:D10",
+        ],
+      }
+    `);
 
     expect(evalOrder("C1")).toMatchInlineSnapshot(`
         [
+          "A1:A3",
           "cell:B1",
           "cell:B3",
           "B1:B3",
@@ -433,6 +440,8 @@ describe("DependencyManager", () => {
     // A1 * B1 resolves fine now so SUM doesn't short circuit on that and continues to A2 * B2
     expect(evalOrder("C1")).toMatchInlineSnapshot(`
         [
+          "A1:A3",
+          "cell:D10",
           "empty:D11",
           "cell:B1",
           "B1:B3",
@@ -496,7 +505,17 @@ describe("DependencyManager", () => {
                   "deps": [
                     {
                       "canResolve": false,
-                      "directDepsUpdated": false,
+                      "directDepsUpdated": true,
+                      "frontierDependencies": [
+                        {
+                          "canResolve": false,
+                          "directDepsUpdated": false,
+                          "key": "D10",
+                          "resolved": false,
+                          "resultType": "awaiting-evaluation",
+                          "type": "cell",
+                        },
+                      ],
                       "key": "D11",
                       "resolved": false,
                       "resultType": "awaiting-evaluation",
@@ -559,6 +578,7 @@ describe("DependencyManager", () => {
     markAsResolved();
     expect(evalOrder("C1")).toMatchInlineSnapshot(`
         [
+          "A1:A3",
           "cell:D10",
           "empty:D11",
           "cell:B1",
@@ -619,27 +639,45 @@ describe("DependencyManager", () => {
               "canResolve": true,
               "deps": [
                 {
-                  "canResolve": true,
+                  "canResolve": false,
                   "deps": [
                     {
-                      "canResolve": false,
-                      "directDepsUpdated": true,
-                      "frontierDependencies": [
+                      "canResolve": true,
+                      "deps": [
                         {
                           "canResolve": false,
-                          "directDepsUpdated": false,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "directDepsUpdated": false,
+                                  "key": "F1",
+                                  "resolved": true,
+                                  "resultType": "value",
+                                  "type": "cell",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "A2",
+                              "resolved": true,
+                              "resultType": "spilled-values",
+                              "type": "cell",
+                            },
+                            {
+                              "canResolve": true,
+                              "directDepsUpdated": false,
+                              "key": "A1",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": true,
                           "key": "D10",
                           "resolved": false,
-                          "resultType": "awaiting-evaluation",
-                          "type": "cell",
-                        },
-                        {
-                          "canResolve": true,
-                          "circular": true,
-                          "directDepsUpdated": false,
-                          "key": "C1",
-                          "resolved": false,
-                          "resultType": "value",
+                          "resultType": "spilled-values",
                           "type": "cell",
                         },
                         {
@@ -661,16 +699,71 @@ describe("DependencyManager", () => {
                           "type": "cell",
                         },
                       ],
+                      "directDepsUpdated": false,
                       "key": "D11",
                       "resolved": false,
                       "resultType": "value",
                       "type": "empty",
                     },
+                    {
+                      "canResolve": false,
+                      "deps": [
+                        {
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "directDepsUpdated": false,
+                              "key": "F1",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "A2",
+                          "resolved": true,
+                          "resultType": "spilled-values",
+                          "type": "cell",
+                        },
+                        {
+                          "canResolve": true,
+                          "directDepsUpdated": false,
+                          "key": "A1",
+                          "resolved": true,
+                          "resultType": "value",
+                          "type": "cell",
+                        },
+                      ],
+                      "directDepsUpdated": true,
+                      "key": "D10",
+                      "resolved": false,
+                      "resultType": "spilled-values",
+                      "type": "cell",
+                    },
+                    {
+                      "canResolve": true,
+                      "deps": [
+                        {
+                          "canResolve": true,
+                          "directDepsUpdated": false,
+                          "key": "F1",
+                          "resolved": true,
+                          "resultType": "value",
+                          "type": "cell",
+                        },
+                      ],
+                      "directDepsUpdated": false,
+                      "key": "A2",
+                      "resolved": true,
+                      "resultType": "spilled-values",
+                      "type": "cell",
+                    },
                   ],
-                  "directDepsUpdated": false,
+                  "directDepsUpdated": true,
                   "key": "B1",
                   "resolved": false,
-                  "resultType": "error",
+                  "resultType": "value",
                   "type": "cell",
                 },
                 {
@@ -719,9 +812,8 @@ describe("DependencyManager", () => {
 
     expect(directDeps("D11")).toMatchInlineSnapshot(`
         {
-          "frontierDependencies": [
+          "deps": [
             "cell:D10",
-            "cell:C1",
             "cell:A2",
           ],
         }
@@ -729,6 +821,7 @@ describe("DependencyManager", () => {
 
     expect(evalOrder("C1")).toMatchInlineSnapshot(`
         [
+          "A1:A3",
           "cell:D10",
           "empty:D11",
           "cell:B1",
@@ -934,56 +1027,14 @@ describe("DependencyManager", () => {
         {
           "frontierDependencies": [
             "cell:D10",
-            "cell:C1",
           ],
         }
       `);
-    expect(evalOrder("D11")).toMatchInlineSnapshot(`
-        [
-          "cell:D10",
-          "cell:C1",
-          "empty:D11",
-        ]
-      `);
-    expect(dependencyTree("D11")).toMatchInlineSnapshot(`
-        {
-          "canResolve": false,
-          "directDepsUpdated": true,
-          "frontierDependencies": [
-            {
-              "canResolve": false,
-              "directDepsUpdated": false,
-              "key": "D10",
-              "resolved": false,
-              "resultType": "awaiting-evaluation",
-              "type": "cell",
-            },
-            {
-              "canResolve": false,
-              "directDepsUpdated": false,
-              "key": "C1",
-              "resolved": false,
-              "resultType": "awaiting-evaluation",
-              "type": "cell",
-            },
-          ],
-          "key": "D11",
-          "resolved": false,
-          "resultType": "value",
-          "type": "empty",
-        }
-      `);
-    //#endregion
-
-    //#region step 2
-    evaluate();
-    markAsResolved();
     expect(evalOrder("D11")).toMatchInlineSnapshot(`
         [
           "cell:B2",
           "cell:A1",
           "cell:D10",
-          "cell:C1",
           "empty:D11",
         ]
       `);
@@ -1018,28 +1069,67 @@ describe("DependencyManager", () => {
               "resultType": "awaiting-evaluation",
               "type": "cell",
             },
-            {
-              "canResolve": false,
-              "deps": [
-                {
-                  "canResolve": false,
-                  "directDepsUpdated": false,
-                  "key": "A1",
-                  "resolved": false,
-                  "resultType": "awaiting-evaluation",
-                  "type": "cell",
-                },
-              ],
-              "directDepsUpdated": true,
-              "key": "C1",
-              "resolved": false,
-              "resultType": "spilled-values",
-              "type": "cell",
-            },
           ],
           "key": "D11",
           "resolved": false,
           "resultType": "value",
+          "type": "empty",
+        }
+      `);
+    //#endregion
+
+    //#region step 2
+    evaluate();
+    markAsResolved();
+    expect(evalOrder("D11")).toMatchInlineSnapshot(`
+        [
+          "cell:A2",
+          "empty:D11",
+        ]
+      `);
+    expect(dependencyTree("D11")).toMatchInlineSnapshot(`
+        {
+          "canResolve": false,
+          "deps": [
+            {
+              "canResolve": true,
+              "deps": [
+                {
+                  "canResolve": true,
+                  "directDepsUpdated": false,
+                  "key": "B2",
+                  "resolved": true,
+                  "resultType": "value",
+                  "type": "cell",
+                },
+                {
+                  "canResolve": true,
+                  "directDepsUpdated": false,
+                  "key": "A1",
+                  "resolved": true,
+                  "resultType": "value",
+                  "type": "cell",
+                },
+              ],
+              "directDepsUpdated": false,
+              "key": "D10",
+              "resolved": true,
+              "resultType": "spilled-values",
+              "type": "cell",
+            },
+            {
+              "canResolve": false,
+              "directDepsUpdated": false,
+              "key": "A2",
+              "resolved": false,
+              "resultType": "awaiting-evaluation",
+              "type": "cell",
+            },
+          ],
+          "directDepsUpdated": false,
+          "key": "D11",
+          "resolved": false,
+          "resultType": "awaiting-evaluation",
           "type": "empty",
         }
       `);
@@ -1134,7 +1224,7 @@ describe("DependencyManager", () => {
         "canResolve": false,
         "deps": [
           {
-            "canResolve": false,
+            "canResolve": true,
             "deps": [
               {
                 "canResolve": false,
@@ -1173,17 +1263,7 @@ describe("DependencyManager", () => {
                 "type": "cell",
               },
             ],
-            "directDepsUpdated": true,
-            "frontierDependencies": [
-              {
-                "canResolve": false,
-                "directDepsUpdated": false,
-                "key": "A1",
-                "resolved": false,
-                "resultType": "awaiting-evaluation",
-                "type": "cell",
-              },
-            ],
+            "directDepsUpdated": false,
             "key": "B1:B2",
             "resolved": false,
             "resultType": "range",
@@ -1254,7 +1334,17 @@ describe("DependencyManager", () => {
                       },
                       {
                         "canResolve": false,
-                        "directDepsUpdated": false,
+                        "directDepsUpdated": true,
+                        "frontierDependencies": [
+                          {
+                            "canResolve": false,
+                            "directDepsUpdated": false,
+                            "key": "C1",
+                            "resolved": false,
+                            "resultType": "awaiting-evaluation",
+                            "type": "cell",
+                          },
+                        ],
                         "key": "C2",
                         "resolved": false,
                         "resultType": "awaiting-evaluation",
@@ -1284,26 +1374,6 @@ describe("DependencyManager", () => {
               },
             ],
             "directDepsUpdated": false,
-            "frontierDependencies": [
-              {
-                "canResolve": false,
-                "deps": [
-                  {
-                    "canResolve": false,
-                    "directDepsUpdated": false,
-                    "key": "C1",
-                    "resolved": false,
-                    "resultType": "awaiting-evaluation",
-                    "type": "cell",
-                  },
-                ],
-                "directDepsUpdated": true,
-                "key": "A1",
-                "resolved": false,
-                "resultType": "spilled-values",
-                "type": "cell",
-              },
-            ],
             "key": "B1:B2",
             "resolved": false,
             "resultType": "range",
@@ -1403,26 +1473,6 @@ describe("DependencyManager", () => {
               },
             ],
             "directDepsUpdated": false,
-            "frontierDependencies": [
-              {
-                "canResolve": true,
-                "deps": [
-                  {
-                    "canResolve": true,
-                    "directDepsUpdated": false,
-                    "key": "C1",
-                    "resolved": false,
-                    "resultType": "spilled-values",
-                    "type": "cell",
-                  },
-                ],
-                "directDepsUpdated": false,
-                "key": "A1",
-                "resolved": false,
-                "resultType": "spilled-values",
-                "type": "cell",
-              },
-            ],
             "key": "B1:B2",
             "resolved": false,
             "resultType": "range",
@@ -1536,26 +1586,6 @@ describe("DependencyManager", () => {
               },
             ],
             "directDepsUpdated": false,
-            "frontierDependencies": [
-              {
-                "canResolve": true,
-                "deps": [
-                  {
-                    "canResolve": true,
-                    "directDepsUpdated": false,
-                    "key": "C1",
-                    "resolved": true,
-                    "resultType": "spilled-values",
-                    "type": "cell",
-                  },
-                ],
-                "directDepsUpdated": false,
-                "key": "A1",
-                "resolved": true,
-                "resultType": "spilled-values",
-                "type": "cell",
-              },
-            ],
             "key": "B1:B2",
             "resolved": true,
             "resultType": "range",

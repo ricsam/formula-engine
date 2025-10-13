@@ -260,7 +260,7 @@ describe("OpenRangeEvaluator", () => {
       );
 
       expect(cell("A1", true)).toMatchInlineSnapshot(`0`);
-      expect(cell("A10", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:B10 -> cell:TestWorkbook:TestSheet:A10"`);
+      expect(cell("A10", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:A10 -> cell:TestWorkbook:TestSheet:B10"`);
       expect(cell("B10")).toMatchInlineSnapshot(`"#CYCLE!"`);
     });
 

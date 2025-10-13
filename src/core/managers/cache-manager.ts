@@ -1,17 +1,12 @@
-import type { CellAddress, EvaluationOrder } from "../types";
-import type { RangeEvalOrderEntry } from "./range-eval-order-builder";
+import type { EvaluationOrder, SCC } from "../types";
 
 export class CacheManager {
   private _evaluationOrderCache = new Map<string, EvaluationOrder>();
-  /**
-   * Key is rangeKey + "@" + lookupOrder
-   */
-  private _rangeEvalOrderCache = new Map<string, RangeEvalOrderEntry[]>();
 
   /**
-   * Key is rangeKey or cellKey
+   * Cache for SCCs - key is a hash of the node keys in the SCC
    */
-  private _frontierCandidatesCache = new Map<string, CellAddress[]>();
+  private _sccCache = new Map<string, SCC>();
 
   constructor() {}
 
@@ -23,31 +18,16 @@ export class CacheManager {
     return this._evaluationOrderCache.get(nodeKey);
   }
 
-  setRangeEvalOrder(
-    nodeKey: string,
-    rangeEvalOrder: RangeEvalOrderEntry[]
-  ): void {
-    this._rangeEvalOrderCache.set(nodeKey, rangeEvalOrder);
+  setSCC(sccHash: string, scc: SCC): void {
+    this._sccCache.set(sccHash, scc);
   }
 
-  getRangeEvalOrder(nodeKey: string): RangeEvalOrderEntry[] | undefined {
-    return this._rangeEvalOrderCache.get(nodeKey);
-  }
-
-  setFrontierCandidates(
-    nodeKey: string,
-    frontierCandidates: CellAddress[]
-  ): void {
-    this._frontierCandidatesCache.set(nodeKey, frontierCandidates);
-  }
-
-  getFrontierCandidates(nodeKey: string): CellAddress[] | undefined {
-    return this._frontierCandidatesCache.get(nodeKey);
+  getSCC(sccHash: string): SCC | undefined {
+    return this._sccCache.get(sccHash);
   }
 
   clear(): void {
     this._evaluationOrderCache.clear();
-    this._rangeEvalOrderCache.clear();
-    this._frontierCandidatesCache.clear();
+    this._sccCache.clear();
   }
 }

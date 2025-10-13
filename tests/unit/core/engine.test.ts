@@ -1538,14 +1538,11 @@ describe("FormulaEngine", () => {
 
       // All three cells should show cycle error
       expect(cell("A1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1"`
-      );
+        `"#CYCLE! cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1 -> cell:TestWorkbook:TestSheet:C1"`);
       expect(cell("B1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! in cell:TestWorkbook:TestSheet:A1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1"`
-      );
+        `"#CYCLE! in cell:TestWorkbook:TestSheet:A1 cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1 -> cell:TestWorkbook:TestSheet:C1"`);
       expect(cell("C1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! in cell:TestWorkbook:TestSheet:A1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1"`
-      );
+        `"#CYCLE! in cell:TestWorkbook:TestSheet:A1 cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1 -> cell:TestWorkbook:TestSheet:C1"`);
     });
 
     test("should detect cycles with non-cycle dependencies", () => {
@@ -1557,21 +1554,17 @@ describe("FormulaEngine", () => {
 
       // Cycle participants should show cycle error
       expect(cell("B1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`
-      );
+        `"#CYCLE! cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:C1"`);
       expect(cell("C1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`
-      );
+        `"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:C1"`);
 
       // A1 should also show cycle error since it depends on the cycle
       expect(cell("A1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`
-      );
+        `"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:C1"`);
 
       // D1 should also show cycle error since it depends on A1 which has a cycle
       expect(cell("D1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`
-      );
+        `"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:C1"`);
     });
 
     test("should handle self-referencing cell", () => {

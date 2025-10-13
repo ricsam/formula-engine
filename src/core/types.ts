@@ -273,9 +273,23 @@ export type EvaluationResult = {
   dependencies: Set<string>;
 } & FunctionEvaluationResult;
 
+export type SCC = {
+  id: number;
+  nodes: Set<DependencyNode>; // All nodes considering soft + hard edges
+  evaluationOrder: DependencyNode[]; // Flat topologically ordered list
+  resolved: boolean;
+  hardEdgeSCCs: Set<DependencyNode>[]; // SCCs formed by only hard edges (regular dependencies)
+};
+
+export type SCCDAG = {
+  sccList: SCC[];
+  sccGraph: Map<number, Set<number>>; // Adjacency list of SCC dependencies
+};
+
 export type EvaluationOrder = {
   evaluationOrder: Set<DependencyNode>;
   hasCycle: boolean;
   cycleNodes?: Set<DependencyNode>;
   hash: string;
+  sccDAG?: SCCDAG;
 };

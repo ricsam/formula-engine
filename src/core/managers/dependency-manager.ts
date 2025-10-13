@@ -219,7 +219,6 @@ export class DependencyManager {
     if (!this.ranges.has(rangeKey)) {
       const node = new RangeEvaluationNode(
         rangeKey,
-        this.cacheManager,
         this,
         this.workbookManager
       );
@@ -282,23 +281,15 @@ export class DependencyManager {
   }
 
   /**
-   * Build evaluation order for a cell, handling frontier dependencies specially
+   * Build evaluation order for a cell using SCC-based condensation DAG approach
    *
-   * Evaluation order is a topolocial sorted list of dependencies, where nodeKey is the last element:
-   * [A] = frontier dependency
-   * {A} = transitive dependency of a frontier dependency
-   * (A) = transitive dependency of a regular dependency
-   * A = target cell
-   *
-   * 1. Frontier dependencies without dependencies
-   * 1. Transitive dependencies of frontier dependencies
-   * 2. Frontier dependencies
-   * 3. Transitive dependencies of regular dependencies
-   * 4. Target cell
-   *
-   * e.g: nodeKey is Y10, then the evaluation order is [B1],[B10],[D2],{A1},[B2],{C4},[E4],(B1),(G4),(H1),Y10
-   *
-   * Only dependencies can cause cycles, frontier dependencies cannot cause cycles.
+   * Algorithm:
+   * 1. Discover all transitive dependencies (skipping resolved nodes)
+   * 2. Find SCCs using Tarjan's algorithm
+   * 3. Create condensation DAG from SCCs
+   * 4. Topologically sort the condensation DAG using Kahn's algorithm
+   * 5. For each SCC, create internal evaluation order with cycle breaking
+   * 6. Join the sorted SCC evaluation orders to create final evaluation order
    */
   buildEvaluationOrder(nodeKey: string): EvaluationOrder {
     const node = this.getCellNode(nodeKey);
@@ -309,32 +300,21 @@ export class DependencyManager {
     ) {
       return this.cacheManager.getEvaluationOrder(node.key)!;
     }
-    let profileThis = false;
     if (flags.isProfiling) {
       console.time("buildEvaluationOrder");
+      console.group();
     }
 
-    if (flags.isProfiling) {
-      if (flags.prevSize === 5770) {
-        profileThis = true;
-        console.group("Slow evaluation");
-      }
-    }
-
-    // Algorithm:
-    // 1. Discover all transitive dependencies (skipping resolved nodes)
-    // 2. Detect cycles using Tarjan's algorithm
-    // 3. Build topologically sorted evaluation order
-    // 4. Return order with cycle information (cyclic nodes are marked but still included)
-
+    // Phase 1: Discover all transitive dependencies (skipping resolved nodes)
     const allNodes = new Map<string, DependencyNode>();
     const visitedForDiscovery = new Set<DependencyNode>();
-    const cycleNodes = new Set<DependencyNode>();
 
-    // Phase 1: Discover all nodes, skipping resolved nodes
     const discoverNodes = (currentNode: DependencyNode) => {
-      // Skip resolved nodes completely
-      if (currentNode && currentNode.resolved) {
+      // Skip resolved nodes, BUT always include range nodes even if resolved
+      // because ranges need to be re-evaluated in different contexts
+      const isRangeNode = currentNode instanceof RangeEvaluationNode;
+      
+      if (currentNode && currentNode.resolved && !isRangeNode) {
         return;
       }
 
@@ -348,15 +328,12 @@ export class DependencyManager {
 
       visitedForDiscovery.add(currentNode);
 
-      // Get all dependencies (regular and frontier)
       const allDeps = currentNode.getAllDependencies();
       for (const dep of allDeps) {
         discoverNodes(dep);
       }
     };
 
-
-    // Start discovery from the target node
     if (flags.isProfiling) {
       console.time("discoverNodes");
     }
@@ -370,7 +347,6 @@ export class DependencyManager {
       flags.prevSize = allNodes.size;
     }
 
-    // If the target node itself was resolved, return it alone
     if (allNodes.size === 0 && node && node.resolved) {
       const result: EvaluationOrder = {
         evaluationOrder: new Set([node]),
@@ -383,155 +359,193 @@ export class DependencyManager {
       }
 
       if (flags.isProfiling) {
-        if (profileThis) {
-          console.groupEnd();
-        }
+        console.groupEnd();
         console.timeEnd("buildEvaluationOrder");
       }
 
       return result;
     }
 
-    // Phase 2: Detect cycles using Tarjan's algorithm (only for regular dependencies)
-    const getStronglyConnectedComponents = (): Set<DependencyNode>[] => {
-      const index = new Map<DependencyNode, number>();
-      const lowlink = new Map<DependencyNode, number>();
-      const onStack = new Set<DependencyNode>();
-      const stack: DependencyNode[] = [];
-      const sccs: Set<DependencyNode>[] = [];
-      let currentIndex = 0;
+    // Phase 2: Find SCCs using Tarjan's algorithm
+    if (flags.isProfiling) {
+      console.time("tarjan");
+    }
 
-      const strongConnect = (v: DependencyNode) => {
-        index.set(v, currentIndex);
-        lowlink.set(v, currentIndex);
-        currentIndex++;
-        stack.push(v);
-        onStack.add(v);
+    // Build SCCs considering ALL dependencies (soft + hard edges)
+    const sccs = this.findSCCs(allNodes, true);
+    
+    if (flags.isProfiling) {
+      console.timeEnd("tarjan");
+    }
 
-        // Only consider regular dependencies (not frontier) for cycle detection
-        const successors = v.getDependencies();
-        for (const w of successors) {
-          if (!allNodes.has(w.key)) {
-            continue;
-          }
+    // Phase 3: Create condensation DAG and check for cached SCCs
+    if (flags.isProfiling) {
+      console.time("condensation");
+    }
 
-          if (!index.has(w)) {
-            strongConnect(w);
-            lowlink.set(v, Math.min(lowlink.get(v)!, lowlink.get(w)!));
-          } else if (onStack.has(w)) {
-            lowlink.set(v, Math.min(lowlink.get(v)!, index.get(w)!));
-          }
-        }
+    const nodeToSCCId = new Map<DependencyNode, number>();
+    const sccList: import("../types").SCC[] = [];
 
-        // Pop SCC from stack
-        if (lowlink.get(v) === index.get(v)) {
-          const scc = new Set<DependencyNode>();
-          let w: DependencyNode;
-          do {
-            w = stack.pop()!;
-            onStack.delete(w);
-            scc.add(w);
-          } while (w !== v);
+    for (let i = 0; i < sccs.length; i++) {
+      const sccNodes = sccs[i]!;
 
-          // Mark as cycle if: multiple nodes in SCC, or single node with self-loop
-          if (scc.size > 1 || (scc.size === 1 && v.getDependencies().has(v))) {
-            sccs.push(scc);
-          }
-        }
-      };
+      // Check if all nodes in this SCC are resolved
+      const allResolved = Array.from(sccNodes).every((n) => n.resolved);
 
-      // Run on all discovered nodes
-      for (const [_, node] of allNodes) {
-        if (!index.has(node)) {
-          strongConnect(node);
+      // Create SCC hash for caching
+      const sccHash = Array.from(sccNodes)
+        .map((n) => n.key)
+        .sort()
+        .join("|");
+
+      // Try to get cached SCC if it's resolved
+      let scc: import("../types").SCC;
+      const cachedSCC = allResolved
+        ? this.cacheManager.getSCC(sccHash)
+        : undefined;
+
+      if (cachedSCC) {
+        scc = cachedSCC;
+      } else {
+        // Build evaluation order for this SCC with cycle breaking
+        const sccEvalOrder = this.buildSCCEvaluationOrder(sccNodes);
+
+        // Find hard-edge SCCs within this soft-edge SCC
+        // Hard-edge SCCs are formed by only regular dependencies
+        const hardEdgeSCCs = this.findSCCs(
+          new Map(Array.from(sccNodes).map(n => [n.key, n])),
+          false // Use only hard edges (regular dependencies)
+        );
+
+        scc = {
+          id: i,
+          nodes: sccNodes,
+          evaluationOrder: sccEvalOrder,
+          resolved: allResolved,
+          hardEdgeSCCs,
+        };
+
+        // Cache if resolved
+        if (allResolved) {
+          this.cacheManager.setSCC(sccHash, scc);
         }
       }
 
-      return sccs;
-    };
+      sccList.push(scc);
 
-    // Identify all cyclic nodes
-    if (profileThis) {
-      console.time("getStronglyConnectedComponents");
-    }
-    for (const scc of getStronglyConnectedComponents()) {
-      for (const node of scc) {
-        cycleNodes.add(node);
+      for (const n of sccNodes) {
+        nodeToSCCId.set(n, i);
       }
     }
-    if (profileThis) {
-      console.timeEnd("getStronglyConnectedComponents");
+
+    // Build SCC dependency graph
+    // Edge from A to B means A depends on B, so B must be evaluated before A
+    const sccGraph = new Map<number, Set<number>>();
+    for (let i = 0; i < sccList.length; i++) {
+      sccGraph.set(i, new Set());
     }
 
-    // Phase 3: Build topologically sorted evaluation order using DFS post-order
-    // This creates proper topological order where dependencies come before dependents
+    for (const [_, n] of allNodes) {
+      const nSCCId = nodeToSCCId.get(n)!;
+      // Use ALL dependencies (regular + frontier) for the condensation DAG
+      // This ensures proper evaluation order even with frontier dependencies
+      const deps = n.getAllDependencies();
+
+      for (const dep of deps) {
+        if (!allNodes.has(dep.key)) continue;
+
+        const depSCCId = nodeToSCCId.get(dep)!;
+        // n depends on dep, so dep's SCC must come before n's SCC
+        // Add edge from dep's SCC to n's SCC
+        if (nSCCId !== depSCCId) {
+          sccGraph.get(depSCCId)!.add(nSCCId);
+        }
+      }
+    }
+
+    if (flags.isProfiling) {
+      console.timeEnd("condensation");
+    }
+
+    // Phase 4: Topologically sort SCCs using Kahn's algorithm
+    if (flags.isProfiling) {
+      console.time("kahn");
+    }
+
+    const inDegree = new Map<number, number>();
+    for (let i = 0; i < sccList.length; i++) {
+      inDegree.set(i, 0);
+    }
+
+    for (const [_, deps] of sccGraph) {
+      for (const toId of deps) {
+        inDegree.set(toId, inDegree.get(toId)! + 1);
+      }
+    }
+
+    const queue: number[] = [];
+    for (let i = 0; i < sccList.length; i++) {
+      if (inDegree.get(i) === 0) {
+        queue.push(i);
+      }
+    }
+
+    const sortedSCCIds: number[] = [];
+    while (queue.length > 0) {
+      const sccId = queue.shift()!;
+      sortedSCCIds.push(sccId);
+
+      const deps = sccGraph.get(sccId)!;
+      for (const depId of deps) {
+        const newInDegree = inDegree.get(depId)! - 1;
+        inDegree.set(depId, newInDegree);
+        if (newInDegree === 0) {
+          queue.push(depId);
+        }
+      }
+    }
+
+    if (flags.isProfiling) {  
+      console.timeEnd("kahn");
+    }
+
+    // Phase 5: Join evaluation orders from sorted SCCs
     const evaluationOrderArray: DependencyNode[] = [];
-    const visitedForOrder = new Set<DependencyNode>();
-    const visitingForOrder = new Set<DependencyNode>(); // Track nodes currently being visited
+    for (const sccId of sortedSCCIds) {
+      const scc = sccList[sccId]!;
+      evaluationOrderArray.push(...scc.evaluationOrder);
+    }
 
-    const buildOrder = (current: DependencyNode) => {
-      // Already processed
-      if (visitedForOrder.has(current) || current.resolved) {
-        return;
-      }
+    const evaluationOrder = new Set(evaluationOrderArray);
 
-      // Detect cycles during traversal (shouldn't happen if Tarjan worked correctly)
-      if (visitingForOrder.has(current)) {
-        return; // Skip back edges
-      }
-
-      visitingForOrder.add(current);
-
-      // Visit all dependencies first (regular dependencies)
-      const regularDeps = current.getDependencies();
-      for (const dep of regularDeps) {
-        if (allNodes.has(dep.key) && !cycleNodes.has(dep)) {
-          // Skip cyclic dependencies to avoid infinite recursion
-          buildOrder(dep);
-        } else if (allNodes.has(dep.key) && cycleNodes.has(dep)) {
-          // Still try to visit cyclic nodes, but guard against infinite loops
-          if (!visitingForOrder.has(dep)) {
-            buildOrder(dep);
+    // Identify cycle nodes from hard-edge SCCs
+    const cycleNodes = new Set<DependencyNode>();
+    for (const scc of sccList) {
+      for (const hardEdgeSCC of scc.hardEdgeSCCs) {
+        // A hard-edge SCC with multiple nodes or a self-loop indicates a real cycle
+        if (hardEdgeSCC.size > 1) {
+          for (const n of hardEdgeSCC) {
+            cycleNodes.add(n);
+          }
+        } else if (hardEdgeSCC.size === 1) {
+          const node = Array.from(hardEdgeSCC)[0]!;
+          if (node.getDependencies().has(node)) {
+            cycleNodes.add(node);
           }
         }
       }
-
-      // Visit frontier dependencies
-      const frontierDeps = current.getFrontierDependencies();
-      for (const dep of frontierDeps) {
-        if (allNodes.has(dep.key) && !visitingForOrder.has(dep)) {
-          buildOrder(dep);
-        }
-      }
-
-      visitingForOrder.delete(current);
-
-      // Add to order in post-order (after visiting all dependencies)
-      if (!visitedForOrder.has(current)) {
-        visitedForOrder.add(current);
-        evaluationOrderArray.push(current);
-      }
-    };
-
-    // Build order starting from the target node
-    // This ensures we get a proper topological sort
-    if (profileThis) {
-      console.time("buildOrder");
     }
-    buildOrder(node);
-    if (profileThis) {
-      console.timeEnd("buildOrder");
-    }
-
-    // Convert array to Set while preserving insertion order (JS Sets maintain insertion order)
-    const evaluationOrder = new Set(evaluationOrderArray);
 
     const hasCycle = cycleNodes.size > 0;
     const result: EvaluationOrder = {
       evaluationOrder,
       hasCycle,
       ...(hasCycle && { cycleNodes }),
-      hash: this.computeHash(new Set(allNodes.values())),
+      hash: this.computeGraphHash(allNodes, sccList),
+      sccDAG: {
+        sccList,
+        sccGraph,
+      },
     };
 
     if (node && node.resolved) {
@@ -539,12 +553,155 @@ export class DependencyManager {
     }
 
     if (flags.isProfiling) {
-      if (profileThis) {
-        console.groupEnd();
-      }
+      console.groupEnd();
       console.timeEnd("buildEvaluationOrder");
     }
     return result;
+  }
+
+  /**
+   * Find strongly connected components using Tarjan's algorithm
+   * @param nodes - Map of nodes to analyze
+   * @param includeFrontier - If true, use getAllDependencies(); if false, use getDependencies()
+   * @returns Array of SCCs (each SCC is a Set of nodes)
+   */
+  private findSCCs(
+    nodes: Map<string, DependencyNode>,
+    includeFrontier: boolean
+  ): Set<DependencyNode>[] {
+    const index = new Map<DependencyNode, number>();
+    const lowlink = new Map<DependencyNode, number>();
+    const onStack = new Set<DependencyNode>();
+    const stack: DependencyNode[] = [];
+    const sccs: Set<DependencyNode>[] = [];
+    let currentIndex = 0;
+
+    const strongConnect = (v: DependencyNode) => {
+      index.set(v, currentIndex);
+      lowlink.set(v, currentIndex);
+      currentIndex++;
+      stack.push(v);
+      onStack.add(v);
+
+      // Use either all dependencies or just regular dependencies
+      const successors = includeFrontier
+        ? v.getAllDependencies()
+        : v.getDependencies();
+      
+      for (const w of successors) {
+        if (!nodes.has(w.key)) {
+          continue;
+        }
+
+        if (!index.has(w)) {
+          strongConnect(w);
+          lowlink.set(v, Math.min(lowlink.get(v)!, lowlink.get(w)!));
+        } else if (onStack.has(w)) {
+          lowlink.set(v, Math.min(lowlink.get(v)!, index.get(w)!));
+        }
+      }
+
+      if (lowlink.get(v) === index.get(v)) {
+        const scc = new Set<DependencyNode>();
+        let w: DependencyNode;
+        do {
+          w = stack.pop()!;
+          onStack.delete(w);
+          scc.add(w);
+        } while (w !== v);
+
+        sccs.push(scc);
+      }
+    };
+
+    for (const [_, n] of nodes) {
+      if (!index.has(n)) {
+        strongConnect(n);
+      }
+    }
+
+    return sccs;
+  }
+
+  /**
+   * Build evaluation order within a single SCC using DFS with cycle breaking
+   * Uses all dependencies (including frontier) for proper evaluation ordering
+   */
+  private buildSCCEvaluationOrder(
+    sccNodes: Set<DependencyNode>
+  ): DependencyNode[] {
+    const visited = new Set<DependencyNode>();
+    const visiting = new Set<DependencyNode>();
+    const result: DependencyNode[] = [];
+
+    const dfs = (n: DependencyNode) => {
+      if (visited.has(n)) {
+        return;
+      }
+
+      if (visiting.has(n)) {
+        // Cycle detected (from any edge type), break it
+        return;
+      }
+
+      visiting.add(n);
+
+      // Use all dependencies for evaluation ordering (regular + frontier)
+      const deps = n.getAllDependencies();
+      for (const dep of deps) {
+        if (sccNodes.has(dep) && !visited.has(dep)) {
+          dfs(dep);
+        }
+      }
+
+      visiting.delete(n);
+      visited.add(n);
+      result.push(n);
+    };
+
+    // Sort nodes by key for deterministic ordering
+    const sortedNodes = Array.from(sccNodes).sort((a, b) =>
+      a.key.localeCompare(b.key)
+    );
+
+    for (const n of sortedNodes) {
+      if (!visited.has(n)) {
+        dfs(n);
+      }
+    }
+
+    return result;
+  }
+
+
+  /**
+   * Compute hash representing the graph structure including SCC information
+   */
+  private computeGraphHash(
+    allNodes: Map<string, DependencyNode>,
+    sccList: import("../types").SCC[]
+  ): string {
+    const parts: string[] = [];
+
+    // Hash nodes and their dependencies
+    for (const [key, node] of Array.from(allNodes.entries()).sort()) {
+      const deps = Array.from(node.getAllDependencies())
+        .map((d) => d.key)
+        .sort()
+        .join(",");
+      parts.push(`${key}:[${deps}]`);
+    }
+
+    // Add SCC structure
+    for (const scc of sccList) {
+      const nodeKeys = Array.from(scc.nodes)
+        .map((n) => n.key)
+        .sort()
+        .join(",");
+      parts.push(`SCC${scc.id}:{${nodeKeys}}`);
+    }
+
+    return parts.join("|");
   }
 
   /**
@@ -721,6 +878,48 @@ export class DependencyManager {
       node.canResolve()
     ) {
       node.resolve();
+    }
+
+    // After marking nodes as resolved, update SCC cache with resolved status
+    this.updateResolvedSCCs(node);
+  }
+
+  /**
+   * Update SCCs in cache to mark them as resolved if all their nodes are resolved
+   */
+  private updateResolvedSCCs(startNode: DependencyNode): void {
+    // Get evaluation order which contains SCC information
+    if (flags.isProfiling) {
+      console.time("updateResolvedSCCs");
+    }
+    const evalOrder = this.buildEvaluationOrder(startNode.key);
+
+    if (!evalOrder.sccDAG) {
+      return;
+    }
+
+    // Check each SCC and update cache if all nodes are resolved
+    for (const scc of evalOrder.sccDAG.sccList) {
+      const allResolved = Array.from(scc.nodes).every((n) => n.resolved);
+
+      if (allResolved && !scc.resolved) {
+        // Create updated SCC with resolved flag
+        const updatedSCC: import("../types").SCC = {
+          ...scc,
+          resolved: true,
+        };
+
+        // Update cache
+        const sccHash = Array.from(scc.nodes)
+          .map((n) => n.key)
+          .sort()
+          .join("|");
+
+        this.cacheManager.setSCC(sccHash, updatedSCC);
+      }
+    }
+    if (flags.isProfiling) {
+      console.timeEnd("updateResolvedSCCs");
     }
   }
 }

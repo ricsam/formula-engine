@@ -1,21 +1,48 @@
 import type { CellEvalNode } from "src/evaluator/cell-eval-node";
 import type { EvaluateAllCellsResult, RangeAddress } from "../types";
-import { cellAddressToKey, checkRangeIntersection, isCellInRange } from "../utils";
+import {
+  cellAddressToKey,
+  checkRangeIntersection,
+  isCellInRange,
+} from "../utils";
 import type { WorkbookManager } from "./workbook-manager";
 import type { DependencyManager } from "./dependency-manager";
 import type { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
 import { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
+import type { RangeEvalOrderEntry } from "./range-eval-order-builder";
 
 export class FrontierDependencyManager {
+  private evalOrder: RangeEvalOrderEntry[];
   constructor(
     private frontierRange: RangeAddress,
     protected workbookManager: WorkbookManager,
     protected evaluationManager: DependencyManager
-  ) {}
+  ) {
+    this.evalOrder = this.workbookManager.buildRangeEvalOrder(
+      "col-major",
+      this.frontierRange
+    );
+    for (const entry of this.evalOrder) {
+      if (entry.type === "empty_cell" || entry.type === "empty_range") {
+        for (const candidate of entry.candidates) {
+          const node = this.evaluationManager.getCellNode(
+            cellAddressToKey(candidate)
+          );
+          if (node instanceof EmptyCellEvaluationNode) {
+            throw new Error("A frontier dependencies can not be an empty cell");
+          }
+          this.addFrontierDependency(node);
+        }
+      } else if (entry.type === "value") {
+        const node = this.evaluationManager.getCellNode(
+          cellAddressToKey(entry.address)
+        );
+        this.addDependency(node);
+      }
+    }
+  }
 
   private _resolved: boolean = false;
-  private _hasRegisteredFrontierDependencies: boolean = false;
-
   private _directDepsUpdated: boolean = false;
 
   /**
@@ -46,22 +73,11 @@ export class FrontierDependencyManager {
     return undefined;
   }
 
-  public get frontierDependencies() {
-    if (!this._hasRegisteredFrontierDependencies) {
-      this.workbookManager
-        .getFrontierCandidates(this.frontierRange)
-        .forEach((candidate) => {
-          const node = this.evaluationManager.getCellNode(
-            cellAddressToKey(candidate)
-          );
-          if (node instanceof EmptyCellEvaluationNode) {
-            throw new Error("A frontier dependencies can not be an empty cell");
-          }
-          this.addFrontierDependency(node);
-        });
-      this._hasRegisteredFrontierDependencies = true;
-    }
+  public getRangeEvalOrder() {
+    return this.evalOrder;
+  }
 
+  public get frontierDependencies() {
     return this._frontierDependencies
       .difference(this._discardedFrontierDependencies)
       .difference(this._dependencies);
@@ -71,7 +87,7 @@ export class FrontierDependencyManager {
     return this._discardedFrontierDependencies;
   }
 
-  private addFrontierDependency(dependency: CellEvalNode) {
+  protected addFrontierDependency(dependency: CellEvalNode) {
     if (this._frontierDependencies.has(dependency)) {
       return;
     }
@@ -111,7 +127,7 @@ export class FrontierDependencyManager {
   }
 
   public canResolve() {
-    return !this._directDepsUpdated && this._hasRegisteredFrontierDependencies;
+    return !this._directDepsUpdated;
   }
 
   public get resolved() {
@@ -150,7 +166,6 @@ export class FrontierDependencyManager {
     this._dependencies.add(dependency);
   }
 
-
   public upgradeFrontierDependencies() {
     // todo can be optimized to not generate the frontier candidates every time
     // we can cache the frontier candidates for the current cell
@@ -165,7 +180,10 @@ export class FrontierDependencyManager {
       if (result) {
         if (result.type === "spilled-values") {
           const spillArea = result.spillArea(candidateNode.cellAddress);
-          const intersects = checkRangeIntersection(this.frontierRange.range, spillArea);
+          const intersects = checkRangeIntersection(
+            this.frontierRange.range,
+            spillArea
+          );
           if (intersects) {
             this.maybeUpgradeFrontierDependency(candidateNode); // upgraded!
           } else {

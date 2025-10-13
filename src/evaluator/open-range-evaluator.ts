@@ -71,7 +71,7 @@ export class OpenRangeEvaluator {
       );
     }
 
-    const evalOrder = rangeNode.getRangeEvalOrder(options.lookupOrder);
+    const evalOrder = rangeNode.getRangeEvalOrder();
 
     for (const entry of evalOrder) {
       if (entry.type === "value") {

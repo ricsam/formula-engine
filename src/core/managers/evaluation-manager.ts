@@ -151,16 +151,6 @@ export class EvaluationManager {
     try {
       // upgrade any frontier dependencies that spill into the range
       node.upgradeFrontierDependencies();
-
-      const cellsInRange = this.workbookManager.getCellsInRange(node.address);
-
-      // Iterate over all defined cells in the sheet using optimized index-based iterator
-      for (const address of cellsInRange) {
-        const cellKey = cellAddressToKey(address);
-
-        const cellNode = this.dependencyManager.getCellNode(cellKey);
-        node.addDependency(cellNode);
-      }
     } catch (err) {
       // ignore errors, maybe e.g. the sheet wasn't found
       console.warn(err);
