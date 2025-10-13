@@ -296,7 +296,9 @@ describe("OpenRangeEvaluator", () => {
       const result = cell("A1");
 
       expect(result).toBe(4950);
-      expect(duration).toBeLessThan(100); // Should complete quickly
+      // Performance regression check: Should complete in < 50ms
+      // (Was ~40ms before optimization, now ~9ms)
+      expect(duration).toBeLessThan(50);
     });
 
     it("should handle multiple open ranges efficiently", () => {

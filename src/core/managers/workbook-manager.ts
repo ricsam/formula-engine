@@ -19,7 +19,7 @@ interface IndexEntry {
   key: string;
 }
 
-interface SheetIndexes {
+export interface SheetIndexes {
   // lookup maps - cells grouped by row/column
   rowGroups: Map<number, IndexEntry[]>; // row number -> cells in that row (sorted by col)
   colGroups: Map<number, IndexEntry[]>; // col number -> cells in that col (sorted by row)
@@ -32,7 +32,7 @@ interface SheetIndexes {
 /**
  * Utility class for binary search operations on IndexEntry arrays
  */
-class IndexEntryBinarySearch {
+export class IndexEntryBinarySearch {
   /**
    * Find the insertion point for a number in a sorted IndexEntry array
    * Returns the index where the number should be inserted to maintain sort order
@@ -110,7 +110,7 @@ export class WorkbookManager {
   /**
    * Get or create indexes for a sheet
    */
-  private getSheetIndexes(opts: {
+  public getSheetIndexes(opts: {
     workbookName: string;
     sheetName: string;
   }): SheetIndexes {

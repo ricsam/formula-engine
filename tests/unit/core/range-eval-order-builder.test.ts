@@ -1086,8 +1086,9 @@ describe("buildRangeEvalOrder", () => {
     const result = buildRangeEvalOrder.call(manager, "col-major", range);
     const duration = performance.now() - startTime;
 
-    // Should complete very quickly (< 50ms) because it only processes sparse data
-    expect(duration).toBeLessThan(50);
+    // Performance regression check: Should complete in < 5ms
+    // (Was ~27ms before optimization, now ~0.1ms)
+    expect(duration).toBeLessThan(5);
 
     // Check the result structure
     expect(result.map(serializeEntry)).toMatchInlineSnapshot(`

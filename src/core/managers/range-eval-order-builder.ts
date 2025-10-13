@@ -6,7 +6,11 @@ import {
   type Sheet,
 } from "../types";
 import { getCellReference, parseCellReference } from "../utils";
-import type { WorkbookManager } from "./workbook-manager";
+import {
+  type WorkbookManager,
+  type SheetIndexes,
+  IndexEntryBinarySearch,
+} from "./workbook-manager";
 import { EvaluationError } from "src/evaluator/evaluation-error";
 
 export type LookupOrder = "row-major" | "col-major";
@@ -200,16 +204,16 @@ export function buildRangeEvalOrder(
   }
 
   if (lookupOrder === "row-major") {
+    // Get indexes for efficient row/column lookups
+    const indexes = this.getSheetIndexes({
+      workbookName: lookupRange.workbookName,
+      sheetName: lookupRange.sheetName,
+    });
+
     // Iterate row by row, left to right
     for (let row = startRow; row <= endRow; row++) {
-      // Check if this row has any occupied cells
-      let hasOccupiedInRow = false;
-      for (const occupiedAddr of occupiedCells.values()) {
-        if (occupiedAddr.rowIndex === row) {
-          hasOccupiedInRow = true;
-          break;
-        }
-      }
+      // Check if this row has any occupied cells using indexes
+      const hasOccupiedInRow = indexes.rowGroups.has(row);
 
       // If the row has no occupied cells and the range is infinite in columns,
       // emit a single infinite range for the entire row
@@ -257,7 +261,8 @@ export function buildRangeEvalOrder(
         lookupRange,
         occupiedCells,
         sheet,
-        result
+        result,
+        indexes
       );
 
       // If the lookup range is infinite in columns, emit a final infinite range for this row ONLY
@@ -337,16 +342,16 @@ export function buildRangeEvalOrder(
       });
     }
   } else {
+    // Get indexes for efficient row/column lookups
+    const indexes = this.getSheetIndexes({
+      workbookName: lookupRange.workbookName,
+      sheetName: lookupRange.sheetName,
+    });
+
     // col-major: iterate column by column, top to bottom
     for (let col = startCol; col <= endCol; col++) {
-      // Check if this column has any occupied cells
-      let hasOccupiedInColumn = false;
-      for (const occupiedAddr of occupiedCells.values()) {
-        if (occupiedAddr.colIndex === col) {
-          hasOccupiedInColumn = true;
-          break;
-        }
-      }
+      // Check if this column has any occupied cells using indexes
+      const hasOccupiedInColumn = indexes.colGroups.has(col);
 
       // If the column has no occupied cells and the range is infinite in rows,
       // emit a single infinite range for the entire column
@@ -397,7 +402,8 @@ export function buildRangeEvalOrder(
         lookupRange,
         occupiedCells,
         sheet,
-        result
+        result,
+        indexes
       );
 
       // If the lookup range is infinite in rows, emit a final infinite range for this column ONLY
@@ -492,7 +498,8 @@ function processRowMajorRow(
   lookupRange: RangeAddress,
   occupiedCells: Map<string, CellAddress>,
   sheet: Sheet,
-  result: RangeEvalOrderEntry[]
+  result: RangeEvalOrderEntry[],
+  indexes: SheetIndexes
 ): void {
   let col = startCol;
 
@@ -515,13 +522,18 @@ function processRowMajorRow(
     } else {
       // This cell is empty - find the contiguous empty range in this row with same candidates
       const emptyRangeStart = col;
-      let emptyRangeEnd = col;
+      let emptyRangeEnd = endCol;
 
-      // Extend range to next occupied cell or end (using indexes)
-      emptyRangeEnd = endCol;
-      for (const occupiedAddr of occupiedCells.values()) {
-        if (occupiedAddr.rowIndex === row && occupiedAddr.colIndex > col) {
-          emptyRangeEnd = Math.min(emptyRangeEnd, occupiedAddr.colIndex - 1);
+      // Find next occupied cell in this row using binary search (O(log n))
+      const rowGroup = indexes.rowGroups.get(row);
+      if (rowGroup) {
+        // Binary search for the first cell in this row with colIndex > col
+        const nextCellIdx = IndexEntryBinarySearch.findFirstGreaterOrEqual(
+          rowGroup,
+          col + 1
+        );
+        if (nextCellIdx !== -1) {
+          emptyRangeEnd = rowGroup[nextCellIdx]!.number - 1;
         }
       }
 
@@ -588,7 +600,8 @@ function processColMajorColumn(
   lookupRange: RangeAddress,
   occupiedCells: Map<string, CellAddress>,
   sheet: Sheet,
-  result: RangeEvalOrderEntry[]
+  result: RangeEvalOrderEntry[],
+  indexes: SheetIndexes
 ): void {
   let row = startRow;
 
@@ -611,13 +624,18 @@ function processColMajorColumn(
     } else {
       // This cell is empty - find the contiguous empty range in this column with same candidates
       const emptyRangeStart = row;
-      let emptyRangeEnd = row;
+      let emptyRangeEnd = endRow;
 
-      // Extend range to next occupied cell or end (using indexes)
-      emptyRangeEnd = endRow;
-      for (const occupiedAddr of occupiedCells.values()) {
-        if (occupiedAddr.colIndex === col && occupiedAddr.rowIndex > row) {
-          emptyRangeEnd = Math.min(emptyRangeEnd, occupiedAddr.rowIndex - 1);
+      // Find next occupied cell in this column using binary search (O(log n))
+      const colGroup = indexes.colGroups.get(col);
+      if (colGroup) {
+        // Binary search for the first cell in this column with rowIndex > row
+        const nextCellIdx = IndexEntryBinarySearch.findFirstGreaterOrEqual(
+          colGroup,
+          row + 1
+        );
+        if (nextCellIdx !== -1) {
+          emptyRangeEnd = colGroup[nextCellIdx]!.number - 1;
         }
       }
 
@@ -728,14 +746,30 @@ function findAllCandidatesForRange(
 
       // Add samples at rows where there are occupied cells to the left
       // (these are the rows that might have different left candidates)
+      // Use indexes to efficiently find occupied cells instead of nested loop
+      const indexes = manager.getSheetIndexes({
+        workbookName: emptyRange.workbookName,
+        sheetName: emptyRange.sheetName,
+      });
+
+      const seenRows = new Set<number>();
       for (let c = 0; c < startCol; c++) {
-        for (let r = startRow; r <= endRow; r++) {
-          const cellRef = getCellReference({
-            rowIndex: r,
-            colIndex: c,
-          });
-          if (sheet.content.has(cellRef)) {
-            positionsToCheck.push({ row: r, col: startCol });
+        const colGroup = indexes.colGroups.get(c);
+        if (colGroup) {
+          // Use binary search to find cells in this column within the row range
+          const startIdx = IndexEntryBinarySearch.findFirstGreaterOrEqual(
+            colGroup,
+            startRow
+          );
+          if (startIdx !== -1) {
+            for (let i = startIdx; i < colGroup.length; i++) {
+              const entry = colGroup[i];
+              if (!entry || entry.number > endRow) break;
+              if (!seenRows.has(entry.number)) {
+                seenRows.add(entry.number);
+                positionsToCheck.push({ row: entry.number, col: startCol });
+              }
+            }
           }
         }
       }
@@ -850,6 +884,7 @@ function isSameCell(a: CellAddress, b: CellAddress): boolean {
  * within the same row
  * Only finds cells with formulas (starting with "=")
  * Searches both inside and outside the lookup range boundaries
+ * OPTIMIZED: Uses indexes to avoid O(n) scan
  */
 function findNearestLeftAnchor(
   this: WorkbookManager,
@@ -859,20 +894,34 @@ function findNearestLeftAnchor(
   const row = targetCell.rowIndex;
   const targetCol = targetCell.colIndex;
 
-  // Search from targetCol-1 down to column 0 (search entire row to the left)
-  for (let col = targetCol - 1; col >= 0; col--) {
-    const cellAddr: CellAddress = {
-      rowIndex: row,
-      colIndex: col,
-      sheetName: targetCell.sheetName,
-      workbookName: targetCell.workbookName,
-    };
-    const cellRef = getCellReference(cellAddr);
-    const content = sheet.content.get(cellRef);
+  // Use indexes to get cells in this row (O(1) lookup + O(cells_in_row) scan)
+  const indexes = this.getSheetIndexes({
+    workbookName: targetCell.workbookName,
+    sheetName: targetCell.sheetName,
+  });
+  
+  const rowGroup = indexes.rowGroups.get(row);
+  if (!rowGroup) {
+    return null; // No cells in this row
+  }
 
+  // Search backwards through the sorted array to find nearest left formula
+  // rowGroup is sorted by column index
+  for (let i = rowGroup.length - 1; i >= 0; i--) {
+    const entry = rowGroup[i];
+    if (!entry || entry.number >= targetCol) {
+      continue; // Skip cells at or right of target
+    }
+
+    const content = sheet.content.get(entry.key);
     // Only consider formula cells (starting with "=")
     if (typeof content === "string" && content.startsWith("=")) {
-      return cellAddr;
+      return {
+        rowIndex: row,
+        colIndex: entry.number,
+        sheetName: targetCell.sheetName,
+        workbookName: targetCell.workbookName,
+      };
     }
   }
 
@@ -884,6 +933,7 @@ function findNearestLeftAnchor(
  * within the same column
  * Only finds cells with formulas (starting with "=")
  * Searches outside the lookup range boundaries
+ * OPTIMIZED: Uses indexes to avoid O(n) scan
  */
 function findNearestAboveAnchor(
   this: WorkbookManager,
@@ -893,20 +943,34 @@ function findNearestAboveAnchor(
   const col = targetCell.colIndex;
   const targetRow = targetCell.rowIndex;
 
-  // Search from targetRow-1 up to row 0 (search entire column above)
-  for (let row = targetRow - 1; row >= 0; row--) {
-    const cellAddr: CellAddress = {
-      rowIndex: row,
-      colIndex: col,
-      sheetName: targetCell.sheetName,
-      workbookName: targetCell.workbookName,
-    };
-    const cellRef = getCellReference(cellAddr);
-    const content = sheet.content.get(cellRef);
+  // Use indexes to get cells in this column (O(1) lookup + O(cells_in_col) scan)
+  const indexes = this.getSheetIndexes({
+    workbookName: targetCell.workbookName,
+    sheetName: targetCell.sheetName,
+  });
+  
+  const colGroup = indexes.colGroups.get(col);
+  if (!colGroup) {
+    return null; // No cells in this column
+  }
 
+  // Search backwards through the sorted array to find nearest above formula
+  // colGroup is sorted by row index
+  for (let i = colGroup.length - 1; i >= 0; i--) {
+    const entry = colGroup[i];
+    if (!entry || entry.number >= targetRow) {
+      continue; // Skip cells at or below target
+    }
+
+    const content = sheet.content.get(entry.key);
     // Only consider formula cells (starting with "=")
     if (typeof content === "string" && content.startsWith("=")) {
-      return cellAddr;
+      return {
+        rowIndex: entry.number,
+        colIndex: col,
+        sheetName: targetCell.sheetName,
+        workbookName: targetCell.workbookName,
+      };
     }
   }
 
@@ -918,6 +982,7 @@ function findNearestAboveAnchor(
  * These are formulas that could spill diagonally to reach the target cell
  * and don't block each other (forming a "staircase" pattern)
  * Searches outside the lookup range boundaries (like direct left/above search)
+ * OPTIMIZED: Uses indexes to avoid O(n²) scan
  *
  * For example, for target D7, candidates might be A6, B5, C4
  * - A6 at (5,0) could spill right and down to reach D7
@@ -933,23 +998,36 @@ function findAllDiagonalStepCandidates(
   const targetRow = targetCell.rowIndex;
   const targetCol = targetCell.colIndex;
 
-  // Find all formula cells in the top-left quadrant (search entire grid to the top-left)
+  // Use indexes to efficiently find all formula cells in the top-left quadrant
   const allCandidates: CellAddress[] = [];
+  
+  const indexes = this.getSheetIndexes({
+    workbookName: targetCell.workbookName,
+    sheetName: targetCell.sheetName,
+  });
 
-  for (let row = targetRow - 1; row >= 0; row--) {
-    for (let col = targetCol - 1; col >= 0; col--) {
-      const cellAddr: CellAddress = {
-        rowIndex: row,
-        colIndex: col,
-        sheetName: targetCell.sheetName,
-        workbookName: targetCell.workbookName,
-      };
-      const cellRef = getCellReference(cellAddr);
-      const content = sheet.content.get(cellRef);
+  // Iterate only through columns that exist in the top-left quadrant
+  for (let col = 0; col < targetCol; col++) {
+    const colGroup = indexes.colGroups.get(col);
+    if (!colGroup) {
+      continue; // No cells in this column
+    }
 
+    // For each cell in this column, check if it's above target row and is a formula
+    for (const entry of colGroup) {
+      if (entry.number >= targetRow) {
+        break; // Cells are sorted by row, so we can stop early
+      }
+
+      const content = sheet.content.get(entry.key);
       // Only consider formula cells (starting with "=")
       if (typeof content === "string" && content.startsWith("=")) {
-        allCandidates.push(cellAddr);
+        allCandidates.push({
+          rowIndex: entry.number,
+          colIndex: col,
+          sheetName: targetCell.sheetName,
+          workbookName: targetCell.workbookName,
+        });
       }
     }
   }
