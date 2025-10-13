@@ -209,13 +209,10 @@ export function processMultiCriteriaValues(
 
         if (!widthsMatch || !heightsMatch) {
           // Return #VALUE! error for dimension mismatch
-          return [{
-            type: "error",
-            err: FormulaError.VALUE,
-            message:
-              "Criteria range dimensions do not match value range dimensions",
-            errAddress: context.originCell.cellAddress,
-          }];
+          throw new EvaluationError(
+            FormulaError.VALUE,
+            "Criteria range dimensions do not match value range dimensions"
+          );
         }
       }
       // Single values (type === "value") are compatible with any range size
@@ -317,7 +314,7 @@ export function processMultiCriteriaValues(
       }
     }
   }
-  
+
   return results;
 }
 
@@ -417,7 +414,6 @@ function handleEmptyCriteriaSpilledValues(
   ) {
     throw new EvaluationError(
       FormulaError.VALUE,
-      context.originCell.cellAddress,
       "Can not process infinite ranges with empty cell criteria"
     );
   }
@@ -524,6 +520,6 @@ function handleEmptyCriteriaSpilledValues(
       }
     }
   }
-  
+
   return results;
 }

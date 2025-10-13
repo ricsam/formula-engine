@@ -67,7 +67,6 @@ export class OpenRangeEvaluator {
     if (!sheet) {
       throw new EvaluationError(
         FormulaError.REF,
-        options.context.originCell.cellAddress,
         `Sheet ${options.address.sheetName} not found`
       );
     }
@@ -108,7 +107,6 @@ export class OpenRangeEvaluator {
           const candidateNode =
             this.dependencyManager.getCellNode(candidateKey);
           const result = candidateNode.evaluationResult;
-
 
           if (candidateNode instanceof EmptyCellEvaluationNode) {
             throw new Error("A frontier dependency can not be an empty cell");

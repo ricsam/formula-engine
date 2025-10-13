@@ -509,7 +509,7 @@ export function captureEvaluationErrors<T>(
         type: "error",
         err: error.type,
         message: error.message,
-        errAddress: error.errAddress,
+        errAddress: error.errAddress ?? errAddress,
       };
     }
     if (error instanceof AwaitingEvaluationError) {

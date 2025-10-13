@@ -4,8 +4,8 @@ import { cellAddressToKey } from "src/core/utils";
 export class EvaluationError extends Error {
   constructor(
     public readonly type: FormulaError,
-    public readonly errAddress: CellAddress,
-    message: string
+    message: string,
+    public readonly errAddress?: CellAddress,
   ) {
     super(message);
   }

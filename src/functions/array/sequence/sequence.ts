@@ -381,7 +381,6 @@ export const SEQUENCE: FunctionDefinition = {
         ) {
           throw new EvaluationError(
             FormulaError.REF,
-            context.originCell.cellAddress,
             `Can not evaluate all cells over an infinite range`
           );
         }

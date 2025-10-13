@@ -1,16 +1,18 @@
-import type {
-  CellAddress,
-  FiniteSpreadsheetRange,
-  LocalCellAddress,
-  SerializedCellValue,
-  Sheet,
-  SpreadsheetRange,
-  Workbook,
+import {
+  FormulaError,
+  type CellAddress,
+  type FiniteSpreadsheetRange,
+  type LocalCellAddress,
+  type SerializedCellValue,
+  type Sheet,
+  type SpreadsheetRange,
+  type Workbook,
 } from "../types";
 import { getCellReference, parseCellReference } from "../utils";
 
 import type { RangeAddress } from "src/core/types";
 import { buildRangeEvalOrder } from "./range-eval-order-builder";
+import { EvaluationError } from "src/evaluator/evaluation-error";
 
 interface IndexEntry {
   number: number;
@@ -640,7 +642,7 @@ export class WorkbookManager {
     // First check if the sheet exists
     const sheet = this.getSheet(address);
     if (!sheet) {
-      throw new Error("Sheet not found");
+      throw new EvaluationError(FormulaError.REF, "Sheet not found");
     }
 
     const indexes = this.getSheetIndexes(address);
