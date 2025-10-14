@@ -162,7 +162,7 @@ export function ExcelDemo() {
   >(initialWorkbookGridItems);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [debugMode, setDebugMode] = useState(false);
-  const [verboseErrors, setVerboseErrors] = useState(true);
+  const [verboseErrors, setVerboseErrors] = useState(false);
   const [viewport, _setViewport] = useState<ViewportState | undefined>(
     initialViewport
   );
@@ -1219,7 +1219,7 @@ export function ExcelDemo() {
                     {currentFileName}
                   </span>
                   {hasUnsavedChanges && (
-                    <span className="text-xs text-orange-600">●</span>
+                    <span className="text-xs text-orange-600" data-testid="unsaved-changes-indicator">●</span>
                   )}
                 </div>
               )}

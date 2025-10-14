@@ -33,6 +33,7 @@ import { flags } from "src/debug/flags";
 import { CellEvalNode } from "src/evaluator/cell-eval-node";
 import { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
 import { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
+import { EvaluationError } from "src/evaluator/evaluation-error";
 
 export class EvaluationManager {
   private isEvaluating = false;
@@ -167,7 +168,7 @@ export class EvaluationManager {
     const sheet = this.workbookManager.getSheet(nodeAddress);
 
     if (!sheet) {
-      throw new Error("Sheet not found");
+      throw new EvaluationError(FormulaError.REF, "Sheet not found", nodeAddress);
     }
 
     const rawContent = sheet.content.get(cellId);
@@ -304,7 +305,7 @@ export class EvaluationManager {
     const sheet = this.workbookManager.getSheet(cellAddress);
     if (!sheet) {
       this.isEvaluating = false;
-      throw new Error("Sheet not found");
+      throw new EvaluationError(FormulaError.REF, "Sheet not found", cellAddress);
     }
 
     const cellId = getCellReference({
@@ -436,12 +437,12 @@ export class EvaluationManager {
   canSpill(spillCandidate: CellAddress, spillArea: SpreadsheetRange): boolean {
     const sheet = this.workbookManager.getSheet(spillCandidate);
     if (!sheet) {
-      throw new Error("Sheet not found");
+      throw new EvaluationError(FormulaError.REF, "Sheet not found", spillCandidate);
     }
     const cellId = getCellReference(spillCandidate);
     const content = sheet.content.get(cellId);
     if (!content) {
-      throw new Error(`Cell not found: ${cellId}`);
+      throw new EvaluationError(FormulaError.REF, `Cell not found: ${cellId}`, spillCandidate);
     }
     for (const spilledValue of this.dependencyManager.spilledValues.values()) {
       if (
@@ -504,7 +505,7 @@ export class EvaluationManager {
 
     const sheet = this.workbookManager.getSheet(cellAddress);
     if (!sheet) {
-      throw new Error("Sheet not found");
+      throw new EvaluationError(FormulaError.REF, "Sheet not found", cellAddress);
     }
 
     const getEvaluatedNode = () => {

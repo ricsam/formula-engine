@@ -575,26 +575,6 @@ export class WorkbookManager {
   }
 
   /**
-   * Converts a SpreadsheetRange to FiniteSpreadsheetRange, throwing an error if infinite
-   */
-  private toFiniteRange(range: SpreadsheetRange): FiniteSpreadsheetRange {
-    if (
-      range.end.col.type === "infinity" ||
-      range.end.row.type === "infinity"
-    ) {
-      throw new Error("Clearing infinite ranges is not supported");
-    }
-
-    return {
-      start: range.start,
-      end: {
-        col: range.end.col.value,
-        row: range.end.row.value,
-      },
-    };
-  }
-
-  /**
    * Removes the content in the spreadsheet that is inside the range.
    * OPTIMIZED: Uses indexes to only process cells that actually exist.
    * ENHANCED: Now supports infinite ranges.
@@ -621,7 +601,6 @@ export class WorkbookManager {
     // setSheetContent will rebuild indexes from scratch, so no need to manually update them
     this.setSheetContent(address, newContent);
   }
-
 
   /**
    * Optimized generator to iterate over cells defined in the content within a range
@@ -717,10 +696,10 @@ export class WorkbookManager {
     return Array.from(this.iterateCellsInRange(address));
   }
 
-  public getCellContent(cellAddress: CellAddress): SerializedCellValue {
+  private getCellContent(cellAddress: CellAddress): SerializedCellValue {
     const sheet = this.getSheet(cellAddress);
     if (!sheet) {
-      throw new Error("Sheet not found");
+      throw new EvaluationError(FormulaError.REF, "Sheet not found", cellAddress);
     }
     return sheet.content.get(getCellReference(cellAddress));
   }
