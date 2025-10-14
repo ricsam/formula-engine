@@ -1,5 +1,9 @@
-import type { CellEvalNode } from "src/evaluator/cell-eval-node";
-import type { EvaluateAllCellsResult, RangeAddress } from "../types";
+import { CellEvalNode } from "src/evaluator/cell-eval-node";
+import type {
+  CellAddress,
+  EvaluateAllCellsResult,
+  RangeAddress,
+} from "../types";
 import {
   cellAddressToKey,
   checkRangeIntersection,
@@ -11,33 +15,77 @@ import type { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
 import { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
 import type { RangeEvalOrderEntry } from "./range-eval-order-builder";
 
+type EvalOrderEntry =
+  | {
+      type: "value";
+      address: CellAddress;
+      node: CellEvalNode;
+    }
+  | {
+      type: "empty_cell";
+      address: CellAddress;
+      candidates: CellEvalNode[];
+    }
+  | {
+      type: "empty_range";
+      address: RangeAddress;
+      candidates: CellEvalNode[];
+    };
+
+function assertIsCellEvalNode(
+  node: CellEvalNode | EmptyCellEvaluationNode
+): asserts node is CellEvalNode {
+  if (node instanceof EmptyCellEvaluationNode) {
+    throw new Error("A frontier dependencies can not be an empty cell");
+  }
+}
+
 export class FrontierDependencyManager {
-  private evalOrder: RangeEvalOrderEntry[];
+  private evalOrder: EvalOrderEntry[];
   constructor(
     private frontierRange: RangeAddress,
     protected workbookManager: WorkbookManager,
     protected evaluationManager: DependencyManager
   ) {
-    this.evalOrder = this.workbookManager.buildRangeEvalOrder(
-      "col-major",
-      this.frontierRange
-    );
+    const addressToNode = (address: CellAddress) => {
+      const node = this.evaluationManager.getCellNode(
+        cellAddressToKey(address)
+      );
+      assertIsCellEvalNode(node);
+      return node;
+    };
+    // todo maybe pass in lookupOrder
+    this.evalOrder = this.workbookManager
+      .buildRangeEvalOrder("col-major", this.frontierRange)
+      .map((entry): EvalOrderEntry => {
+        if (entry.type === "value") {
+          return {
+            type: "value",
+            address: entry.address,
+            node: addressToNode(entry.address),
+          };
+        } else if (entry.type === "empty_cell") {
+          return {
+            type: "empty_cell",
+            address: entry.address,
+            candidates: entry.candidates.map(addressToNode),
+          };
+        } else if (entry.type === "empty_range") {
+          return {
+            type: "empty_range",
+            address: entry.address,
+            candidates: entry.candidates.map(addressToNode),
+          };
+        }
+        throw new Error("Invalid entry type: " + (entry as any).type);
+      });
     for (const entry of this.evalOrder) {
       if (entry.type === "empty_cell" || entry.type === "empty_range") {
         for (const candidate of entry.candidates) {
-          const node = this.evaluationManager.getCellNode(
-            cellAddressToKey(candidate)
-          );
-          if (node instanceof EmptyCellEvaluationNode) {
-            throw new Error("A frontier dependencies can not be an empty cell");
-          }
-          this.addFrontierDependency(node);
+          this.addFrontierDependency(candidate);
         }
       } else if (entry.type === "value") {
-        const node = this.evaluationManager.getCellNode(
-          cellAddressToKey(entry.address)
-        );
-        this.addDependency(node);
+        this.addDependency(entry.node);
       }
     }
   }
@@ -127,7 +175,7 @@ export class FrontierDependencyManager {
   }
 
   public canResolve() {
-    return !this._directDepsUpdated;
+    return !this._directDepsUpdated && this.frontierDependencies.size === 0;
   }
 
   public get resolved() {

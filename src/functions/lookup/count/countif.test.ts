@@ -384,6 +384,109 @@ describe("COUNTIF function", () => {
     });
   });
 
+  describe("INFINITY criteria parsing", () => {
+    test("should match INFINITY values with INFINITY string criteria", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          ["A2", "=1/0"], // Positive infinity
+          ["A3", 20],
+          ["A4", "=-1/0"], // Negative infinity
+          ["A5", "=1/0"], // Positive infinity
+          ["B1", '=COUNTIF(A1:A5, "INFINITY")'],
+        ])
+      );
+
+      expect(cell("B1")).toBe(2); // Two positive infinity values
+    });
+
+    test("should match negative INFINITY values with -INFINITY string criteria", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          ["A2", "=1/0"], // Positive infinity
+          ["A3", 20],
+          ["A4", "=-1/0"], // Negative infinity
+          ["A5", "=-1/0"], // Negative infinity
+          ["B1", '=COUNTIF(A1:A5, "-INFINITY")'],
+        ])
+      );
+
+      expect(cell("B1")).toBe(2); // Two negative infinity values
+    });
+
+    test("should handle case-insensitive INFINITY criteria", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "=1/0"], // Positive infinity
+          ["A2", "=1/0"], // Positive infinity
+          ["B1", '=COUNTIF(A1:A2, "infinity")'], // lowercase
+          ["B2", '=COUNTIF(A1:A2, "Infinity")'], // mixed case
+          ["B3", '=COUNTIF(A1:A2, "INFINITY")'], // uppercase
+        ])
+      );
+
+      expect(cell("B1")).toBe(2);
+      expect(cell("B2")).toBe(2);
+      expect(cell("B3")).toBe(2);
+    });
+
+    test("should use INFINITY in comparison criteria", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          ["A2", 1000],
+          ["A3", 5000],
+          ["A4", "=1/0"], // Positive infinity
+          ["B1", '=COUNTIF(A1:A4, ">INFINITY")'], // Nothing is > +INFINITY
+          ["B2", '=COUNTIF(A1:A4, "<-INFINITY")'], // Nothing is < -INFINITY
+          ["B3", '=COUNTIF(A1:A4, "<INFINITY")'], // All numbers are < +INFINITY
+        ])
+      );
+
+      expect(cell("B1")).toBe(0); // Nothing is greater than +INFINITY
+      expect(cell("B2")).toBe(0); // Nothing is less than -INFINITY
+      expect(cell("B3")).toBe(3); // All finite numbers (10, 1000, 5000) are < +INFINITY
+    });
+
+    test("should handle not equal to INFINITY", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          ["A2", "=1/0"], // Positive infinity
+          ["A3", 20],
+          ["A4", "=-1/0"], // Negative infinity
+          ["B1", '=COUNTIF(A1:A4, "<>INFINITY")'], // Not positive infinity
+          ["B2", '=COUNTIF(A1:A4, "<>-INFINITY")'], // Not negative infinity
+        ])
+      );
+
+      expect(cell("B1")).toBe(3); // 10, 20, -INFINITY (not positive infinity)
+      expect(cell("B2")).toBe(3); // 10, 20, +INFINITY (not negative infinity)
+    });
+
+    test("should distinguish between INFINITY and -INFINITY", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "=1/0"], // Positive infinity
+          ["A2", "=-1/0"], // Negative infinity
+          ["A3", "=1/0"], // Positive infinity
+          ["B1", '=COUNTIF(A1:A3, "INFINITY")'],
+          ["B2", '=COUNTIF(A1:A3, "-INFINITY")'],
+        ])
+      );
+
+      expect(cell("B1")).toBe(2); // Two positive infinity
+      expect(cell("B2")).toBe(1); // One negative infinity
+    });
+  });
+
   describe("edge cases", () => {
     test("should handle empty range", () => {
       setCellContent("A1", '=COUNTIF(B1:B1, "test")');

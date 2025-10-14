@@ -1,3 +1,4 @@
+import { flags } from "src/debug/flags";
 import {
   FormulaError,
   type CellAddress,
@@ -899,7 +900,7 @@ function findNearestLeftAnchor(
     workbookName: targetCell.workbookName,
     sheetName: targetCell.sheetName,
   });
-  
+
   const rowGroup = indexes.rowGroups.get(row);
   if (!rowGroup) {
     return null; // No cells in this row
@@ -948,7 +949,7 @@ function findNearestAboveAnchor(
     workbookName: targetCell.workbookName,
     sheetName: targetCell.sheetName,
   });
-  
+
   const colGroup = indexes.colGroups.get(col);
   if (!colGroup) {
     return null; // No cells in this column
@@ -1000,7 +1001,7 @@ function findAllDiagonalStepCandidates(
 
   // Use indexes to efficiently find all formula cells in the top-left quadrant
   const allCandidates: CellAddress[] = [];
-  
+
   const indexes = this.getSheetIndexes({
     workbookName: targetCell.workbookName,
     sheetName: targetCell.sheetName,
@@ -1033,45 +1034,41 @@ function findAllDiagonalStepCandidates(
   }
 
   // Filter out candidates that are blocked by other candidates
+  // OPTIMIZED: O(n log n) instead of O(n²) using sweep-line algorithm
+  //
   // A candidate at (r1, c1) is blocked by another at (r2, c2) if:
-  // - (r2, c2) is between (r1, c1) and the target
-  // - Meaning: r1 <= r2 < targetRow and c1 <= c2 < targetCol
-  // - Since spills go down-right, a formula can only block cells at positions >= itself
-  const unblockedCandidates = allCandidates.filter((candidate) => {
-    // Check if this candidate is blocked by any other candidate
-    for (const other of allCandidates) {
-      if (isSameCell(candidate, other)) continue;
+  // - r2 >= r1 AND c2 >= c1 (other is at same position or down-right)
+  // - This is a 2D dominance problem: find Pareto frontier (undominated points)
+  //
+  // Algorithm:
+  // 1. Sort candidates by row DESCENDING, then col DESCENDING
+  // 2. Sweep through, tracking MAXIMUM column seen so far
+  // 3. A candidate is unblocked if its col > max col seen
+  // 4. For same-row candidates, only the first (largest col) can be unblocked
 
-      // Check if 'other' blocks 'candidate' from reaching target
-      // 'other' blocks 'candidate' if 'other' is between 'candidate' and target
-      // For rectangular spills going down-right:
-      // 'other' at (r2, c2) blocks 'candidate' at (r1, c1) if:
-      // r1 <= r2 AND c1 <= c2 (other is down-right of candidate, potentially in its spill path)
-      // AND the spill from other would reach the candidate's row or column before target
-
-      // Actually, simpler: 'other' blocks 'candidate' if 'other' would occupy
-      // a cell that 'candidate' needs to spill through to reach target
-      // Since we're looking for non-blocking step patterns, candidates should satisfy:
-      // For any two candidates (r1,c1) and (r2,c2), neither should be in the
-      // minimal spill rectangle of the other that reaches the target
-
-      // A simpler approach: candidates form valid steps if for any two candidates,
-      // one is strictly top-left of the other (both row and col smaller)
-      // This ensures they don't block each other
-
-      // Check if 'other' could block 'candidate'
-      if (
-        other.rowIndex >= candidate.rowIndex &&
-        other.colIndex >= candidate.colIndex &&
-        other.rowIndex < targetRow &&
-        other.colIndex < targetCol
-      ) {
-        // 'other' is in the potential spill path from 'candidate' to target
-        return false; // candidate is blocked
-      }
-    }
-    return true; // candidate is not blocked
+  // Sort by row descending, then col descending
+  allCandidates.sort((a, b) => {
+    if (a.rowIndex !== b.rowIndex) return b.rowIndex - a.rowIndex; // descending
+    return b.colIndex - a.colIndex; // descending
   });
+
+  const unblockedCandidates: CellAddress[] = [];
+  let maxColSeen = -1;
+  let prevRow = -1;
+
+  for (const candidate of allCandidates) {
+    // First candidate in each row: check if undominated by candidates in rows above
+    // Subsequent candidates in same row: dominated by first in row (larger col)
+    if (candidate.rowIndex !== prevRow) {
+      // New row - check if this candidate's col > max col from rows above
+      if (candidate.colIndex > maxColSeen) {
+        unblockedCandidates.push(candidate);
+        maxColSeen = candidate.colIndex;
+      }
+      prevRow = candidate.rowIndex;
+    }
+    // Else: same row as previous, dominated by previous (which had larger col)
+  }
 
   return unblockedCandidates;
 }

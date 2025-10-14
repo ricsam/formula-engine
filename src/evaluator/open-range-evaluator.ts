@@ -51,6 +51,11 @@ export class OpenRangeEvaluator {
       rangeAddressToKey(options.address)
     );
 
+    const cachedResults = rangeNode.getResults();
+    if (cachedResults) {
+      return cachedResults;
+    }
+
     if (options.context.originCell instanceof EmptyCellEvaluationNode) {
       throw new Error(
         "If the origin cell is an empty cell, we could not be evaluating a range"
@@ -76,10 +81,7 @@ export class OpenRangeEvaluator {
     for (const entry of evalOrder) {
       if (entry.type === "value") {
         const entryAddress = entry.address;
-        const cellKey = cellAddressToKey(entryAddress);
-
-        const cellNode = this.dependencyManager.getCellNode(cellKey);
-        const result = cellNode.evaluationResult;
+        const result = entry.node.evaluationResult;
         if (result.type === "awaiting-evaluation") {
           throw new AwaitingEvaluationError(
             options.context.originCell.cellAddress,
@@ -102,18 +104,10 @@ export class OpenRangeEvaluator {
           results.push({ result: result, relativePos });
         }
       } else if (entry.type === "empty_cell" || entry.type === "empty_range") {
-        for (const candidate of entry.candidates) {
-          const candidateKey = cellAddressToKey(candidate);
-          const candidateNode =
-            this.dependencyManager.getCellNode(candidateKey);
+        for (const candidateNode of entry.candidates) {
           const result = candidateNode.evaluationResult;
-
-          if (candidateNode instanceof EmptyCellEvaluationNode) {
-            throw new Error("A frontier dependency can not be an empty cell");
-          }
-
           if (result.type === "spilled-values") {
-            const spillArea = result.spillArea(candidate);
+            const spillArea = result.spillArea(candidateNode.cellAddress);
             if (entry.type === "empty_range") {
               const intersects = checkRangeIntersection(
                 spillArea,
@@ -137,7 +131,7 @@ export class OpenRangeEvaluator {
                     context: rangeContext,
                     evaluate: result.evaluate,
                     intersection: entry.address.range,
-                    origin: candidate,
+                    origin: candidateNode.cellAddress,
                     lookupOrder: options.lookupOrder,
                   }
                 );
@@ -160,8 +154,8 @@ export class OpenRangeEvaluator {
                 // so it can limit evaluation to only the relevant cells.
 
                 const relativePos = {
-                  x: entry.address.colIndex - candidate.colIndex,
-                  y: entry.address.rowIndex - candidate.rowIndex,
+                  x: entry.address.colIndex - candidateNode.cellAddress.colIndex,
+                  y: entry.address.rowIndex - candidateNode.cellAddress.rowIndex,
                 };
                 const spilledResult = result.evaluate(
                   relativePos,
@@ -184,6 +178,10 @@ export class OpenRangeEvaluator {
           }
         }
       }
+    }
+
+    if (rangeNode.resolved) {
+      rangeNode.setResults(results);
     }
 
     return results;

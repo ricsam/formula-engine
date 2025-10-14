@@ -1,5 +1,3 @@
-import { parseFormula } from "src/parser/parser";
-import type { ASTNode } from "src/parser/ast";
 import { FormulaError, type CellValue } from "src/core/types";
 
 /**
@@ -20,6 +18,45 @@ function wildcardToRegex(pattern: string): RegExp {
   // Convert wildcards: * -> .*, ? -> .
   const regexPattern = escaped.replace(/\*/g, ".*").replace(/\?/g, ".");
   return new RegExp(`^${regexPattern}$`);
+}
+
+/**
+ * Parse a simple value string to determine its type
+ * This is a lightweight alternative to parseFormula for criteria strings
+ */
+function parseSimpleValue(valueStr: string): CellValue {
+  // Trim the value
+  const trimmed = valueStr.trim();
+  
+  // Check for boolean values (case-insensitive)
+  const upperTrimmed = trimmed.toUpperCase();
+  if (upperTrimmed === "TRUE") {
+    return { type: "boolean", value: true };
+  }
+  if (upperTrimmed === "FALSE") {
+    return { type: "boolean", value: false };
+  }
+  
+  // Check for infinity values (case-insensitive)
+  if (upperTrimmed === "INFINITY") {
+    return { type: "infinity", sign: "positive" };
+  }
+  if (upperTrimmed === "-INFINITY") {
+    return { type: "infinity", sign: "negative" };
+  }
+  
+  // Check for numeric values
+  // Match: optional negative sign, digits, optional decimal point and more digits
+  // Examples: "10", "-20", "3.14", "-0.5", "0"
+  if (/^-?\d+(\.\d+)?$/.test(trimmed)) {
+    const num = Number(trimmed);
+    if (!isNaN(num) && isFinite(num)) {
+      return { type: "number", value: num };
+    }
+  }
+  
+  // Default to string
+  return { type: "string", value: valueStr };
 }
 
 /**
@@ -63,25 +100,12 @@ export function parseCriteria(criteria: CellValue): ParsedCriteria {
       };
     }
 
-    // Try to parse the value part as a formula to get the proper type
-    try {
-      const ast = parseFormula(valueStr.trim());
-      if (ast.type === "value") {
-        return { 
-          type: "comparison", 
-          operator: operator as ">" | "<" | ">=" | "<=" | "<>", 
-          value: ast.value 
-        };
-      }
-    } catch {
-      // If parsing fails, treat as string
-    }
-
-    // Fallback: treat as string value
+    // Parse the value part to get the proper type
+    const parsedValue = parseSimpleValue(valueStr);
     return { 
       type: "comparison", 
       operator: operator as ">" | "<" | ">=" | "<=" | "<>", 
-      value: { type: "string", value: valueStr } 
+      value: parsedValue
     };
   }
 
@@ -90,18 +114,9 @@ export function parseCriteria(criteria: CellValue): ParsedCriteria {
     return { type: "wildcard", pattern: criteriaStr };
   }
 
-  // Try to parse as a formula to get the proper type
-  try {
-    const ast = parseFormula(criteriaStr);
-    if (ast.type === "value") {
-      return { type: "exact", value: ast.value };
-    }
-  } catch {
-    // If parsing fails, treat as string
-  }
-
-  // Default: exact string match
-  return { type: "exact", value: criteria };
+  // Parse as a simple value to get the proper type
+  const parsedValue = parseSimpleValue(criteriaStr);
+  return { type: "exact", value: parsedValue };
 }
 
 /**
@@ -155,43 +170,93 @@ export function matchesParsedCriteria(cellValue: CellValue, parsedCriteria: Pars
       if (cellValue.type !== "number" && cellValue.type !== "infinity") {
         return false;
       }
-      if (parsedCriteria.value.type !== "number") {
-        return false; // Can only compare with numeric criteria
+      if (parsedCriteria.value.type !== "number" && parsedCriteria.value.type !== "infinity") {
+        return false; // Can only compare with numeric or infinity criteria
       }
 
-      const criteriaNum = parsedCriteria.value.value;
-
-      // Handle infinity cases
-      if (cellValue.type === "infinity") {
-        switch (parsedCriteria.operator) {
-          case ">":
-            return cellValue.sign === "positive"; // +∞ > any number
-          case "<":
-            return cellValue.sign === "negative"; // -∞ < any number
-          case ">=":
-            return cellValue.sign === "positive"; // +∞ >= any number
-          case "<=":
-            return cellValue.sign === "negative"; // -∞ <= any number
-          default:
-            return false;
+      // Handle when criteria is infinity
+      if (parsedCriteria.value.type === "infinity") {
+        const criteriaSign = parsedCriteria.value.sign;
+        
+        // Handle when cell value is also infinity
+        if (cellValue.type === "infinity") {
+          const cellSign = cellValue.sign;
+          switch (parsedCriteria.operator) {
+            case ">":
+              // +∞ > -∞, but not +∞ > +∞
+              return cellSign === "positive" && criteriaSign === "negative";
+            case "<":
+              // -∞ < +∞, but not -∞ < -∞
+              return cellSign === "negative" && criteriaSign === "positive";
+            case ">=":
+              // +∞ >= +∞, +∞ >= -∞, but not -∞ >= +∞
+              return cellSign === "positive" || (cellSign === criteriaSign);
+            case "<=":
+              // -∞ <= -∞, -∞ <= +∞, but not +∞ <= -∞
+              return cellSign === "negative" || (cellSign === criteriaSign);
+            default:
+              return false;
+          }
+        }
+        
+        // Handle when cell value is a finite number
+        if (cellValue.type === "number") {
+          switch (parsedCriteria.operator) {
+            case ">":
+              // No finite number is > +∞, all finite numbers > -∞
+              return criteriaSign === "negative";
+            case "<":
+              // All finite numbers < +∞, no finite number < -∞
+              return criteriaSign === "positive";
+            case ">=":
+              // No finite number >= +∞, all finite numbers >= -∞
+              return criteriaSign === "negative";
+            case "<=":
+              // All finite numbers <= +∞, no finite number <= -∞
+              return criteriaSign === "positive";
+            default:
+              return false;
+          }
         }
       }
 
-      // Regular number comparison
-      if (cellValue.type === "number") {
-        switch (parsedCriteria.operator) {
-          case ">":
-            return cellValue.value > criteriaNum;
-          case "<":
-            return cellValue.value < criteriaNum;
-          case ">=":
-            return cellValue.value >= criteriaNum;
-          case "<=":
-            return cellValue.value <= criteriaNum;
-          default:
-            return false;
+      // Handle when criteria is a number (not infinity)
+      if (parsedCriteria.value.type === "number") {
+        const criteriaNum = parsedCriteria.value.value;
+
+        // Handle infinity cell values with numeric criteria
+        if (cellValue.type === "infinity") {
+          switch (parsedCriteria.operator) {
+            case ">":
+              return cellValue.sign === "positive"; // +∞ > any number
+            case "<":
+              return cellValue.sign === "negative"; // -∞ < any number
+            case ">=":
+              return cellValue.sign === "positive"; // +∞ >= any number
+            case "<=":
+              return cellValue.sign === "negative"; // -∞ <= any number
+            default:
+              return false;
+          }
+        }
+
+        // Regular number comparison
+        if (cellValue.type === "number") {
+          switch (parsedCriteria.operator) {
+            case ">":
+              return cellValue.value > criteriaNum;
+            case "<":
+              return cellValue.value < criteriaNum;
+            case ">=":
+              return cellValue.value >= criteriaNum;
+            case "<=":
+              return cellValue.value <= criteriaNum;
+            default:
+              return false;
+          }
         }
       }
+      
       return false;
 
     case "wildcard":

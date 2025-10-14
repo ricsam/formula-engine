@@ -498,7 +498,7 @@ describe("DependencyManager", () => {
               "type": "range",
             },
             {
-              "canResolve": true,
+              "canResolve": false,
               "deps": [
                 {
                   "canResolve": false,
@@ -636,7 +636,7 @@ describe("DependencyManager", () => {
               "type": "range",
             },
             {
-              "canResolve": true,
+              "canResolve": false,
               "deps": [
                 {
                   "canResolve": false,
@@ -1040,7 +1040,7 @@ describe("DependencyManager", () => {
       `);
     expect(dependencyTree("D11")).toMatchInlineSnapshot(`
         {
-          "canResolve": true,
+          "canResolve": false,
           "directDepsUpdated": false,
           "frontierDependencies": [
             {

@@ -807,8 +807,8 @@ export class DependencyManager {
         }
         visited.add(node);
 
-        // Check the node's direct dependencies
-        const directDeps = node.getAllDependencies();
+        // Check the node's dependencies to not cause cycles with frontier dependencies
+        const directDeps = node.getDependencies();
 
         const a = areTransitiveDepsResolved(directDeps);
         const b = node.canResolve();
@@ -824,7 +824,7 @@ export class DependencyManager {
     };
 
     if (
-      areTransitiveDepsResolved(node.getAllDependencies()) &&
+      areTransitiveDepsResolved(node.getDependencies()) &&
       node.canResolve()
     ) {
       node.resolve();

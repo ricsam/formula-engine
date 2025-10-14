@@ -1147,4 +1147,51 @@ describe("buildRangeEvalOrder", () => {
     expect(result.length).toBe(1);
     expect(result[0]?.type).toBe("empty_range");
   });
+
+  test("performance: diagonal candidates with many formulas should use O(n log n) algorithm", () => {
+    // Create a grid of formulas in the top-left quadrant
+    // This simulates the worst case where we have many diagonal candidates
+    // With the old O(n²) algorithm, this would take ~500ms for 25k candidates
+    // With O(n log n), should complete in < 10ms
+    
+    const gridSize = 100; // 100x100 = 10,000 formulas
+    for (let row = 1; row <= gridSize; row++) {
+      for (let col = 0; col < gridSize; col++) {
+        const colLetter = String.fromCharCode(65 + (col % 26)); // A-Z repeating
+        setCell(colLetter, row, `=${row * 100 + col}`);
+      }
+    }
+
+    // Target cell far to the right and below
+    const targetCell: CellAddress = {
+      workbookName,
+      sheetName,
+      rowIndex: 200,
+      colIndex: 200,
+    };
+
+    const startTime = performance.now();
+    
+    // This will trigger findAllDiagonalStepCandidates with ~10k candidates
+    const range: RangeAddress = {
+      workbookName,
+      sheetName,
+      range: {
+        start: { row: targetCell.rowIndex, col: targetCell.colIndex },
+        end: {
+          row: { type: "number", value: targetCell.rowIndex },
+          col: { type: "number", value: targetCell.colIndex },
+        },
+      },
+    };
+    
+    buildRangeEvalOrder.call(manager, "col-major", range);
+    
+    const duration = performance.now() - startTime;
+    
+    // Performance regression check: Should complete in < 50ms
+    // (Would be ~500ms with O(n²) algorithm for 25k candidates)
+    // With O(n log n), typically ~10ms for 10k candidates
+    expect(duration).toBeLessThan(50);
+  });
 });

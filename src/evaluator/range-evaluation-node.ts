@@ -1,12 +1,14 @@
 import type { DependencyManager } from "src/core/managers/dependency-manager";
 import { FrontierDependencyManager } from "src/core/managers/frontier-dependency-manager";
 import type { WorkbookManager } from "src/core/managers/workbook-manager";
-import type { RangeAddress } from "src/core/types";
+import type { EvaluateAllCellsResult, RangeAddress } from "src/core/types";
 import { keyToRangeAddress } from "src/core/utils";
 
 export class RangeEvaluationNode extends FrontierDependencyManager {
   public key: string;
   public address: RangeAddress;
+
+  private _results: EvaluateAllCellsResult[] | undefined;
 
   constructor(
     public rangeKey: string,
@@ -18,6 +20,18 @@ export class RangeEvaluationNode extends FrontierDependencyManager {
 
     this.address = rangeAddress;
     this.key = rangeKey;
+  }
+
+  setResults(results: EvaluateAllCellsResult[]): void {
+    if (!this.resolved) {
+      throw new Error("Cannot set results on an unresolved range evaluation node");
+    }
+    this._results = results;
+  }
+
+  // todo maybe add lookupOrder
+  getResults(): EvaluateAllCellsResult[] | undefined {
+    return this._results;
   }
 
   toJSON(visitor: Set<string> = new Set()): any {
