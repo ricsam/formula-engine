@@ -11,6 +11,7 @@ import {
   type SingleEvaluationResult,
   type ErrorEvaluationResult,
 } from "src/core/types";
+import { captureEvaluationErrors } from "src/core/utils";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 
@@ -107,7 +108,10 @@ function createIfErrorSpilledResult(
       }
 
       // IFERROR logic: if first argument is error, return second argument
-      if (spillValueResult.type === "error") {
+      if (
+        spillValueResult.type === "error" ||
+        spillValueResult.type === "awaiting-evaluation"
+      ) {
         return spillErrorResult;
       }
 
@@ -136,14 +140,24 @@ export const IFERROR: FunctionDefinition = {
     }
 
     // Evaluate the value argument (the expression to check for errors)
-    const valueResult = this.evaluateNode(node.args[0]!, context);
+    const valueResult = captureEvaluationErrors(
+      context.originCell.cellAddress,
+      () => this.evaluateNode(node.args[0]!, context)
+    );
+
+    if (valueResult.type === "awaiting-evaluation") {
+      return valueResult;
+    }
 
     // Handle spilled values - we need to evaluate both branches
     // because different cells might have errors or not
     if (valueResult.type === "spilled-values") {
       // Evaluate the value_if_error argument
       const valueIfErrorResult = this.evaluateNode(node.args[1]!, context);
-      if (valueIfErrorResult.type === "error") {
+      if (
+        valueIfErrorResult.type === "error" ||
+        valueIfErrorResult.type === "awaiting-evaluation"
+      ) {
         return valueIfErrorResult; // Error in the error handler itself
       }
 

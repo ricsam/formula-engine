@@ -21,7 +21,7 @@ export function performCount(
   let count = 0;
 
   for (const result of results) {
-    if (result.type === "error") {
+    if (result.type === "error" || result.type === "awaiting-evaluation") {
       // Propagate errors immediately
       return result;
     }

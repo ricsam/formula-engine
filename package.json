@@ -12,7 +12,7 @@
     "test:e2e:debug-visible": "npx playwright test --headed --debug",
     "test:e2e:with-logs": "./scripts/run-test.sh",
     "typecheck": "tsc --noEmit",
-    "dev": "bun --hot demo/index.tsx",
+    "dev": "bun demo/index.tsx",
     "start": "NODE_ENV=production bun demo/index.tsx",
     "build": "tsr generate && bun run build.ts",
     "generate-routes": "tsr generate",

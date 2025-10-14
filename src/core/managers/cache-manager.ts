@@ -1,12 +1,13 @@
-import type { CellAddress, EvaluationOrder } from "../types";
-import type { RangeEvalOrderEntry } from "./range-eval-order-builder";
+import type { EvaluationOrder, SCC } from "../types";
 
 export class CacheManager {
   private _evaluationOrderCache = new Map<string, EvaluationOrder>();
+
   /**
-   * Key is rangeKey + "@" + lookupOrder
+   * Cache for SCCs - key is a hash of the node keys in the SCC
    */
-  private _rangeEvalOrderCache = new Map<string, RangeEvalOrderEntry[]>();
+  private _sccCache = new Map<string, SCC>();
+
   constructor() {}
 
   setEvaluationOrder(nodeKey: string, evaluationOrder: EvaluationOrder): void {
@@ -17,11 +18,16 @@ export class CacheManager {
     return this._evaluationOrderCache.get(nodeKey);
   }
 
-  setRangeEvalOrder(nodeKey: string, rangeEvalOrder: RangeEvalOrderEntry[]): void {
-    this._rangeEvalOrderCache.set(nodeKey, rangeEvalOrder);
+  setSCC(sccHash: string, scc: SCC): void {
+    this._sccCache.set(sccHash, scc);
   }
 
-  getRangeEvalOrder(nodeKey: string): RangeEvalOrderEntry[] | undefined {
-    return this._rangeEvalOrderCache.get(nodeKey);
+  getSCC(sccHash: string): SCC | undefined {
+    return this._sccCache.get(sccHash);
+  }
+
+  clear(): void {
+    this._evaluationOrderCache.clear();
+    this._sccCache.clear();
   }
 }

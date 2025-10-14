@@ -7,6 +7,7 @@ import {
   type SpreadsheetRange,
 } from "src/core/types";
 import { getRangeIntersection, isRangeOneCell } from "src/core/utils";
+import { EvaluationError } from "src/evaluator/evaluation-error";
 
 /**
  * SEQUENCE(rows, [columns], [start], [step])
@@ -39,7 +40,7 @@ export const SEQUENCE: FunctionDefinition = {
 
     for (let i = 0; i < node.args.length; i++) {
       const result = this.evaluateNode(node.args[i]!, context);
-      if (result.type === "error") {
+      if (result.type === "error" || result.type === "awaiting-evaluation") {
         return result;
       }
       argResults.push(result);
@@ -93,8 +94,15 @@ export const SEQUENCE: FunctionDefinition = {
       };
     }
 
-    let rowsValue: number | "infinity";
+    let rowsValue: number | "infinity" = 0;
     let isRowsInfinite = false;
+
+    if (
+      rowsResult.type === "awaiting-evaluation" ||
+      rowsResult.type === "error"
+    ) {
+      return rowsResult;
+    }
 
     if (rowsResult.type === "spilled-values") {
       throw new Error("Sequences cannot contain spilled values");
@@ -112,13 +120,6 @@ export const SEQUENCE: FunctionDefinition = {
           errAddress: context.originCell.cellAddress,
         };
       }
-    } else {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Rows argument must be a number or INFINITY",
-        errAddress: context.originCell.cellAddress,
-      };
     }
 
     const rows = isRowsInfinite ? Infinity : Math.floor(rowsValue as number);
@@ -359,12 +360,13 @@ export const SEQUENCE: FunctionDefinition = {
           };
         }
       },
-      evaluateAllCells: function* ({
+      evaluateAllCells: function ({
         evaluate,
         intersection,
         context,
         origin,
       }) {
+        const results = [];
         let range = spillArea(origin);
         if (intersection) {
           const newRange = getRangeIntersection(range, intersection);
@@ -377,17 +379,10 @@ export const SEQUENCE: FunctionDefinition = {
           range.end.row.type === "infinity" ||
           range.end.col.type === "infinity"
         ) {
-          const hasIntersection = intersection !== undefined;
-          yield {
-            result: {
-              type: "error",
-              err: FormulaError.REF,
-              message: `Can not evaluate all cells over an infinite range`,
-              errAddress: context.originCell.cellAddress,
-            },
-            relativePos: { x: 0, y: 0 },
-          };
-          return;
+          throw new EvaluationError(
+            FormulaError.REF,
+            `Can not evaluate all cells over an infinite range`
+          );
         }
 
         for (let i = range.start.row; i <= range.end.row.value; i++) {
@@ -397,19 +392,21 @@ export const SEQUENCE: FunctionDefinition = {
 
             const evaled = evaluate({ x: offsetLeft, y: offsetTop }, context);
             const relativePos = { x: offsetLeft, y: offsetTop };
-            yield evaled
+            results.push(evaled
               ? { result: evaled, relativePos }
               : {
                   result: {
-                    type: "error",
+                    type: "error" as const,
                     err: FormulaError.REF,
                     message: "Error evaluating SEQUENCE",
                     errAddress: context.originCell.cellAddress,
                   },
                   relativePos,
-                };
+                });
           }
         }
+        
+        return results;
       },
     };
   },

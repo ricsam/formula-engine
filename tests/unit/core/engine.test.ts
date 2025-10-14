@@ -259,7 +259,7 @@ describe("FormulaEngine", () => {
         ["C3", "=SUM(Table1[[num]:[result]])"],
         ["C4", "=SUM(Table1[@[num]:[result]])"],
         ["F1", "=Table1[[#Headers],[result]]"],
-        ["F20", "=Table1[#Headers]"]
+        ["F20", "=Table1[#Headers]"],
       ])
     );
 
@@ -1247,7 +1247,7 @@ describe("FormulaEngine", () => {
           ["B1", "Price"],
           ["A2", "Widget"],
           ["B2", 100],
-          ["C1", "=SUM(Products[Price])"],
+          ["C1", "=Products[Price]"],
         ])
       );
 
@@ -1275,8 +1275,8 @@ describe("FormulaEngine", () => {
       expect(cellsUpdateCount).toBe(3); // From removeTable
 
       // Formula should now error
-      const result = cell("C1");
-      expect(typeof result === "string" && result.startsWith("#")).toBe(true);
+      const result = cell("C1", true);
+      expect(result).toMatchInlineSnapshot(`"#REF! Table Products not found"`);
 
       unsubscribe();
     });
@@ -1537,9 +1537,12 @@ describe("FormulaEngine", () => {
       setCellContent("C1", "=A1");
 
       // All three cells should show cycle error
-      expect(cell("A1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1"`);
-      expect(cell("B1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1"`);
-      expect(cell("C1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1"`);
+      expect(cell("A1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1 -> cell:TestWorkbook:TestSheet:C1"`);
+      expect(cell("B1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! in cell:TestWorkbook:TestSheet:A1 cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1 -> cell:TestWorkbook:TestSheet:C1"`);
+      expect(cell("C1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! in cell:TestWorkbook:TestSheet:A1 cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1 -> cell:TestWorkbook:TestSheet:C1"`);
     });
 
     test("should detect cycles with non-cycle dependencies", () => {
@@ -1550,21 +1553,27 @@ describe("FormulaEngine", () => {
       setCellContent("D1", "=A1"); // Depends on A1 but not part of cycle
 
       // Cycle participants should show cycle error
-      expect(cell("B1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`);
-      expect(cell("C1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`);
+      expect(cell("B1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:C1"`);
+      expect(cell("C1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:C1"`);
 
       // A1 should also show cycle error since it depends on the cycle
-      expect(cell("A1", true)).toMatchInlineSnapshot(`"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`);
+      expect(cell("A1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:C1"`);
 
       // D1 should also show cycle error since it depends on A1 which has a cycle
-      expect(cell("D1", true)).toMatchInlineSnapshot(`"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:C1 -> cell:TestWorkbook:TestSheet:B1"`);
+      expect(cell("D1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:C1"`);
     });
 
     test("should handle self-referencing cell", () => {
       // Create a self-reference: A1 -> A1
       setCellContent("A1", "=A1");
 
-      expect(cell("A1", true)).toMatchInlineSnapshot(`"#CYCLE! cell:TestWorkbook:TestSheet:A1"`);
+      expect(cell("A1", true)).toMatchInlineSnapshot(
+        `"#CYCLE! cell:TestWorkbook:TestSheet:A1"`
+      );
     });
   });
 });

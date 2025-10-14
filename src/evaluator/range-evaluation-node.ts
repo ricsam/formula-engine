@@ -1,39 +1,60 @@
+import type { DependencyManager } from "src/core/managers/dependency-manager";
 import { FrontierDependencyManager } from "src/core/managers/frontier-dependency-manager";
 import type { WorkbookManager } from "src/core/managers/workbook-manager";
-import type { RangeAddress, SpreadsheetRange } from "src/core/types";
-import { keyToRangeAddress, rangeAddressToKey } from "src/core/utils";
-import type { DependencyManager } from "src/core/managers/dependency-manager";
-import type { CacheManager } from "src/core/managers/cache-manager";
-import type { LookupOrder } from "src/core/managers";
+import type { EvaluateAllCellsResult, RangeAddress } from "src/core/types";
+import { keyToRangeAddress } from "src/core/utils";
 
 export class RangeEvaluationNode extends FrontierDependencyManager {
   public key: string;
   public address: RangeAddress;
 
+  private _results: EvaluateAllCellsResult[] | undefined;
+
   constructor(
     public rangeKey: string,
-    private cacheManager: CacheManager,
     dependencyManager: DependencyManager,
     workbookManager: WorkbookManager
   ) {
     const rangeAddress = keyToRangeAddress(rangeKey);
-    super(workbookManager, dependencyManager);
+    super(rangeAddress, workbookManager, dependencyManager);
 
     this.address = rangeAddress;
     this.key = rangeKey;
   }
 
-  public getRangeEvalOrder(lookupOrder: LookupOrder) {
-    const cacheKey = this.key + "@" + lookupOrder;
-    const cachedRangeEvalOrder = this.cacheManager.getRangeEvalOrder(cacheKey);
-    if (cachedRangeEvalOrder) {
-      return cachedRangeEvalOrder;
+  setResults(results: EvaluateAllCellsResult[]): void {
+    if (!this.resolved) {
+      throw new Error("Cannot set results on an unresolved range evaluation node");
     }
-    const rangeEvalOrder = this.workbookManager.buildRangeEvalOrder(
-      lookupOrder,
-      this.address
-    );
-    this.cacheManager.setRangeEvalOrder(cacheKey, rangeEvalOrder);
-    return rangeEvalOrder;
+    this._results = results;
+  }
+
+  // todo maybe add lookupOrder
+  getResults(): EvaluateAllCellsResult[] | undefined {
+    return this._results;
+  }
+
+  toJSON(visitor: Set<string> = new Set()): any {
+    const hasVisited = visitor?.has(this.key);
+    visitor?.add(this.key);
+    if (hasVisited) {
+      return {
+        key: this.key,
+        resolved: this.resolved,
+        cycle: true,
+        dependencies: [],
+        frontierDependencies: [],
+      };
+    }
+    return {
+      key: this.key,
+      resolved: this.resolved,
+      dependencies: Array.from(this.getDependencies()).map((node) =>
+        node.toJSON(visitor)
+      ),
+      frontierDependencies: Array.from(this.getFrontierDependencies()).map(
+        (node) => node.toJSON(visitor)
+      ),
+    };
   }
 }

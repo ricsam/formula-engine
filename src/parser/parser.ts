@@ -1206,7 +1206,7 @@ export class Parser {
           }
           this.tokens.consume(); // [
 
-          // Parse column specification that could be either Column1 or Column1:Column2
+          // Parse column specification - could be [Column1], [Column1:Column2], or [Column1]:[Column2]
           if (
             !this.tokens.match("IDENTIFIER") &&
             !this.tokens.match("FUNCTION") &&
@@ -1220,8 +1220,9 @@ export class Parser {
           }
           const colStart = this.parseColumnName();
 
-          // Check if it's a column range Column1:Column2
-          if (this.tokens.match("COLON")) {
+          // Check if it's a column range inside single brackets [Column1:Column2]
+          // But not if followed by ] (which would be the Excel-style [Column1]:[Column2])
+          if (this.tokens.match("COLON") && !this.tokens.peekAhead(1)?.type.match(/RBRACKET/)) {
             this.tokens.consume(); // :
 
             if (
@@ -1256,6 +1257,45 @@ export class Parser {
             );
           }
           this.tokens.consume(); // ]
+
+          // Check for Excel-style column range [Column1]:[Column2]
+          if (this.tokens.match("COLON")) {
+            this.tokens.consume(); // :
+
+            if (!this.tokens.match("LBRACKET")) {
+              throw new ParseError(
+                "Expected [ after : in column range",
+                this.tokens.peek().position
+              );
+            }
+            this.tokens.consume(); // [
+
+            if (
+              !this.tokens.match("IDENTIFIER") &&
+              !this.tokens.match("FUNCTION") &&
+              !this.tokens.match("NUMBER") &&
+              !this.tokens.match("OPERATOR")
+            ) {
+              throw new ParseError(
+                "Expected end column name",
+                this.tokens.peek().position
+              );
+            }
+            const colEnd = this.parseColumnName();
+
+            if (!this.tokens.match("RBRACKET")) {
+              throw new ParseError(
+                "Expected ] after end column name",
+                this.tokens.peek().position
+              );
+            }
+            this.tokens.consume(); // ]
+
+            cols = {
+              startCol: colStart,
+              endCol: colEnd,
+            };
+          }
         }
 
         if (!this.tokens.match("RBRACKET")) {
@@ -1544,7 +1584,7 @@ export class Parser {
           }
           this.tokens.consume(); // [
 
-          // Parse column specification that could be either Column1 or Column1:Column2
+          // Parse column specification - could be [Column1], [Column1:Column2], or [Column1]:[Column2]
           if (
             !this.tokens.match("IDENTIFIER") &&
             !this.tokens.match("FUNCTION") &&
@@ -1558,8 +1598,9 @@ export class Parser {
           }
           const colStart = this.parseColumnName();
 
-          // Check if it's a column range Column1:Column2
-          if (this.tokens.match("COLON")) {
+          // Check if it's a column range inside single brackets [Column1:Column2]
+          // But not if followed by ] (which would be the Excel-style [Column1]:[Column2])
+          if (this.tokens.match("COLON") && !this.tokens.peekAhead(1)?.type.match(/RBRACKET/)) {
             this.tokens.consume(); // :
 
             if (
@@ -1594,6 +1635,45 @@ export class Parser {
             );
           }
           this.tokens.consume(); // ]
+
+          // Check for Excel-style column range [Column1]:[Column2]
+          if (this.tokens.match("COLON")) {
+            this.tokens.consume(); // :
+
+            if (!this.tokens.match("LBRACKET")) {
+              throw new ParseError(
+                "Expected [ after : in column range",
+                this.tokens.peek().position
+              );
+            }
+            this.tokens.consume(); // [
+
+            if (
+              !this.tokens.match("IDENTIFIER") &&
+              !this.tokens.match("FUNCTION") &&
+              !this.tokens.match("NUMBER") &&
+              !this.tokens.match("OPERATOR")
+            ) {
+              throw new ParseError(
+                "Expected end column name",
+                this.tokens.peek().position
+              );
+            }
+            const colEnd = this.parseColumnName();
+
+            if (!this.tokens.match("RBRACKET")) {
+              throw new ParseError(
+                "Expected ] after end column name",
+                this.tokens.peek().position
+              );
+            }
+            this.tokens.consume(); // ]
+
+            cols = {
+              startCol: colStart,
+              endCol: colEnd,
+            };
+          }
         }
 
         if (!this.tokens.match("RBRACKET")) {

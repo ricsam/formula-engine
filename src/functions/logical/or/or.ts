@@ -15,23 +15,23 @@ import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 /**
- * AND function - Returns TRUE if all arguments are TRUE, FALSE otherwise
+ * OR function - Returns TRUE if any argument is TRUE, FALSE otherwise
  *
- * Usage: AND(logical1, [logical2], ...)
+ * Usage: OR(logical1, [logical2], ...)
  *
  * logical1, logical2, ...: Logical values or expressions to evaluate
  *
  * Examples:
- *   AND(TRUE, TRUE) - returns TRUE
- *   AND(TRUE, FALSE) - returns FALSE
- *   AND(A1>10, B1<20) - returns TRUE if both conditions are met
- *   AND(A1:A3) - returns TRUE if all values in A1:A3 are truthy
+ *   OR(TRUE, FALSE) - returns TRUE
+ *   OR(FALSE, FALSE) - returns FALSE
+ *   OR(A1>10, B1<20) - returns TRUE if either condition is met
+ *   OR(A1:A3) - returns TRUE if any value in A1:A3 is truthy
  *
  * Note:
  * - Supports spilled values (dynamic arrays) for arguments
  * - Logical evaluation: 0 and empty string are FALSE, everything else is TRUE
- * - If any argument is spilled, returns spilled results
- * - Short-circuit evaluation: stops at first FALSE value
+ * - If any argument is spilled, processes all values in the range
+ * - Short-circuit evaluation: stops at first TRUE value
  */
 
 /**
@@ -52,25 +52,25 @@ function isTruthy(value: CellValue): boolean {
   }
 }
 
-// AND function does not create spilled results - it processes all values in ranges
+// OR function does not create spilled results - it processes all values in ranges
 // as individual logical tests and returns a single boolean result
 
 /**
- * AND function implementation
+ * OR function implementation
  */
-export const AND: FunctionDefinition = {
-  name: "AND",
+export const OR: FunctionDefinition = {
+  name: "OR",
   evaluate: function (node, context): FunctionEvaluationResult {
     if (node.args.length === 0) {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        message: "AND function requires at least one argument",
+        message: "OR function requires at least one argument",
         errAddress: context.originCell.cellAddress,
       };
     }
 
-    // Process arguments one by one (like SUM function)
+    // Process arguments one by one (like AND function)
     for (const arg of node.args) {
       const argResult = this.evaluateNode(arg, context);
 
@@ -80,10 +80,11 @@ export const AND: FunctionDefinition = {
 
       if (argResult.type === "value") {
         // Single value - check if truthy
-        if (!isTruthy(argResult.result)) {
+        if (isTruthy(argResult.result)) {
+          // Short-circuit: return TRUE on first truthy value
           return {
             type: "value",
-            result: { type: "boolean", value: false },
+            result: { type: "boolean", value: true },
           };
         }
       } else if (argResult.type === "spilled-values") {
@@ -96,14 +97,15 @@ export const AND: FunctionDefinition = {
         });
 
         for (const cellValue of cellValues) {
-          if (cellValue.result.type === "error") {
+          if (cellValue.result.type === "error" || cellValue.result.type === "awaiting-evaluation") {
             return cellValue.result;
           }
           if (cellValue.result.type === "value") {
-            if (!isTruthy(cellValue.result.result)) {
+            if (isTruthy(cellValue.result.result)) {
+              // Short-circuit: return TRUE on first truthy value
               return {
                 type: "value",
-                result: { type: "boolean", value: false },
+                result: { type: "boolean", value: true },
               };
             }
           }
@@ -112,16 +114,16 @@ export const AND: FunctionDefinition = {
         return {
           type: "error",
           err: FormulaError.VALUE,
-          message: "Invalid argument type for AND function",
+          message: "Invalid argument type for OR function",
           errAddress: context.originCell.cellAddress,
         };
       }
     }
 
-    // All arguments are truthy
+    // All arguments are falsy
     return {
       type: "value",
-      result: { type: "boolean", value: true },
+      result: { type: "boolean", value: false },
     };
   },
 };

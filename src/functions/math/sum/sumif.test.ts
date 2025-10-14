@@ -165,7 +165,7 @@ describe("SUMIF function", () => {
       expect(cell("A2")).toBe("#VALUE!");
     });
 
-    test("errors in value range are not skipped", () => {
+    test("errors in value range are skipped", () => {
       engine.setSheetContent(
         sheetAddress,
         new Map<string, SerializedCellValue>([
@@ -179,8 +179,8 @@ describe("SUMIF function", () => {
         ])
       );
 
-      expect(cell("A2")).toBe("#VALUE!"); // Verify A2 is an error
-      expect(cell("C1")).toBe(FormulaError.VALUE); // Should not skip error
+      expect(cell("A2")).toBe(FormulaError.VALUE); // Verify A2 is an error
+      expect(cell("C1")).toBe(40);
     });
 
     test("criteria can match literal error strings", () => {

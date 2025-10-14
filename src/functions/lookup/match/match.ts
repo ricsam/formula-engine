@@ -32,7 +32,8 @@ function matchOperation(
   lookupValue: CellValue,
   lookupArray: Iterable<EvaluateAllCellsResult>,
   matchType: number,
-  context: EvaluationContext
+  context: EvaluationContext,
+  isHorizontal: boolean
 ): FunctionEvaluationResult {
   // Strict type checking for lookup_value
   if (lookupValue.type !== "string" && lookupValue.type !== "number") {
@@ -54,15 +55,8 @@ function matchOperation(
     };
   }
 
-  let foundSomething = false;
-
-  let i = 0;
-  const values: any[] = [];
   for (const value of lookupArray) {
-    i++;
-    values.push(value.result);
     if (value.result.type === "value") {
-      foundSomething = true;
       if (matchType === 0) {
         // Exact match
         const arrayValue = value.result.result;
@@ -71,9 +65,15 @@ function matchOperation(
           arrayValue.type === lookupValue.type &&
           arrayValue.value === lookupValue.value
         ) {
+          // For horizontal arrays (single row), use x position (column index)
+          // For vertical arrays (single/multiple columns), use y position (row index)
+          const position = isHorizontal
+            ? value.relativePos.x + 1
+            : value.relativePos.y + 1;
+
           return {
             type: "value",
-            result: { type: "number", value: value.relativePos.y + 1 },
+            result: { type: "number", value: position },
           }; // 1-based index
         }
       } else {
@@ -83,15 +83,6 @@ function matchOperation(
         throw new Error("MATCH: approximate match not fully implemented");
       }
     }
-  }
-
-  if (!foundSomething) {
-    return {
-      type: "error",
-      err: FormulaError.VALUE,
-      message: "MATCH lookup_array cannot be empty",
-      errAddress: context.originCell.cellAddress,
-    };
   }
 
   return {
@@ -116,13 +107,19 @@ export const MATCH: FunctionDefinition = {
 
     // Evaluate lookup_value
     const lookupValueResult = this.evaluateNode(node.args[0]!, context);
-    if (lookupValueResult.type === "error") {
+    if (
+      lookupValueResult.type === "error" ||
+      lookupValueResult.type === "awaiting-evaluation"
+    ) {
       return lookupValueResult;
     }
 
     // Evaluate lookup_array
     const lookupArrayResult = this.evaluateNode(node.args[1]!, context);
-    if (lookupArrayResult.type === "error") {
+    if (
+      lookupArrayResult.type === "error" ||
+      lookupArrayResult.type === "awaiting-evaluation"
+    ) {
       return lookupArrayResult;
     }
 
@@ -134,7 +131,10 @@ export const MATCH: FunctionDefinition = {
 
     if (node.args[2]) {
       matchTypeResult = this.evaluateNode(node.args[2], context);
-      if (matchTypeResult.type === "error") {
+      if (
+        matchTypeResult.type === "error" ||
+        matchTypeResult.type === "awaiting-evaluation"
+      ) {
         return matchTypeResult;
       }
     }
@@ -152,25 +152,6 @@ export const MATCH: FunctionDefinition = {
       };
     }
 
-    // Extract values for normal (non-spilled) case
-    if (lookupValueResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "MATCH: Invalid lookup_value result type",
-        errAddress: context.originCell.cellAddress,
-      };
-    }
-
-    if (matchTypeResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "MATCH: Invalid match_type result type",
-        errAddress: context.originCell.cellAddress,
-      };
-    }
-
     // Strict type checking for match_type
     if (matchTypeResult.result.type !== "number") {
       return {
@@ -183,6 +164,7 @@ export const MATCH: FunctionDefinition = {
 
     // Extract lookup_array values
     let lookupArray: Iterable<EvaluateAllCellsResult> = [];
+    let isHorizontal = false;
 
     // Handle direct range arguments (like A:A) before extracting lookup_array values
 
@@ -192,7 +174,43 @@ export const MATCH: FunctionDefinition = {
       lookupArray = [
         { result: lookupArrayResult, relativePos: { x: 0, y: 0 } },
       ];
+      isHorizontal = false; // Single value, treat as vertical
     } else if (lookupArrayResult.type === "spilled-values") {
+      // Validate that lookup_array is 1D (either single row OR single column)
+      const spillArea = lookupArrayResult.spillArea(
+        context.originCell.cellAddress
+      );
+      const startRow = spillArea.start.row;
+      const endRow = spillArea.end.row;
+      const startCol = spillArea.start.col;
+      const endCol = spillArea.end.col;
+
+      // Check if it's a single row (horizontal)
+      const isSingleRow = endRow.type === "number" && startRow === endRow.value;
+
+      // Check if it's a single column (vertical)
+      const isSingleCol = endCol.type === "number" && startCol === endCol.value;
+
+      // MATCH requires a 1D array - either single row OR single column, not both or neither
+      if (!isSingleRow && !isSingleCol) {
+        return {
+          type: "error",
+          err: FormulaError.VALUE,
+          message:
+            "MATCH lookup_array must be a single row or single column (1D array)",
+          errAddress: context.originCell.cellAddress,
+        };
+      }
+
+      // Cannot be both single row AND single column (that would be a single cell, which is handled)
+      if (isSingleRow && isSingleCol) {
+        // This is actually a single cell, which is fine
+        isHorizontal = false; // Treat single cell as vertical
+      } else {
+        // Horizontal if it's a single row
+        isHorizontal = isSingleRow;
+      }
+
       // Extract values from spilled array
       lookupArray = lookupArrayResult.evaluateAllCells.call(this, {
         context,
@@ -207,7 +225,8 @@ export const MATCH: FunctionDefinition = {
       lookupValueResult.result,
       lookupArray,
       Math.floor(matchTypeResult.result.value), // Floor to handle decimal inputs
-      context
+      context,
+      isHorizontal
     );
   },
 };

@@ -128,7 +128,7 @@ function createIfSpilledResult(
           errAddress: context.originCell.cellAddress,
         };
       }
-      if (spillLogicalResult.type === "error") {
+      if (spillLogicalResult.type === "error" || spillLogicalResult.type === "awaiting-evaluation") {
         return spillLogicalResult;
       }
 
@@ -140,7 +140,7 @@ function createIfSpilledResult(
           errAddress: context.originCell.cellAddress,
         };
       }
-      if (spillTrueResult.type === "error") {
+      if (spillTrueResult.type === "error" || spillTrueResult.type === "awaiting-evaluation") {
         return spillTrueResult;
       }
 
@@ -152,7 +152,7 @@ function createIfSpilledResult(
           errAddress: context.originCell.cellAddress,
         };
       }
-      if (spillFalseResult.type === "error") {
+      if (spillFalseResult.type === "error" || spillFalseResult.type === "awaiting-evaluation") {
         return spillFalseResult;
       }
 
@@ -204,7 +204,7 @@ export const IF: FunctionDefinition = {
     if (logicalTestResult.type === "spilled-values") {
       // Evaluate value_if_true
       const valueIfTrueResult = this.evaluateNode(node.args[1]!, context);
-      if (valueIfTrueResult.type === "error") {
+      if (valueIfTrueResult.type === "error" || valueIfTrueResult.type === "awaiting-evaluation") {
         return valueIfTrueResult;
       }
 
@@ -212,7 +212,7 @@ export const IF: FunctionDefinition = {
       let valueIfFalseResult: FunctionEvaluationResult;
       if (node.args.length > 2) {
         valueIfFalseResult = this.evaluateNode(node.args[2]!, context);
-        if (valueIfFalseResult.type === "error") {
+        if (valueIfFalseResult.type === "error" || valueIfFalseResult.type === "awaiting-evaluation") {
           return valueIfFalseResult;
         }
       } else {

@@ -227,11 +227,30 @@ describe("Formula Formatter", () => {
       );
     });
 
-    test("should format complex table references with range", () => {
-      expect(formatFormula("Table1[[#Headers],[Column1:Column2]]")).toBe(
-        "Table1[[#Headers],[Column1:Column2]]"
+    test("should format Excel-style selector with column range [[#Headers],[Col1]:[Col2]]", () => {
+      expect(formatFormula("Table1[[#Headers],[Column1]:[Column2]]")).toBe(
+        "Table1[[#Headers],[Column1]:[Column2]]"
       );
     });
+
+    test("should format Excel-style selector with numeric column names", () => {
+      expect(formatFormula("Summary1_RFP[[#Headers],[10uM]:[null]]")).toBe(
+        "Summary1_RFP[[#Headers],[10uM]:[null]]"
+      );
+    });
+
+    test("should format Excel-style selector with sheet qualification", () => {
+      expect(formatFormula("Sheet1!Table1[[#All],[Start]:[End]]")).toBe(
+        "Sheet1!Table1[[#All],[Start]:[End]]"
+      );
+    });
+
+    test("should format selector with single column (no range)", () => {
+      expect(formatFormula("Table1[[#Data],[Column1]]")).toBe(
+        "Table1[[#Data],[Column1]]"
+      );
+    });
+    
     test("should format complex table references with column name containing colon", () => {
       // If the column name itself contains a colon, it's treated as a single column
       expect(formatFormula("Table1[[#Headers],[Column1:Column1]]")).toBe(
@@ -299,6 +318,16 @@ describe("Formula Formatter", () => {
         const formula = "INDEX(Table1[CAR ID], MATCH([@[CUSTOMER-ID]], Table1[CUSTOMER-ID],0))";
         const expected = "INDEX(Table1[CAR ID],MATCH([@CUSTOMER-ID],Table1[CUSTOMER-ID],0))";
         expect(formatFormula(formula)).toBe(expected);
+      });
+
+      test("should format complex INDEX formula with Excel-style selector column range", () => {
+        const formula = "INDEX(Summary1_RFP[[10uM]:[null]],MATCH([@[grouping_key]],Summary1_RFP[Identifier],0),MATCH([@[pea_concentration]],Summary1_RFP[[#Headers],[10uM]:[null]],0))";
+        const expected = "INDEX(Summary1_RFP[[10uM]:[null]],MATCH([@grouping_key],Summary1_RFP[Identifier],0),MATCH([@pea_concentration],Summary1_RFP[[#Headers],[10uM]:[null]],0))";
+        expect(formatFormula(formula)).toBe(expected);
+        
+        // Ensure round-trip stability
+        const reformatted = formatFormula(expected);
+        expect(reformatted).toBe(expected);
       });
 
       test("should format VLOOKUP with table references", () => {
@@ -457,6 +486,11 @@ describe("Formula Formatter", () => {
       "Table1[@[Net Sales]:[Gross Profit]]",
       "INDEX(Table1[CAR ID],MATCH([@CUSTOMER-ID],Table1[CUSTOMER-ID],0))",
       "VLOOKUP([@Customer Name],CustomerTable[[Customer Name]:[Phone Number]],3,FALSE)",
+      // Excel-style selector with column range
+      "Table1[[#Headers],[Col1]:[Col2]]",
+      "Summary1_RFP[[#Headers],[10uM]:[null]]",
+      "Data[[#Data],[Start]:[End]]",
+      "INDEX(Summary1_RFP[[10uM]:[null]],MATCH([@grouping_key],Summary1_RFP[Identifier],0),MATCH([@pea_concentration],Summary1_RFP[[#Headers],[10uM]:[null]],0))",
       // Canonical forms only (these should round-trip exactly)
       "A5:10", // Open→ range
       "$A5:15", // Open→ range with column absolute

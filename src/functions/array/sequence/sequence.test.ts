@@ -317,6 +317,8 @@ describe("SEQUENCE function", () => {
   });
 
   test("SEQUENCE lazy evaluation", () => {
+    const startTime = performance.now();
+    
     engine.setSheetContent(
       sheetAddress,
       new Map<string, SerializedCellValue>([
@@ -325,5 +327,10 @@ describe("SEQUENCE function", () => {
       ])
     );
     expect(cell("A1")).toBe(10000000);
+    
+    const duration = performance.now() - startTime;
+    // Performance regression check: Should complete in < 50ms
+    // (Was ~600ms before optimization, now ~4ms)
+    expect(duration).toBeLessThan(50);
   });
 });

@@ -156,7 +156,8 @@ export type ValueEvaluationResult = {
 
 export type AwaitingEvaluationResult = {
   type: "awaiting-evaluation";
-  cellAddress: CellAddress;
+  waitingFor: CellAddress;
+  errAddress: CellAddress;
 };
 
 export type ErrorEvaluationResult =
@@ -186,7 +187,7 @@ export type SpilledValuesEvaluationResult = {
   source: string;
   evaluate: SpilledValuesEvaluator;
   /**
-   * evaluateAllCells is a generator function that evaluates all non-empty cells in the spilled range.
+   * evaluateAllCells evaluates all non-empty cells in the spilled range.
    * Because a spilled range can be open-ended, we need to have logic for which cells we should evaluate.
    * e.g. when evaluating a range such as D:D only the cells in the current sheet residing in
    * column D should be evaluated and cells producing spilled values that spill onto D:D.
@@ -202,8 +203,8 @@ export type SpilledValuesEvaluationResult = {
    * e.g. evaluation of scalar operators where we want to nest e.g. `5 * right.evaluate()`
    * can be implemented by calling
    * ```ts
-   * for (const val of child.evaluateAllCells.call(this, options))
-   *   yield 5 * val;
+   * const vals = child.evaluateAllCells.call(this, options);
+   * return vals.map(val => ({ ...val, result: 5 * val.result }));
    * ```
    *
    * #### Consumers:
@@ -229,11 +230,7 @@ export type SpilledValuesEvaluationResult = {
 
       lookupOrder: LookupOrder;
     }
-  ) => IterableIterator<
-    EvaluateAllCellsResult,
-    undefined | void,
-    EvaluateAllCellsResult | undefined
-  >;
+  ) => EvaluateAllCellsResult[];
 };
 
 export type EvaluateAllCellsResult = {
@@ -276,9 +273,23 @@ export type EvaluationResult = {
   dependencies: Set<string>;
 } & FunctionEvaluationResult;
 
+export type SCC = {
+  id: number;
+  nodes: Set<DependencyNode>; // All nodes considering soft + hard edges
+  evaluationOrder: DependencyNode[]; // Flat topologically ordered list
+  resolved: boolean;
+  hardEdgeSCCs: Set<DependencyNode>[]; // SCCs formed by only hard edges (regular dependencies)
+};
+
+export type SCCDAG = {
+  sccList: SCC[];
+  sccGraph: Map<number, Set<number>>; // Adjacency list of SCC dependencies
+};
+
 export type EvaluationOrder = {
   evaluationOrder: Set<DependencyNode>;
   hasCycle: boolean;
   cycleNodes?: Set<DependencyNode>;
   hash: string;
+  sccDAG?: SCCDAG;
 };

@@ -264,6 +264,58 @@ describe("MATCH function", () => {
 
       expect(cell("B1")).toBe(2);
     });
+
+    test("should reject 2D arrays (must be 1D)", () => {
+      // Set up a 2D array (multiple rows AND multiple columns)
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Apple"],
+          ["B1", "Banana"],
+          ["C1", "Cherry"],
+          ["A2", "Dog"],
+          ["B2", "Elephant"],
+          ["C2", "Fox"],
+        ])
+      );
+      
+      // Try to use MATCH with a 2D range (2 rows × 3 columns)
+      setCellContent("D1", '=MATCH("Elephant", A1:C2, 0)');
+      
+      const result = cell("D1");
+      // Should return #VALUE! error
+      expect(result).toBe("#VALUE!");
+    });
+
+    test("should accept horizontal 1D arrays (single row)", () => {
+      // Set up a horizontal array (1 row × multiple columns)
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Apple"],
+          ["B1", "Banana"],
+          ["C1", "Cherry"],
+        ])
+      );
+      
+      setCellContent("D1", '=MATCH("Cherry", A1:C1, 0)');
+      expect(cell("D1")).toBe(3); // Third column
+    });
+
+    test("should accept vertical 1D arrays (single column)", () => {
+      // Set up a vertical array (multiple rows × 1 column)
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Apple"],
+          ["A2", "Banana"],
+          ["A3", "Cherry"],
+        ])
+      );
+      
+      setCellContent("B1", '=MATCH("Cherry", A1:A3, 0)');
+      expect(cell("B1")).toBe(3); // Third row
+    });
   });
 
   describe("can use table column as lookup_array", () => {
@@ -402,7 +454,7 @@ describe("MATCH function", () => {
         numCols: 1,
       });
 
-      expect(cell("B1")).toBe("#VALUE!"); // Should return error for empty table
+      expect(cell("B1")).toBe(FormulaError.NA); // Should return error for empty table
     });
   });
 });

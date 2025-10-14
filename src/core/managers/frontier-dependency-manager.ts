@@ -1,19 +1,96 @@
-import type { CellEvalNode } from "src/evaluator/cell-eval-node";
-import type { EvaluateAllCellsResult, RangeAddress } from "../types";
-import { cellAddressToKey } from "../utils";
+import { CellEvalNode } from "src/evaluator/cell-eval-node";
+import type {
+  CellAddress,
+  EvaluateAllCellsResult,
+  RangeAddress,
+} from "../types";
+import {
+  cellAddressToKey,
+  checkRangeIntersection,
+  isCellInRange,
+} from "../utils";
 import type { WorkbookManager } from "./workbook-manager";
 import type { DependencyManager } from "./dependency-manager";
 import type { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
-import type { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
+import { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
+import type { RangeEvalOrderEntry } from "./range-eval-order-builder";
+
+type EvalOrderEntry =
+  | {
+      type: "value";
+      address: CellAddress;
+      node: CellEvalNode;
+    }
+  | {
+      type: "empty_cell";
+      address: CellAddress;
+      candidates: CellEvalNode[];
+    }
+  | {
+      type: "empty_range";
+      address: RangeAddress;
+      candidates: CellEvalNode[];
+    };
+
+function assertIsCellEvalNode(
+  node: CellEvalNode | EmptyCellEvaluationNode
+): asserts node is CellEvalNode {
+  if (node instanceof EmptyCellEvaluationNode) {
+    throw new Error("A frontier dependencies can not be an empty cell");
+  }
+}
 
 export class FrontierDependencyManager {
+  private evalOrder: EvalOrderEntry[];
   constructor(
+    private frontierRange: RangeAddress,
     protected workbookManager: WorkbookManager,
     protected evaluationManager: DependencyManager
-  ) {}
+  ) {
+    const addressToNode = (address: CellAddress) => {
+      const node = this.evaluationManager.getCellNode(
+        cellAddressToKey(address)
+      );
+      assertIsCellEvalNode(node);
+      return node;
+    };
+    // todo maybe pass in lookupOrder
+    this.evalOrder = this.workbookManager
+      .buildRangeEvalOrder("col-major", this.frontierRange)
+      .map((entry): EvalOrderEntry => {
+        if (entry.type === "value") {
+          return {
+            type: "value",
+            address: entry.address,
+            node: addressToNode(entry.address),
+          };
+        } else if (entry.type === "empty_cell") {
+          return {
+            type: "empty_cell",
+            address: entry.address,
+            candidates: entry.candidates.map(addressToNode),
+          };
+        } else if (entry.type === "empty_range") {
+          return {
+            type: "empty_range",
+            address: entry.address,
+            candidates: entry.candidates.map(addressToNode),
+          };
+        }
+        throw new Error("Invalid entry type: " + (entry as any).type);
+      });
+    for (const entry of this.evalOrder) {
+      if (entry.type === "empty_cell" || entry.type === "empty_range") {
+        for (const candidate of entry.candidates) {
+          this.addFrontierDependency(candidate);
+        }
+      } else if (entry.type === "value") {
+        this.addDependency(entry.node);
+      }
+    }
+  }
 
   private _resolved: boolean = false;
-
   private _directDepsUpdated: boolean = false;
 
   /**
@@ -44,6 +121,10 @@ export class FrontierDependencyManager {
     return undefined;
   }
 
+  public getRangeEvalOrder() {
+    return this.evalOrder;
+  }
+
   public get frontierDependencies() {
     return this._frontierDependencies
       .difference(this._discardedFrontierDependencies)
@@ -54,7 +135,7 @@ export class FrontierDependencyManager {
     return this._discardedFrontierDependencies;
   }
 
-  public addFrontierDependency(dependency: CellEvalNode) {
+  protected addFrontierDependency(dependency: CellEvalNode) {
     if (this._frontierDependencies.has(dependency)) {
       return;
     }
@@ -94,7 +175,7 @@ export class FrontierDependencyManager {
   }
 
   public canResolve() {
-    return !this._directDepsUpdated;
+    return !this._directDepsUpdated && this.frontierDependencies.size === 0;
   }
 
   public get resolved() {
@@ -131,5 +212,35 @@ export class FrontierDependencyManager {
 
   public addDependency(dependency: CellEvalNode | EmptyCellEvaluationNode) {
     this._dependencies.add(dependency);
+  }
+
+  public upgradeFrontierDependencies() {
+    // todo can be optimized to not generate the frontier candidates every time
+    // we can cache the frontier candidates for the current cell
+    const frontierCandidates: CellEvalNode[] = Array.from(
+      this.frontierDependencies
+    );
+
+    for (const candidateNode of frontierCandidates) {
+      const result = candidateNode.evaluationResult;
+
+      // upgrade or downgrade frontier dependency
+      if (result) {
+        if (result.type === "spilled-values") {
+          const spillArea = result.spillArea(candidateNode.cellAddress);
+          const intersects = checkRangeIntersection(
+            this.frontierRange.range,
+            spillArea
+          );
+          if (intersects) {
+            this.maybeUpgradeFrontierDependency(candidateNode); // upgraded!
+          } else {
+            this.maybeDiscardFrontierDependency(candidateNode); // downgraded!
+          }
+        } else {
+          this.maybeDiscardFrontierDependency(candidateNode); // downgraded!
+        }
+      }
+    }
   }
 }

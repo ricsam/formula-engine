@@ -49,7 +49,11 @@ export function evaluateScalarOperator(
   if (left.type === "value" && right.type === "value") {
     const leftValue = left.result;
     const rightValue = right.result;
-    const result = evaluateScalar(leftValue, rightValue, options.context.originCell.cellAddress);
+    const result = evaluateScalar(
+      leftValue,
+      rightValue,
+      options.context.originCell.cellAddress
+    );
     if (result.type === "error" || result.type === "awaiting-evaluation") {
       return result;
     }
@@ -77,15 +81,16 @@ export function evaluateScalarOperator(
           options.context.originCell.cellAddress
         );
       },
-      evaluateAllCells: function* (options) {
-        for (const cellValue of left.evaluateAllCells.call(this, options)) {
+      evaluateAllCells: function (options) {
+        const leftResults = left.evaluateAllCells.call(this, options);
+        return leftResults.map(cellValue => {
           if (
             cellValue.result.type === "error" ||
             cellValue.result.type === "awaiting-evaluation"
           ) {
-            yield cellValue;
+            return cellValue;
           } else {
-            yield {
+            return {
               result: evaluateSingleScalarOperator(
                 cellValue.result.result,
                 right.result,
@@ -95,7 +100,7 @@ export function evaluateScalarOperator(
               relativePos: cellValue.relativePos,
             };
           }
-        }
+        });
       },
     };
   }
@@ -119,13 +124,14 @@ export function evaluateScalarOperator(
           options.context.originCell.cellAddress
         );
       },
-      evaluateAllCells: function* (options) {
-        for (const cellValue of right.evaluateAllCells.call(this, options)) {
+      evaluateAllCells: function (options) {
+        const rightResults = right.evaluateAllCells.call(this, options);
+        return rightResults.map(cellValue => {
           if (
             cellValue.result.type === "error" ||
             cellValue.result.type === "awaiting-evaluation"
           ) {
-            yield cellValue;
+            return cellValue;
           } else {
             const result = evaluateSingleScalarOperator(
               left.result,
@@ -133,12 +139,12 @@ export function evaluateScalarOperator(
               evaluateScalar,
               options.context.originCell.cellAddress
             );
-            yield {
+            return {
               result: result,
               relativePos: cellValue.relativePos,
             };
           }
-        }
+        });
       },
     };
   }
@@ -192,13 +198,9 @@ export function evaluateScalarOperator(
           options.context.originCell.cellAddress
         );
       },
-      evaluateAllCells: function* (options) {
-        const leftResults = Array.from(
-          left.evaluateAllCells.call(this, options)
-        );
-        const rightResults = Array.from(
-          right.evaluateAllCells.call(this, options)
-        );
+      evaluateAllCells: function (options) {
+        const leftResults = left.evaluateAllCells.call(this, options);
+        const rightResults = right.evaluateAllCells.call(this, options);
 
         // Create position-based maps for both left and right results
         const leftMap = new Map<string, EvaluateAllCellsResult>();
@@ -217,6 +219,8 @@ export function evaluateScalarOperator(
           allPositions.add(key);
         }
 
+        const results: EvaluateAllCellsResult[] = [];
+
         // Process each unique position
         for (const posKey of allPositions) {
           const leftResult = leftMap.get(posKey);
@@ -231,11 +235,14 @@ export function evaluateScalarOperator(
             continue;
           } else if (!leftResult && rightResult) {
             // Left is empty/missing, right has value
-            if (rightResult.result.type === "error") {
-              yield rightResult;
+            if (
+              rightResult.result.type === "error" ||
+              rightResult.result.type === "awaiting-evaluation"
+            ) {
+              results.push(rightResult);
             } else if (rightResult.result.type === "value") {
               // Treat missing left as empty, which is handled by the operator
-              yield {
+              results.push({
                 result: {
                   type: "error",
                   err: FormulaError.NA,
@@ -243,17 +250,20 @@ export function evaluateScalarOperator(
                   errAddress: options.context.originCell.cellAddress,
                 },
                 relativePos,
-              };
+              });
             } else {
-              yield rightResult;
+              results.push(rightResult);
             }
           } else if (!rightResult && leftResult) {
             // Right is empty/missing, left has value
-            if (leftResult.result.type === "error") {
-              yield leftResult;
+            if (
+              leftResult.result.type === "error" ||
+              leftResult.result.type === "awaiting-evaluation"
+            ) {
+              results.push(leftResult);
             } else if (leftResult.result.type === "value") {
               // Treat missing right as empty, which is handled by the operator
-              yield {
+              results.push({
                 result: {
                   type: "error",
                   err: FormulaError.NA,
@@ -261,21 +271,27 @@ export function evaluateScalarOperator(
                   errAddress: options.context.originCell.cellAddress,
                 },
                 relativePos,
-              };
+              });
             } else {
-              yield leftResult;
+              results.push(leftResult);
             }
           } else if (leftResult && rightResult) {
             // Both have values
-            if (leftResult.result.type === "error") {
-              yield leftResult;
-            } else if (rightResult.result.type === "error") {
-              yield rightResult;
+            if (
+              leftResult.result.type === "error" ||
+              leftResult.result.type === "awaiting-evaluation"
+            ) {
+              results.push(leftResult);
+            } else if (
+              rightResult.result.type === "error" ||
+              rightResult.result.type === "awaiting-evaluation"
+            ) {
+              results.push(rightResult);
             } else if (
               leftResult.result.type === "value" &&
               rightResult.result.type === "value"
             ) {
-              yield {
+              results.push({
                 result: evaluateSingleScalarOperator(
                   leftResult.result.result,
                   rightResult.result.result,
@@ -283,21 +299,24 @@ export function evaluateScalarOperator(
                   options.context.originCell.cellAddress
                 ),
                 relativePos: leftResult.relativePos,
-              };
+              });
             } else {
               // Both are awaiting-evaluation or some other state
-              yield {
+              results.push({
                 result: {
                   type: "error",
                   err: FormulaError.VALUE,
-                  message: "Cannot evaluate scalar operator on non-value results",
+                  message:
+                    "Cannot evaluate scalar operator on non-value results",
                   errAddress: options.context.originCell.cellAddress,
                 },
                 relativePos,
-              };
+              });
             }
           }
         }
+
+        return results;
       },
     };
   }

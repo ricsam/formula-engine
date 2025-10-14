@@ -1,23 +1,25 @@
-import type {
-  CellAddress,
-  FiniteSpreadsheetRange,
-  LocalCellAddress,
-  SerializedCellValue,
-  Sheet,
-  SpreadsheetRange,
-  Workbook,
+import {
+  FormulaError,
+  type CellAddress,
+  type FiniteSpreadsheetRange,
+  type LocalCellAddress,
+  type SerializedCellValue,
+  type Sheet,
+  type SpreadsheetRange,
+  type Workbook,
 } from "../types";
 import { getCellReference, parseCellReference } from "../utils";
 
 import type { RangeAddress } from "src/core/types";
 import { buildRangeEvalOrder } from "./range-eval-order-builder";
+import { EvaluationError } from "src/evaluator/evaluation-error";
 
 interface IndexEntry {
   number: number;
   key: string;
 }
 
-interface SheetIndexes {
+export interface SheetIndexes {
   // lookup maps - cells grouped by row/column
   rowGroups: Map<number, IndexEntry[]>; // row number -> cells in that row (sorted by col)
   colGroups: Map<number, IndexEntry[]>; // col number -> cells in that col (sorted by row)
@@ -30,7 +32,7 @@ interface SheetIndexes {
 /**
  * Utility class for binary search operations on IndexEntry arrays
  */
-class IndexEntryBinarySearch {
+export class IndexEntryBinarySearch {
   /**
    * Find the insertion point for a number in a sorted IndexEntry array
    * Returns the index where the number should be inserted to maintain sort order
@@ -108,7 +110,7 @@ export class WorkbookManager {
   /**
    * Get or create indexes for a sheet
    */
-  private getSheetIndexes(opts: {
+  public getSheetIndexes(opts: {
     workbookName: string;
     sheetName: string;
   }): SheetIndexes {
@@ -573,26 +575,6 @@ export class WorkbookManager {
   }
 
   /**
-   * Converts a SpreadsheetRange to FiniteSpreadsheetRange, throwing an error if infinite
-   */
-  private toFiniteRange(range: SpreadsheetRange): FiniteSpreadsheetRange {
-    if (
-      range.end.col.type === "infinity" ||
-      range.end.row.type === "infinity"
-    ) {
-      throw new Error("Clearing infinite ranges is not supported");
-    }
-
-    return {
-      start: range.start,
-      end: {
-        col: range.end.col.value,
-        row: range.end.row.value,
-      },
-    };
-  }
-
-  /**
    * Removes the content in the spreadsheet that is inside the range.
    * OPTIMIZED: Uses indexes to only process cells that actually exist.
    * ENHANCED: Now supports infinite ranges.
@@ -621,18 +603,6 @@ export class WorkbookManager {
   }
 
   /**
-   * Get all cells in a specific row (pre-computed from grouped index)
-   */
-  private getCellsInRow(
-    opts: { workbookName: string; sheetName: string },
-    row: number
-  ): IndexEntry[] {
-    const indexes = this.getSheetIndexes(opts);
-    // Direct O(1) lookup from Map
-    return indexes.rowGroups.get(row) ?? [];
-  }
-
-  /**
    * Optimized generator to iterate over cells defined in the content within a range
    * Uses indexes to efficiently find and yield only cells that exist within the range
    */
@@ -640,7 +610,7 @@ export class WorkbookManager {
     // First check if the sheet exists
     const sheet = this.getSheet(address);
     if (!sheet) {
-      throw new Error("Sheet not found");
+      throw new EvaluationError(FormulaError.REF, "Sheet not found");
     }
 
     const indexes = this.getSheetIndexes(address);
@@ -726,338 +696,10 @@ export class WorkbookManager {
     return Array.from(this.iterateCellsInRange(address));
   }
 
-  /**
-   * Get all cells in a specific column (pre-computed from grouped index)
-   */
-  private getCellsInColumn(
-    opts: { workbookName: string; sheetName: string },
-    column: number
-  ): IndexEntry[] {
-    const indexes = this.getSheetIndexes(opts);
-    // Direct O(1) lookup from Map
-    return indexes.colGroups.get(column) ?? [];
-  }
-
-  /**
-   * Generator that yields frontier candidates that might spill into the range
-   * A frontier candidate is a formula cell that could potentially spill into the range.
-   * This includes cells in three regions:
-   * 1. Above the range (same columns, rows before) - nearest formula cell per column
-   * 2. To the left of the range (same rows, columns before) - nearest formula cell per row
-   * 3. Top-left quadrant (both above AND to the left of the range) - all formula cells
-   *    with clear paths to the range
-   *
-   * For regions 1 & 2, we only yield the nearest formula cell in each direction.
-   * For region 3, we yield all formula cells that have no blocking formula cells
-   * between them and the range (both horizontally and vertically).
-   */
-  *iterateFrontierCandidates(range: RangeAddress): Generator<CellAddress> {
-    const candidateKeys = new Set<string>();
-
-    const sheet = this.getSheet({
-      sheetName: range.sheetName,
-      workbookName: range.workbookName,
-    });
-
-    if (!sheet) {
-      return;
-    }
-
-    // 1. Get columns that intersect with the range (cells above)
-    const colsToCheck = this.getColumnsInRange(range);
-
-    // For each column, find the nearest formula cell above the range
-    for (const col of colsToCheck) {
-      const cellsInCol = this.getCellsInColumn(range, col);
-      const nearestAbove = this.findNearestFormulaAbove(
-        cellsInCol,
-        range.range.start.row,
-        sheet
-      );
-      if (nearestAbove && !candidateKeys.has(nearestAbove)) {
-        candidateKeys.add(nearestAbove);
-        yield {
-          ...parseCellReference(nearestAbove),
-          sheetName: range.sheetName,
-          workbookName: range.workbookName,
-        };
-      }
-    }
-
-    // 2. Get rows that intersect with the range (cells to the left)
-    const rowsToCheck = this.getRowsInRange(range);
-
-    // For each row, find the nearest formula cell to the left of the range
-    for (const row of rowsToCheck) {
-      const cellsInRow = this.getCellsInRow(range, row);
-      const nearestLeft = this.findNearestFormulaLeft(
-        cellsInRow,
-        range.range.start.col,
-        sheet
-      );
-      if (nearestLeft && !candidateKeys.has(nearestLeft)) {
-        candidateKeys.add(nearestLeft);
-        yield {
-          ...parseCellReference(nearestLeft),
-          sheetName: range.sheetName,
-          workbookName: range.workbookName,
-        };
-      }
-    }
-
-    // 3. Check the top-left quadrant (cells both above AND to the left)
-    // These are cells that might spill diagonally into the range
-    for (const candidate of this.findTopLeftQuadrantCandidates(
-      range,
-      sheet,
-      candidateKeys
-    )) {
-      candidateKeys.add(getCellReference(candidate));
-      yield candidate;
-    }
-  }
-
-  /**
-   * Get frontier candidates that might spill into the range
-   * A frontier candidate is a formula cell that could potentially spill into the range.
-   * This includes cells in three regions:
-   * 1. Above the range (same columns, rows before)
-   * 2. To the left of the range (same rows, columns before)
-   * 3. Top-left quadrant (both above AND to the left of the range)
-   */
-  getFrontierCandidates(range: RangeAddress): CellAddress[] {
-    return Array.from(this.iterateFrontierCandidates(range));
-  }
-
-  /**
-   * Find formula cells in the top-left quadrant that could spill into the range
-   * This checks cells that are both above AND to the left of the range
-   */
-  *findTopLeftQuadrantCandidates(
-    address: RangeAddress,
-    sheet: Sheet,
-    existingCandidates: Set<string>
-  ): Generator<CellAddress> {
-    // Only process if there's actually a top-left quadrant
-    if (address.range.start.row === 0 || address.range.start.col === 0) {
-      return;
-    }
-
-    const indexes = this.getSheetIndexes(address);
-
-    // Use sorted index to find only cells that exist above and to the left of the range
-    // This avoids iterating through empty rows/columns
-    const candidateCells = indexes.cellsSortedByRow.filter((cell) => {
-      const parsed = parseCellReference(cell.key);
-      return (
-        parsed.rowIndex < address.range.start.row &&
-        parsed.colIndex < address.range.start.col
-      );
-    });
-
-    // Process each candidate cell
-    for (const cell of candidateCells) {
-      // Skip if already found
-      if (existingCandidates.has(cell.key)) continue;
-
-      const content = sheet.content.get(cell.key);
-      if (typeof content === "string" && content.startsWith("=")) {
-        const parsed = parseCellReference(cell.key);
-        const row = parsed.rowIndex;
-        const col = parsed.colIndex;
-
-        // Check if there's a clear path to the range
-        // A cell at (row, col) can spill to the range if:
-        // 1. No formulas exist between (row, col+1) and (row, range.start.col-1)
-        // 2. No formulas exist between (row+1, col) and (range.start.row-1, col)
-
-        let hasBlockingCell = false;
-
-        // Check horizontal path (same row, columns between this cell and range)
-        const cellsInRow = this.getCellsInRow(address, row);
-        for (const blockingCandidate of cellsInRow) {
-          if (
-            blockingCandidate.number > col &&
-            blockingCandidate.number < address.range.start.col
-          ) {
-            const blockingContent = sheet.content.get(blockingCandidate.key);
-            if (
-              typeof blockingContent === "string" &&
-              blockingContent.startsWith("=")
-            ) {
-              hasBlockingCell = true;
-              break;
-            }
-          }
-        }
-
-        if (!hasBlockingCell) {
-          // Check vertical path (same column, rows between this cell and range)
-          const colCells = this.getCellsInColumn(address, col);
-          for (const blockingCandidate of colCells) {
-            if (
-              blockingCandidate.number > row &&
-              blockingCandidate.number < address.range.start.row
-            ) {
-              const blockingContent = sheet.content.get(blockingCandidate.key);
-              if (
-                typeof blockingContent === "string" &&
-                blockingContent.startsWith("=")
-              ) {
-                hasBlockingCell = true;
-                break;
-              }
-            }
-          }
-        }
-
-        if (!hasBlockingCell) {
-          yield {
-            ...parsed,
-            sheetName: address.sheetName,
-            workbookName: address.workbookName,
-          };
-        }
-      }
-    }
-  }
-
-  /**
-   * Find the nearest formula cell above the given row in a column
-   */
-  private findNearestFormulaAbove(
-    cellsInCol: IndexEntry[],
-    beforeRow: number,
-    sheet: Sheet
-  ): string | null {
-    if (cellsInCol.length === 0) return null;
-
-    // Binary search to find the rightmost position where we could insert beforeRow
-    const insertionPoint = IndexEntryBinarySearch.findRightmostInsertionPoint(
-      cellsInCol,
-      beforeRow
-    );
-
-    // Now search backwards from the insertion point to find the nearest formula
-    for (let i = insertionPoint - 1; i >= 0; i--) {
-      const cell = cellsInCol[i];
-      if (!cell) continue;
-
-      const content = sheet.content.get(cell.key);
-      if (typeof content === "string" && content.startsWith("=")) {
-        return cell.key;
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Find the nearest formula cell to the left of the given column in a row
-   */
-  private findNearestFormulaLeft(
-    cellsInRow: IndexEntry[],
-    beforeCol: number,
-    sheet: Sheet
-  ): string | null {
-    if (cellsInRow.length === 0) return null;
-
-    // Binary search to find the rightmost position where we could insert beforeCol
-    const insertionPoint = IndexEntryBinarySearch.findRightmostInsertionPoint(
-      cellsInRow,
-      beforeCol
-    );
-
-    // Now search backwards from the insertion point to find the nearest formula
-    for (let i = insertionPoint - 1; i >= 0; i--) {
-      const cell = cellsInRow[i];
-      if (!cell) continue;
-
-      const content = sheet.content.get(cell.key);
-      if (typeof content === "string" && content.startsWith("=")) {
-        return cell.key;
-      }
-    }
-
-    return null;
-  }
-
-  /**
-   * Get unique dimensions (rows or columns) that actually contain cells and intersect with a range
-   * OPTIMIZED: Only returns dimensions that have actual cell data, not all numbers in the range
-   */
-  private getActualDimensionsInRange(
-    list: IndexEntry[],
-    startNum: number,
-    endDimension: { type: "number"; value: number } | { type: "infinity" }
-  ): number[] {
-    const dimensions = new Set<number>();
-
-    // Use binary search to find the first cell >= startNum
-    const startIdx = IndexEntryBinarySearch.findFirstGreaterOrEqual(
-      list,
-      startNum
-    );
-    if (startIdx === -1) {
-      // No cells at or after startNum
-      return [];
-    }
-
-    // Only iterate through cells that actually exist and are within bounds
-    for (let i = startIdx; i < list.length; i++) {
-      const entry = list[i];
-      if (!entry) continue;
-
-      const num = entry.number;
-
-      // Check if we've gone past the end of a finite range
-      if (endDimension.type === "number" && num > endDimension.value) {
-        break;
-      }
-
-      dimensions.add(num);
-    }
-
-    return Array.from(dimensions).sort((a, b) => a - b);
-  }
-
-  /**
-   * Binary search to find the first element >= target
-   */
-  private findFirstGreaterOrEqual(list: IndexEntry[], target: number): number {
-    return IndexEntryBinarySearch.findFirstGreaterOrEqual(list, target);
-  }
-
-  /**
-   * Get columns that actually contain cells and intersect with the range
-   * OPTIMIZED: Only returns columns that have actual cell data within the range
-   */
-  private getColumnsInRange(range: RangeAddress): number[] {
-    const indexes = this.getSheetIndexes(range);
-    return this.getActualDimensionsInRange(
-      indexes.cellsSortedByCol,
-      range.range.start.col,
-      range.range.end.col
-    );
-  }
-
-  /**
-   * Get rows that actually contain cells and intersect with the range
-   * OPTIMIZED: Only returns rows that have actual cell data within the range
-   */
-  private getRowsInRange(range: RangeAddress): number[] {
-    const indexes = this.getSheetIndexes(range);
-    return this.getActualDimensionsInRange(
-      indexes.cellsSortedByRow,
-      range.range.start.row,
-      range.range.end.row
-    );
-  }
-
-  public getCellContent(cellAddress: CellAddress): SerializedCellValue {
+  private getCellContent(cellAddress: CellAddress): SerializedCellValue {
     const sheet = this.getSheet(cellAddress);
     if (!sheet) {
-      throw new Error("Sheet not found");
+      throw new EvaluationError(FormulaError.REF, "Sheet not found", cellAddress);
     }
     return sheet.content.get(getCellReference(cellAddress));
   }

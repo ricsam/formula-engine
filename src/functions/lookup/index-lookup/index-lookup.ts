@@ -100,7 +100,10 @@ function getValueFromArray(
     };
   }
 
-  if (spillResult.type === "error" || spillResult.type === "awaiting-evaluation") {
+  if (
+    spillResult.type === "error" ||
+    spillResult.type === "awaiting-evaluation"
+  ) {
     return spillResult;
   }
 
@@ -121,13 +124,19 @@ export const INDEX: FunctionDefinition = {
 
     // Evaluate array argument
     const arrayResult = this.evaluateNode(node.args[0]!, context);
-    if (arrayResult.type === "error") {
+    if (
+      arrayResult.type === "error" ||
+      arrayResult.type === "awaiting-evaluation"
+    ) {
       return arrayResult;
     }
 
     // Evaluate row_num argument
     const rowNumResult = this.evaluateNode(node.args[1]!, context);
-    if (rowNumResult.type === "error") {
+    if (
+      rowNumResult.type === "error" ||
+      rowNumResult.type === "awaiting-evaluation"
+    ) {
       return rowNumResult;
     }
 
@@ -135,7 +144,10 @@ export const INDEX: FunctionDefinition = {
     let colNumResult: FunctionEvaluationResult | null = null;
     if (node.args[2]) {
       colNumResult = this.evaluateNode(node.args[2], context);
-      if (colNumResult.type === "error") {
+      if (
+        colNumResult.type === "error" ||
+        colNumResult.type === "awaiting-evaluation"
+      ) {
         return colNumResult;
       }
     }
@@ -150,25 +162,6 @@ export const INDEX: FunctionDefinition = {
         err: FormulaError.VALUE,
         message:
           "INDEX: Spilled row_num/column_num arguments not yet implemented",
-        errAddress: context.originCell.cellAddress,
-      };
-    }
-
-    // Validate argument types
-    if (rowNumResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "INDEX: Invalid row_num result type",
-        errAddress: context.originCell.cellAddress,
-      };
-    }
-
-    if (colNumResult && colNumResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "INDEX: Invalid column_num result type",
         errAddress: context.originCell.cellAddress,
       };
     }
