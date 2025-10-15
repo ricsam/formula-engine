@@ -152,12 +152,22 @@ export interface Workbook {
 export type ValueEvaluationResult = {
   type: "value";
   result: CellValue;
+  /**
+   * If the terminating evaluation result is a reference (see evaluateReference)
+   * then we store information about the source cell for context dependent functions like CELL
+   */
+  sourceCell?: CellAddress;
 };
 
 export type AwaitingEvaluationResult = {
   type: "awaiting-evaluation";
   waitingFor: CellAddress;
   errAddress: CellAddress;
+  /**
+   * If the terminating evaluation result is a reference (see evaluateReference)
+   * then we store information about the source cell for context dependent functions like CELL
+   */
+  sourceCell?: CellAddress;
 };
 
 export type ErrorEvaluationResult =
@@ -166,6 +176,11 @@ export type ErrorEvaluationResult =
       err: FormulaError;
       errAddress: CellAddress;
       message: string;
+      /**
+       * If the terminating evaluation result is a reference (see evaluateReference)
+       * then we store information about the source cell for context dependent functions like CELL
+       */
+      sourceCell?: CellAddress;
     }
   | AwaitingEvaluationResult;
 
@@ -180,6 +195,19 @@ export type SpilledValuesEvaluator = (
 
 export type SpilledValuesEvaluationResult = {
   type: "spilled-values";
+
+  /**
+   * When a raw range is evaluated, we will add it to the sourceRange so it can be used e.g. for context dependent functions
+   */
+  sourceRange?: RangeAddress;
+
+  /**
+   * If the terminating evaluation result is a reference (see evaluateReference)
+   * then we store information about the source cell for context dependent functions like CELL
+   * sourceCell will only be defined on a spilledValue when a single value is looked up,
+   */
+  sourceCell?: CellAddress;
+
   spillArea: (origin: CellAddress) => SpreadsheetRange;
   /**
    * for debugging we add a source string to denote where the spilled values were created

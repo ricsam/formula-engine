@@ -39,6 +39,12 @@ import { IFERROR } from "./logical/iferror/iferror";
 import { XLOOKUP } from "./lookup/xlookup/xlookup";
 import { OR } from "./logical/or/or";
 import { TEXTJOIN } from "./text/textjoin/textjoin";
+import { ROW } from "./information/row/row";
+import { COLUMN } from "./information/column/column";
+import { CELL } from "./information/cell/cell";
+import { ADDRESS } from "./reference/address/address";
+import { INDIRECT } from "./reference/indirect/indirect";
+import { OFFSET } from "./reference/offset/offset";
 
 const buildFunctionIndex = (functions: Record<string, FunctionDefinition>) => {
   return Object.fromEntries(
@@ -56,11 +62,14 @@ const buildFunctionIndex = (functions: Record<string, FunctionDefinition>) => {
 
 export const functions: Record<string, FunctionDefinition> = buildFunctionIndex(
   {
+    ADDRESS,
     AND,
     AVERAGE,
     AVERAGEIF,
     AVERAGEIFS,
     CEILING,
+    CELL,
+    COLUMN,
     CONCATENATE,
     COUNT,
     COUNTIF,
@@ -70,6 +79,7 @@ export const functions: Record<string, FunctionDefinition> = buildFunctionIndex(
     IF,
     IFERROR,
     INDEX,
+    INDIRECT,
     LEFT,
     LEN,
     MATCH,
@@ -80,8 +90,10 @@ export const functions: Record<string, FunctionDefinition> = buildFunctionIndex(
     MIN,
     MINIF,
     MINIFS,
+    OFFSET,
     OR,
     RIGHT,
+    ROW,
     SEQUENCE,
     SUM,
     SUMIF,

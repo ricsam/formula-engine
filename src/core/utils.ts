@@ -13,6 +13,33 @@ import {
   type SpreadsheetRangeEnd,
 } from "./types";
 
+// Type narrowing utilities
+export function isCellAddress(
+  obj: RangeAddress | CellAddress
+): obj is CellAddress {
+  return (
+    obj &&
+    typeof obj === "object" &&
+    "rowIndex" in obj &&
+    "colIndex" in obj &&
+    "sheetName" in obj &&
+    "workbookName" in obj &&
+    !("range" in obj)
+  );
+}
+
+export function isRangeAddress(
+  obj: RangeAddress | CellAddress
+): obj is RangeAddress {
+  return (
+    obj &&
+    typeof obj === "object" &&
+    "range" in obj &&
+    "sheetName" in obj &&
+    "workbookName" in obj
+  );
+}
+
 // Column utilities
 export const columnToIndex = (col: string): number => {
   let result = 0;
