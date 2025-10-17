@@ -34,6 +34,7 @@ import { CellEvalNode } from "src/evaluator/cell-eval-node";
 import { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
 import { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
 import { EvaluationError } from "src/evaluator/evaluation-error";
+import { AstEvaluationNode } from "src/evaluator/ast-evaluation-node";
 
 export class EvaluationManager {
   private isEvaluating = false;
@@ -291,6 +292,13 @@ export class EvaluationManager {
       this.evaluateCellNode(dependencyKey);
       return;
     }
+    if (dependencyKey.startsWith("ast:")) {
+      // we could later move the evaluation logic here,
+      // but for now, let's not do anything and
+      // let the evaluateCellNode handle the evaluation
+      // through formulaEvaluator.evaluateNode
+      return;
+    }
     throw new Error("Invalid dependency key: " + dependencyKey);
   }
 
@@ -338,10 +346,14 @@ export class EvaluationManager {
         if (evaluationPlan.cycleNodes) {
           for (const node of evaluationPlan.cycleNodes) {
             if (!(node instanceof RangeEvaluationNode)) {
-              node.setEvaluationResult({
-                ...evaluationResult,
-                errAddress: node.cellAddress,
-              });
+              if (node instanceof AstEvaluationNode) {
+                node.setEvaluationResult(evaluationResult);
+              } else {
+                node.setEvaluationResult({
+                  ...evaluationResult,
+                  errAddress: node.cellAddress,
+                });
+              }
             }
           }
         }
@@ -352,6 +364,9 @@ export class EvaluationManager {
       const timeStart = performance.now();
       const durations: { duration: number; key: string }[] = [];
       let numResolved = 0;
+      if (flags.isProfiling && evaluationPlan.evaluationOrder.size > 2000) {
+        // console.profile();
+      }
       evaluationPlan.evaluationOrder.forEach((dependency) => {
         const start = performance.now();
         if (dependency.resolved) {
@@ -359,11 +374,14 @@ export class EvaluationManager {
         }
         this.evaluateDependencyNode(dependency.key);
         const end = performance.now();
-        if (flags.isProfiling && evaluationPlan.evaluationOrder.size > 100) {
+        if (flags.isProfiling && evaluationPlan.evaluationOrder.size > 2000) {
           durations.push({ duration: end - start, key: dependency.key });
         }
       });
-      if (flags.isProfiling && evaluationPlan.evaluationOrder.size > 100) {
+      if (flags.isProfiling && evaluationPlan.evaluationOrder.size > 2000) {
+        // console.profileEnd();
+      }
+      if (flags.isProfiling && evaluationPlan.evaluationOrder.size > 2000) {
         const percentResolved = Math.round(
           (100 * numResolved) / evaluationPlan.evaluationOrder.size
         );

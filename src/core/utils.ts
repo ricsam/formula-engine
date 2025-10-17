@@ -327,6 +327,10 @@ export function keyToCellAddress(key: string): CellAddress {
   };
 }
 
+/**
+ * For cache lookups, use dependencyManager.getCellNode(cellAddressToKey(cellAddress)).key
+ * because it may be an empty cell node key
+ */
 export function cellAddressToKey(cellAddress: CellAddress): string {
   if (
     cellAddress.rowIndex === undefined ||

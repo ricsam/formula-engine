@@ -32,6 +32,7 @@ export const ROW: FunctionDefinition = {
   evaluate: function (node, context): FunctionEvaluationResult {
     // If no arguments, return the row of the current cell (1-based)
     if (node.args.length === 0) {
+      context.addContextDependency('row');
       return {
         type: "value",
         result: {

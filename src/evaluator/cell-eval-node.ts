@@ -3,34 +3,35 @@ import type {
   FunctionEvaluationResult,
   SingleEvaluationResult,
 } from "src/core/types";
-import { keyToCellAddress } from "src/core/utils";
+import { getCellReference, keyToCellAddress } from "src/core/utils";
 import { RangeEvaluationNode } from "./range-evaluation-node";
 import { EmptyCellEvaluationNode } from "./empty-cell-evaluation-node";
+import type { AstEvaluationNode } from "./ast-evaluation-node";
 
-export class CellEvalNode {
-  public readonly cellAddress: CellAddress;
+export class BaseEvalNode {
   public readonly key: string;
   private _dependencies: Set<
-    CellEvalNode | RangeEvaluationNode | EmptyCellEvaluationNode
+    | CellEvalNode
+    | RangeEvaluationNode
+    | EmptyCellEvaluationNode
+    | AstEvaluationNode
   > = new Set();
-  private _evaluationResult?: FunctionEvaluationResult;
+  private _evaluationResult: FunctionEvaluationResult;
   private _originSpillResult?: SingleEvaluationResult;
   private _directDepsUpdated: boolean = false;
   private _resolved: boolean = false;
 
-  constructor(
-    key: string,
-    evaluationResult?: FunctionEvaluationResult,
-    originSpillResult?: SingleEvaluationResult
-  ) {
-    this.cellAddress = keyToCellAddress(key);
+  constructor(key: string, initialEvaluationResult: FunctionEvaluationResult) {
     this.key = key;
-    this._evaluationResult = evaluationResult;
-    this._originSpillResult = originSpillResult;
+    this._evaluationResult = initialEvaluationResult;
   }
 
   public addDependency(
-    dep: CellEvalNode | RangeEvaluationNode | EmptyCellEvaluationNode
+    dep:
+      | CellEvalNode
+      | RangeEvaluationNode
+      | EmptyCellEvaluationNode
+      | AstEvaluationNode
   ) {
     if (this._dependencies.has(dep)) {
       return;
@@ -50,7 +51,10 @@ export class CellEvalNode {
   }
 
   public canResolve() {
-    return this.evaluationResult.type !== "awaiting-evaluation" && !this._directDepsUpdated;
+    return (
+      this.evaluationResult.type !== "awaiting-evaluation" &&
+      !this._directDepsUpdated
+    );
   }
 
   public get resolved() {
@@ -58,13 +62,7 @@ export class CellEvalNode {
   }
 
   public get evaluationResult(): FunctionEvaluationResult {
-    return (
-      this._evaluationResult ?? {
-        type: "awaiting-evaluation",
-        waitingFor: this.cellAddress,
-        errAddress: this.cellAddress,
-      }
-    );
+    return this._evaluationResult;
   }
 
   public get originSpillResult() {
@@ -120,7 +118,7 @@ export class CellEvalNode {
         resolved: this.resolved,
         cycle: true,
         dependencies: [],
-      }
+      };
     }
     visitor?.add(this.key);
     return {
@@ -132,5 +130,22 @@ export class CellEvalNode {
         node.toJSON(visitor)
       ),
     };
+  }
+}
+
+export class CellEvalNode extends BaseEvalNode {
+  public readonly cellAddress: CellAddress;
+  constructor(key: string) {
+    const cellAddress = keyToCellAddress(key);
+    super(key, {
+      type: "awaiting-evaluation",
+      waitingFor: cellAddress,
+      errAddress: cellAddress,
+    });
+    this.cellAddress = cellAddress;
+  }
+
+  public override toString(): string {
+    return getCellReference(this.cellAddress);
   }
 }

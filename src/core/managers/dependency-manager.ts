@@ -1,10 +1,12 @@
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
+import {
+  contextDependencyKeys,
+  type ContextDependency,
+  type EvaluationContext,
+} from "src/evaluator/evaluation-context";
 import {
   type CellAddress,
   type EvaluationOrder,
   type FunctionEvaluationResult,
-  type RangeAddress,
-  type SingleEvaluationResult,
   type SpilledValue,
 } from "../types";
 import {
@@ -13,22 +15,18 @@ import {
   getRangeKey,
   isCellInRange,
   keyToCellAddress,
-  rangeAddressToKey,
 } from "../utils";
 
+import { AstEvaluationNode } from "src/evaluator/ast-evaluation-node";
 import { CellEvalNode } from "src/evaluator/cell-eval-node";
-import { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
-import { CacheManager } from "./cache-manager";
-import { WorkbookManager } from "./workbook-manager";
 import { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
+import { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
+import type { ASTNode } from "src/parser/ast";
+import { astToString } from "src/parser/formatter";
+import { CacheManager } from "./cache-manager";
 import type { DependencyNode } from "./dependency-node";
-import { AwaitingEvaluationError } from "src/evaluator/evaluation-error";
-
-interface NodeInfo {
-  isFrontierDep: boolean;
-  frontierParents: Set<string>; // Nodes that have this as a frontier dependency
-  node: CellEvalNode | RangeEvaluationNode;
-}
+import type { TableManager } from "./table-manager";
+import { WorkbookManager } from "./workbook-manager";
 
 export interface DependencyTreeNode {
   type: "cell" | "range" | "empty";
@@ -88,7 +86,7 @@ export class DependencyManager {
 
   constructor(
     private cacheManager: CacheManager,
-    private workbookManager: WorkbookManager
+    private workbookManager: WorkbookManager,
   ) {}
 
   getSpillValue(cellAddress: CellAddress): SpilledValue | undefined {
@@ -225,6 +223,104 @@ export class DependencyManager {
       return node;
     }
     return this.ranges.get(rangeKey)!;
+  }
+
+  asts: Map<
+    /**
+     * ast key
+     */
+    string,
+    {
+      evalNode: AstEvaluationNode;
+      contextDependency: ContextDependency;
+      contextDependencyKey: string;
+    }[]
+  > = new Map();
+
+  getAstNode(
+    ast: ASTNode,
+    currentContext: Omit<Required<ContextDependency>, "tableName"> & {
+      tableName?: string;
+    }
+  ): AstEvaluationNode {
+    const astKey = `ast:${astToString(ast)}`; // cache normalize this later
+    const astEntries = this.asts.get(astKey);
+
+    // if any of the ast entries match the current context, then we can return the ast node
+    // otherwise we have to evalute the ast node to understand if it is context dependent
+    // and later it will be saved using saveAstNode
+    if (astEntries) {
+      for (const entry of astEntries) {
+        // e.g. we have a row dependent ast dependency, dependent on row 1, and the current context dependency has rowIndex 1
+        // then we will get a match
+        const matches = Object.entries(entry.contextDependency).every(
+          ([key, value]) => {
+            if (typeof value === "undefined") {
+              return true;
+            }
+            return currentContext[key as keyof ContextDependency] === value;
+          }
+        );
+        if (matches) {
+          return entry.evalNode;
+        }
+      }
+    }
+
+    // by default the ast node is cell specific
+    // but later, setContextDependency is called with a more open context dependency
+    const node = new AstEvaluationNode(ast, currentContext);
+    // initially we store it as a cell, sheet, workbook and table dependent node
+    // but later, once resolved, we can store it under a looser dependency key, e.g. only sheet, workbook and table dependent
+    this.saveAstNode(node, currentContext);
+    return node;
+  }
+
+  getContextDependencyKey(contextDependency: ContextDependency) {
+    const keys: (string | number)[] = [];
+    contextDependencyKeys.forEach((key) => {
+      if (contextDependency[key] !== undefined) {
+        keys.push(`${key}:[${contextDependency[key]}]`);
+      } else {
+        keys.push(`${key}:*`);
+      }
+    });
+    return keys.join(",");
+  }
+
+  /**
+   * Once an AST node is evaluated, we know if it is context dependent
+   * and will thus save it under the correct cache key according to its
+   * contextDependency
+   *
+   * only resolved ast nodes can be saved
+   */
+  private saveAstNode(
+    ast: AstEvaluationNode,
+    contextDependency: ContextDependency
+  ) {
+    const astKey = ast.key;
+    const contextDependencyKey =
+      this.getContextDependencyKey(contextDependency);
+    const astEntries = this.asts.get(astKey);
+    if (astEntries) {
+      // if we don't already have an entry, then let's add it
+      if (
+        !astEntries.some(
+          (entry) => entry.contextDependencyKey === contextDependencyKey
+        )
+      ) {
+        astEntries.push({
+          evalNode: ast,
+          contextDependency,
+          contextDependencyKey,
+        });
+      }
+    } else {
+      this.asts.set(astKey, [
+        { evalNode: ast, contextDependency, contextDependencyKey },
+      ]);
+    }
   }
 
   getEvaluatedNodes(): Map<string, CellEvalNode> {
@@ -702,10 +798,7 @@ export class DependencyManager {
       node: DependencyNode,
       isSelf = false
     ): DependencyTreeNode => {
-      const cellRef =
-        node instanceof RangeEvaluationNode
-          ? getRangeKey(node.address.range)
-          : getCellReference(node.cellAddress);
+      const cellRef: string = node.toString();
 
       // Handle self-reference to avoid infinite recursion
       if (isSelf) {
@@ -818,6 +911,12 @@ export class DependencyManager {
         }
         if (a && b) {
           node.resolve();
+          // if an ast node is resolved, it will get removed from the dependency graph
+          // and thus never reach evaluateNode in formula evaluator
+          // so we need to save it here. The latest context dependency is the correct one.
+          if (node instanceof AstEvaluationNode) {
+            this.saveAstNode(node, node.getContextDependency());
+          }
         }
       }
       return canResolve;

@@ -308,6 +308,12 @@ export class NamedExpressionManager {
   ): string | undefined {
     // scenario 1: no sheetName nor workbookName
     if (!namedExpression.sheetName && !namedExpression.workbookName) {
+      /**
+       * the result of this formula will differ based on in which sheet and workbook we are
+       * evaluating it in.
+       */
+      context.addContextDependency("sheet", "workbook");
+
       // step 1, check if there is a named expression in the sheet scope
       const expression = this.sheetExpressions
         .get(context.originCell.cellAddress.workbookName)
@@ -335,7 +341,10 @@ export class NamedExpressionManager {
     // scenario 2: we only have a workbookName - a bit weird, but could happen
     if (namedExpression.workbookName && !namedExpression.sheetName) {
       // special case: if workbook is the current workbook, we should just resolve the named expression according to scenario 1
-      if (namedExpression.workbookName === context.originCell.cellAddress.workbookName) {
+      if (
+        namedExpression.workbookName ===
+        context.originCell.cellAddress.workbookName
+      ) {
         return this.resolveNamedExpression(
           {
             name: namedExpression.name,
@@ -365,6 +374,11 @@ export class NamedExpressionManager {
         .get(context.originCell.cellAddress.workbookName)
         ?.get(namedExpression.sheetName)
         ?.get(namedExpression.name);
+      /**
+       * the result of this formula will differ based on in which workbook we are
+       * evaluating it in.
+       */
+      context.addContextDependency("workbook");
       if (expression) {
         // step 1, check if there is a named expression in the current workbook against the sheet name
         return expression.expression;

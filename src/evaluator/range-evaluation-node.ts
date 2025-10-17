@@ -2,7 +2,7 @@ import type { DependencyManager } from "src/core/managers/dependency-manager";
 import { FrontierDependencyManager } from "src/core/managers/frontier-dependency-manager";
 import type { WorkbookManager } from "src/core/managers/workbook-manager";
 import type { EvaluateAllCellsResult, RangeAddress } from "src/core/types";
-import { keyToRangeAddress } from "src/core/utils";
+import { getRangeKey, keyToRangeAddress } from "src/core/utils";
 
 export class RangeEvaluationNode extends FrontierDependencyManager {
   public key: string;
@@ -24,7 +24,9 @@ export class RangeEvaluationNode extends FrontierDependencyManager {
 
   setResults(results: EvaluateAllCellsResult[]): void {
     if (!this.resolved) {
-      throw new Error("Cannot set results on an unresolved range evaluation node");
+      throw new Error(
+        "Cannot set results on an unresolved range evaluation node"
+      );
     }
     this._results = results;
   }
@@ -56,5 +58,9 @@ export class RangeEvaluationNode extends FrontierDependencyManager {
         (node) => node.toJSON(visitor)
       ),
     };
+  }
+
+  public override toString(): string {
+    return getRangeKey(this.address.range);
   }
 }
