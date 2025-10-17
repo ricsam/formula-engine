@@ -14,6 +14,7 @@ import type { DependencyManager } from "./dependency-manager";
 import type { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
 import { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
 import type { RangeEvalOrderEntry } from "./range-eval-order-builder";
+import type { AstEvaluationNode } from "src/evaluator/ast-evaluation-node";
 
 type EvalOrderEntry =
   | {
@@ -111,7 +112,7 @@ export class FrontierDependencyManager {
   /**
    * hard edge dependencies, which can cause cycles in the dependency graph
    */
-  private _dependencies: Set<CellEvalNode | EmptyCellEvaluationNode> =
+  private _dependencies: Set<CellEvalNode | EmptyCellEvaluationNode | AstEvaluationNode> =
     new Set();
 
   /**
@@ -210,7 +211,7 @@ export class FrontierDependencyManager {
     return this.discardedFrontierDependencies;
   }
 
-  public addDependency(dependency: CellEvalNode | EmptyCellEvaluationNode) {
+  public addDependency(dependency: CellEvalNode | EmptyCellEvaluationNode | AstEvaluationNode) {
     this._dependencies.add(dependency);
   }
 

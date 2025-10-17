@@ -9,6 +9,7 @@ import type {
 } from "src/core/types";
 import {
   cellAddressToKey,
+  getCellReference,
   isCellInRange,
   keyToCellAddress,
   keyToRangeAddress,
@@ -106,5 +107,9 @@ export class EmptyCellEvaluationNode extends FrontierDependencyManager {
         (node) => node.toJSON(visitor)
       ),
     };
+  }
+
+  public override toString(): string {
+    return getCellReference(this.cellAddress);
   }
 }

@@ -1,5 +1,9 @@
 import { parseFormula } from "src/parser/parser";
-import type { LocalCellAddress, SingleEvaluationResult } from "../core/types";
+import type {
+  LocalCellAddress,
+  RangeAddress,
+  SingleEvaluationResult,
+} from "../core/types";
 import {
   FormulaError,
   type CellAddress,
@@ -55,9 +59,10 @@ import { lessThanOrEqual } from "./comparison/less-than-or-equal";
 import { notEquals } from "./comparison/not-equals";
 import { concatenate } from "./concatenation/concatenate";
 import type { NamedExpressionManager } from "src/core/managers/named-expression-manager";
-import type { EvaluationContext } from "./evaluation-context";
+import { EvaluationContext } from "./evaluation-context";
 import { flags } from "src/debug/flags";
 import { AwaitingEvaluationError, EvaluationError } from "./evaluation-error";
+import { formatFormula } from "src/parser/formatter";
 
 export class FormulaEvaluator {
   public openRangeEvaluator: OpenRangeEvaluator;
@@ -128,73 +133,122 @@ export class FormulaEvaluator {
     node: ASTNode,
     context: EvaluationContext
   ): FunctionEvaluationResult {
-    switch (node.type) {
-      case "value":
-        return {
-          type: "value",
-          result: this.evaluateValue(node),
-        };
-      case "infinity":
-        return {
-          type: "value",
-          result: {
-            type: "infinity",
-            sign: "positive",
-          },
-        };
-      case "binary-op":
-        return this.evaluateBinaryOp(node, context);
-
-      case "reference":
-        return this.evaluateReference(node, context);
-
-      case "named-expression":
-        return this.evaluateNamedExpression(node, context);
-
-      case "structured-reference":
-        return this.evaluateStructuredReference(node, context);
-
-      case "function":
-        return this.evaluateFunction(node, context);
-
-      case "range":
-        return this.evaluateRange(node, context);
-
-      case "unary-op":
-        return this.evaluateUnaryOp(node, context);
-
-      case "3d-range":
-        return this.evaluate3DRange(node, context);
-
-      case "array":
-        return this.evaluateArray(node, context);
-
-      default:
-        return {
-          type: "error",
-          err: FormulaError.ERROR,
-          message: "WIP: unimplemented support for " + node.type,
-          errAddress: context.originCell.cellAddress,
-        };
+    const table = this.isCellInTable(context.originCell.cellAddress);
+    let tableName: string | undefined;
+    if (table) {
+      tableName = table.name;
     }
+
+    const astNode = this.dependencyManager.getAstNode(node, {
+      ...context.originCell.cellAddress,
+      tableName: tableName,
+    });
+    context.dependencyNode.addDependency(astNode);
+
+    if (astNode.resolved) {
+      return astNode.evaluationResult;
+    }
+
+    astNode.resetDirectDepsUpdated();
+
+    function runEvaluation(
+      this: FormulaEvaluator,
+      context: EvaluationContext
+    ): FunctionEvaluationResult {
+      switch (node.type) {
+        case "value":
+          return {
+            type: "value",
+            result: this.evaluateValue(node),
+          };
+        case "infinity":
+          return {
+            type: "value",
+            result: {
+              type: "infinity",
+              sign: "positive",
+            },
+          };
+        case "binary-op":
+          return this.evaluateBinaryOp(node, context);
+
+        case "reference":
+          return this.evaluateReference(node, context);
+
+        case "named-expression":
+          return this.evaluateNamedExpression(node, context);
+
+        case "structured-reference":
+          return this.evaluateStructuredReference(node, context);
+
+        case "function":
+          return this.evaluateFunction(node, context);
+
+        case "range":
+          return this.evaluateRange(node, context);
+
+        case "unary-op":
+          return this.evaluateUnaryOp(node, context);
+
+        case "3d-range":
+          return this.evaluate3DRange(node, context);
+
+        case "array":
+          return this.evaluateArray(node, context);
+
+        default:
+          return {
+            type: "error",
+            err: FormulaError.ERROR,
+            message: "WIP: unimplemented support for " + node.type,
+            errAddress: context.originCell.cellAddress,
+          };
+      }
+    }
+    const newContext = new EvaluationContext(
+      astNode,
+      context.originCell
+    );
+    const result = runEvaluation.call(this, newContext);
+    astNode.setEvaluationResult(result);
+    const astContextDependency = newContext.getContextDependency();
+
+    astNode.setContextDependency(astContextDependency);
+
+    context.appendContextDependency(astContextDependency);
+
+    return result;
   }
 
   evaluateStructuredReference(
     node: StructuredReferenceNode,
     context: EvaluationContext
   ): FunctionEvaluationResult {
+    // the tables are never dependent on the sheet, interesetingly enough
     let table: TableDefinition | undefined;
     if (node.tableName && node.workbookName) {
+      // this expression will evaluate to the same value regardless of where in the workbooks we are evaluating it in
       table = this.tableManager
         .getTables(node.workbookName)
         .get(node.tableName);
     } else if (node.tableName) {
+      // different workbooks could have different tables with the same name
+      // so it can differ based on the workbook we are evaluating it in
+      context.addContextDependency("workbook");
       table = this.tableManager
         .getTables(context.originCell.cellAddress.workbookName)
         .get(node.tableName);
     } else {
+      // if no table nor workbook name is provided, we need to find the table in the current workbook
+      // and the formula will be evaluated differently based on the table (and workbook) we are evaluating it in
+      context.addContextDependency("workbook", "table");
       table = this.isCellInTable(context.originCell.cellAddress);
     }
+
+    if (node.isCurrentRow) {
+      context.addContextDependency("row");
+    }
+
     if (!table) {
       return {
         type: "error",
@@ -470,10 +524,18 @@ export class FormulaEvaluator {
 
     const debugRange = getRangeKey(node.range);
 
+    const rangeAddress: RangeAddress = {
+      sheetName: node.sheetName ?? context.originCell.cellAddress.sheetName,
+      workbookName:
+        node.workbookName ?? context.originCell.cellAddress.workbookName,
+      range: node.range,
+    };
+
     return {
       type: "spilled-values",
       spillArea: (origin) => this.projectRange(node.range, origin),
       source: `range ${debugRange}`,
+      sourceRange: rangeAddress,
       evaluate: (spillOffset, context) => {
         const originSheetName =
           node.sheetName ?? context.originCell.cellAddress.sheetName;
@@ -579,7 +641,10 @@ export class FormulaEvaluator {
       };
     }
     const originResult = this.evaluateNode(firstCell, context);
-    if (originResult.type === "error" || originResult.type === "awaiting-evaluation") {
+    if (
+      originResult.type === "error" ||
+      originResult.type === "awaiting-evaluation"
+    ) {
       return originResult;
     }
     return {
@@ -646,7 +711,10 @@ export class FormulaEvaluator {
   ): FunctionEvaluationResult {
     const operandResult = this.evaluateNode(node.operand, context);
 
-    if (operandResult.type === "error" || operandResult.type === "awaiting-evaluation") {
+    if (
+      operandResult.type === "error" ||
+      operandResult.type === "awaiting-evaluation"
+    ) {
       return operandResult;
     }
 
@@ -657,7 +725,11 @@ export class FormulaEvaluator {
         source: `unary ${node.operator} operation`,
         evaluate: (spilledCell, context) => {
           const spillResult = operandResult.evaluate(spilledCell, context);
-          if (!spillResult || spillResult.type === "error" || spillResult.type === "awaiting-evaluation") {
+          if (
+            !spillResult ||
+            spillResult.type === "error" ||
+            spillResult.type === "awaiting-evaluation"
+          ) {
             return spillResult;
           }
           if (spillResult.type !== "value") {
@@ -675,11 +747,8 @@ export class FormulaEvaluator {
           );
         },
         evaluateAllCells: function (options) {
-          const cellValues = operandResult.evaluateAllCells.call(
-            this,
-            options
-          );
-          return cellValues.map(cellValue => {
+          const cellValues = operandResult.evaluateAllCells.call(this, options);
+          return cellValues.map((cellValue) => {
             if (
               cellValue.result.type === "error" ||
               cellValue.result.type === "awaiting-evaluation"
@@ -816,8 +885,12 @@ export class FormulaEvaluator {
       cellAddress,
       context
     );
-    
-    return result;
+
+    if (result.type === "spilled-values") {
+      return { ...result, sourceCell: cellAddress, sourceRange: undefined };
+    }
+
+    return { ...result, sourceCell: cellAddress };
   }
 
   /**

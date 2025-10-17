@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { FormulaEngine } from "src/core/engine";
+import type { DependencyNode } from "src/core/managers/dependency-node";
 import { type SerializedCellValue } from "src/core/types";
 import { parseCellReference } from "src/core/utils";
 import type { CellEvalNode } from "src/evaluator/cell-eval-node";
@@ -58,9 +59,7 @@ describe("DependencyManager", () => {
     return node.key; // may be empty:... or cell:...;
   };
 
-  const depToKey = (
-    dep: CellEvalNode | RangeEvaluationNode | EmptyCellEvaluationNode
-  ) => {
+  const depToKey = (dep: DependencyNode) => {
     if (dep instanceof RangeEvaluationNode) {
       return dep.key.split(":")[3]! + ":" + dep.key.split(":")[4]!;
     }
