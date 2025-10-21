@@ -22,7 +22,6 @@ import {
   type EvaluateScalarOperatorOptions,
 } from "src/evaluator/evaluate-scalar-operator";
 import { functions } from "src/functions";
-import { OpenRangeEvaluator } from "src/evaluator/open-range-evaluator";
 import type {
   ArrayNode,
   ASTNode,
@@ -38,6 +37,7 @@ import type {
 } from "src/parser/ast";
 import {
   captureEvaluationErrors,
+  cellAddressToKey,
   getAbsoluteRange,
   getCellReference,
   getRangeIntersection,
@@ -45,6 +45,7 @@ import {
   getRelativeRange,
   getRelativeRangeKey,
   isRangeOneCell,
+  rangeAddressToKey,
 } from "../core/utils";
 import { add } from "./arithmetic/add/add";
 import { divide } from "./arithmetic/divide/divide";
@@ -63,55 +64,14 @@ import { EvaluationContext } from "./evaluation-context";
 import { flags } from "src/debug/flags";
 import { AwaitingEvaluationError, EvaluationError } from "./evaluation-error";
 import { formatFormula } from "src/parser/formatter";
+import { CellValueNode } from "./dependency-nodes/cell-value-node";
 
 export class FormulaEvaluator {
-  public openRangeEvaluator: OpenRangeEvaluator;
   constructor(
     private tableManager: TableManager,
     private dependencyManager: DependencyManager,
-    private namedExpressionManager: NamedExpressionManager,
-    workbookManager: WorkbookManager
-  ) {
-    this.openRangeEvaluator = new OpenRangeEvaluator(
-      dependencyManager,
-      workbookManager,
-      this
-    );
-  }
-
-  isCellInTable(cellAddress: CellAddress): TableDefinition | undefined {
-    const { rowIndex, colIndex } = cellAddress;
-
-    // Get all tables for this sheet
-
-    for (const table of this.tableManager
-      .getTables(cellAddress.workbookName)
-      .values()) {
-      // Check each table to see if the cell is within its bounds
-      if (table.sheetName !== cellAddress.sheetName) {
-        continue;
-      }
-
-      const { start, endRow, headers } = table;
-
-      // Check row bounds
-      const isInRowRange =
-        endRow.type === "infinity"
-          ? rowIndex >= start.rowIndex
-          : rowIndex >= start.rowIndex && rowIndex <= endRow.value;
-
-      // Check column bounds
-      const endColIndex = start.colIndex + headers.size - 1;
-      const isInColRange =
-        colIndex >= start.colIndex && colIndex <= endColIndex;
-
-      if (isInRowRange && isInColRange) {
-        return table;
-      }
-    }
-
-    return undefined;
-  }
+    private namedExpressionManager: NamedExpressionManager
+  ) {}
 
   // evaluator methods
   evaluateFormula(
@@ -123,7 +83,7 @@ export class FormulaEvaluator {
   ): FunctionEvaluationResult {
     const ast = parseFormula(formula);
 
-    return captureEvaluationErrors(context.originCell.cellAddress, () => {
+    return captureEvaluationErrors(context.dependencyNode, () => {
       const result = this.evaluateNode(ast, context);
       return result;
     });
@@ -133,19 +93,17 @@ export class FormulaEvaluator {
     node: ASTNode,
     context: EvaluationContext
   ): FunctionEvaluationResult {
-    const table = this.isCellInTable(context.originCell.cellAddress);
-    let tableName: string | undefined;
-    if (table) {
-      tableName = table.name;
-    }
+    const currentContext = {
+      ...context.cellAddress,
+      tableName: context.tableName,
+    };
 
-    const astNode = this.dependencyManager.getAstNode(node, {
-      ...context.originCell.cellAddress,
-      tableName: tableName,
-    });
+    const astNode = this.dependencyManager.getAstNode(node, currentContext);
     context.dependencyNode.addDependency(astNode);
 
     if (astNode.resolved) {
+      const astContextDependency = astNode.getContextDependency();
+      context.appendContextDependency(astContextDependency);
       return astNode.evaluationResult;
     }
 
@@ -201,13 +159,14 @@ export class FormulaEvaluator {
             type: "error",
             err: FormulaError.ERROR,
             message: "WIP: unimplemented support for " + node.type,
-            errAddress: context.originCell.cellAddress,
+            errAddress: context.dependencyNode,
           };
       }
     }
     const newContext = new EvaluationContext(
+      this.tableManager,
       astNode,
-      context.originCell
+      context.cellAddress
     );
     const result = runEvaluation.call(this, newContext);
     astNode.setEvaluationResult(result);
@@ -236,13 +195,13 @@ export class FormulaEvaluator {
       // so it can differ based on the workbook we are evaluating it in
       context.addContextDependency("workbook");
       table = this.tableManager
-        .getTables(context.originCell.cellAddress.workbookName)
+        .getTables(context.cellAddress.workbookName)
         .get(node.tableName);
     } else {
       // if no table nor workbook name is provided, we need to find the table in the current workbook
       // and the formula will be evaluated differently based on the table (and workbook) we are evaluating it in
       context.addContextDependency("workbook", "table");
-      table = this.isCellInTable(context.originCell.cellAddress);
+      table = this.tableManager.isCellInTable(context.cellAddress);
     }
 
     if (node.isCurrentRow) {
@@ -254,11 +213,11 @@ export class FormulaEvaluator {
         type: "error",
         err: FormulaError.REF,
         message: `Table ${node.tableName} not found`,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
-    const rowIndex = context.originCell.cellAddress.rowIndex;
+    const rowIndex = context.cellAddress.rowIndex;
     const tableStart = table.start;
 
     // Handle selector-based references
@@ -284,7 +243,7 @@ export class FormulaEvaluator {
             type: "error",
             err: FormulaError.REF,
             message: `Unknown table selector: ${node.selector}`,
-            errAddress: context.originCell.cellAddress,
+            errAddress: context.dependencyNode,
           };
       }
 
@@ -297,7 +256,7 @@ export class FormulaEvaluator {
             type: "error",
             err: FormulaError.REF,
             message: `Column ${node.cols.startCol} or ${node.cols.endCol} not found in table ${table.name}`,
-            errAddress: context.originCell.cellAddress,
+            errAddress: context.dependencyNode,
           };
         }
         const startColIndex = tableStart.colIndex + startCol.index;
@@ -378,7 +337,7 @@ export class FormulaEvaluator {
           type: "error",
           err: FormulaError.REF,
           message: `Column ${node.cols.startCol} or ${node.cols.endCol} not found in table ${table.name}`,
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
       const startColIndex = tableStart.colIndex + startCol.index;
@@ -420,7 +379,7 @@ export class FormulaEvaluator {
       type: "error",
       err: FormulaError.REF,
       message: "Structured reference must specify either a selector or columns",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -525,9 +484,8 @@ export class FormulaEvaluator {
     const debugRange = getRangeKey(node.range);
 
     const rangeAddress: RangeAddress = {
-      sheetName: node.sheetName ?? context.originCell.cellAddress.sheetName,
-      workbookName:
-        node.workbookName ?? context.originCell.cellAddress.workbookName,
+      sheetName: node.sheetName ?? context.cellAddress.sheetName,
+      workbookName: node.workbookName ?? context.cellAddress.workbookName,
       range: node.range,
     };
 
@@ -537,38 +495,40 @@ export class FormulaEvaluator {
       source: `range ${debugRange}`,
       sourceRange: rangeAddress,
       evaluate: (spillOffset, context) => {
-        const originSheetName =
-          node.sheetName ?? context.originCell.cellAddress.sheetName;
+        if (!node.sheetName && !node.workbookName) {
+          // e.g. the result from A4:A9 will depend in which sheet and workbook we are evaluating it in
+          context.addContextDependency("workbook", "sheet");
+        } else if (!node.sheetName) {
+          // e.g. the result from [Workbook1]A4:A9 will depend in which sheet we are evaluating it in
+          context.addContextDependency("sheet");
+        } else if (!node.workbookName) {
+          // e.g. the result from Sheet1!A4:A9 will depend in which workbook we are evaluating it in
+          context.addContextDependency("workbook");
+        } else {
+          // if we have both sheetName and workbookName, we don't need to add any context dependencies
+        }
+
+        const originSheetName = node.sheetName ?? context.cellAddress.sheetName;
         const originWorkbookName =
-          node.workbookName ?? context.originCell.cellAddress.workbookName;
+          node.workbookName ?? context.cellAddress.workbookName;
         const colIndex = node.range.start.col + spillOffset.x;
         const rowIndex = node.range.start.row + spillOffset.y;
-        const result = this.dependencyManager.evalTimeSafeEvaluateCell(
-          {
-            colIndex,
-            rowIndex,
-            sheetName: originSheetName,
-            workbookName: originWorkbookName,
-          },
-          context
-        );
 
-        if (result) {
-          if (result.type === "spilled-values") {
-            const originResult = result.evaluate({ x: 0, y: 0 }, context);
-            return originResult;
-          }
-          return result;
-        }
-        return {
-          type: "error",
-          err: FormulaError.REF,
-          message: `Error evaluating cell ${getCellReference({
-            rowIndex,
-            colIndex,
-          })}`,
-          errAddress: context.originCell.cellAddress,
+        const cellAddress: CellAddress = {
+          colIndex,
+          rowIndex,
+          sheetName: originSheetName,
+          workbookName: originWorkbookName,
         };
+
+        const evalNode = this.dependencyManager.getCellValueOrEmptyCellNode(
+          cellAddressToKey(cellAddress)
+        );
+        context.dependencyNode.addDependency(evalNode);
+
+        const result = evalNode.evaluationResult;
+
+        return result;
       },
       evaluateAllCells: function ({
         evaluate,
@@ -603,17 +563,20 @@ export class FormulaEvaluator {
           }
         }
 
-        return this.openRangeEvaluator.evaluateCellsInRange({
-          context,
-          lookupOrder,
-          address: {
-            range,
-            sheetName:
-              node.sheetName ?? context.originCell.cellAddress.sheetName,
-            workbookName:
-              node.workbookName ?? context.originCell.cellAddress.workbookName,
-          },
-        });
+        const address: RangeAddress = {
+          range,
+          sheetName: node.sheetName ?? context.cellAddress.sheetName,
+          workbookName: node.workbookName ?? context.cellAddress.workbookName,
+        };
+
+        const rangeNode = this.dependencyManager.getRangeNode(
+          rangeAddressToKey(address)
+        );
+
+        context.dependencyNode.addDependency(rangeNode);
+
+        return this.dependencyManager.getRangeNode(rangeAddressToKey(address))
+          .result;
       },
     };
   }
@@ -628,7 +591,7 @@ export class FormulaEvaluator {
         type: "error",
         err: FormulaError.REF,
         message: "Array is empty",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
     const firstCell = firstRow[0];
@@ -637,7 +600,7 @@ export class FormulaEvaluator {
         type: "error",
         err: FormulaError.REF,
         message: "Array is empty",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
     const originResult = this.evaluateNode(firstCell, context);
@@ -673,7 +636,7 @@ export class FormulaEvaluator {
             type: "error",
             err: FormulaError.REF,
             message: "Array is empty",
-            errAddress: context.originCell.cellAddress,
+            errAddress: context.dependencyNode,
           };
         }
         const cell = row[spillOffset.x];
@@ -682,7 +645,7 @@ export class FormulaEvaluator {
             type: "error",
             err: FormulaError.REF,
             message: "Array is empty",
-            errAddress: context.originCell.cellAddress,
+            errAddress: context.dependencyNode,
           };
         }
         const result = this.evaluateNode(cell, context);
@@ -691,7 +654,7 @@ export class FormulaEvaluator {
             type: "error",
             err: FormulaError.VALUE,
             message: "Arrays cannot contain spilled values",
-            errAddress: context.originCell.cellAddress,
+            errAddress: context.dependencyNode,
           };
         }
         return result;
@@ -737,7 +700,7 @@ export class FormulaEvaluator {
               type: "error",
               err: FormulaError.VALUE,
               message: "Invalid spilled result for unary operation",
-              errAddress: context.originCell.cellAddress,
+              errAddress: context.dependencyNode,
             };
           }
           return this.evaluateUnaryScalar(
@@ -748,23 +711,29 @@ export class FormulaEvaluator {
         },
         evaluateAllCells: function (options) {
           const cellValues = operandResult.evaluateAllCells.call(this, options);
-          return cellValues.map((cellValue) => {
-            if (
-              cellValue.result.type === "error" ||
-              cellValue.result.type === "awaiting-evaluation"
-            ) {
-              return cellValue;
-            } else {
-              return {
-                result: this.evaluateUnaryScalar(
-                  node.operator,
-                  cellValue.result.result,
-                  context
-                ),
-                relativePos: cellValue.relativePos,
-              };
-            }
-          });
+          if (cellValues.type !== "values") {
+            return cellValues;
+          }
+          return {
+            type: "values",
+            values: cellValues.values.map((cellValue) => {
+              if (
+                cellValue.result.type === "error" ||
+                cellValue.result.type === "awaiting-evaluation"
+              ) {
+                return cellValue;
+              } else {
+                return {
+                  result: this.evaluateUnaryScalar(
+                    node.operator,
+                    cellValue.result.result,
+                    context
+                  ),
+                  relativePos: cellValue.relativePos,
+                };
+              }
+            }),
+          };
         },
       };
     }
@@ -781,7 +750,7 @@ export class FormulaEvaluator {
       type: "error",
       err: FormulaError.VALUE,
       message: "Invalid operand for unary operation",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -798,7 +767,7 @@ export class FormulaEvaluator {
         type: "error",
         err: FormulaError.VALUE,
         message: `Cannot apply unary ${operator} to non-number`,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
     if (operand.type === "infinity") {
@@ -807,7 +776,7 @@ export class FormulaEvaluator {
           type: "error",
           err: FormulaError.NUM,
           message: "Cannot apply % to infinity",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
       return {
@@ -842,7 +811,7 @@ export class FormulaEvaluator {
           type: "error",
           err: FormulaError.VALUE,
           message: `Unknown unary operator: ${operator}`,
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
     }
   }
@@ -877,20 +846,38 @@ export class FormulaEvaluator {
   ): FunctionEvaluationResult {
     const cellAddress: CellAddress = {
       ...node.address,
-      sheetName: node.sheetName ?? context.originCell.cellAddress.sheetName,
-      workbookName:
-        node.workbookName ?? context.originCell.cellAddress.workbookName,
+      sheetName: node.sheetName ?? context.cellAddress.sheetName,
+      workbookName: node.workbookName ?? context.cellAddress.workbookName,
     };
-    const result = this.dependencyManager.evalTimeSafeEvaluateCell(
-      cellAddress,
-      context
-    );
 
-    if (result.type === "spilled-values") {
-      return { ...result, sourceCell: cellAddress, sourceRange: undefined };
+    const key = cellAddressToKey(cellAddress);
+    const evalNode = this.dependencyManager.getCellValueOrEmptyCellNode(key);
+    context.dependencyNode.addDependency(evalNode);
+
+    if (!node.sheetName && !node.workbookName) {
+      // e.g. the result from A4:A9 will depend in which sheet and workbook we are evaluating it in
+      context.addContextDependency("workbook", "sheet");
+    } else if (!node.sheetName) {
+      // e.g. the result from [Workbook1]A4:A9 will depend in which sheet we are evaluating it in
+      context.addContextDependency("sheet");
+    } else if (!node.workbookName) {
+      // e.g. the result from Sheet1!A4:A9 will depend in which workbook we are evaluating it in
+      context.addContextDependency("workbook");
+    } else {
+      // if we have both sheetName and workbookName, we don't need to add any context dependencies
     }
 
-    return { ...result, sourceCell: cellAddress };
+    if (evalNode instanceof CellValueNode && evalNode.spillMeta) {
+      if (evalNode.spillMeta.evaluationResult.type === "spilled-values") {
+        return {
+          ...evalNode.spillMeta.evaluationResult,
+          sourceCell: cellAddress,
+          sourceRange: undefined,
+        };
+      }
+    }
+
+    return { ...evalNode.evaluationResult, sourceCell: cellAddress };
   }
 
   /**
@@ -910,7 +897,7 @@ export class FormulaEvaluator {
         type: "error",
         err: FormulaError.NAME,
         message: `Named expression ${node.name} not found`,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -957,7 +944,7 @@ export class FormulaEvaluator {
           type: "error",
           err: FormulaError.ERROR,
           message: `Unknown binary operator: ${operator}`,
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
     }
   }
@@ -972,7 +959,7 @@ export class FormulaEvaluator {
         type: "error",
         err: FormulaError.NAME,
         message: `Function ${node.name} not found`,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
     return func.evaluate.call(this, node, context);

@@ -66,6 +66,10 @@ export const SUMIFS: FunctionDefinition = {
       "col-major"
     );
 
-    return performSummation(matchingValues);
+    if (matchingValues.type === "error" || matchingValues.type === "awaiting-evaluation") {
+      return matchingValues;
+    }
+
+    return performSummation(matchingValues.values);
   },
 };

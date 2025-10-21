@@ -58,7 +58,7 @@ export const MINIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "MINIF criteria must be a single value",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -69,7 +69,7 @@ export const MINIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: parsedCriteria.message,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -92,6 +92,10 @@ export const MINIF: FunctionDefinition = {
       "col-major"
     );
 
-    return performMinimum(matchingValues, context);
+    if (matchingValues.type === "error" || matchingValues.type === "awaiting-evaluation") {
+      return matchingValues;
+    }
+
+    return performMinimum(matchingValues.values, context);
   },
 };

@@ -9,6 +9,7 @@ import {
   type SpreadsheetRange,
   type SpilledValuesEvaluationResult,
   type SingleEvaluationResult,
+  type CellInRangeResult,
   type EvaluateAllCellsResult,
 } from "src/core/types";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
@@ -82,7 +83,7 @@ function wildcardMatch(pattern: string, text: string): boolean {
   while (i < pattern.length) {
     const char = pattern[i];
     if (!char) break;
-    
+
     if (char === "~" && i + 1 < pattern.length) {
       // Escape next character
       const nextChar = pattern[i + 1];
@@ -114,8 +115,8 @@ function wildcardMatch(pattern: string, text: string): boolean {
 function xlookupOperation(
   this: FormulaEvaluator,
   lookupValue: CellValue,
-  lookupArray: EvaluateAllCellsResult[],
-  returnArray: EvaluateAllCellsResult[],
+  lookupArray: EvaluateAllCellsResult,
+  returnArray: EvaluateAllCellsResult,
   ifNotFound: CellValue | null,
   hasIfNotFound: boolean,
   matchMode: number,
@@ -127,7 +128,7 @@ function xlookupOperation(
     return {
       type: "error",
       err: FormulaError.VALUE,
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
       message: `XLOOKUP match_mode must be -1, 0, 1, or 2, got ${matchMode}`,
     };
   }
@@ -137,26 +138,34 @@ function xlookupOperation(
     return {
       type: "error",
       err: FormulaError.VALUE,
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
       message: `XLOOKUP search_mode must be 1, -1, 2, or -2, got ${searchMode}`,
     };
   }
 
+  if (lookupArray.type !== "values") {
+    return lookupArray;
+  }
+  if (returnArray.type !== "values") {
+    return returnArray;
+  }
+
   // Check arrays have same length
-  if (lookupArray.length !== returnArray.length) {
+  if (lookupArray.values.length !== returnArray.values.length) {
     return {
       type: "error",
       err: FormulaError.VALUE,
-      errAddress: context.originCell.cellAddress,
-      message: "XLOOKUP lookup_array and return_array must have same dimensions",
+      errAddress: context.dependencyNode,
+      message:
+        "XLOOKUP lookup_array and return_array must have same dimensions",
     };
   }
 
-  if (lookupArray.length === 0) {
+  if (lookupArray.values.length === 0) {
     return {
       type: "error",
       err: FormulaError.VALUE,
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
       message: "XLOOKUP lookup_array cannot be empty",
     };
   }
@@ -166,16 +175,16 @@ function xlookupOperation(
     return {
       type: "error",
       err: FormulaError.VALUE,
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
       message: "XLOOKUP binary search mode not yet implemented",
     };
   }
 
   // Determine search order
   const searchArray =
-    searchMode === -1 ? [...lookupArray].reverse() : lookupArray;
+    searchMode === -1 ? [...lookupArray.values].reverse() : lookupArray.values;
   const searchReturnArray =
-    searchMode === -1 ? [...returnArray].reverse() : returnArray;
+    searchMode === -1 ? [...returnArray.values].reverse() : returnArray.values;
 
   let bestMatchIndex = -1;
   let bestMatchValue: CellValue | null = null;
@@ -192,7 +201,7 @@ function xlookupOperation(
       if (valuesMatch(lookupValue, arrayValue)) {
         const returnItem = searchReturnArray[i];
         if (!returnItem) continue;
-        
+
         if (returnItem.result.type === "value") {
           return {
             type: "value",
@@ -209,7 +218,7 @@ function xlookupOperation(
         if (wildcardMatch(lookupValue.value, arrayValue.value)) {
           const returnItem = searchReturnArray[i];
           if (!returnItem) continue;
-          
+
           if (returnItem.result.type === "value") {
             return {
               type: "value",
@@ -228,7 +237,7 @@ function xlookupOperation(
         // Exact match found
         const returnItem = searchReturnArray[i];
         if (!returnItem) continue;
-        
+
         if (returnItem.result.type === "value") {
           return {
             type: "value",
@@ -239,7 +248,10 @@ function xlookupOperation(
         }
       } else if (cmp < 0) {
         // arrayValue < lookupValue
-        if (bestMatchValue === null || compareValues(arrayValue, bestMatchValue) > 0) {
+        if (
+          bestMatchValue === null ||
+          compareValues(arrayValue, bestMatchValue) > 0
+        ) {
           bestMatchIndex = i;
           bestMatchValue = arrayValue;
         }
@@ -252,7 +264,7 @@ function xlookupOperation(
         // Exact match found
         const returnItem = searchReturnArray[i];
         if (!returnItem) continue;
-        
+
         if (returnItem.result.type === "value") {
           return {
             type: "value",
@@ -263,7 +275,10 @@ function xlookupOperation(
         }
       } else if (cmp > 0) {
         // arrayValue > lookupValue
-        if (bestMatchValue === null || compareValues(arrayValue, bestMatchValue) < 0) {
+        if (
+          bestMatchValue === null ||
+          compareValues(arrayValue, bestMatchValue) < 0
+        ) {
           bestMatchIndex = i;
           bestMatchValue = arrayValue;
         }
@@ -295,7 +310,7 @@ function xlookupOperation(
   return {
     type: "error",
     err: FormulaError.NA,
-    errAddress: context.originCell.cellAddress,
+    errAddress: context.dependencyNode,
     message: "XLOOKUP: lookup_value not found",
   };
 }
@@ -307,7 +322,7 @@ export const XLOOKUP: FunctionDefinition = {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
         message: "XLOOKUP function takes 3 to 6 arguments",
       };
     }
@@ -373,7 +388,7 @@ export const XLOOKUP: FunctionDefinition = {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
         message: "XLOOKUP: Spilled array arguments not yet supported",
       };
     }
@@ -383,7 +398,7 @@ export const XLOOKUP: FunctionDefinition = {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
         message: "XLOOKUP: Invalid lookup_value result type",
       };
     }
@@ -392,7 +407,7 @@ export const XLOOKUP: FunctionDefinition = {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
         message: "XLOOKUP: Invalid match_mode result type",
       };
     }
@@ -401,7 +416,7 @@ export const XLOOKUP: FunctionDefinition = {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
         message: "XLOOKUP: Invalid search_mode result type",
       };
     }
@@ -411,7 +426,7 @@ export const XLOOKUP: FunctionDefinition = {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
         message: `XLOOKUP match_mode must be number, got ${matchModeResult.result.type}`,
       };
     }
@@ -421,7 +436,7 @@ export const XLOOKUP: FunctionDefinition = {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
         message: `XLOOKUP search_mode must be number, got ${searchModeResult.result.type}`,
       };
     }
@@ -438,49 +453,57 @@ export const XLOOKUP: FunctionDefinition = {
     const searchMode = Math.floor(searchModeResult.result.value);
 
     // Extract lookup_array values
-    let lookupArray: EvaluateAllCellsResult[] = [];
+    let lookupArray: EvaluateAllCellsResult = {
+      type: "error",
+      err: FormulaError.VALUE,
+      errAddress: context.dependencyNode,
+      message: "XLOOKUP: Invalid lookup_array type",
+    };
     if (lookupArrayResult.type === "value") {
-      lookupArray = [
-        { result: lookupArrayResult, relativePos: { x: 0, y: 0 } },
-      ];
+      lookupArray = {
+        type: "values",
+        values: [{ result: lookupArrayResult, relativePos: { x: 0, y: 0 } }],
+      };
     } else if (lookupArrayResult.type === "spilled-values") {
-      lookupArray = Array.from(
-        lookupArrayResult.evaluateAllCells.call(this, {
-          context,
-          evaluate: lookupArrayResult.evaluate,
-          origin: context.originCell.cellAddress,
-          lookupOrder: "col-major",
-        })
-      );
+      lookupArray = lookupArrayResult.evaluateAllCells.call(this, {
+        context,
+        evaluate: lookupArrayResult.evaluate,
+        origin: context.cellAddress,
+        lookupOrder: "col-major",
+      });
     } else {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
         message: "XLOOKUP: Invalid lookup_array type",
       };
     }
 
     // Extract return_array values
-    let returnArray: EvaluateAllCellsResult[] = [];
+    let returnArray: EvaluateAllCellsResult = {
+      type: "error",
+      err: FormulaError.VALUE,
+      errAddress: context.dependencyNode,
+      message: "XLOOKUP: Invalid return_array type",
+    };
     if (returnArrayResult.type === "value") {
-      returnArray = [
-        { result: returnArrayResult, relativePos: { x: 0, y: 0 } },
-      ];
+      returnArray = {
+        type: "values",
+        values: [{ result: returnArrayResult, relativePos: { x: 0, y: 0 } }],
+      };
     } else if (returnArrayResult.type === "spilled-values") {
-      returnArray = Array.from(
-        returnArrayResult.evaluateAllCells.call(this, {
-          context,
-          evaluate: returnArrayResult.evaluate,
-          origin: context.originCell.cellAddress,
-          lookupOrder: "col-major",
-        })
-      );
+      returnArray = returnArrayResult.evaluateAllCells.call(this, {
+        context,
+        evaluate: returnArrayResult.evaluate,
+        origin: context.cellAddress,
+        lookupOrder: "col-major",
+      });
     } else {
       return {
         type: "error",
         err: FormulaError.VALUE,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
         message: "XLOOKUP: Invalid return_array type",
       };
     }

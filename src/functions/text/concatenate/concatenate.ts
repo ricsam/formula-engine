@@ -43,7 +43,7 @@ function coerceToString(
       type: "error",
       err: FormulaError.VALUE,
       message: "Invalid argument type",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -69,7 +69,7 @@ function coerceToString(
         type: "error",
         err: FormulaError.VALUE,
         message: "Cannot convert argument to string",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
   }
 }
@@ -153,7 +153,7 @@ function createConcatenateSpilledResult(
               type: "error",
               err: FormulaError.REF,
               message: "The spilled results have not been evaluated",
-              errAddress: context.originCell.cellAddress,
+              errAddress: context.dependencyNode,
             };
           }
           if (spillResult.type === "error") {
@@ -189,7 +189,7 @@ export const CONCATENATE: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "CONCATENATE function requires at least 1 argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 

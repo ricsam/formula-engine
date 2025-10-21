@@ -68,6 +68,10 @@ export const MINIFS: FunctionDefinition = {
       "col-major"
     );
 
-    return performMinimum(matchingValues, context);
+    if (matchingValues.type === "error" || matchingValues.type === "awaiting-evaluation") {
+      return matchingValues;
+    }
+
+    return performMinimum(matchingValues.values, context);
   },
 };

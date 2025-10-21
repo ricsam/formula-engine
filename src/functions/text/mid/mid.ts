@@ -31,7 +31,7 @@ export const MID: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "MID function takes exactly 3 arguments",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -73,7 +73,7 @@ export const MID: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid text argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -82,7 +82,7 @@ export const MID: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid start_num argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -91,7 +91,7 @@ export const MID: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid num_chars argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -101,7 +101,7 @@ export const MID: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Text argument must be a string",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -110,7 +110,7 @@ export const MID: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Start_num argument must be a number",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -119,7 +119,7 @@ export const MID: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Num_chars argument must be a number",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 

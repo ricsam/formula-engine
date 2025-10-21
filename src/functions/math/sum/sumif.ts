@@ -58,7 +58,7 @@ export const SUMIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "SUMIF criteria must be a single value",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -69,7 +69,7 @@ export const SUMIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: parsedCriteria.message,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -92,6 +92,10 @@ export const SUMIF: FunctionDefinition = {
       "col-major"
     );
 
-    return performSummation(matchingValues);
+    if (matchingValues.type === "error" || matchingValues.type === "awaiting-evaluation") {
+      return matchingValues;
+    }
+
+    return performSummation(matchingValues.values);
   },
 };

@@ -1,9 +1,11 @@
 import {
   FormulaError,
   type CellAddress,
+  type CellInRangeResult,
   type CellNumber,
   type FunctionDefinition,
   type FunctionEvaluationResult,
+  type SpilledValuesEvaluationResult,
   type SpreadsheetRange,
 } from "src/core/types";
 import { getRangeIntersection, isRangeOneCell } from "src/core/utils";
@@ -29,7 +31,7 @@ export const SEQUENCE: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "SEQUENCE function takes 1 to 4 arguments",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -47,7 +49,7 @@ export const SEQUENCE: FunctionDefinition = {
 
       if (result.type === "spilled-values") {
         hasArrayInput = true;
-        const spillArea = result.spillArea(context.originCell.cellAddress);
+        const spillArea = result.spillArea(context.cellAddress);
         if (!largestSpillArea) {
           largestSpillArea = spillArea;
         } else {
@@ -90,7 +92,7 @@ export const SEQUENCE: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Missing rows argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -117,7 +119,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Rows argument must be a number or INFINITY",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
     }
@@ -128,7 +130,7 @@ export const SEQUENCE: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Rows must be greater than 0",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -142,7 +144,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Missing columns argument",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
 
@@ -159,7 +161,7 @@ export const SEQUENCE: FunctionDefinition = {
             type: "error",
             err: FormulaError.VALUE,
             message: "Columns argument must be a number or INFINITY",
-            errAddress: context.originCell.cellAddress,
+            errAddress: context.dependencyNode,
           };
         }
       } else {
@@ -167,7 +169,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Columns argument must be a number or INFINITY",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
       if (!isColumnsInfinite && columns < 1) {
@@ -175,7 +177,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Columns must be greater than 0",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
     }
@@ -189,7 +191,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Missing start argument",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
 
@@ -205,7 +207,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Start argument must be a number",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
     }
@@ -219,7 +221,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Missing step argument",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
 
@@ -235,7 +237,7 @@ export const SEQUENCE: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Step argument must be a number",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
     }
@@ -267,7 +269,7 @@ export const SEQUENCE: FunctionDefinition = {
       value: start,
     };
 
-    if (isRangeOneCell(spillArea(context.originCell.cellAddress))) {
+    if (isRangeOneCell(spillArea(context.cellAddress))) {
       return {
         type: "value",
         result: originResult,
@@ -297,7 +299,7 @@ export const SEQUENCE: FunctionDefinition = {
               type: "error",
               err: FormulaError.ERROR,
               message: "Error evaluating SEQUENCE",
-              errAddress: context.originCell.cellAddress,
+              errAddress: context.dependencyNode,
             };
           }
 
@@ -327,7 +329,7 @@ export const SEQUENCE: FunctionDefinition = {
               type: "error",
               err: FormulaError.ERROR,
               message: "Error evaluating SEQUENCE",
-              errAddress: context.originCell.cellAddress,
+              errAddress: context.dependencyNode,
             };
           }
 
@@ -360,13 +362,8 @@ export const SEQUENCE: FunctionDefinition = {
           };
         }
       },
-      evaluateAllCells: function ({
-        evaluate,
-        intersection,
-        context,
-        origin,
-      }) {
-        const results = [];
+      evaluateAllCells: function ({ evaluate, intersection, context, origin }) {
+        const results: CellInRangeResult[] = [];
         let range = spillArea(origin);
         if (intersection) {
           const newRange = getRangeIntersection(range, intersection);
@@ -392,21 +389,11 @@ export const SEQUENCE: FunctionDefinition = {
 
             const evaled = evaluate({ x: offsetLeft, y: offsetTop }, context);
             const relativePos = { x: offsetLeft, y: offsetTop };
-            results.push(evaled
-              ? { result: evaled, relativePos }
-              : {
-                  result: {
-                    type: "error" as const,
-                    err: FormulaError.REF,
-                    message: "Error evaluating SEQUENCE",
-                    errAddress: context.originCell.cellAddress,
-                  },
-                  relativePos,
-                });
+            results.push({ result: evaled, relativePos });
           }
         }
-        
-        return results;
+
+        return { type: "values", values: results };
       },
     };
   },

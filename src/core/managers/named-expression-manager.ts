@@ -316,15 +316,15 @@ export class NamedExpressionManager {
 
       // step 1, check if there is a named expression in the sheet scope
       const expression = this.sheetExpressions
-        .get(context.originCell.cellAddress.workbookName)
-        ?.get(context.originCell.cellAddress.sheetName)
+        .get(context.cellAddress.workbookName)
+        ?.get(context.cellAddress.sheetName)
         ?.get(namedExpression.name);
       if (expression) {
         return expression.expression;
       } else {
         // step 2, check if there is a named expression in the workbook scope
         const expression = this.workbookExpressions
-          .get(context.originCell.cellAddress.workbookName)
+          .get(context.cellAddress.workbookName)
           ?.get(namedExpression.name);
         if (expression) {
           return expression.expression;
@@ -343,7 +343,7 @@ export class NamedExpressionManager {
       // special case: if workbook is the current workbook, we should just resolve the named expression according to scenario 1
       if (
         namedExpression.workbookName ===
-        context.originCell.cellAddress.workbookName
+        context.cellAddress.workbookName
       ) {
         return this.resolveNamedExpression(
           {
@@ -371,7 +371,7 @@ export class NamedExpressionManager {
     // scenario 3: we only have a sheetName
     if (namedExpression.sheetName && !namedExpression.workbookName) {
       const expression = this.sheetExpressions
-        .get(context.originCell.cellAddress.workbookName)
+        .get(context.cellAddress.workbookName)
         ?.get(namedExpression.sheetName)
         ?.get(namedExpression.name);
       /**
@@ -385,7 +385,7 @@ export class NamedExpressionManager {
       } else {
         // step 2, check if there is a named expression in the current workbook has a workbook scoped named expression
         const expression = this.workbookExpressions
-          .get(context.originCell.cellAddress.workbookName)
+          .get(context.cellAddress.workbookName)
           ?.get(namedExpression.name);
         if (expression) {
           return expression.expression;

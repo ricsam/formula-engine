@@ -71,7 +71,7 @@ function rightOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: "NumChars argument must be a positive number",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -97,7 +97,7 @@ export const RIGHT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "RIGHT function takes 1 or 2 arguments",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -147,7 +147,7 @@ export const RIGHT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid text argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -156,7 +156,7 @@ export const RIGHT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid numChars argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -166,7 +166,7 @@ export const RIGHT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Text argument must be a string",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -175,7 +175,7 @@ export const RIGHT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "NumChars argument must be a number",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -248,7 +248,7 @@ function createRightSpilledResult(
           type: "error",
           err: FormulaError.REF,
           message: "The spilled results have not been evaluated",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
       if (spillNumResult.type === "error") {

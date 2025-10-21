@@ -48,7 +48,7 @@ export function performAverage(
       type: "error",
       err: FormulaError.DIV0,
       message: "Cannot calculate average of empty range",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 

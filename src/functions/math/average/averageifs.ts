@@ -66,6 +66,10 @@ export const AVERAGEIFS: FunctionDefinition = {
       "col-major"
     );
 
-    return performAverage(matchingValues, context);
+    if (matchingValues.type === "error" || matchingValues.type === "awaiting-evaluation") {
+      return matchingValues;
+    }
+
+    return performAverage(matchingValues.values, context);
   },
 };

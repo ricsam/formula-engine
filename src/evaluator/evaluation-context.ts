@@ -1,39 +1,28 @@
-import type { CellAddress } from "src/core/types";
-import type { CellEvalNode } from "./cell-eval-node";
-import type { RangeEvaluationNode } from "./range-evaluation-node";
-import type { EmptyCellEvaluationNode } from "./empty-cell-evaluation-node";
+import type { TableManager } from "src/core/managers";
 import type { DependencyNode } from "src/core/managers/dependency-node";
+import type { WorkbookManager } from "src/core/managers/workbook-manager";
+import type { CellAddress } from "src/core/types";
 
 export class EvaluationContext {
+  private _cellAddress: CellAddress;
+  private _tableName: string | undefined;
   /**
    * Can be a range or a cell
    */
   private _dependencyNode: DependencyNode;
-  /**
-   * The cell evaluating a cell,e.g.
-   * if we are evaluting A1=SUM(B2:B4) + B1, then the origin cell is A1 and the dependency node is A1 as well
-   * the open range evaluator will create a new context with the origin cell being A1 and the dependency node being B2:B4
-   *
-   * A new dependency will be added to A1 onto B1, and then B1 will be evaluated just like A1 is evaluated where the origin cell is B1
-   */
-  private _originCell: CellEvalNode | EmptyCellEvaluationNode;
-  private _tableName?: string;
   constructor(
+    tableManager: TableManager,
     dependencyNode: DependencyNode,
-    originCell: CellEvalNode | EmptyCellEvaluationNode,
-    tableName?: string
+    cellAddress: CellAddress
   ) {
     this._dependencyNode = dependencyNode;
-    this._originCell = originCell;
-    this._tableName = tableName;
+    this._cellAddress = cellAddress;
+    const table = tableManager.isCellInTable(cellAddress);
+    this._tableName = table?.name;
   }
 
   get dependencyNode() {
     return this._dependencyNode;
-  }
-
-  get originCell() {
-    return this._originCell;
   }
 
   private _contextDependency: ContextDependency = {};
@@ -42,30 +31,40 @@ export class EvaluationContext {
     return this._contextDependency;
   }
 
+  /**
+   * The cell context, the address of the cell being evaluated
+   * and the context in which results should be stored
+   */
+  get cellAddress() {
+    return this._cellAddress;
+  }
+
+  get tableName() {
+    return this._tableName;
+  }
+
   addContextDependency(...types: ContextDependencyType[]) {
-    types.forEach((type) => {
+    for (const type of types) {
       switch (type) {
         case "row":
-          this._contextDependency.rowIndex =
-            this.originCell.cellAddress.rowIndex;
+          this._contextDependency.rowIndex = this._cellAddress.rowIndex;
           break;
         case "col":
-          this._contextDependency.colIndex =
-            this.originCell.cellAddress.colIndex;
+          this._contextDependency.colIndex = this._cellAddress.colIndex;
           break;
         case "workbook":
-          this._contextDependency.workbookName =
-            this.originCell.cellAddress.workbookName;
+          this._contextDependency.workbookName = this._cellAddress.workbookName;
           break;
         case "sheet":
-          this._contextDependency.sheetName =
-            this.originCell.cellAddress.sheetName;
+          this._contextDependency.sheetName = this._cellAddress.sheetName;
           break;
         case "table":
-          this._contextDependency.tableName = this._tableName;
+          this._contextDependency.tableName = this.tableName;
           break;
+        default:
+          throw new Error(`Invalid context dependency type: ${type}`);
       }
-    });
+    }
   }
 
   /**

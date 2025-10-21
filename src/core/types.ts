@@ -7,8 +7,8 @@ import type { ASTNode, FunctionNode } from "src/parser/ast";
 import type { FormulaEngine } from "./engine";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import type { CellEvalNode } from "src/evaluator/cell-eval-node";
-import type { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
+import type { CellValueNode } from "src/evaluator/dependency-nodes/cell-value-node";
+import type { EmptyCellEvaluationNode } from "src/evaluator/dependency-nodes/empty-cell-evaluation-node";
 import type { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
 import type { DependencyNode } from "./managers/dependency-node";
 import type { LookupOrder } from "./managers/range-eval-order-builder";
@@ -35,7 +35,7 @@ export interface LocalCellAddress {
 export type ArethmeticEvaluator = (
   left: CellValue,
   right: CellValue,
-  errAddress: CellAddress
+  context: EvaluationContext
 ) => CellValue | ErrorEvaluationResult;
 
 export type PositiveInfinity = {
@@ -161,8 +161,8 @@ export type ValueEvaluationResult = {
 
 export type AwaitingEvaluationResult = {
   type: "awaiting-evaluation";
-  waitingFor: CellAddress;
-  errAddress: CellAddress;
+  waitingFor: DependencyNode;
+  errAddress: DependencyNode;
   /**
    * If the terminating evaluation result is a reference (see evaluateReference)
    * then we store information about the source cell for context dependent functions like CELL
@@ -170,11 +170,15 @@ export type AwaitingEvaluationResult = {
   sourceCell?: CellAddress;
 };
 
+export type DoesNotSpillResult = {
+  type: "does-not-spill";
+};
+
 export type ErrorEvaluationResult =
   | {
       type: "error";
       err: FormulaError;
-      errAddress: CellAddress;
+      errAddress: DependencyNode;
       message: string;
       /**
        * If the terminating evaluation result is a reference (see evaluateReference)
@@ -258,10 +262,17 @@ export type SpilledValuesEvaluationResult = {
 
       lookupOrder: LookupOrder;
     }
-  ) => EvaluateAllCellsResult[];
+  ) => EvaluateAllCellsResult;
 };
 
-export type EvaluateAllCellsResult = {
+export type EvaluateAllCellsResult =
+  | ErrorEvaluationResult
+  | {
+      type: "values";
+      values: CellInRangeResult[];
+    };
+
+export type CellInRangeResult = {
   result: SingleEvaluationResult;
   relativePos: { x: number; y: number };
 };

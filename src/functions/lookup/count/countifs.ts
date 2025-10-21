@@ -50,13 +50,19 @@ export const COUNTIFS: FunctionDefinition = {
     // Process values with criteria using generator - count all matching cells (including non-numeric)
     let count = 0;
 
-    for (const result of processMultiCriteriaValues(
+    const matchingValues = processMultiCriteriaValues(
       this,
       countRangeResult,
       criteriaPairsResult,
       context,
       "col-major"
-    )) {
+    );
+    
+    if (matchingValues.type === "error" || matchingValues.type === "awaiting-evaluation") {
+      return matchingValues;
+    }
+
+    for (const result of matchingValues.values) {
       // COUNTIFS counts all matching cells, including errors and non-numeric values
       count++;
     }

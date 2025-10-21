@@ -3,19 +3,15 @@ import { CellValueNode } from "src/evaluator/dependency-nodes/cell-value-node";
 import { EmptyCellEvaluationNode } from "src/evaluator/dependency-nodes/empty-cell-evaluation-node";
 import { SpillMetaNode } from "src/evaluator/dependency-nodes/spill-meta-node";
 import { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
+import type { DependencyNode } from "./dependency-node";
 
-export type DependencyNode =
-  | CellValueNode
-  | RangeEvaluationNode
-  | EmptyCellEvaluationNode
-  | AstEvaluationNode
-  | SpillMetaNode;
 
-export type CellNodeType = "cell-value" | "empty" | "spill-meta";
-
-export type CellNodeKey = `${CellNodeType}:${string}`;
-export type CellNodeKeyDictionary = {
-  "cell-value": CellValueNode;
-  empty: EmptyCellEvaluationNode;
-  "spill-meta": SpillMetaNode;
-};
+export function isDependencyNode(node: any): node is DependencyNode {
+  return (
+    node instanceof CellValueNode ||
+    node instanceof RangeEvaluationNode ||
+    node instanceof EmptyCellEvaluationNode ||
+    node instanceof AstEvaluationNode ||
+    node instanceof SpillMetaNode
+  );
+}

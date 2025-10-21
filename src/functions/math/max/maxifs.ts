@@ -67,6 +67,10 @@ export const MAXIFS: FunctionDefinition = {
       "col-major"
     );
 
-    return performMaximum(matchingValues, context);
+    if (matchingValues.type === "error" || matchingValues.type === "awaiting-evaluation") {
+      return matchingValues;
+    }
+
+    return performMaximum(matchingValues.values, context);
   },
 };

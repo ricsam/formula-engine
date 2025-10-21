@@ -1,20 +1,11 @@
 import {
   FormulaError,
   type CellValue,
-  type CellNumber,
+  type EvaluateAllCellsResult,
   type FunctionDefinition,
   type FunctionEvaluationResult,
-  type ValueEvaluationResult,
-  type CellAddress,
-  type SpreadsheetRange,
-  type SpilledValuesEvaluationResult,
-  type EvaluateAllCellsResult,
 } from "src/core/types";
-import type { FormulaEngine } from "src/core/engine";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import { OpenRangeEvaluator } from "../../../evaluator/open-range-evaluator";
-import { flags } from "src/debug/flags";
 
 /**
  * MATCH function - Returns the position of a value in an array
@@ -30,7 +21,7 @@ import { flags } from "src/debug/flags";
 // Helper function to perform MATCH operation
 function matchOperation(
   lookupValue: CellValue,
-  lookupArray: Iterable<EvaluateAllCellsResult>,
+  lookupArray: EvaluateAllCellsResult,
   matchType: number,
   context: EvaluationContext,
   isHorizontal: boolean
@@ -41,7 +32,7 @@ function matchOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: `MATCH lookup_value must be string or number, got ${lookupValue.type}`,
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -51,11 +42,17 @@ function matchOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: `MATCH match_type must be -1, 0, or 1, got ${matchType}`,
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
+  if (
+    lookupArray.type === "awaiting-evaluation" ||
+    lookupArray.type === "error"
+  ) {
+    return lookupArray;
+  }
 
-  for (const value of lookupArray) {
+  for (const value of lookupArray.values) {
     if (value.result.type === "value") {
       if (matchType === 0) {
         // Exact match
@@ -89,7 +86,7 @@ function matchOperation(
     type: "error",
     err: FormulaError.NA,
     message: "MATCH: lookup_value not found in lookup_array",
-    errAddress: context.originCell.cellAddress,
+    errAddress: context.dependencyNode,
   };
 }
 
@@ -101,7 +98,7 @@ export const MATCH: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "MATCH function takes 2 or 3 arguments",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -148,7 +145,7 @@ export const MATCH: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "MATCH: Spilled array arguments not yet implemented",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -158,12 +155,16 @@ export const MATCH: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: `MATCH match_type must be number, got ${matchTypeResult.result.type}`,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
     // Extract lookup_array values
-    let lookupArray: Iterable<EvaluateAllCellsResult> = [];
+    let lookupArray: EvaluateAllCellsResult = {
+      type: "awaiting-evaluation",
+      waitingFor: context.dependencyNode,
+      errAddress: context.dependencyNode,
+    };
     let isHorizontal = false;
 
     // Handle direct range arguments (like A:A) before extracting lookup_array values
@@ -171,15 +172,14 @@ export const MATCH: FunctionDefinition = {
     // Extract lookup_array values for non-infinite ranges
     if (lookupArrayResult.type === "value") {
       // Single value case - treat as array with one element
-      lookupArray = [
-        { result: lookupArrayResult, relativePos: { x: 0, y: 0 } },
-      ];
+      lookupArray = {
+        type: "values",
+        values: [{ result: lookupArrayResult, relativePos: { x: 0, y: 0 } }],
+      };
       isHorizontal = false; // Single value, treat as vertical
     } else if (lookupArrayResult.type === "spilled-values") {
       // Validate that lookup_array is 1D (either single row OR single column)
-      const spillArea = lookupArrayResult.spillArea(
-        context.originCell.cellAddress
-      );
+      const spillArea = lookupArrayResult.spillArea(context.cellAddress);
       const startRow = spillArea.start.row;
       const endRow = spillArea.end.row;
       const startCol = spillArea.start.col;
@@ -198,7 +198,7 @@ export const MATCH: FunctionDefinition = {
           err: FormulaError.VALUE,
           message:
             "MATCH lookup_array must be a single row or single column (1D array)",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
 
@@ -215,7 +215,7 @@ export const MATCH: FunctionDefinition = {
       lookupArray = lookupArrayResult.evaluateAllCells.call(this, {
         context,
         evaluate: lookupArrayResult.evaluate,
-        origin: context.originCell.cellAddress,
+        origin: context.cellAddress,
         lookupOrder: "col-major",
       });
     }

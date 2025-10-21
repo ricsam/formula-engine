@@ -1276,7 +1276,7 @@ describe("FormulaEngine", () => {
 
       // Formula should now error
       const result = cell("C1", true);
-      expect(result).toMatchInlineSnapshot(`"#REF! Table Products not found"`);
+      expect(result).toMatchInlineSnapshot(`"#REF! in ast:Products[Price] Table Products not found"`);
 
       unsubscribe();
     });
@@ -1538,11 +1538,11 @@ describe("FormulaEngine", () => {
 
       // All three cells should show cycle error
       expect(cell("A1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1 -> cell:TestWorkbook:TestSheet:C1"`);
+        `"#CYCLE! cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1 -> cell-value:TestWorkbook:TestSheet:A1 -> ast:A1"`);
       expect(cell("B1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! in cell:TestWorkbook:TestSheet:A1 cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1 -> cell:TestWorkbook:TestSheet:C1"`);
+        `"#CYCLE! in cell-value:TestWorkbook:TestSheet:A1 cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1 -> cell-value:TestWorkbook:TestSheet:A1 -> ast:A1"`);
       expect(cell("C1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! in cell:TestWorkbook:TestSheet:A1 cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:A1 -> cell:TestWorkbook:TestSheet:C1"`);
+        `"#CYCLE! in cell-value:TestWorkbook:TestSheet:A1 cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1 -> cell-value:TestWorkbook:TestSheet:A1 -> ast:A1"`);
     });
 
     test("should detect cycles with non-cycle dependencies", () => {
@@ -1554,17 +1554,17 @@ describe("FormulaEngine", () => {
 
       // Cycle participants should show cycle error
       expect(cell("B1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:C1"`);
+        `"#CYCLE! cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1"`);
       expect(cell("C1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:C1"`);
+        `"#CYCLE! in cell-value:TestWorkbook:TestSheet:B1 cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1"`);
 
       // A1 should also show cycle error since it depends on the cycle
       expect(cell("A1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:C1"`);
+        `"#CYCLE! in cell-value:TestWorkbook:TestSheet:B1 cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1"`);
 
       // D1 should also show cycle error since it depends on A1 which has a cycle
       expect(cell("D1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! in cell:TestWorkbook:TestSheet:B1 cell:TestWorkbook:TestSheet:B1 -> cell:TestWorkbook:TestSheet:C1"`);
+        `"#CYCLE! in cell-value:TestWorkbook:TestSheet:B1 cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1"`);
     });
 
     test("should handle self-referencing cell", () => {
@@ -1572,8 +1572,7 @@ describe("FormulaEngine", () => {
       setCellContent("A1", "=A1");
 
       expect(cell("A1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! cell:TestWorkbook:TestSheet:A1"`
-      );
+        `"#CYCLE! cell-value:TestWorkbook:TestSheet:A1 -> ast:A1"`);
     });
   });
 });

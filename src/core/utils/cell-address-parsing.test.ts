@@ -14,7 +14,7 @@ describe("cell address to key", () => {
       };
 
       const key = cellAddressToKey(cellAddress);
-      expect(key).toBe("cell:Workbook1:Sheet1:A1");
+      expect(key).toBe("cell-value:Workbook1:Sheet1:A1");
     });
 
     test("should handle different sheets", () => {
@@ -32,8 +32,8 @@ describe("cell address to key", () => {
         rowIndex: 5,
       };
 
-      expect(cellAddressToKey(cellAddress1)).toBe("cell:Workbook1:Sheet1:K6");
-      expect(cellAddressToKey(cellAddress2)).toBe("cell:Workbook1:Sheet2:K6");
+      expect(cellAddressToKey(cellAddress1)).toBe("cell-value:Workbook1:Sheet1:K6");
+      expect(cellAddressToKey(cellAddress2)).toBe("cell-value:Workbook1:Sheet2:K6");
       expect(cellAddressToKey(cellAddress1)).not.toBe(
         cellAddressToKey(cellAddress2)
       );
@@ -48,7 +48,7 @@ describe("cell address to key", () => {
       };
 
       expect(cellAddressToKey(cellAddress)).toBe(
-        "cell:My Workbook:My Sheet Name:C2"
+        "cell-value:My Workbook:My Sheet Name:C2"
       );
     });
   });
@@ -62,7 +62,7 @@ describe("cell address to key", () => {
         rowIndex: 0,
       };
 
-      expect(cellAddressToKey(cellAddress)).toBe("cell:Workbook1::A1");
+      expect(cellAddressToKey(cellAddress)).toBe("cell-value:Workbook1::A1");
     });
 
     test("should handle large numbers", () => {
@@ -74,7 +74,7 @@ describe("cell address to key", () => {
       };
 
       expect(cellAddressToKey(cellAddress)).toBe(
-        "cell:Workbook1:Sheet1:XFD1000000"
+        "cell-value:Workbook1:Sheet1:XFD1000000"
       );
     });
 

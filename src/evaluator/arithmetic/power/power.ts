@@ -1,7 +1,7 @@
 import type { ArethmeticEvaluator } from "src/core/types";
 import { FormulaError } from "src/core/types";
 
-export const power: ArethmeticEvaluator = (left, right, errAddress) => {
+export const power: ArethmeticEvaluator = (left, right, context) => {
   // Only allow number and infinity types
   if ((left.type !== "number" && left.type !== "infinity") ||
       (right.type !== "number" && right.type !== "infinity")) {
@@ -9,7 +9,7 @@ export const power: ArethmeticEvaluator = (left, right, errAddress) => {
       type: "error",
       err: FormulaError.VALUE,
       message: `Cannot exponentiate ${left.type} and ${right.type}`,
-      errAddress: errAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -44,7 +44,7 @@ export const power: ArethmeticEvaluator = (left, right, errAddress) => {
               type: "error",
               err: FormulaError.NUM,
               message: "Cannot raise negative infinity to non-integer power",
-              errAddress: errAddress,
+              errAddress: context.dependencyNode,
             };
           }
         }
@@ -103,7 +103,7 @@ export const power: ArethmeticEvaluator = (left, right, errAddress) => {
         type: "error",
         err: FormulaError.NUM,
         message: "Cannot raise negative number to non-integer power",
-        errAddress: errAddress,
+        errAddress: context.dependencyNode,
       };
     }
     
@@ -125,6 +125,6 @@ export const power: ArethmeticEvaluator = (left, right, errAddress) => {
     type: "error",
     err: FormulaError.VALUE,
     message: `Cannot exponentiate ${left.type} and ${right.type}`,
-    errAddress: errAddress,
+    errAddress: context.dependencyNode,
   };
 };

@@ -12,6 +12,7 @@ import {
   type SpreadsheetRange,
   type SpreadsheetRangeEnd,
 } from "./types";
+import type { DependencyNode } from "./managers/dependency-node";
 
 // Type narrowing utilities
 export function isCellAddress(
@@ -341,7 +342,7 @@ export function cellAddressToKey(cellAddress: CellAddress): string {
     );
   }
   const cellRef = getCellReference(cellAddress);
-  return `cell:${cellAddress.workbookName}:${cellAddress.sheetName}:${cellRef}`;
+  return `cell-value:${cellAddress.workbookName}:${cellAddress.sheetName}:${cellRef}`;
 }
 
 export function rangeAddressToKey(rangeAddress: RangeAddress): string {
@@ -529,7 +530,7 @@ export function getRangeIntersection(
 }
 
 export function captureEvaluationErrors<T>(
-  errAddress: CellAddress,
+  errAddress: DependencyNode,
   fn: () => T
 ): T | ErrorEvaluationResult {
   try {

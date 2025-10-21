@@ -44,7 +44,7 @@ export const OFFSET: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "OFFSET function requires 3 to 5 arguments",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -71,7 +71,7 @@ export const OFFSET: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "OFFSET function rows must be a number",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -89,7 +89,7 @@ export const OFFSET: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "OFFSET function cols must be a number",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -114,7 +114,7 @@ export const OFFSET: FunctionDefinition = {
             type: "error",
             err: FormulaError.VALUE,
             message: "OFFSET function height must be positive",
-            errAddress: context.originCell.cellAddress,
+            errAddress: context.dependencyNode,
           };
         }
       }
@@ -138,7 +138,7 @@ export const OFFSET: FunctionDefinition = {
             type: "error",
             err: FormulaError.VALUE,
             message: "OFFSET function width must be positive",
-            errAddress: context.originCell.cellAddress,
+            errAddress: context.dependencyNode,
           };
         }
       }
@@ -146,8 +146,8 @@ export const OFFSET: FunctionDefinition = {
 
     // Get the base cell/range from the evaluated reference
     let baseRange: SpreadsheetRange;
-    let baseSheetName: string = context.originCell.cellAddress.sheetName;
-    let baseWorkbookName: string = context.originCell.cellAddress.workbookName;
+    let baseSheetName: string = context.cellAddress.sheetName;
+    let baseWorkbookName: string = context.cellAddress.workbookName;
 
     // Check if we have a cell or range reference
     const cellOrRange =
@@ -160,7 +160,7 @@ export const OFFSET: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "OFFSET function requires a cell or range reference",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -189,7 +189,7 @@ export const OFFSET: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "OFFSET function requires a cell or range reference",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -203,7 +203,7 @@ export const OFFSET: FunctionDefinition = {
         type: "error",
         err: FormulaError.REF,
         message: "OFFSET function resulted in invalid cell reference",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -220,7 +220,7 @@ export const OFFSET: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "OFFSET function requires finite reference when width is omitted",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -233,7 +233,7 @@ export const OFFSET: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "OFFSET function requires finite reference when height is omitted",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -243,7 +243,7 @@ export const OFFSET: FunctionDefinition = {
         type: "error",
         err: FormulaError.REF,
         message: "OFFSET function resulted in invalid cell reference",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 

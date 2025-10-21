@@ -152,7 +152,7 @@ describe("Reproduce issue with evalution order", () => {
 
     expect(
       engine._dependencyManager.getDependencyTree(
-        "cell:TestWorkbook:TestSheet:B4"
+        engine._dependencyManager.getCellValueNode(`cell-value:TestWorkbook:TestSheet:B4`)
       )
     ).toMatchSnapshot();
     // B4: SUM(15, 3, 5) = 23

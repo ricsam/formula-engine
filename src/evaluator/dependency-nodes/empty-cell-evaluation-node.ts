@@ -1,27 +1,17 @@
+import type { DependencyManager } from "src/core/managers/dependency-manager";
 import { FrontierDependencyManager } from "src/core/managers/frontier-dependency-manager";
 import type { WorkbookManager } from "src/core/managers/workbook-manager";
 import type {
   CellAddress,
-  FunctionEvaluationResult,
   RangeAddress,
   SingleEvaluationResult,
-  SpreadsheetRange,
 } from "src/core/types";
-import {
-  cellAddressToKey,
-  getCellReference,
-  isCellInRange,
-  keyToCellAddress,
-  keyToRangeAddress,
-  rangeAddressToKey,
-} from "src/core/utils";
-import type { DependencyManager } from "src/core/managers/dependency-manager";
-import type { CellEvalNode } from "./cell-eval-node";
+import { getCellReference, keyToCellAddress } from "src/core/utils";
 
 export class EmptyCellEvaluationNode extends FrontierDependencyManager {
   public key: string;
   public cellAddress: CellAddress;
-  private _evaluationResult?: FunctionEvaluationResult;
+  private _evaluationResult: SingleEvaluationResult;
 
   constructor(
     public emptyCellKey: string,
@@ -48,20 +38,19 @@ export class EmptyCellEvaluationNode extends FrontierDependencyManager {
 
     this.cellAddress = cellAddress;
     this.key = emptyCellKey.replace(/^cell:/, "empty:");
+    this._evaluationResult = {
+      type: "awaiting-evaluation",
+      waitingFor: this,
+      errAddress: this,
+    };
   }
 
-  public setEvaluationResult(result: FunctionEvaluationResult) {
+  public setEvaluationResult(result: SingleEvaluationResult) {
     this._evaluationResult = result;
   }
 
-  public get evaluationResult(): FunctionEvaluationResult {
-    return (
-      this._evaluationResult ?? {
-        type: "awaiting-evaluation",
-        waitingFor: this.cellAddress,
-        errAddress: this.cellAddress,
-      }
-    );
+  public get evaluationResult(): SingleEvaluationResult {
+    return this._evaluationResult;
   }
 
   public override resolve() {
@@ -74,14 +63,6 @@ export class EmptyCellEvaluationNode extends FrontierDependencyManager {
     return (
       super.canResolve() && this.evaluationResult.type !== "awaiting-evaluation"
     );
-  }
-
-  /**
-   * An origin spill result is not possible for an empty cell
-   * but we just have it here for being consistent with the DependencyNode
-   */
-  public get originSpillResult(): SingleEvaluationResult | undefined {
-    return undefined;
   }
 
   toJSON(visitor: Set<string> = new Set()): any {

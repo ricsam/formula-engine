@@ -39,7 +39,7 @@ export const INDIRECT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "INDIRECT function requires 1 or 2 arguments",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -57,7 +57,7 @@ export const INDIRECT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "INDIRECT function ref_text must be a string",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -85,7 +85,7 @@ export const INDIRECT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "INDIRECT function does not yet support R1C1 style references",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -99,7 +99,7 @@ export const INDIRECT: FunctionDefinition = {
           type: "error",
           err: FormulaError.REF,
           message: `INDIRECT requires a valid cell or range reference, got: ${refText}`,
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
       
@@ -112,7 +112,7 @@ export const INDIRECT: FunctionDefinition = {
         type: "error",
         err: FormulaError.REF,
         message: `INDIRECT could not parse reference: ${refText}`,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
   },

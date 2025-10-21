@@ -2,21 +2,27 @@ import { describe, expect, test } from "bun:test";
 import { subtract } from "./subtract";
 import { FormulaError } from "src/core/types";
 import { type CellAddress } from "src/core/types";
+import { EvaluationContext } from "src/evaluator/evaluation-context";
+import { TableManager } from "src/core/managers/table-manager";
+import { WorkbookManager } from "src/core/managers/workbook-manager";
+import { CellValueNode } from "src/evaluator/dependency-nodes/cell-value-node";
+
 const errAddress: CellAddress = {
   sheetName: "Sheet1",
   workbookName: "Workbook1",
-  colIndex: 1,
-  rowIndex: 1,
+  colIndex: 0,
+  rowIndex: 0,
 };
+
+const workbookManager = new WorkbookManager();
+const tableManager = new TableManager(workbookManager);
+const dependencyNode = new CellValueNode("cell-value:Workbook1:Sheet1:A1");
+const ctx = new EvaluationContext(tableManager, dependencyNode, errAddress);
 
 describe("subtract function", () => {
   test("basic number subtraction", () => {
     expect(
-      subtract(
-        { type: "number", value: 5 },
-        { type: "number", value: 3 },
-        errAddress
-      )
+      subtract({ type: "number", value: 5 }, { type: "number", value: 3 }, ctx)
     ).toEqual({
       type: "number",
       value: 2,
@@ -25,11 +31,7 @@ describe("subtract function", () => {
 
   test("negative result", () => {
     expect(
-      subtract(
-        { type: "number", value: 3 },
-        { type: "number", value: 8 },
-        errAddress
-      )
+      subtract({ type: "number", value: 3 }, { type: "number", value: 8 }, ctx)
     ).toEqual({
       type: "number",
       value: -5,
@@ -38,11 +40,7 @@ describe("subtract function", () => {
 
   test("zero subtraction", () => {
     expect(
-      subtract(
-        { type: "number", value: 42 },
-        { type: "number", value: 0 },
-        errAddress
-      )
+      subtract({ type: "number", value: 42 }, { type: "number", value: 0 }, ctx)
     ).toEqual({
       type: "number",
       value: 42,
@@ -51,11 +49,7 @@ describe("subtract function", () => {
 
   test("subtracting from zero", () => {
     expect(
-      subtract(
-        { type: "number", value: 0 },
-        { type: "number", value: 7 },
-        errAddress
-      )
+      subtract({ type: "number", value: 0 }, { type: "number", value: 7 }, ctx)
     ).toEqual({
       type: "number",
       value: -7,
@@ -66,7 +60,7 @@ describe("subtract function", () => {
     const result = subtract(
       { type: "number", value: 5.7 },
       { type: "number", value: 2.3 },
-      errAddress
+      ctx
     );
     expect(result.type).toBe("number");
     if (result.type === "number") {
@@ -80,7 +74,7 @@ describe("subtract function", () => {
         subtract(
           { type: "infinity", sign: "positive" },
           { type: "number", value: 100 },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "infinity",
@@ -93,7 +87,7 @@ describe("subtract function", () => {
         subtract(
           { type: "infinity", sign: "negative" },
           { type: "number", value: 50 },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "infinity",
@@ -106,7 +100,7 @@ describe("subtract function", () => {
         subtract(
           { type: "number", value: 100 },
           { type: "infinity", sign: "positive" },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "infinity",
@@ -119,7 +113,7 @@ describe("subtract function", () => {
         subtract(
           { type: "number", value: 50 },
           { type: "infinity", sign: "negative" },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "infinity",
@@ -132,13 +126,13 @@ describe("subtract function", () => {
         subtract(
           { type: "infinity", sign: "positive" },
           { type: "infinity", sign: "positive" },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "error",
         err: FormulaError.NUM,
         message: "Cannot subtract infinity from same-signed infinity",
-        errAddress: errAddress,
+        errAddress: ctx.dependencyNode,
       });
     });
 
@@ -147,13 +141,13 @@ describe("subtract function", () => {
         subtract(
           { type: "infinity", sign: "negative" },
           { type: "infinity", sign: "negative" },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "error",
         err: FormulaError.NUM,
         message: "Cannot subtract infinity from same-signed infinity",
-        errAddress: errAddress,
+        errAddress: ctx.dependencyNode,
       });
     });
 
@@ -162,7 +156,7 @@ describe("subtract function", () => {
         subtract(
           { type: "infinity", sign: "positive" },
           { type: "infinity", sign: "negative" },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "infinity",
@@ -175,7 +169,7 @@ describe("subtract function", () => {
         subtract(
           { type: "infinity", sign: "negative" },
           { type: "infinity", sign: "positive" },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "infinity",
@@ -190,7 +184,7 @@ describe("subtract function", () => {
         subtract(
           { type: "number", value: Number.MAX_VALUE },
           { type: "number", value: -Number.MAX_VALUE },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "infinity",
@@ -203,7 +197,7 @@ describe("subtract function", () => {
         subtract(
           { type: "number", value: -Number.MAX_VALUE },
           { type: "number", value: Number.MAX_VALUE },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "infinity",
@@ -218,13 +212,13 @@ describe("subtract function", () => {
         subtract(
           { type: "number", value: 5 },
           { type: "string", value: "hello" },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "error",
         err: FormulaError.VALUE,
         message: "Cannot subtract number and string",
-        errAddress: errAddress,
+        errAddress: ctx.dependencyNode,
       });
     });
 
@@ -233,13 +227,13 @@ describe("subtract function", () => {
         subtract(
           { type: "string", value: "world" },
           { type: "number", value: 10 },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "error",
         err: FormulaError.VALUE,
         message: "Cannot subtract string and number",
-        errAddress: errAddress,
+        errAddress: ctx.dependencyNode,
       });
     });
 
@@ -248,13 +242,13 @@ describe("subtract function", () => {
         subtract(
           { type: "boolean", value: true },
           { type: "number", value: 5 },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "error",
         err: FormulaError.VALUE,
         message: "Cannot subtract boolean and number",
-        errAddress: errAddress,
+        errAddress: ctx.dependencyNode,
       });
     });
 
@@ -263,13 +257,13 @@ describe("subtract function", () => {
         subtract(
           { type: "number", value: 10 },
           { type: "boolean", value: false },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "error",
         err: FormulaError.VALUE,
         message: "Cannot subtract number and boolean",
-        errAddress: errAddress,
+        errAddress: ctx.dependencyNode,
       });
     });
 
@@ -278,13 +272,13 @@ describe("subtract function", () => {
         subtract(
           { type: "infinity", sign: "positive" },
           { type: "string", value: "text" },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "error",
         err: FormulaError.VALUE,
         message: "Cannot subtract infinity and string",
-        errAddress: errAddress,
+        errAddress: ctx.dependencyNode,
       });
     });
 
@@ -293,13 +287,13 @@ describe("subtract function", () => {
         subtract(
           { type: "infinity", sign: "negative" },
           { type: "boolean", value: true },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "error",
         err: FormulaError.VALUE,
         message: "Cannot subtract infinity and boolean",
-        errAddress: errAddress,
+        errAddress: ctx.dependencyNode,
       });
     });
   });
@@ -310,7 +304,7 @@ describe("subtract function", () => {
         subtract(
           { type: "number", value: Number.MIN_VALUE },
           { type: "number", value: Number.MIN_VALUE },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "number",
@@ -323,7 +317,7 @@ describe("subtract function", () => {
         subtract(
           { type: "number", value: NaN },
           { type: "number", value: 5 },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "number",
@@ -336,7 +330,7 @@ describe("subtract function", () => {
         subtract(
           { type: "number", value: 10 },
           { type: "number", value: NaN },
-          errAddress
+          ctx
         )
       ).toEqual({
         type: "number",

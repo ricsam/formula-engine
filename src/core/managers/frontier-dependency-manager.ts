@@ -1,65 +1,56 @@
-import { CellEvalNode } from "src/evaluator/cell-eval-node";
-import type {
-  CellAddress,
-  EvaluateAllCellsResult,
-  RangeAddress,
-} from "../types";
-import {
-  cellAddressToKey,
-  checkRangeIntersection,
-  isCellInRange,
-} from "../utils";
-import type { WorkbookManager } from "./workbook-manager";
+import { CellValueNode } from "src/evaluator/dependency-nodes/cell-value-node";
+import type { CellAddress, CellInRangeResult, RangeAddress } from "../types";
+import { cellAddressToKey, checkRangeIntersection } from "../utils";
 import type { DependencyManager } from "./dependency-manager";
-import type { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
-import { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
-import type { RangeEvalOrderEntry } from "./range-eval-order-builder";
-import type { AstEvaluationNode } from "src/evaluator/ast-evaluation-node";
+import type { DependencyNode } from "./dependency-node";
+import type { WorkbookManager } from "./workbook-manager";
+import type { SpillMetaNode } from "src/evaluator/dependency-nodes/spill-meta-node";
 
 type EvalOrderEntry =
   | {
       type: "value";
       address: CellAddress;
-      node: CellEvalNode;
+      node: CellValueNode;
     }
   | {
       type: "empty_cell";
       address: CellAddress;
-      candidates: CellEvalNode[];
+      candidates: SpillMetaNode[];
     }
   | {
       type: "empty_range";
       address: RangeAddress;
-      candidates: CellEvalNode[];
+      candidates: SpillMetaNode[];
     };
-
-function assertIsCellEvalNode(
-  node: CellEvalNode | EmptyCellEvaluationNode
-): asserts node is CellEvalNode {
-  if (node instanceof EmptyCellEvaluationNode) {
-    throw new Error("A frontier dependencies can not be an empty cell");
-  }
-}
 
 export class FrontierDependencyManager {
   private evalOrder: EvalOrderEntry[];
+  private _resolved: boolean = false;
+  private _directDepsUpdated: boolean;
+
   constructor(
     private frontierRange: RangeAddress,
     protected workbookManager: WorkbookManager,
     protected evaluationManager: DependencyManager
   ) {
-    const addressToNode = (address: CellAddress) => {
-      const node = this.evaluationManager.getCellNode(
-        cellAddressToKey(address)
+    const addressToSpillMetaNode = (address: CellAddress) => {
+      const node = this.evaluationManager.getSpillMetaNode(
+        cellAddressToKey(address).replace(/^[^:]+:/, "spill-meta:")
       );
-      assertIsCellEvalNode(node);
       return node;
     };
     // todo maybe pass in lookupOrder
+    let directDepsUpdated = false;
     this.evalOrder = this.workbookManager
       .buildRangeEvalOrder("col-major", this.frontierRange)
       .map((entry): EvalOrderEntry => {
         if (entry.type === "value") {
+          const addressToNode = (address: CellAddress) => {
+            const node = this.evaluationManager.getCellValueNode(
+              cellAddressToKey(address)
+            );
+            return node;
+          };
           return {
             type: "value",
             address: entry.address,
@@ -69,13 +60,13 @@ export class FrontierDependencyManager {
           return {
             type: "empty_cell",
             address: entry.address,
-            candidates: entry.candidates.map(addressToNode),
+            candidates: entry.candidates.map(addressToSpillMetaNode),
           };
         } else if (entry.type === "empty_range") {
           return {
             type: "empty_range",
             address: entry.address,
-            candidates: entry.candidates.map(addressToNode),
+            candidates: entry.candidates.map(addressToSpillMetaNode),
           };
         }
         throw new Error("Invalid entry type: " + (entry as any).type);
@@ -83,16 +74,16 @@ export class FrontierDependencyManager {
     for (const entry of this.evalOrder) {
       if (entry.type === "empty_cell" || entry.type === "empty_range") {
         for (const candidate of entry.candidates) {
-          this.addFrontierDependency(candidate);
+          this._frontierDependencies.add(candidate);
+          directDepsUpdated = true;
         }
       } else if (entry.type === "value") {
         this.addDependency(entry.node);
+        directDepsUpdated = true;
       }
     }
+    this._directDepsUpdated = directDepsUpdated;
   }
-
-  private _resolved: boolean = false;
-  private _directDepsUpdated: boolean = false;
 
   /**
    * frontierDependencies is the set of dependency node keys that could spill values onto the target range (if evaluationResult is spilled-values)
@@ -100,25 +91,24 @@ export class FrontierDependencyManager {
    *
    * soft edge dependencies, which can not cause cycles in the dependency graph
    */
-  private _frontierDependencies: Set<CellEvalNode> = new Set();
+  private _frontierDependencies: Set<SpillMetaNode> = new Set();
 
   /**
    * discardedFrontierDependencies is the set of dependency node keys that were discarded as frontier dependencies because
    * they they do not produce spilled values that spill onto the target range
    * Key is from cellAddressToKey
    */
-  private _discardedFrontierDependencies: Set<CellEvalNode> = new Set();
+  private _discardedFrontierDependencies: Set<SpillMetaNode> = new Set();
 
   /**
    * hard edge dependencies, which can cause cycles in the dependency graph
    */
-  private _dependencies: Set<CellEvalNode | EmptyCellEvaluationNode | AstEvaluationNode> =
-    new Set();
+  private _dependencies: Set<DependencyNode> = new Set();
 
   /**
    * cache, should maybe be stored in the cache manager
    */
-  get iterateAllCells(): undefined | Iterable<EvaluateAllCellsResult> {
+  get iterateAllCells(): undefined | Iterable<CellInRangeResult> {
     return undefined;
   }
 
@@ -136,15 +126,7 @@ export class FrontierDependencyManager {
     return this._discardedFrontierDependencies;
   }
 
-  protected addFrontierDependency(dependency: CellEvalNode) {
-    if (this._frontierDependencies.has(dependency)) {
-      return;
-    }
-    this._directDepsUpdated = true;
-    this._frontierDependencies.add(dependency);
-  }
-
-  public maybeDiscardFrontierDependency(dependency: CellEvalNode) {
+  public maybeDiscardFrontierDependency(dependency: SpillMetaNode) {
     if (!this._resolved) {
       return;
     }
@@ -155,7 +137,7 @@ export class FrontierDependencyManager {
     this._discardedFrontierDependencies.add(dependency);
   }
 
-  public maybeUpgradeFrontierDependency(dependency: CellEvalNode) {
+  public maybeUpgradeFrontierDependency(dependency: SpillMetaNode) {
     if (!this._resolved) {
       return;
     }
@@ -211,14 +193,14 @@ export class FrontierDependencyManager {
     return this.discardedFrontierDependencies;
   }
 
-  public addDependency(dependency: CellEvalNode | EmptyCellEvaluationNode | AstEvaluationNode) {
+  public addDependency(dependency: DependencyNode) {
     this._dependencies.add(dependency);
   }
 
   public upgradeFrontierDependencies() {
     // todo can be optimized to not generate the frontier candidates every time
     // we can cache the frontier candidates for the current cell
-    const frontierCandidates: CellEvalNode[] = Array.from(
+    const frontierCandidates: SpillMetaNode[] = Array.from(
       this.frontierDependencies
     );
 
@@ -226,21 +208,19 @@ export class FrontierDependencyManager {
       const result = candidateNode.evaluationResult;
 
       // upgrade or downgrade frontier dependency
-      if (result) {
-        if (result.type === "spilled-values") {
-          const spillArea = result.spillArea(candidateNode.cellAddress);
-          const intersects = checkRangeIntersection(
-            this.frontierRange.range,
-            spillArea
-          );
-          if (intersects) {
-            this.maybeUpgradeFrontierDependency(candidateNode); // upgraded!
-          } else {
-            this.maybeDiscardFrontierDependency(candidateNode); // downgraded!
-          }
+      if (result.type === "spilled-values") {
+        const spillArea = result.spillArea(candidateNode.cellAddress);
+        const intersects = checkRangeIntersection(
+          this.frontierRange.range,
+          spillArea
+        );
+        if (intersects) {
+          this.maybeUpgradeFrontierDependency(candidateNode); // upgraded!
         } else {
           this.maybeDiscardFrontierDependency(candidateNode); // downgraded!
         }
+      } else {
+        this.maybeDiscardFrontierDependency(candidateNode); // downgraded!
       }
     }
   }

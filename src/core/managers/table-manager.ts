@@ -87,13 +87,16 @@ export class TableManager {
     return table;
   }
 
-  copyTable(from: {
-    workbookName: string;
-    tableName: string;
-  }, to: {
-    workbookName: string;
-    tableName: string;
-  }): void {
+  copyTable(
+    from: {
+      workbookName: string;
+      tableName: string;
+    },
+    to: {
+      workbookName: string;
+      tableName: string;
+    }
+  ): void {
     const fromTable = this.getTable({
       workbookName: from.workbookName,
       name: from.tableName,
@@ -305,5 +308,37 @@ export class TableManager {
         wb.delete(tableName);
       }
     });
+  }
+
+  isCellInTable(cellAddress: CellAddress): TableDefinition | undefined {
+    const { rowIndex, colIndex } = cellAddress;
+
+    // Get all tables for this sheet
+
+    for (const table of this.getTables(cellAddress.workbookName).values()) {
+      // Check each table to see if the cell is within its bounds
+      if (table.sheetName !== cellAddress.sheetName) {
+        continue;
+      }
+
+      const { start, endRow, headers } = table;
+
+      // Check row bounds
+      const isInRowRange =
+        endRow.type === "infinity"
+          ? rowIndex >= start.rowIndex
+          : rowIndex >= start.rowIndex && rowIndex <= endRow.value;
+
+      // Check column bounds
+      const endColIndex = start.colIndex + headers.size - 1;
+      const isInColRange =
+        colIndex >= start.colIndex && colIndex <= endColIndex;
+
+      if (isInRowRange && isInColRange) {
+        return table;
+      }
+    }
+
+    return undefined;
   }
 }

@@ -32,7 +32,7 @@ export const LEN: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "LEN function takes exactly 1 argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -59,7 +59,7 @@ export const LEN: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid text argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -69,7 +69,7 @@ export const LEN: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Text argument must be a string",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -84,7 +84,7 @@ export const LEN: FunctionDefinition = {
       type: "error",
       err: FormulaError.VALUE,
       message: "LEN operation failed",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   },
 };
@@ -107,7 +107,7 @@ function createLenSpilledResult(
       type: "error",
       err: FormulaError.VALUE,
       message: "createLenSpilledResult called without spilled values",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -133,7 +133,7 @@ function createLenSpilledResult(
           type: "error",
           err: FormulaError.VALUE,
           message: "LEN operation failed",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
 

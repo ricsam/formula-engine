@@ -30,7 +30,7 @@ export const LEFT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "LEFT function takes 1 or 2 arguments",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -76,7 +76,7 @@ export const LEFT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid text argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -85,7 +85,7 @@ export const LEFT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid numChars argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -95,7 +95,7 @@ export const LEFT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Text argument must be a string",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -104,7 +104,7 @@ export const LEFT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "NumChars argument must be a number",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 

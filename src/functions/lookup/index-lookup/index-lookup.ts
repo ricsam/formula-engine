@@ -39,7 +39,7 @@ function getValueFromArray(
   col: number,
   context: EvaluationContext
 ): CellValue | ErrorEvaluationResult {
-  const dims = arrayResult.spillArea(context.originCell.cellAddress);
+  const dims = arrayResult.spillArea(context.cellAddress);
 
   // Convert 1-based indices to 0-based
   const rowIndex = row - 1;
@@ -58,7 +58,7 @@ function getValueFromArray(
       type: "error",
       err: FormulaError.REF,
       message: `INDEX: row_num ${row} is out of range`,
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -70,15 +70,15 @@ function getValueFromArray(
       type: "error",
       err: FormulaError.REF,
       message: `INDEX: column_num ${col} is out of range`,
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
   const spilledAddress: CellAddress = {
     colIndex: actualCol,
     rowIndex: actualRow,
-    sheetName: context.originCell.cellAddress.sheetName,
-    workbookName: context.originCell.cellAddress.workbookName,
+    sheetName: context.cellAddress.sheetName,
+    workbookName: context.cellAddress.workbookName,
   };
 
   const spill = {
@@ -96,7 +96,7 @@ function getValueFromArray(
       type: "error",
       err: FormulaError.VALUE,
       message: "INDEX: Unable to retrieve value from array",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -118,7 +118,7 @@ export const INDEX: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "INDEX function takes 2 or 3 arguments",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -162,7 +162,7 @@ export const INDEX: FunctionDefinition = {
         err: FormulaError.VALUE,
         message:
           "INDEX: Spilled row_num/column_num arguments not yet implemented",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -172,7 +172,7 @@ export const INDEX: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: `INDEX row_num must be number, got ${rowNumResult.result.type}`,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -184,7 +184,7 @@ export const INDEX: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: `INDEX column_num must be number, got ${colNumValue.type}`,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -198,7 +198,7 @@ export const INDEX: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: `INDEX row_num must be >= 1, got ${rowNum}`,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -207,7 +207,7 @@ export const INDEX: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: `INDEX column_num must be >= 1, got ${colNum}`,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -219,7 +219,7 @@ export const INDEX: FunctionDefinition = {
           type: "error",
           err: FormulaError.REF,
           message: `INDEX: Single value can only be accessed at [1,1], got [${rowNum},${colNum}]`,
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
       return {
@@ -249,7 +249,7 @@ export const INDEX: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "INDEX: Invalid array argument type",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
   },

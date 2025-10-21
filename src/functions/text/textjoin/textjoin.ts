@@ -39,9 +39,7 @@ const MAX_TEXT_LENGTH = 32767;
 /**
  * Helper function to convert a cell value to string with type coercion
  */
-function coerceToString(
-  value: CellValue
-): string {
+function coerceToString(value: CellValue): string {
   switch (value.type) {
     case "string":
       return value.value;
@@ -91,13 +89,20 @@ function collectTextItems(
       // Extract all values from the range
       const cellValues = arg.evaluateAllCells.call(this, {
         context,
-        origin: context.originCell.cellAddress,
+        origin: context.cellAddress,
         evaluate: arg.evaluate,
         lookupOrder: "col-major",
       });
 
-      for (const cellValue of cellValues) {
-        if (cellValue.result.type === "error") {
+      if (cellValues.type !== "values") {
+        return cellValues;
+      }
+
+      for (const cellValue of cellValues.values) {
+        if (
+          cellValue.result.type === "error" ||
+          cellValue.result.type === "awaiting-evaluation"
+        ) {
           return cellValue.result;
         }
         if (cellValue.result.type === "value") {
@@ -124,7 +129,7 @@ export const TEXTJOIN: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "TEXTJOIN function requires at least 3 arguments",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -143,7 +148,7 @@ export const TEXTJOIN: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "TEXTJOIN delimiter must be a single value",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -164,7 +169,7 @@ export const TEXTJOIN: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "TEXTJOIN ignore_empty must be a single value",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -189,8 +194,13 @@ export const TEXTJOIN: FunctionDefinition = {
     }
 
     // Collect all text items from arguments
-    const textItems = collectTextItems.call(this, textArgs, ignoreEmpty, context);
-    
+    const textItems = collectTextItems.call(
+      this,
+      textArgs,
+      ignoreEmpty,
+      context
+    );
+
     // Check if we got an error
     if (!Array.isArray(textItems)) {
       return textItems;
@@ -205,7 +215,7 @@ export const TEXTJOIN: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: `TEXTJOIN result exceeds ${MAX_TEXT_LENGTH} character limit`,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 

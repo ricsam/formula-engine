@@ -56,7 +56,7 @@ export function performMaximum(
       type: "error",
       err: FormulaError.VALUE,
       message: "No numeric values found",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
