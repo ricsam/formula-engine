@@ -161,7 +161,7 @@ describe("Tables", () => {
 
     // Formula should now show error
     const result = cell("C1", true);
-    expect(result).toMatchInlineSnapshot(`"#REF! Table TempTable not found"`);
+    expect(result).toMatchInlineSnapshot(`"#REF! in ast:TempTable[Amount] Table TempTable not found"`);
   });
 
   test("should handle cross-sheet table references", () => {

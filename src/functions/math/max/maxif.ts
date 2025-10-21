@@ -58,7 +58,7 @@ export const MAXIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "MAXIF criteria must be a single value",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -69,7 +69,7 @@ export const MAXIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: parsedCriteria.message,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -92,6 +92,10 @@ export const MAXIF: FunctionDefinition = {
       "col-major"
     );
 
-    return performMaximum(matchingValues, context);
+    if (matchingValues.type === "error" || matchingValues.type === "awaiting-evaluation") {
+      return matchingValues;
+    }
+
+    return performMaximum(matchingValues.values, context);
   },
 };

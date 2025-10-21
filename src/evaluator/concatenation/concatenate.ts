@@ -5,7 +5,7 @@ import { FormulaError } from "src/core/types";
  * Concatenation operator (&) - Concatenates two values as strings
  * Works with numbers and strings only
  */
-export const concatenate: ArethmeticEvaluator = (left, right, errAddress) => {
+export const concatenate: ArethmeticEvaluator = (left, right, context) => {
   // Convert each value to string based on type
   let leftStr: string;
   let rightStr: string;
@@ -23,7 +23,7 @@ export const concatenate: ArethmeticEvaluator = (left, right, errAddress) => {
         type: "error",
         err: FormulaError.VALUE,
         message: `Cannot concatenate ${left.type} - only numbers and strings are supported`,
-        errAddress: errAddress,
+        errAddress: context.dependencyNode,
       };
   }
 
@@ -40,7 +40,7 @@ export const concatenate: ArethmeticEvaluator = (left, right, errAddress) => {
         type: "error",
         err: FormulaError.VALUE,
         message: `Cannot concatenate ${right.type} - only numbers and strings are supported`,
-        errAddress: errAddress,
+        errAddress: context.dependencyNode,
       };
   }
 

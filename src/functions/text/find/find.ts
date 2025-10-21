@@ -54,7 +54,7 @@ function findOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: "Text not found #2",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -65,7 +65,7 @@ function findOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: "Text not found #2",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -75,7 +75,7 @@ function findOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: "Text not found #2",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -259,7 +259,7 @@ function createFindSpilledResult(
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid withinText argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -269,7 +269,7 @@ function createFindSpilledResult(
         type: "error",
         err: FormulaError.VALUE,
         message: "WithinText argument must be a string",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -334,7 +334,7 @@ function createFindSpilledResult(
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid findText argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -344,7 +344,7 @@ function createFindSpilledResult(
         type: "error",
         err: FormulaError.VALUE,
         message: "FindText argument must be a string",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -409,7 +409,7 @@ function createFindSpilledResult(
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid findText or withinText argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -419,7 +419,7 @@ function createFindSpilledResult(
         type: "error",
         err: FormulaError.VALUE,
         message: "FindText argument must be a string",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -428,7 +428,7 @@ function createFindSpilledResult(
         type: "error",
         err: FormulaError.VALUE,
         message: "WithinText argument must be a string",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -476,7 +476,7 @@ function createFindSpilledResult(
     type: "error",
     err: FormulaError.VALUE,
     message: "Invalid arguments for FIND",
-    errAddress: context.originCell.cellAddress,
+    errAddress: context.dependencyNode,
   };
 }
 
@@ -506,7 +506,7 @@ export const FIND: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "FIND function takes 2 or 3 arguments",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -553,7 +553,7 @@ export const FIND: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid findText or withinText argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -563,7 +563,7 @@ export const FIND: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "FindText argument must be a string",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -572,7 +572,7 @@ export const FIND: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "WithinText argument must be a string",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 

@@ -9,11 +9,16 @@ import {
   type SpreadsheetRange,
   type SpilledValuesEvaluationResult,
   type SingleEvaluationResult,
+  type CellInRangeResult,
 } from "src/core/types";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
 import type { ReferenceNode, RangeNode } from "src/parser/ast";
 import { EvaluationError } from "src/evaluator/evaluation-error";
-import { getRangeIntersection, isCellAddress, isRangeAddress } from "src/core/utils";
+import {
+  getRangeIntersection,
+  isCellAddress,
+  isRangeAddress,
+} from "src/core/utils";
 
 /**
  * ROW function - Returns the row number of a reference
@@ -32,12 +37,12 @@ export const ROW: FunctionDefinition = {
   evaluate: function (node, context): FunctionEvaluationResult {
     // If no arguments, return the row of the current cell (1-based)
     if (node.args.length === 0) {
-      context.addContextDependency('row');
+      context.addContextDependency("row");
       return {
         type: "value",
         result: {
           type: "number",
-          value: context.originCell.cellAddress.rowIndex + 1,
+          value: context.cellAddress.rowIndex + 1,
         },
       };
     }
@@ -47,7 +52,7 @@ export const ROW: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "ROW function takes at most 1 argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -55,7 +60,7 @@ export const ROW: FunctionDefinition = {
 
     // Evaluate the argument
     const argResult = this.evaluateNode(argNode, context);
-    
+
     // Handle errors and awaiting evaluation
     if (
       argResult.type === "error" ||
@@ -76,7 +81,7 @@ export const ROW: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "ROW function requires a cell or range reference",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -109,9 +114,7 @@ export const ROW: FunctionDefinition = {
           }
 
           // Otherwise, use spillArea to get the row number relative to where it appears
-          const spillArea = argResult.spillArea(
-            evalContext.originCell.cellAddress
-          );
+          const spillArea = argResult.spillArea(evalContext.cellAddress);
           const actualRow = spillArea.start.row + spillOffset.y;
           return {
             type: "value",
@@ -130,7 +133,12 @@ export const ROW: FunctionDefinition = {
               intersection
             );
             if (!newRange) {
-              return [];
+              return {
+                type: "error",
+                err: FormulaError.VALUE,
+                message: "Intersection range is not valid",
+                errAddress: context.dependencyNode,
+              };
             }
             rangeToEvaluate = newRange;
           }
@@ -156,16 +164,19 @@ export const ROW: FunctionDefinition = {
           }
           const rows = Array.from(rowSet).sort((a, b) => a - b);
 
-          const results = [];
+          const results: CellInRangeResult[] = [];
           for (let i = 0; i < rows.length; i++) {
             const relativePos = { x: 0, y: i };
             const evaled = evaluate(relativePos, context);
             results.push({
-              result: evaled!,
+              result: evaled,
               relativePos,
             });
           }
-          return results;
+          return {
+            type: "values",
+            values: results,
+          };
         },
       };
     }
@@ -175,7 +186,7 @@ export const ROW: FunctionDefinition = {
       type: "error",
       err: FormulaError.VALUE,
       message: "ROW function requires a cell or range reference",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   },
 };

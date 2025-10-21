@@ -44,7 +44,7 @@ export const CELL: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "CELL function requires 1 or 2 arguments",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -62,14 +62,14 @@ export const CELL: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "CELL function info_type must be a string",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
     const infoType = infoTypeResult.result.value.toLowerCase();
 
     // Determine the reference cell
-    let referenceCell: CellAddress = context.originCell.cellAddress;
+    let referenceCell: CellAddress = context.cellAddress;
     let referenceValue: CellValue | null = null;
     
     if (node.args.length === 2) {
@@ -95,7 +95,7 @@ export const CELL: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "CELL function requires a cell or range reference",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
       
@@ -116,7 +116,7 @@ export const CELL: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "CELL function requires a cell or range reference",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
       
@@ -154,7 +154,7 @@ export const CELL: FunctionDefinition = {
         let address = `$${col}$${row}`;
         
         // Include sheet name if it's different from current sheet
-        if (referenceCell.sheetName !== context.originCell.cellAddress.sheetName) {
+        if (referenceCell.sheetName !== context.cellAddress.sheetName) {
           address = `${referenceCell.sheetName}!${address}`;
         }
         
@@ -224,7 +224,7 @@ export const CELL: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: `CELL function unknown info_type: "${infoType}"`,
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
     }
   },

@@ -94,7 +94,7 @@ export function parseCriteriaPairs(
         type: "error",
         err: FormulaError.VALUE,
         message: parsedCriteria.message,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -134,8 +134,20 @@ export function processMultiCriteriaValues(
   criteriaPairs: CriteriaPair[],
   context: EvaluationContext,
   lookupOrder: LookupOrder
-): SingleEvaluationResult[] {
+):
+  | { type: "values"; values: SingleEvaluationResult[] }
+  | ErrorEvaluationResult {
   const results: SingleEvaluationResult[] = [];
+
+  const criteriaPairWithError = criteriaPairs
+    .map((pair) => pair.rangeResult)
+    .find(
+      (result) =>
+        result.type === "error" || result.type === "awaiting-evaluation"
+    );
+  if (criteriaPairWithError) {
+    return criteriaPairWithError;
+  }
 
   // Check if this is an empty criteria case
   if (
@@ -171,25 +183,21 @@ export function processMultiCriteriaValues(
     }
   } else if (valueRangeResult.type === "spilled-values") {
     // Range case - first validate dimensions using spillArea for efficiency
-    const valueSpillArea = valueRangeResult.spillArea(
-      context.originCell.cellAddress
-    );
+    const valueSpillArea = valueRangeResult.spillArea(context.cellAddress);
 
     // Check that all criteria ranges have compatible dimensions
     for (const { rangeResult } of criteriaPairs) {
       if (rangeResult.type === "spilled-values") {
-        const criteriaSpillArea = rangeResult.spillArea(
-          context.originCell.cellAddress
-        );
+        const criteriaSpillArea = rangeResult.spillArea(context.cellAddress);
 
         // Compare dimensions using relative ranges to get width/height
         const valueRelRange = getRelativeRange(
           valueSpillArea,
-          context.originCell.cellAddress
+          context.cellAddress
         );
         const criteriaRelRange = getRelativeRange(
           criteriaSpillArea,
-          context.originCell.cellAddress
+          context.cellAddress
         );
 
         // Check if dimensions are compatible
@@ -222,7 +230,7 @@ export function processMultiCriteriaValues(
     const valueResults = valueRangeResult.evaluateAllCells.call(evaluator, {
       context,
       evaluate: valueRangeResult.evaluate,
-      origin: context.originCell.cellAddress,
+      origin: context.cellAddress,
       lookupOrder,
     });
 
@@ -232,7 +240,7 @@ export function processMultiCriteriaValues(
         const criteriaResults = rangeResult.evaluateAllCells.call(evaluator, {
           context,
           evaluate: rangeResult.evaluate,
-          origin: context.originCell.cellAddress,
+          origin: context.cellAddress,
           lookupOrder,
         });
         return { type: "array" as const, results: criteriaResults };
@@ -247,16 +255,23 @@ export function processMultiCriteriaValues(
       if (criteriaData.type === "single") {
         return null; // Single values don't need a map
       }
+      if (criteriaData.results.type !== "values") {
+        return null;
+      }
       const map = new Map<string, SingleEvaluationResult>();
-      for (const { result, relativePos } of criteriaData.results) {
+      for (const { result, relativePos } of criteriaData.results.values) {
         const key = `${relativePos.x},${relativePos.y}`;
         map.set(key, result);
       }
       return map;
     });
 
+    if (valueResults.type !== "values") {
+      return valueResults;
+    }
+
     // Iterate through each value position
-    for (const valueCell of valueResults) {
+    for (const valueCell of valueResults.values) {
       if (!valueCell) {
         continue;
       }
@@ -300,7 +315,7 @@ export function processMultiCriteriaValues(
           }
         } else if (criteriaCell.type === "awaiting-evaluation") {
           throw new AwaitingEvaluationError(
-            context.originCell.cellAddress,
+            context.dependencyNode,
             criteriaCell.waitingFor
           );
         } else {
@@ -315,7 +330,7 @@ export function processMultiCriteriaValues(
     }
   }
 
-  return results;
+  return { type: "values", values: results };
 }
 
 /**
@@ -331,7 +346,7 @@ export function validateMultiCriteriaArgs(
       type: "error",
       err: FormulaError.VALUE,
       message: `${functionName} function requires an odd number of arguments (min 3): value_range, criteria_range1, criteria1, [criteria_range2, criteria2], ...`,
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
   return null;
@@ -350,7 +365,7 @@ export function validateCountifsArgs(
       err: FormulaError.VALUE,
       message:
         "COUNTIFS function requires an even number of arguments (min 2): criteria_range1, criteria1, [criteria_range2, criteria2], ...",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
   return null;
@@ -369,7 +384,7 @@ export function validateSingleCriteriaArgs(
       type: "error",
       err: FormulaError.VALUE,
       message: `${functionName} function takes 2 or 3 arguments`,
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
   return null;
@@ -395,7 +410,9 @@ function handleEmptyCriteriaSpilledValues(
   valueRangeResult: FunctionEvaluationResult,
   criteriaPairs: CriteriaPair[],
   context: EvaluationContext
-): SingleEvaluationResult[] {
+):
+  | { type: "values"; values: SingleEvaluationResult[] }
+  | ErrorEvaluationResult {
   if (
     !hasEmptyCriteria(criteriaPairs) ||
     valueRangeResult.type !== "spilled-values"
@@ -403,9 +420,7 @@ function handleEmptyCriteriaSpilledValues(
     throw new Error("Not an empty criteria case");
   }
   const results: SingleEvaluationResult[] = [];
-  const valueSpillArea = valueRangeResult.spillArea(
-    context.originCell.cellAddress
-  );
+  const valueSpillArea = valueRangeResult.spillArea(context.cellAddress);
 
   // Check if this is an infinite range and we are counting empty cells - throw error
   if (
@@ -448,7 +463,7 @@ function handleEmptyCriteriaSpilledValues(
 
           if (rangeResult.type === "spilled-values") {
             const criteriaSpillArea = rangeResult.spillArea(
-              context.originCell.cellAddress
+              context.cellAddress
             );
             const criteriaRow =
               row - valueSpillArea.start.row + criteriaSpillArea.start.row;
@@ -521,5 +536,5 @@ function handleEmptyCriteriaSpilledValues(
     }
   }
 
-  return results;
+  return { type: "values", values: results };
 }

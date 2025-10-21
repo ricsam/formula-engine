@@ -71,11 +71,11 @@ export class FormulaEngine {
       this.tableManager,
       this.dependencyManager,
       this.namedExpressionManager,
-      this.workbookManager
     );
 
     this.evaluationManager = new EvaluationManager(
       this.workbookManager,
+      this.tableManager,
       formulaEvaluator,
       this.dependencyManager
     );
@@ -348,7 +348,7 @@ export class FormulaEngine {
   }
 
   isCellInTable(cellAddress: CellAddress): TableDefinition | undefined {
-    return this.evaluationManager.isCellInTable(cellAddress);
+    return this.tableManager.isCellInTable(cellAddress);
   }
 
   //#endregion

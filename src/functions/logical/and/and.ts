@@ -66,7 +66,7 @@ export const AND: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "AND function requires at least one argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -90,12 +90,16 @@ export const AND: FunctionDefinition = {
         // Range - check all values in the range
         const cellValues = argResult.evaluateAllCells.call(this, {
           context,
-          origin: context.originCell.cellAddress,
+          origin: context.cellAddress,
           evaluate: argResult.evaluate,
           lookupOrder: "col-major",
         });
 
-        for (const cellValue of cellValues) {
+        if (cellValues.type === "error" || cellValues.type === "awaiting-evaluation") {
+          return cellValues;
+        }
+
+        for (const cellValue of cellValues.values) {
           if (cellValue.result.type === "error") {
             return cellValue.result;
           }
@@ -113,7 +117,7 @@ export const AND: FunctionDefinition = {
           type: "error",
           err: FormulaError.VALUE,
           message: "Invalid argument type for AND function",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
     }

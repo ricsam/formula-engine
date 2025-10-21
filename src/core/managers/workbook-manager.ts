@@ -12,7 +12,12 @@ import { getCellReference, parseCellReference } from "../utils";
 
 import type { RangeAddress } from "src/core/types";
 import { buildRangeEvalOrder } from "./range-eval-order-builder";
-import { EvaluationError } from "src/evaluator/evaluation-error";
+import {
+  EvaluationError,
+  SheetNotFoundError,
+  WorkbookNotFoundError,
+} from "src/evaluator/evaluation-error";
+import { normalizeSerializedCellValue } from "src/parser/formatter";
 
 interface IndexEntry {
   number: number;
@@ -133,7 +138,7 @@ export class WorkbookManager {
   getSheets(workbookName: string): Map<string, Sheet> {
     const workbook = this.workbooks.get(workbookName);
     if (!workbook) {
-      throw new Error("Workbook not found");
+      throw new WorkbookNotFoundError(workbookName);
     }
     return workbook.sheets;
   }
@@ -155,7 +160,7 @@ export class WorkbookManager {
   removeWorkbook(workbookName: string): void {
     const workbook = this.workbooks.get(workbookName);
     if (!workbook) {
-      throw new Error("Workbook not found");
+      throw new WorkbookNotFoundError(workbookName);
     }
 
     // Clean up indexes for all sheets in this workbook
@@ -253,7 +258,7 @@ export class WorkbookManager {
   }): Sheet {
     const workbook = this.workbooks.get(workbookName);
     if (!workbook) {
-      throw new Error("Workbook not found");
+      throw new WorkbookNotFoundError(workbookName);
     }
     const sheet = {
       name: sheetName,
@@ -282,7 +287,7 @@ export class WorkbookManager {
   }): Sheet {
     const workbook = this.workbooks.get(workbookName);
     if (!workbook) {
-      throw new Error("Workbook not found");
+      throw new WorkbookNotFoundError(workbookName);
     }
     const sheet = workbook.sheets.get(sheetName);
     if (!sheet) {
@@ -310,11 +315,11 @@ export class WorkbookManager {
   }): Sheet {
     const workbook = this.workbooks.get(workbookName);
     if (!workbook) {
-      throw new Error("Workbook not found");
+      throw new WorkbookNotFoundError(workbookName);
     }
     const sheet = workbook.sheets.get(sheetName);
     if (!sheet) {
-      throw new Error("Sheet not found");
+      throw new SheetNotFoundError(sheetName);
     }
 
     if (workbook.sheets.has(newSheetName)) {
@@ -371,11 +376,11 @@ export class WorkbookManager {
   }): Map<string, SerializedCellValue> {
     const workbook = this.workbooks.get(workbookName);
     if (!workbook) {
-      throw new Error("Workbook not found");
+      throw new WorkbookNotFoundError(workbookName);
     }
     const sheet = workbook.sheets.get(sheetName);
     if (!sheet) {
-      throw new Error("Sheet not found");
+      throw new SheetNotFoundError(sheetName);
     }
 
     return sheet.content;
@@ -509,7 +514,7 @@ export class WorkbookManager {
       });
 
     if (!sheet) {
-      throw new Error("Sheet not found");
+      throw new SheetNotFoundError(address.sheetName);
     }
 
     const indexes = this.getSheetIndexes({
@@ -546,7 +551,7 @@ export class WorkbookManager {
   ): void {
     const sheet = this.getSheet(opts);
     if (!sheet) {
-      throw new Error("Sheet not found");
+      throw new SheetNotFoundError(opts.sheetName);
     }
 
     // Clear existing content without breaking the Map reference
@@ -583,7 +588,7 @@ export class WorkbookManager {
     const sheet = this.getSheet(address);
 
     if (!sheet) {
-      throw new Error("Sheet not found");
+      throw new SheetNotFoundError(address.sheetName);
     }
 
     // Get current sheet content and prepare new content with cleared cells
@@ -610,7 +615,7 @@ export class WorkbookManager {
     // First check if the sheet exists
     const sheet = this.getSheet(address);
     if (!sheet) {
-      throw new EvaluationError(FormulaError.REF, "Sheet not found");
+      throw new SheetNotFoundError(address.sheetName);
     }
 
     const indexes = this.getSheetIndexes(address);
@@ -699,9 +704,19 @@ export class WorkbookManager {
   private getCellContent(cellAddress: CellAddress): SerializedCellValue {
     const sheet = this.getSheet(cellAddress);
     if (!sheet) {
-      throw new EvaluationError(FormulaError.REF, "Sheet not found", cellAddress);
+      throw new SheetNotFoundError(cellAddress.sheetName);
     }
     return sheet.content.get(getCellReference(cellAddress));
+  }
+
+  public getSerializedCellValue(cellAddress: CellAddress): SerializedCellValue {
+    const sheet = this.getSheet(cellAddress);
+    if (!sheet) {
+      throw new SheetNotFoundError(cellAddress.sheetName);
+    }
+    return normalizeSerializedCellValue(
+      sheet.content.get(getCellReference(cellAddress))
+    );
   }
 
   public isCellEmpty(cellAddress: CellAddress): boolean {
@@ -709,6 +724,10 @@ export class WorkbookManager {
     return (
       content === undefined || (typeof content === "string" && content === "")
     );
+  }
+  public isFormulaCell(cellAddress: CellAddress): boolean {
+    const content = this.getCellContent(cellAddress);
+    return typeof content === "string" && content.startsWith("=");
   }
 
   /**

@@ -25,7 +25,7 @@ export function convertToString(result: FunctionEvaluationResult, context: Evalu
       type: "error",
       err: FormulaError.VALUE,
       message: "Expected a value result",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -37,7 +37,7 @@ export function convertToString(result: FunctionEvaluationResult, context: Evalu
       type: "error",
       err: FormulaError.VALUE,
       message: "Expected a string value",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 }
@@ -55,7 +55,7 @@ export function extractNumericValue(result: FunctionEvaluationResult, context: E
       type: "error",
       err: FormulaError.VALUE,
       message: "Expected a value result",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -67,7 +67,7 @@ export function extractNumericValue(result: FunctionEvaluationResult, context: E
       type: "error",
       err: FormulaError.VALUE,
       message: "Expected a number value",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 }
@@ -107,7 +107,7 @@ export function midOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: "StartNum argument must be a positive number",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
   if (numCharsValue < 0) {
@@ -115,7 +115,7 @@ export function midOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: "NumChars argument must be a positive number",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   }
 

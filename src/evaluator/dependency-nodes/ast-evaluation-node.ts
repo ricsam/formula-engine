@@ -1,27 +1,17 @@
+import type { FunctionEvaluationResult } from "src/core/types";
 import type { ASTNode } from "src/parser/ast";
 import { astToString } from "src/parser/formatter";
-import { BaseEvalNode } from "./cell-eval-node";
-import type { CellAddress } from "src/core/types";
-import type { ContextDependency } from "./evaluation-context";
+import type { ContextDependency } from "../evaluation-context";
+import { BaseEvalNode } from "./base-eval-node";
 
-export class AstEvaluationNode extends BaseEvalNode {
+export class AstEvaluationNode extends BaseEvalNode<FunctionEvaluationResult> {
   private _contextDependency: ContextDependency;
   constructor(
     public ast: ASTNode,
     contextDependency: ContextDependency
   ) {
     const key = `ast:${astToString(ast)}`;
-    const dummyAddress: CellAddress = {
-      workbookName: "dummy",
-      sheetName: "dummy",
-      colIndex: 0,
-      rowIndex: 0,
-    };
-    super(key, {
-      type: "awaiting-evaluation",
-      waitingFor: dummyAddress,
-      errAddress: dummyAddress,
-    });
+    super(key);
     this._contextDependency = contextDependency;
   }
 

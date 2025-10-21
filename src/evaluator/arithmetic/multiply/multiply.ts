@@ -1,7 +1,7 @@
 import type { ArethmeticEvaluator } from "src/core/types";
 import { FormulaError } from "src/core/types";
 
-export const multiply: ArethmeticEvaluator = (left, right, errAddress) => {
+export const multiply: ArethmeticEvaluator = (left, right, context) => {
   // Only allow number and infinity types
   if ((left.type !== "number" && left.type !== "infinity") ||
       (right.type !== "number" && right.type !== "infinity")) {
@@ -9,7 +9,7 @@ export const multiply: ArethmeticEvaluator = (left, right, errAddress) => {
       type: "error",
       err: FormulaError.VALUE,
       message: `Cannot multiply ${left.type} and ${right.type}`,
-      errAddress: errAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -23,7 +23,7 @@ export const multiply: ArethmeticEvaluator = (left, right, errAddress) => {
         type: "error",
         err: FormulaError.NUM,
         message: "Cannot multiply infinity by zero",
-        errAddress: errAddress,
+        errAddress: context.dependencyNode,
       };
     }
     
@@ -76,6 +76,6 @@ export const multiply: ArethmeticEvaluator = (left, right, errAddress) => {
     type: "error",
     err: FormulaError.VALUE,
     message: `Cannot multiply ${left.type} and ${right.type} /2`,
-    errAddress: errAddress,
+    errAddress: context.dependencyNode,
   };
 };

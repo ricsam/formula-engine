@@ -118,7 +118,7 @@ function createExactSpilledResult(
           type: "error",
           err: FormulaError.REF,
           message: "The spilled text1 argument has not been evaluated",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
       if (spillText1Result.type === "error" || spillText1Result.type === "awaiting-evaluation") {
@@ -130,7 +130,7 @@ function createExactSpilledResult(
           type: "error",
           err: FormulaError.REF,
           message: "The spilled text2 argument has not been evaluated",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
       if (spillText2Result.type === "error" || spillText2Result.type === "awaiting-evaluation") {
@@ -143,7 +143,7 @@ function createExactSpilledResult(
           type: "error",
           err: FormulaError.VALUE,
           message: "Invalid argument types for EXACT function #1",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
 
@@ -172,7 +172,7 @@ export const EXACT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "EXACT function takes exactly 2 arguments",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -206,7 +206,7 @@ export const EXACT: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid argument types for EXACT function #2",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 

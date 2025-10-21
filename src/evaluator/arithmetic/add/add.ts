@@ -1,7 +1,7 @@
 import type { ArethmeticEvaluator } from "src/core/types";
 import { FormulaError } from "src/core/types";
 
-export const add: ArethmeticEvaluator = (left, right, errAddress) => {
+export const add: ArethmeticEvaluator = (left, right, context) => {
   // Only allow number and infinity types
   if (
     (left.type !== "number" && left.type !== "infinity") ||
@@ -11,7 +11,7 @@ export const add: ArethmeticEvaluator = (left, right, errAddress) => {
       type: "error",
       err: FormulaError.VALUE,
       message: `Cannot add ${left.type} and ${right.type}`,
-      errAddress: errAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -28,7 +28,7 @@ export const add: ArethmeticEvaluator = (left, right, errAddress) => {
           type: "error",
           err: FormulaError.NUM,
           message: "Cannot add positive and negative infinity",
-          errAddress: errAddress,
+          errAddress: context.dependencyNode,
         };
       }
     }
@@ -61,6 +61,6 @@ export const add: ArethmeticEvaluator = (left, right, errAddress) => {
     type: "error",
     err: FormulaError.VALUE,
     message: `Cannot add ${left.type} and ${right.type}`,
-    errAddress: errAddress,
+    errAddress: context.dependencyNode,
   };
 };

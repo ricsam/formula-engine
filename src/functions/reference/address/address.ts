@@ -36,7 +36,7 @@ export const ADDRESS: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "ADDRESS function requires 2 to 5 arguments",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -54,7 +54,7 @@ export const ADDRESS: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "ADDRESS function row_num must be a number",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -72,7 +72,7 @@ export const ADDRESS: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "ADDRESS function column_num must be a number",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -84,7 +84,7 @@ export const ADDRESS: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "ADDRESS function row and column numbers must be positive",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -110,7 +110,7 @@ export const ADDRESS: FunctionDefinition = {
             type: "error",
             err: FormulaError.VALUE,
             message: "ADDRESS function abs_num must be between 1 and 4",
-            errAddress: context.originCell.cellAddress,
+            errAddress: context.dependencyNode,
           };
         }
       }
@@ -173,7 +173,7 @@ export const ADDRESS: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "ADDRESS function R1C1 style not yet implemented",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 

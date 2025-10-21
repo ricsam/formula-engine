@@ -30,7 +30,7 @@ export function createArgumentIterator(
 
     if (result.type === "awaiting-evaluation") {
       throw new AwaitingEvaluationError(
-        context.originCell.cellAddress,
+        context.dependencyNode,
         result.waitingFor
       );
     }
@@ -44,12 +44,16 @@ export function createArgumentIterator(
       const cellValues = result.evaluateAllCells.call(evaluator, {
         context,
         evaluate: result.evaluate,
-        origin: context.originCell.cellAddress,
+        origin: context.cellAddress,
         lookupOrder,
       });
 
-      for (const cellValue of cellValues) {
-        results.push(cellValue.result);
+      if (cellValues.type !== "values") {
+        results.push(cellValues);
+      } else {
+        for (const cellValue of cellValues.values) {
+          results.push(cellValue.result);
+        }
       }
     }
   }

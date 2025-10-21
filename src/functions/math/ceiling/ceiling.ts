@@ -41,7 +41,7 @@ import type { EvaluationContext } from "src/evaluator/evaluation-context";
 function ceilingOperation(
   numberValue: CellNumber | CellInfinity,
   significanceValue: CellNumber | CellInfinity,
-  errAddress: CellAddress
+  context: EvaluationContext
 ): CellNumber | CellInfinity | ErrorEvaluationResult {
   // Handle infinity cases
   if (numberValue.type === "infinity") {
@@ -53,7 +53,7 @@ function ceilingOperation(
       type: "error",
       err: FormulaError.VALUE,
       message: "Cannot use infinity as significance",
-      errAddress: errAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -67,7 +67,7 @@ function ceilingOperation(
       type: "error",
       err: FormulaError.DIV0,
       message: "Significance cannot be zero",
-      errAddress: errAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -80,7 +80,7 @@ function ceilingOperation(
       type: "error",
       err: FormulaError.NUM,
       message: "Positive number cannot be used with negative significance",
-      errAddress: errAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -89,7 +89,7 @@ function ceilingOperation(
       type: "error",
       err: FormulaError.NUM,
       message: "Negative number cannot be used with positive significance",
-      errAddress: errAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
@@ -170,7 +170,7 @@ function createCeilingSpilledResult(
           type: "error",
           err: FormulaError.REF,
           message: "The spilled results have not been evaluated",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
 
@@ -189,7 +189,7 @@ function createCeilingSpilledResult(
           type: "error",
           err: FormulaError.VALUE,
           message: "Invalid spilled result for CEILING",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
 
@@ -202,7 +202,7 @@ function createCeilingSpilledResult(
           type: "error",
           err: FormulaError.VALUE,
           message: "Number argument must be a number",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
 
@@ -214,14 +214,14 @@ function createCeilingSpilledResult(
           type: "error",
           err: FormulaError.VALUE,
           message: "Significance argument must be a number",
-          errAddress: context.originCell.cellAddress,
+          errAddress: context.dependencyNode,
         };
       }
 
       const result = ceilingOperation(
         spillNumberResult.result,
         spillSigResult.result,
-        context.originCell.cellAddress
+        context
       );
       if (result.type === "error" || result.type === "awaiting-evaluation") {
         return result;
@@ -245,7 +245,7 @@ export const CEILING: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "CEILING function takes exactly 2 arguments",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -280,7 +280,7 @@ export const CEILING: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Invalid argument type",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -293,7 +293,7 @@ export const CEILING: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Number argument must be a number",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -305,7 +305,7 @@ export const CEILING: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "Significance argument must be a number",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -313,7 +313,7 @@ export const CEILING: FunctionDefinition = {
     const result = ceilingOperation(
       numberResult.result,
       significanceResult.result,
-      context.originCell.cellAddress
+      context
     );
     if (result.type === "error" || result.type === "awaiting-evaluation") {
       return result;

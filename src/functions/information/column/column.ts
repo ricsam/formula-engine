@@ -9,19 +9,24 @@ import {
   type SpreadsheetRange,
   type SpilledValuesEvaluationResult,
   type SingleEvaluationResult,
+  type CellInRangeResult,
 } from "src/core/types";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
 import type { ReferenceNode, RangeNode } from "src/parser/ast";
 import { EvaluationError } from "src/evaluator/evaluation-error";
-import { getRangeIntersection, isCellAddress, isRangeAddress } from "src/core/utils";
+import {
+  getRangeIntersection,
+  isCellAddress,
+  isRangeAddress,
+} from "src/core/utils";
 
 /**
  * COLUMN function - Returns the column number of a reference
- * 
+ *
  * Usage: COLUMN([reference])
- * 
+ *
  * If reference is omitted, returns the column number of the cell in which the formula appears.
- * 
+ *
  * Examples:
  * - COLUMN() returns the column number of the current cell
  * - COLUMN(C5) returns 3
@@ -32,9 +37,10 @@ export const COLUMN: FunctionDefinition = {
   evaluate: function (node, context): FunctionEvaluationResult {
     // If no arguments, return the column of the current cell (1-based)
     if (node.args.length === 0) {
+      context.addContextDependency("col");
       return {
         type: "value",
-        result: { type: "number", value: context.originCell.cellAddress.colIndex + 1 },
+        result: { type: "number", value: context.cellAddress.colIndex + 1 },
       };
     }
 
@@ -43,7 +49,7 @@ export const COLUMN: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "COLUMN function takes at most 1 argument",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -51,7 +57,7 @@ export const COLUMN: FunctionDefinition = {
 
     // Evaluate the argument
     const argResult = this.evaluateNode(argNode, context);
-    
+
     // Handle errors and awaiting evaluation
     if (
       argResult.type === "error" ||
@@ -72,7 +78,7 @@ export const COLUMN: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "COLUMN function requires a cell or range reference",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -87,7 +93,7 @@ export const COLUMN: FunctionDefinition = {
     // If we have a sourceRange, return spilled column numbers
     if (isRangeAddress(cellOrRange) && argResult.type === "spilled-values") {
       const sourceRange = cellOrRange.range;
-      
+
       // Return as spilled values - evaluate returns column numbers based on position
       return {
         type: "spilled-values",
@@ -103,9 +109,9 @@ export const COLUMN: FunctionDefinition = {
               result: { type: "number", value: actualCol + 1 }, // 1-based
             };
           }
-          
+
           // Otherwise, use spillArea to get the column number relative to where it appears
-          const spillArea = argResult.spillArea(evalContext.originCell.cellAddress);
+          const spillArea = argResult.spillArea(evalContext.cellAddress);
           const actualCol = spillArea.start.col + spillOffset.x;
           return {
             type: "value",
@@ -115,7 +121,7 @@ export const COLUMN: FunctionDefinition = {
         evaluateAllCells: ({ evaluate, intersection, context, origin }) => {
           // Determine the actual range to evaluate
           let rangeToEvaluate = cellOrRange.range;
-          
+
           // Apply intersection if provided
           if (intersection) {
             // Use the intersection range
@@ -124,30 +130,39 @@ export const COLUMN: FunctionDefinition = {
               intersection
             );
             if (!newRange) {
-              return [];
+              return {
+                type: "error",
+                err: FormulaError.VALUE,
+                message:
+                  "Invalid intersection range for COLUMN function",
+                errAddress: context.dependencyNode,
+              };
             }
             rangeToEvaluate = newRange;
           }
-          
+
           // Check if the range is infinite
-          if (rangeToEvaluate.end.row.type === "infinity" || rangeToEvaluate.end.col.type === "infinity") {
+          if (
+            rangeToEvaluate.end.row.type === "infinity" ||
+            rangeToEvaluate.end.col.type === "infinity"
+          ) {
             throw new EvaluationError(
               FormulaError.VALUE,
               "COLUMN function cannot evaluate all cells over an infinite range"
             );
           }
-          
+
           // Extract unique column numbers from the range
           const startCol = rangeToEvaluate.start.col;
           const endCol = rangeToEvaluate.end.col.value;
-          
+
           const colSet = new Set<number>();
           for (let col = startCol; col <= endCol; col++) {
             colSet.add(col + 1); // 1-based
           }
           const cols = Array.from(colSet).sort((a, b) => a - b);
-          
-          const results = [];
+
+          const results: CellInRangeResult[] = [];
           for (let i = 0; i < cols.length; i++) {
             const relativePos = { x: i, y: 0 };
             const evaled = evaluate(relativePos, context);
@@ -156,7 +171,7 @@ export const COLUMN: FunctionDefinition = {
               relativePos,
             });
           }
-          return results;
+          return { type: "values", values: results };
         },
       };
     }
@@ -166,7 +181,7 @@ export const COLUMN: FunctionDefinition = {
       type: "error",
       err: FormulaError.VALUE,
       message: "COLUMN function requires a cell or range reference",
-      errAddress: context.originCell.cellAddress,
+      errAddress: context.dependencyNode,
     };
   },
 };

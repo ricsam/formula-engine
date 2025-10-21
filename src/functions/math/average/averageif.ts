@@ -58,7 +58,7 @@ export const AVERAGEIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "AVERAGEIF criteria must be a single value",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -69,7 +69,7 @@ export const AVERAGEIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: parsedCriteria.message,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -91,6 +91,10 @@ export const AVERAGEIF: FunctionDefinition = {
       "col-major"
     );
 
-    return performAverage(matchingValues, context);
+    if (matchingValues.type === "error" || matchingValues.type === "awaiting-evaluation") {
+      return matchingValues;
+    }
+
+    return performAverage(matchingValues.values, context);
   },
 };

@@ -1,32 +1,28 @@
 import {
   contextDependencyKeys,
   type ContextDependency,
-  type EvaluationContext,
 } from "src/evaluator/evaluation-context";
 import {
   type CellAddress,
   type EvaluationOrder,
-  type FunctionEvaluationResult,
   type SpilledValue,
 } from "../types";
-import {
-  cellAddressToKey,
-  getCellReference,
-  getRangeKey,
-  isCellInRange,
-  keyToCellAddress,
-} from "../utils";
+import { isCellInRange, keyToCellAddress } from "../utils";
 
-import { AstEvaluationNode } from "src/evaluator/ast-evaluation-node";
-import { CellEvalNode } from "src/evaluator/cell-eval-node";
-import { EmptyCellEvaluationNode } from "src/evaluator/empty-cell-evaluation-node";
+import { AstEvaluationNode } from "src/evaluator/dependency-nodes/ast-evaluation-node";
+import { CellValueNode } from "src/evaluator/dependency-nodes/cell-value-node";
+import { EmptyCellEvaluationNode } from "src/evaluator/dependency-nodes/empty-cell-evaluation-node";
 import { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
 import type { ASTNode } from "src/parser/ast";
 import { astToString } from "src/parser/formatter";
 import { CacheManager } from "./cache-manager";
-import type { DependencyNode } from "./dependency-node";
-import type { TableManager } from "./table-manager";
+import type {
+  CellNodeKeyDictionary,
+  CellNodeType,
+  DependencyNode,
+} from "./dependency-node";
 import { WorkbookManager } from "./workbook-manager";
+import { SpillMetaNode } from "src/evaluator/dependency-nodes/spill-meta-node";
 
 export interface DependencyTreeNode {
   type: "cell" | "range" | "empty";
@@ -40,7 +36,8 @@ export interface DependencyTreeNode {
     | "spilled-values"
     | "value"
     | "range"
-    | "error";
+    | "error"
+    | "does-not-spill";
   deps?: DependencyTreeNode[];
   frontierDependencies?: DependencyTreeNode[];
   self?: boolean;
@@ -63,15 +60,17 @@ export class DependencyManager {
      * key is the cell key, from cellAddressToKey
      */
     string,
-    CellEvalNode
+    CellValueNode
   > = new Map();
+
+  private spillMetaNodes: Map<string, SpillMetaNode> = new Map();
 
   private emptyCells: Map<string, EmptyCellEvaluationNode> = new Map();
 
   /**
    * registry of spilled values
    */
-  public spilledValues: Map<
+  private _spilledValues: Map<
     /**
      * key is the dependency node key, from dependencyNodeToKey for the origin cell
      */
@@ -86,11 +85,33 @@ export class DependencyManager {
 
   constructor(
     private cacheManager: CacheManager,
-    private workbookManager: WorkbookManager,
+    private workbookManager: WorkbookManager
   ) {}
 
+  public get spilledValues(): IterableIterator<SpilledValue> {
+    return this._spilledValues.values();
+  }
+
+  isSpillOrigin(cellAddress: CellAddress): boolean {
+    for (const spilledValue of this._spilledValues.values()) {
+      if (
+        spilledValue.origin.sheetName !== cellAddress.sheetName ||
+        spilledValue.origin.workbookName !== cellAddress.workbookName
+      ) {
+        continue;
+      }
+      if (
+        spilledValue.origin.colIndex === cellAddress.colIndex &&
+        spilledValue.origin.rowIndex === cellAddress.rowIndex
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   getSpillValue(cellAddress: CellAddress): SpilledValue | undefined {
-    for (const spilledValue of this.spilledValues.values()) {
+    for (const spilledValue of this._spilledValues.values()) {
       if (
         spilledValue.origin.sheetName !== cellAddress.sheetName ||
         spilledValue.origin.workbookName !== cellAddress.workbookName
@@ -136,44 +157,22 @@ export class DependencyManager {
     return { address, spillOffset: { x: offsetLeft, y: offsetTop } };
   }
 
-  /**
-   * During evaluation, we can't use the formula evaluator to evaluate a cell, because it will create a cycle.
-   * This method can be used to "evaluate" a cell during evaluation, without creating a cycle.
-   *
-   * Internally this method will try to look up the evaluated result for the cell,
-   * if it doesn't exist it will push the cell address to the dependency graph,
-   * causing the engine to re-evaluate the dependency graph,
-   * such that on the second evaluation the cell's evaluation result will be available.
-   */
-  evalTimeSafeEvaluateCell(
-    cellAddress: CellAddress,
-    context: EvaluationContext
-  ): FunctionEvaluationResult {
-    const spilled = this.getSpillValue(cellAddress);
-    if (spilled) {
-      const spillSource = this.getSpilledAddress(cellAddress, spilled);
-      const spillOrigin = this.evalTimeSafeEvaluateCell(
-        spilled.origin,
-        context
-      );
-      if (spillOrigin && spillOrigin.type === "spilled-values") {
-        return spillOrigin.evaluate(spillSource.spillOffset, context);
-      }
-    }
-    const key = cellAddressToKey(cellAddress);
-    const node = this.getCellNode(key);
-    context.dependencyNode.addDependency(node);
-    const result = node.evaluationResult;
-
-    return result;
-  }
-
   clearEvaluationCache(): void {
     this.cacheManager.clear();
     this.evaluatedNodes.clear();
     this.emptyCells.clear();
+    this.asts.clear();
+    this.spillMetaNodes.clear();
     this.ranges.clear();
-    this.spilledValues.clear();
+    this._spilledValues.clear();
+  }
+
+  setSpilledValue(nodeKey: string, spilledValue: SpilledValue): void {
+    this._spilledValues.set(nodeKey.replace(/^[^:]+:/, ""), spilledValue);
+  }
+
+  getSpilledValue(nodeKey: string): SpilledValue | undefined {
+    return this._spilledValues.get(nodeKey.replace(/^[^:]+:/, ""));
   }
 
   getEmptyCellNode(nodeKey: string): EmptyCellEvaluationNode {
@@ -192,21 +191,101 @@ export class DependencyManager {
     return this.emptyCells.get(nodeKey)!;
   }
 
-  getCellNode(nodeKey: string): CellEvalNode | EmptyCellEvaluationNode {
-    if (!nodeKey.startsWith("cell:") && !nodeKey.startsWith("empty:")) {
-      throw new Error("Invalid cell node key: " + nodeKey);
+  getSpillMetaNode(nodeKey: string): SpillMetaNode {
+    if (!nodeKey.startsWith("spill-meta:")) {
+      throw new Error("Invalid spill meta node key: " + nodeKey);
+    }
+    if (!this.spillMetaNodes.has(nodeKey)) {
+      const node = new SpillMetaNode(nodeKey);
+      this.spillMetaNodes.set(nodeKey, node);
+      return node;
+    }
+    return this.spillMetaNodes.get(nodeKey)!;
+  }
+
+  getCellValueNode(nodeKey: string): CellValueNode {
+    if (!nodeKey.startsWith("cell-value:")) {
+      throw new Error("Invalid cell value node key: " + nodeKey);
     }
     if (!this.evaluatedNodes.has(nodeKey)) {
-      const cellAddress = keyToCellAddress(nodeKey);
-      if (this.workbookManager.isCellEmpty(cellAddress)) {
-        return this.getEmptyCellNode(nodeKey.replace(/^cell:/, "empty:"));
-      }
-
-      const node = new CellEvalNode(nodeKey);
+      const node = new CellValueNode(nodeKey);
       this.evaluatedNodes.set(nodeKey, node);
       return node;
     }
     return this.evaluatedNodes.get(nodeKey)!;
+  }
+
+  getCellValueOrEmptyCellNode(
+    nodeKey: string
+  ): CellValueNode | EmptyCellEvaluationNode {
+    const cellAddress = keyToCellAddress(nodeKey);
+
+    const emptyKey = nodeKey.replace(/^[^:]+:/, "empty:");
+    const cellValueKey = nodeKey.replace(/^[^:]+:/, "cell-value:");
+
+    if (this.workbookManager.isCellEmpty(cellAddress)) {
+      return this.getEmptyCellNode(emptyKey);
+    }
+
+    return this.getCellValueNode(cellValueKey);
+  }
+
+  getSpillMetaOrEmptySpillMetaNode(
+    nodeKey: string
+  ): SpillMetaNode | EmptyCellEvaluationNode {
+    const cellAddress = keyToCellAddress(nodeKey);
+
+    const emptyKey = nodeKey.replace(/^[^:]+:/, "empty:");
+    const spillMetaKey = nodeKey.replace(/^[^:]+:/, "spill-meta:");
+
+    if (this.workbookManager.isCellEmpty(cellAddress)) {
+      return this.getEmptyCellNode(emptyKey);
+    }
+
+    return this.getSpillMetaNode(spillMetaKey);
+  }
+
+  lookupCellNode<T extends CellNodeType>(
+    nodeKey: string,
+    types: T[]
+  ): CellNodeKeyDictionary[T][] {
+    const cellAddress = keyToCellAddress(nodeKey);
+
+    const emptyKey = nodeKey.replace(/^[^:]+:/, "empty:");
+    const cellValueKey = nodeKey.replace(/^[^:]+:/, "cell-value:");
+    const cellValueNode = this.evaluatedNodes.get(cellValueKey);
+    const cellMetaKey = nodeKey.replace(/^[^:]+:/, "cell-meta:");
+    const cellMetaNode = this.evaluatedNodes.get(cellMetaKey);
+
+    if (this.workbookManager.isCellEmpty(cellAddress)) {
+      if ((types as string[]).includes("empty")) {
+        return [this.getEmptyCellNode(emptyKey) as any];
+      } else {
+        return [];
+      }
+    }
+
+    const results: any[] = [];
+
+    if ((types as string[]).includes("cell")) {
+      if (cellValueNode) {
+        results.push(cellValueNode);
+      } else {
+        results.push(this.getCellValueNode(cellValueKey));
+      }
+    }
+
+    if (this.workbookManager.isFormulaCell(cellAddress)) {
+      if ((types as string[]).includes("spill-meta")) {
+        if (cellMetaNode) {
+          results.push(cellMetaNode);
+        } else {
+          results.push(this.getSpillMetaNode(cellValueKey));
+        }
+      }
+    }
+
+    return results;
   }
 
   getRangeNode(rangeKey: string): RangeEvaluationNode {
@@ -323,7 +402,7 @@ export class DependencyManager {
     }
   }
 
-  getEvaluatedNodes(): Map<string, CellEvalNode> {
+  getEvaluatedNodes(): Map<string, CellValueNode> {
     return this.evaluatedNodes;
   }
 
@@ -386,13 +465,8 @@ export class DependencyManager {
    * 5. For each SCC, create internal evaluation order with cycle breaking
    * 6. Join the sorted SCC evaluation orders to create final evaluation order
    */
-  buildEvaluationOrder(nodeKey: string): EvaluationOrder {
-    const node = this.getCellNode(nodeKey);
-    if (
-      node &&
-      node.resolved &&
-      this.cacheManager.getEvaluationOrder(node.key)
-    ) {
+  buildEvaluationOrder(node: CellValueNode | EmptyCellEvaluationNode): EvaluationOrder {
+    if (node.resolved && this.cacheManager.getEvaluationOrder(node.key)) {
       return this.cacheManager.getEvaluationOrder(node.key)!;
     }
 
@@ -435,7 +509,7 @@ export class DependencyManager {
       };
 
       if (node && node.resolved) {
-        this.cacheManager.setEvaluationOrder(nodeKey, result);
+        this.cacheManager.setEvaluationOrder(node.key, result);
       }
 
       return result;
@@ -600,7 +674,7 @@ export class DependencyManager {
     };
 
     if (node && node.resolved) {
-      this.cacheManager.setEvaluationOrder(nodeKey, result);
+      this.cacheManager.setEvaluationOrder(node.key, result);
     }
 
     return result;
@@ -781,7 +855,7 @@ export class DependencyManager {
   /**
    * Get a hierarchical dependency tree for a node
    */
-  getDependencyTree(nodeKey: string): DependencyTreeNode {
+  getDependencyTree(node: DependencyNode): DependencyTreeNode {
     const visited = new Set<DependencyNode>();
 
     const nodeToType = (node: DependencyNode): "cell" | "range" | "empty" => {
@@ -878,16 +952,11 @@ export class DependencyManager {
       return result;
     };
 
-    return buildTree(this.getCellNode(nodeKey));
+    return buildTree(node);
   }
   //#endregion
 
-  markResolvedNodes(nodeKey: string): void {
-    const node = this.getCellNode(nodeKey);
-    if (!node) {
-      return;
-    }
-
+  markResolvedNodes(node: CellValueNode | EmptyCellEvaluationNode): void {
     // Track visited nodes to avoid infinite loops in circular dependencies
     const visited = new Set<DependencyNode>();
     visited.add(node); // Don't revisit the current cell
@@ -936,9 +1005,9 @@ export class DependencyManager {
   /**
    * Update SCCs in cache to mark them as resolved if all their nodes are resolved
    */
-  private updateResolvedSCCs(startNode: DependencyNode): void {
+  private updateResolvedSCCs(startNode: CellValueNode | EmptyCellEvaluationNode): void {
     // Get evaluation order which contains SCC information
-    const evalOrder = this.buildEvaluationOrder(startNode.key);
+    const evalOrder = this.buildEvaluationOrder(startNode);
 
     if (!evalOrder.sccDAG) {
       return;

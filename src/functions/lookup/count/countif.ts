@@ -45,7 +45,7 @@ export const COUNTIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "COUNTIF function takes exactly 2 arguments",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -66,7 +66,7 @@ export const COUNTIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: "COUNTIF criteria must be a single value",
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -77,7 +77,7 @@ export const COUNTIF: FunctionDefinition = {
         type: "error",
         err: FormulaError.VALUE,
         message: parsedCriteria.message,
-        errAddress: context.originCell.cellAddress,
+        errAddress: context.dependencyNode,
       };
     }
 
@@ -85,7 +85,7 @@ export const COUNTIF: FunctionDefinition = {
     const countingEmptyCells = countEmptyCells(
       criteriaRangeResult,
       parsedCriteria,
-      context.originCell.cellAddress
+      context.cellAddress
     );
     if (countingEmptyCells) {
       return countingEmptyCells;
@@ -94,13 +94,19 @@ export const COUNTIF: FunctionDefinition = {
     // Use shared criteria processing - count all matching values (including non-numeric)
     let count = 0;
 
-    for (const result of processMultiCriteriaValues(
+    const results = processMultiCriteriaValues(
       this,
       criteriaRangeResult,
       [{ rangeResult: criteriaRangeResult, parsedCriteria }],
       context,
       "col-major"
-    )) {
+    );
+
+    if (results.type === "error" || results.type === "awaiting-evaluation") {
+      return results;
+    }
+
+    for (const result of results.values) {
       // COUNTIF counts all matching cells, including errors and non-numeric values
       count++;
     }

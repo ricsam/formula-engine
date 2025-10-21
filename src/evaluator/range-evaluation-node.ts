@@ -8,7 +8,7 @@ export class RangeEvaluationNode extends FrontierDependencyManager {
   public key: string;
   public address: RangeAddress;
 
-  private _results: EvaluateAllCellsResult[] | undefined;
+  private _result: EvaluateAllCellsResult;
 
   constructor(
     public rangeKey: string,
@@ -20,20 +20,23 @@ export class RangeEvaluationNode extends FrontierDependencyManager {
 
     this.address = rangeAddress;
     this.key = rangeKey;
+    this._result = {
+      type: "awaiting-evaluation",
+      waitingFor: this,
+      errAddress: this,
+    };
   }
 
-  setResults(results: EvaluateAllCellsResult[]): void {
-    if (!this.resolved) {
-      throw new Error(
-        "Cannot set results on an unresolved range evaluation node"
-      );
-    }
-    this._results = results;
+  setResult(result: EvaluateAllCellsResult): void {
+    this._result = result;
   }
 
-  // todo maybe add lookupOrder
-  getResults(): EvaluateAllCellsResult[] | undefined {
-    return this._results;
+  public get result(): EvaluateAllCellsResult {
+    return this._result;
+  }
+
+  public override canResolve(): boolean {
+    return super.canResolve() && this._result.type !== "awaiting-evaluation";
   }
 
   toJSON(visitor: Set<string> = new Set()): any {

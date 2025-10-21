@@ -7,7 +7,7 @@ import { equals } from "./equals";
  * Less than or equal operator (<=) - Returns TRUE if left <= right
  * Uses lessThan OR equals logic
  */
-export const lessThanOrEqual: ArethmeticEvaluator = (left, right, errAddress) => {
+export const lessThanOrEqual: ArethmeticEvaluator = (left, right, context) => {
   // Only allow number and infinity types
   if ((left.type !== "number" && left.type !== "infinity") ||
       (right.type !== "number" && right.type !== "infinity")) {
@@ -15,11 +15,11 @@ export const lessThanOrEqual: ArethmeticEvaluator = (left, right, errAddress) =>
       type: "error",
       err: FormulaError.VALUE,
       message: `Cannot compare ${left.type} and ${right.type}`,
-      errAddress: errAddress,
+      errAddress: context.dependencyNode,
     };
   }
 
-  const ltResult = lessThan(left, right, errAddress);
+  const ltResult = lessThan(left, right, context);
   if (ltResult.type === "error" || ltResult.type === "awaiting-evaluation") {
     return ltResult;
   }
@@ -29,7 +29,7 @@ export const lessThanOrEqual: ArethmeticEvaluator = (left, right, errAddress) =>
   }
   
   // Check equality
-  const eqResult = equals(left, right, errAddress);
+  const eqResult = equals(left, right, context);
   if (eqResult.type === "error" || eqResult.type === "awaiting-evaluation") {
     return eqResult;
   }
@@ -42,6 +42,6 @@ export const lessThanOrEqual: ArethmeticEvaluator = (left, right, errAddress) =>
     type: "error",
     err: FormulaError.VALUE,
     message: "Invalid comparison result",
-    errAddress: errAddress,
+    errAddress: context.dependencyNode,
   };
 };
