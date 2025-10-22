@@ -16,7 +16,11 @@ export const MIN: FunctionDefinition = {
       "col-major"
     );
 
+    if (argumentIterator.type !== "values") {
+      return argumentIterator;
+    }
+
     // Perform minimum calculation (now with unified error propagation)
-    return performMinimum(argumentIterator, context);
+    return performMinimum(argumentIterator.values, context);
   },
 };

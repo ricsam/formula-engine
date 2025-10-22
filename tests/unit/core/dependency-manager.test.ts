@@ -4,6 +4,7 @@ import type { DependencyNode } from "src/core/managers/dependency-node";
 import { type SerializedCellValue } from "src/core/types";
 import { parseCellReference } from "src/core/utils";
 import type { CellValueNode } from "src/evaluator/dependency-nodes/cell-value-node";
+import { AstEvaluationNode } from "src/evaluator/dependency-nodes/ast-evaluation-node";
 import { EmptyCellEvaluationNode } from "src/evaluator/dependency-nodes/empty-cell-evaluation-node";
 import { SpillMetaNode } from "src/evaluator/dependency-nodes/spill-meta-node";
 import { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
@@ -86,6 +87,10 @@ describe("DependencyManager", () => {
     if (dep instanceof SpillMetaNode) {
       return "spill-meta:" + dep.key.split(":")[3]!;
     }
+    if (dep instanceof AstEvaluationNode) {
+      // AST keys are like "ast:SUM(A1:A3)" - return as-is
+      return dep.key;
+    }
     return "cell-value:" + dep.key.split(":")[3]!;
   };
 
@@ -143,7 +148,33 @@ describe("DependencyManager", () => {
   const markAsResolved = (cell: string) => {
     const key = `cell-value:TestWorkbook:TestSheet:${cell.replace(/^[^:]+:/, "")}`
     const node = engine._dependencyManager.getCellValueNode(key);
-    engine._dependencyManager.markResolvedNodes(node);
+    
+    // After marking resolved, need to iterate until hash stabilizes
+    // to discover dependencies that were blocked before
+    let prevHash: string | undefined;
+    let maxIterations = 10;
+    let iteration = 0;
+    
+    while (iteration < maxIterations) {
+      engine._dependencyManager.markResolvedNodes(node);
+      
+      const evalOrder = engine._dependencyManager.buildEvaluationOrder(node);
+      
+      if (prevHash && prevHash === evalOrder.hash) {
+        break;
+      }
+      
+      prevHash = evalOrder.hash;
+      
+      // Evaluate any newly discovered dependencies
+      for (const c of evalOrder.evaluationOrder) {
+        if (!c.resolved) {
+          engine._evaluationManager.evaluateDependencyNode(c.key);
+        }
+      }
+      
+      iteration++;
+    }
   };
   const evaluate = (cell: string) => {
     const key = `cell-value:TestWorkbook:TestSheet:${cell.replace(/^[^:]+:/, "")}`
@@ -186,31 +217,37 @@ describe("DependencyManager", () => {
     expect(directDeps("C1")).toMatchInlineSnapshot(`
       {
         "deps": [
-          "cell-value:B3)",
+          "ast:SUM(A1:A3*B1:B3)",
         ],
       }
     `);
 
     expect(evalOrder("C1")).toMatchInlineSnapshot(`
         [
-          "cell-value:B3",
-          "cell-value:A1",
-          "cell-value:A2",
-          "cell-value:A3",
-          "A1:A3",
-          "cell-value:B3)",
+          "spill-meta:D10",
+          "empty:D11",
+          "ast:D11",
+          "ast:D11*0.5",
+          "spill-meta:B1",
+          "empty:B2",
+          "ast:B2",
+          "ast:B2+A1",
+          "ast:A1:A2*(B2+A1)",
+          "cell-value:B1",
+          "B1:B3",
+          "ast:SUM(A1:A3*B1:B3)",
           "cell-value:C1",
         ]
       `);
     expect(dependencyTree("C1")).toMatchInlineSnapshot(`
         {
-          "canResolve": false,
+          "canResolve": true,
           "deps": [
             {
-              "canResolve": false,
+              "canResolve": true,
               "deps": [
                 {
-                  "canResolve": false,
+                  "canResolve": true,
                   "deps": [
                     {
                       "canResolve": true,
@@ -229,55 +266,509 @@ describe("DependencyManager", () => {
                       "type": "cell",
                     },
                   ],
-                  "directDepsUpdated": true,
+                  "directDepsUpdated": false,
                   "key": "ast:A1:A3*B1:B3",
-                  "resolved": false,
+                  "resolved": true,
                   "resultType": "spilled-values",
                   "type": "cell",
+                },
+                {
+                  "canResolve": true,
+                  "deps": [
+                    {
+                      "canResolve": true,
+                      "directDepsUpdated": false,
+                      "key": "A1",
+                      "resolved": true,
+                      "resultType": "value",
+                      "type": "cell",
+                    },
+                    {
+                      "canResolve": true,
+                      "directDepsUpdated": false,
+                      "key": "A2",
+                      "resolved": true,
+                      "resultType": "value",
+                      "type": "cell",
+                    },
+                    {
+                      "canResolve": true,
+                      "directDepsUpdated": false,
+                      "key": "A3",
+                      "resolved": true,
+                      "resultType": "value",
+                      "type": "cell",
+                    },
+                  ],
+                  "directDepsUpdated": false,
+                  "key": "A1:A3",
+                  "resolved": true,
+                  "resultType": "range",
+                  "type": "range",
                 },
                 {
                   "canResolve": false,
                   "deps": [
                     {
-                      "canResolve": false,
+                      "canResolve": true,
+                      "deps": [
+                        {
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "deps": [
+                                    {
+                                      "canResolve": true,
+                                      "deps": [
+                                        {
+                                          "canResolve": true,
+                                          "deps": [
+                                            {
+                                              "canResolve": true,
+                                              "directDepsUpdated": false,
+                                              "key": "ast:A1:A2",
+                                              "resolved": true,
+                                              "resultType": "spilled-values",
+                                              "type": "cell",
+                                            },
+                                            {
+                                              "canResolve": true,
+                                              "deps": [
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": false,
+                                                      "deps": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "deps": [
+                                                            {
+                                                              "canResolve": true,
+                                                              "deps": [
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "deps": [
+                                                                    {
+                                                                      "canResolve": true,
+                                                                      "directDepsUpdated": false,
+                                                                      "key": "F1",
+                                                                      "resolved": true,
+                                                                      "resultType": "value",
+                                                                      "type": "cell",
+                                                                    },
+                                                                  ],
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:F1",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:2",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                              ],
+                                                              "directDepsUpdated": false,
+                                                              "key": "ast:SEQUENCE(F1,2)",
+                                                              "resolved": true,
+                                                              "resultType": "spilled-values",
+                                                              "type": "cell",
+                                                            },
+                                                          ],
+                                                          "directDepsUpdated": false,
+                                                          "key": "A2",
+                                                          "resolved": true,
+                                                          "resultType": "spilled-values",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "directDepsUpdated": false,
+                                                      "frontierDependencies": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "deps": [
+                                                            {
+                                                              "canResolve": true,
+                                                              "circular": true,
+                                                              "directDepsUpdated": false,
+                                                              "key": "ast:D11*0.5",
+                                                              "resolved": false,
+                                                              "resultType": "value",
+                                                              "type": "cell",
+                                                            },
+                                                          ],
+                                                          "directDepsUpdated": false,
+                                                          "key": "B1",
+                                                          "resolved": false,
+                                                          "resultType": "does-not-spill",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "key": "B2",
+                                                      "resolved": false,
+                                                      "resultType": "value",
+                                                      "type": "empty",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:B2",
+                                                  "resolved": false,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": true,
+                                                      "directDepsUpdated": false,
+                                                      "key": "A1",
+                                                      "resolved": true,
+                                                      "resultType": "value",
+                                                      "type": "cell",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:A1",
+                                                  "resolved": true,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                              ],
+                                              "directDepsUpdated": false,
+                                              "key": "ast:B2+A1",
+                                              "resolved": false,
+                                              "resultType": "value",
+                                              "type": "cell",
+                                            },
+                                          ],
+                                          "directDepsUpdated": false,
+                                          "key": "ast:A1:A2*(B2+A1)",
+                                          "resolved": false,
+                                          "resultType": "spilled-values",
+                                          "type": "cell",
+                                        },
+                                      ],
+                                      "directDepsUpdated": false,
+                                      "key": "D10",
+                                      "resolved": false,
+                                      "resultType": "spilled-values",
+                                      "type": "cell",
+                                    },
+                                    {
+                                      "canResolve": true,
+                                      "directDepsUpdated": false,
+                                      "key": "A2",
+                                      "resolved": true,
+                                      "resultType": "value",
+                                      "type": "cell",
+                                    },
+                                  ],
+                                  "directDepsUpdated": false,
+                                  "key": "D11",
+                                  "resolved": false,
+                                  "resultType": "value",
+                                  "type": "empty",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "ast:D11",
+                              "resolved": false,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                            {
+                              "canResolve": true,
+                              "directDepsUpdated": false,
+                              "key": "ast:0.5",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "ast:D11*0.5",
+                          "resolved": false,
+                          "resultType": "value",
+                          "type": "cell",
+                        },
+                      ],
                       "directDepsUpdated": false,
-                      "key": "A1",
+                      "key": "B1",
                       "resolved": false,
-                      "resultType": "awaiting-evaluation",
+                      "resultType": "value",
                       "type": "cell",
                     },
                     {
-                      "canResolve": false,
+                      "canResolve": true,
                       "directDepsUpdated": false,
-                      "key": "A2",
-                      "resolved": false,
-                      "resultType": "awaiting-evaluation",
-                      "type": "cell",
-                    },
-                    {
-                      "canResolve": false,
-                      "directDepsUpdated": false,
-                      "key": "A3",
-                      "resolved": false,
-                      "resultType": "awaiting-evaluation",
+                      "key": "B3",
+                      "resolved": true,
+                      "resultType": "value",
                       "type": "cell",
                     },
                   ],
-                  "directDepsUpdated": true,
-                  "key": "A1:A3",
+                  "directDepsUpdated": false,
+                  "frontierDependencies": [
+                    {
+                      "canResolve": true,
+                      "deps": [
+                        {
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "deps": [
+                                    {
+                                      "canResolve": true,
+                                      "deps": [
+                                        {
+                                          "canResolve": true,
+                                          "deps": [
+                                            {
+                                              "canResolve": true,
+                                              "directDepsUpdated": false,
+                                              "key": "ast:A1:A2",
+                                              "resolved": true,
+                                              "resultType": "spilled-values",
+                                              "type": "cell",
+                                            },
+                                            {
+                                              "canResolve": true,
+                                              "deps": [
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": false,
+                                                      "deps": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "deps": [
+                                                            {
+                                                              "canResolve": true,
+                                                              "deps": [
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "deps": [
+                                                                    {
+                                                                      "canResolve": true,
+                                                                      "directDepsUpdated": false,
+                                                                      "key": "F1",
+                                                                      "resolved": true,
+                                                                      "resultType": "value",
+                                                                      "type": "cell",
+                                                                    },
+                                                                  ],
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:F1",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:2",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                              ],
+                                                              "directDepsUpdated": false,
+                                                              "key": "ast:SEQUENCE(F1,2)",
+                                                              "resolved": true,
+                                                              "resultType": "spilled-values",
+                                                              "type": "cell",
+                                                            },
+                                                          ],
+                                                          "directDepsUpdated": false,
+                                                          "key": "A2",
+                                                          "resolved": true,
+                                                          "resultType": "spilled-values",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "directDepsUpdated": false,
+                                                      "frontierDependencies": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "circular": true,
+                                                          "directDepsUpdated": false,
+                                                          "key": "B1",
+                                                          "resolved": false,
+                                                          "resultType": "does-not-spill",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "key": "B2",
+                                                      "resolved": false,
+                                                      "resultType": "value",
+                                                      "type": "empty",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:B2",
+                                                  "resolved": false,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": true,
+                                                      "directDepsUpdated": false,
+                                                      "key": "A1",
+                                                      "resolved": true,
+                                                      "resultType": "value",
+                                                      "type": "cell",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:A1",
+                                                  "resolved": true,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                              ],
+                                              "directDepsUpdated": false,
+                                              "key": "ast:B2+A1",
+                                              "resolved": false,
+                                              "resultType": "value",
+                                              "type": "cell",
+                                            },
+                                          ],
+                                          "directDepsUpdated": false,
+                                          "key": "ast:A1:A2*(B2+A1)",
+                                          "resolved": false,
+                                          "resultType": "spilled-values",
+                                          "type": "cell",
+                                        },
+                                      ],
+                                      "directDepsUpdated": false,
+                                      "key": "D10",
+                                      "resolved": false,
+                                      "resultType": "spilled-values",
+                                      "type": "cell",
+                                    },
+                                    {
+                                      "canResolve": true,
+                                      "directDepsUpdated": false,
+                                      "key": "A2",
+                                      "resolved": true,
+                                      "resultType": "value",
+                                      "type": "cell",
+                                    },
+                                  ],
+                                  "directDepsUpdated": false,
+                                  "key": "D11",
+                                  "resolved": false,
+                                  "resultType": "value",
+                                  "type": "empty",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "ast:D11",
+                              "resolved": false,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                            {
+                              "canResolve": true,
+                              "directDepsUpdated": false,
+                              "key": "ast:0.5",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "ast:D11*0.5",
+                          "resolved": false,
+                          "resultType": "value",
+                          "type": "cell",
+                        },
+                      ],
+                      "directDepsUpdated": false,
+                      "key": "B1",
+                      "resolved": false,
+                      "resultType": "does-not-spill",
+                      "type": "cell",
+                    },
+                    {
+                      "canResolve": true,
+                      "deps": [
+                        {
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "directDepsUpdated": false,
+                                  "key": "F1",
+                                  "resolved": true,
+                                  "resultType": "value",
+                                  "type": "cell",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "ast:F1",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                            {
+                              "canResolve": true,
+                              "directDepsUpdated": false,
+                              "key": "ast:2",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "ast:SEQUENCE(F1,2)",
+                          "resolved": true,
+                          "resultType": "spilled-values",
+                          "type": "cell",
+                        },
+                      ],
+                      "directDepsUpdated": false,
+                      "key": "A2",
+                      "resolved": true,
+                      "resultType": "spilled-values",
+                      "type": "cell",
+                    },
+                  ],
+                  "key": "B1:B3",
                   "resolved": false,
                   "resultType": "range",
                   "type": "range",
                 },
               ],
-              "directDepsUpdated": true,
+              "directDepsUpdated": false,
               "key": "ast:SUM(A1:A3*B1:B3)",
               "resolved": false,
               "resultType": "value",
               "type": "cell",
             },
           ],
-          "directDepsUpdated": true,
+          "directDepsUpdated": false,
           "key": "C1",
           "resolved": false,
           "resultType": "value",
@@ -325,7 +816,7 @@ describe("DependencyManager", () => {
                   "type": "cell",
                 },
                 {
-                  "canResolve": false,
+                  "canResolve": true,
                   "deps": [
                     {
                       "canResolve": true,
@@ -336,41 +827,11 @@ describe("DependencyManager", () => {
                       "type": "cell",
                     },
                     {
-                      "canResolve": false,
-                      "deps": [
-                        {
-                          "canResolve": false,
-                          "deps": [
-                            {
-                              "canResolve": false,
-                              "deps": [
-                                {
-                                  "canResolve": false,
-                                  "directDepsUpdated": false,
-                                  "key": "F1",
-                                  "resolved": false,
-                                  "resultType": "awaiting-evaluation",
-                                  "type": "cell",
-                                },
-                              ],
-                              "directDepsUpdated": true,
-                              "key": "ast:F1",
-                              "resolved": false,
-                              "resultType": "awaiting-evaluation",
-                              "type": "cell",
-                            },
-                          ],
-                          "directDepsUpdated": true,
-                          "key": "ast:SEQUENCE(F1,2)",
-                          "resolved": false,
-                          "resultType": "awaiting-evaluation",
-                          "type": "cell",
-                        },
-                      ],
-                      "directDepsUpdated": true,
+                      "canResolve": true,
+                      "directDepsUpdated": false,
                       "key": "A2",
-                      "resolved": false,
-                      "resultType": "awaiting-evaluation",
+                      "resolved": true,
+                      "resultType": "value",
                       "type": "cell",
                     },
                     {
@@ -384,6 +845,460 @@ describe("DependencyManager", () => {
                   ],
                   "directDepsUpdated": false,
                   "key": "A1:A3",
+                  "resolved": true,
+                  "resultType": "range",
+                  "type": "range",
+                },
+                {
+                  "canResolve": false,
+                  "deps": [
+                    {
+                      "canResolve": true,
+                      "deps": [
+                        {
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "deps": [
+                                    {
+                                      "canResolve": true,
+                                      "deps": [
+                                        {
+                                          "canResolve": true,
+                                          "deps": [
+                                            {
+                                              "canResolve": true,
+                                              "directDepsUpdated": false,
+                                              "key": "ast:A1:A2",
+                                              "resolved": true,
+                                              "resultType": "spilled-values",
+                                              "type": "cell",
+                                            },
+                                            {
+                                              "canResolve": true,
+                                              "deps": [
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": false,
+                                                      "deps": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "deps": [
+                                                            {
+                                                              "canResolve": true,
+                                                              "deps": [
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "deps": [
+                                                                    {
+                                                                      "canResolve": true,
+                                                                      "directDepsUpdated": false,
+                                                                      "key": "F1",
+                                                                      "resolved": true,
+                                                                      "resultType": "value",
+                                                                      "type": "cell",
+                                                                    },
+                                                                  ],
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:F1",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:2",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                              ],
+                                                              "directDepsUpdated": false,
+                                                              "key": "ast:SEQUENCE(F1,2)",
+                                                              "resolved": true,
+                                                              "resultType": "spilled-values",
+                                                              "type": "cell",
+                                                            },
+                                                          ],
+                                                          "directDepsUpdated": false,
+                                                          "key": "A2",
+                                                          "resolved": true,
+                                                          "resultType": "spilled-values",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "directDepsUpdated": false,
+                                                      "frontierDependencies": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "deps": [
+                                                            {
+                                                              "canResolve": true,
+                                                              "circular": true,
+                                                              "directDepsUpdated": false,
+                                                              "key": "ast:D11*0.5",
+                                                              "resolved": false,
+                                                              "resultType": "value",
+                                                              "type": "cell",
+                                                            },
+                                                          ],
+                                                          "directDepsUpdated": false,
+                                                          "key": "B1",
+                                                          "resolved": false,
+                                                          "resultType": "does-not-spill",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "key": "B2",
+                                                      "resolved": false,
+                                                      "resultType": "value",
+                                                      "type": "empty",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:B2",
+                                                  "resolved": false,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": true,
+                                                      "directDepsUpdated": false,
+                                                      "key": "A1",
+                                                      "resolved": true,
+                                                      "resultType": "value",
+                                                      "type": "cell",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:A1",
+                                                  "resolved": true,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                              ],
+                                              "directDepsUpdated": false,
+                                              "key": "ast:B2+A1",
+                                              "resolved": false,
+                                              "resultType": "value",
+                                              "type": "cell",
+                                            },
+                                          ],
+                                          "directDepsUpdated": false,
+                                          "key": "ast:A1:A2*(B2+A1)",
+                                          "resolved": false,
+                                          "resultType": "spilled-values",
+                                          "type": "cell",
+                                        },
+                                      ],
+                                      "directDepsUpdated": false,
+                                      "key": "D10",
+                                      "resolved": false,
+                                      "resultType": "spilled-values",
+                                      "type": "cell",
+                                    },
+                                    {
+                                      "canResolve": true,
+                                      "directDepsUpdated": false,
+                                      "key": "A2",
+                                      "resolved": true,
+                                      "resultType": "value",
+                                      "type": "cell",
+                                    },
+                                  ],
+                                  "directDepsUpdated": false,
+                                  "key": "D11",
+                                  "resolved": false,
+                                  "resultType": "value",
+                                  "type": "empty",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "ast:D11",
+                              "resolved": false,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                            {
+                              "canResolve": true,
+                              "directDepsUpdated": false,
+                              "key": "ast:0.5",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "ast:D11*0.5",
+                          "resolved": false,
+                          "resultType": "value",
+                          "type": "cell",
+                        },
+                      ],
+                      "directDepsUpdated": false,
+                      "key": "B1",
+                      "resolved": false,
+                      "resultType": "value",
+                      "type": "cell",
+                    },
+                    {
+                      "canResolve": true,
+                      "directDepsUpdated": false,
+                      "key": "B3",
+                      "resolved": true,
+                      "resultType": "value",
+                      "type": "cell",
+                    },
+                  ],
+                  "directDepsUpdated": false,
+                  "frontierDependencies": [
+                    {
+                      "canResolve": true,
+                      "deps": [
+                        {
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "deps": [
+                                    {
+                                      "canResolve": true,
+                                      "deps": [
+                                        {
+                                          "canResolve": true,
+                                          "deps": [
+                                            {
+                                              "canResolve": true,
+                                              "directDepsUpdated": false,
+                                              "key": "ast:A1:A2",
+                                              "resolved": true,
+                                              "resultType": "spilled-values",
+                                              "type": "cell",
+                                            },
+                                            {
+                                              "canResolve": true,
+                                              "deps": [
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": false,
+                                                      "deps": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "deps": [
+                                                            {
+                                                              "canResolve": true,
+                                                              "deps": [
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "deps": [
+                                                                    {
+                                                                      "canResolve": true,
+                                                                      "directDepsUpdated": false,
+                                                                      "key": "F1",
+                                                                      "resolved": true,
+                                                                      "resultType": "value",
+                                                                      "type": "cell",
+                                                                    },
+                                                                  ],
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:F1",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:2",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                              ],
+                                                              "directDepsUpdated": false,
+                                                              "key": "ast:SEQUENCE(F1,2)",
+                                                              "resolved": true,
+                                                              "resultType": "spilled-values",
+                                                              "type": "cell",
+                                                            },
+                                                          ],
+                                                          "directDepsUpdated": false,
+                                                          "key": "A2",
+                                                          "resolved": true,
+                                                          "resultType": "spilled-values",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "directDepsUpdated": false,
+                                                      "frontierDependencies": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "circular": true,
+                                                          "directDepsUpdated": false,
+                                                          "key": "B1",
+                                                          "resolved": false,
+                                                          "resultType": "does-not-spill",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "key": "B2",
+                                                      "resolved": false,
+                                                      "resultType": "value",
+                                                      "type": "empty",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:B2",
+                                                  "resolved": false,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": true,
+                                                      "directDepsUpdated": false,
+                                                      "key": "A1",
+                                                      "resolved": true,
+                                                      "resultType": "value",
+                                                      "type": "cell",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:A1",
+                                                  "resolved": true,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                              ],
+                                              "directDepsUpdated": false,
+                                              "key": "ast:B2+A1",
+                                              "resolved": false,
+                                              "resultType": "value",
+                                              "type": "cell",
+                                            },
+                                          ],
+                                          "directDepsUpdated": false,
+                                          "key": "ast:A1:A2*(B2+A1)",
+                                          "resolved": false,
+                                          "resultType": "spilled-values",
+                                          "type": "cell",
+                                        },
+                                      ],
+                                      "directDepsUpdated": false,
+                                      "key": "D10",
+                                      "resolved": false,
+                                      "resultType": "spilled-values",
+                                      "type": "cell",
+                                    },
+                                    {
+                                      "canResolve": true,
+                                      "directDepsUpdated": false,
+                                      "key": "A2",
+                                      "resolved": true,
+                                      "resultType": "value",
+                                      "type": "cell",
+                                    },
+                                  ],
+                                  "directDepsUpdated": false,
+                                  "key": "D11",
+                                  "resolved": false,
+                                  "resultType": "value",
+                                  "type": "empty",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "ast:D11",
+                              "resolved": false,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                            {
+                              "canResolve": true,
+                              "directDepsUpdated": false,
+                              "key": "ast:0.5",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "ast:D11*0.5",
+                          "resolved": false,
+                          "resultType": "value",
+                          "type": "cell",
+                        },
+                      ],
+                      "directDepsUpdated": false,
+                      "key": "B1",
+                      "resolved": false,
+                      "resultType": "does-not-spill",
+                      "type": "cell",
+                    },
+                    {
+                      "canResolve": true,
+                      "deps": [
+                        {
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "directDepsUpdated": false,
+                                  "key": "F1",
+                                  "resolved": true,
+                                  "resultType": "value",
+                                  "type": "cell",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "ast:F1",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                            {
+                              "canResolve": true,
+                              "directDepsUpdated": false,
+                              "key": "ast:2",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "ast:SEQUENCE(F1,2)",
+                          "resolved": true,
+                          "resultType": "spilled-values",
+                          "type": "cell",
+                        },
+                      ],
+                      "directDepsUpdated": false,
+                      "key": "A2",
+                      "resolved": true,
+                      "resultType": "spilled-values",
+                      "type": "cell",
+                    },
+                  ],
+                  "key": "B1:B3",
                   "resolved": false,
                   "resultType": "range",
                   "type": "range",
@@ -404,24 +1319,30 @@ describe("DependencyManager", () => {
         }
       `);
 
-    expect(directDeps("A2")).toMatchInlineSnapshot(`
-        {
-          "deps": [
-            "cell-value:undefined",
-          ],
-        }
-      `);
+    expect(directDeps("A2")).toMatchInlineSnapshot(`{}`);
 
-    expect(directDeps("B1")).toMatchInlineSnapshot(`{}`);
+    expect(directDeps("B1")).toMatchInlineSnapshot(`
+      {
+        "deps": [
+          "ast:D11*0.5",
+        ],
+      }
+    `);
 
     expect(evalOrder("C1")).toMatchInlineSnapshot(`
         [
-          "cell-value:F1",
-          "cell-value:undefined",
-          "cell-value:undefined",
-          "cell-value:A2",
-          "A1:A3",
-          "cell-value:B3)",
+          "spill-meta:D10",
+          "empty:D11",
+          "ast:D11",
+          "ast:D11*0.5",
+          "spill-meta:B1",
+          "empty:B2",
+          "ast:B2",
+          "ast:B2+A1",
+          "ast:A1:A2*(B2+A1)",
+          "cell-value:B1",
+          "B1:B3",
+          "ast:SUM(A1:A3*B1:B3)",
           "cell-value:C1",
         ]
       `);
@@ -437,7 +1358,7 @@ describe("DependencyManager", () => {
           "canResolve": true,
           "deps": [
             {
-              "canResolve": false,
+              "canResolve": true,
               "deps": [
                 {
                   "canResolve": true,
@@ -477,10 +1398,435 @@ describe("DependencyManager", () => {
                       "type": "cell",
                     },
                     {
-                      "canResolve": false,
+                      "canResolve": true,
+                      "directDepsUpdated": false,
+                      "key": "A2",
+                      "resolved": true,
+                      "resultType": "value",
+                      "type": "cell",
+                    },
+                    {
+                      "canResolve": true,
+                      "directDepsUpdated": false,
+                      "key": "A3",
+                      "resolved": true,
+                      "resultType": "value",
+                      "type": "cell",
+                    },
+                  ],
+                  "directDepsUpdated": false,
+                  "key": "A1:A3",
+                  "resolved": true,
+                  "resultType": "range",
+                  "type": "range",
+                },
+                {
+                  "canResolve": false,
+                  "deps": [
+                    {
+                      "canResolve": true,
                       "deps": [
                         {
-                          "canResolve": false,
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "deps": [
+                                    {
+                                      "canResolve": true,
+                                      "deps": [
+                                        {
+                                          "canResolve": true,
+                                          "deps": [
+                                            {
+                                              "canResolve": true,
+                                              "directDepsUpdated": false,
+                                              "key": "ast:A1:A2",
+                                              "resolved": true,
+                                              "resultType": "spilled-values",
+                                              "type": "cell",
+                                            },
+                                            {
+                                              "canResolve": true,
+                                              "deps": [
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": false,
+                                                      "deps": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "deps": [
+                                                            {
+                                                              "canResolve": true,
+                                                              "deps": [
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "deps": [
+                                                                    {
+                                                                      "canResolve": true,
+                                                                      "directDepsUpdated": false,
+                                                                      "key": "F1",
+                                                                      "resolved": true,
+                                                                      "resultType": "value",
+                                                                      "type": "cell",
+                                                                    },
+                                                                  ],
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:F1",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:2",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                              ],
+                                                              "directDepsUpdated": false,
+                                                              "key": "ast:SEQUENCE(F1,2)",
+                                                              "resolved": true,
+                                                              "resultType": "spilled-values",
+                                                              "type": "cell",
+                                                            },
+                                                          ],
+                                                          "directDepsUpdated": false,
+                                                          "key": "A2",
+                                                          "resolved": true,
+                                                          "resultType": "spilled-values",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "directDepsUpdated": false,
+                                                      "frontierDependencies": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "deps": [
+                                                            {
+                                                              "canResolve": true,
+                                                              "circular": true,
+                                                              "directDepsUpdated": false,
+                                                              "key": "ast:D11*0.5",
+                                                              "resolved": false,
+                                                              "resultType": "value",
+                                                              "type": "cell",
+                                                            },
+                                                          ],
+                                                          "directDepsUpdated": false,
+                                                          "key": "B1",
+                                                          "resolved": false,
+                                                          "resultType": "does-not-spill",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "key": "B2",
+                                                      "resolved": false,
+                                                      "resultType": "value",
+                                                      "type": "empty",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:B2",
+                                                  "resolved": false,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": true,
+                                                      "directDepsUpdated": false,
+                                                      "key": "A1",
+                                                      "resolved": true,
+                                                      "resultType": "value",
+                                                      "type": "cell",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:A1",
+                                                  "resolved": true,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                              ],
+                                              "directDepsUpdated": false,
+                                              "key": "ast:B2+A1",
+                                              "resolved": false,
+                                              "resultType": "value",
+                                              "type": "cell",
+                                            },
+                                          ],
+                                          "directDepsUpdated": false,
+                                          "key": "ast:A1:A2*(B2+A1)",
+                                          "resolved": false,
+                                          "resultType": "spilled-values",
+                                          "type": "cell",
+                                        },
+                                      ],
+                                      "directDepsUpdated": false,
+                                      "key": "D10",
+                                      "resolved": false,
+                                      "resultType": "spilled-values",
+                                      "type": "cell",
+                                    },
+                                    {
+                                      "canResolve": true,
+                                      "directDepsUpdated": false,
+                                      "key": "A2",
+                                      "resolved": true,
+                                      "resultType": "value",
+                                      "type": "cell",
+                                    },
+                                  ],
+                                  "directDepsUpdated": false,
+                                  "key": "D11",
+                                  "resolved": false,
+                                  "resultType": "value",
+                                  "type": "empty",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "ast:D11",
+                              "resolved": false,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                            {
+                              "canResolve": true,
+                              "directDepsUpdated": false,
+                              "key": "ast:0.5",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "ast:D11*0.5",
+                          "resolved": false,
+                          "resultType": "value",
+                          "type": "cell",
+                        },
+                      ],
+                      "directDepsUpdated": false,
+                      "key": "B1",
+                      "resolved": false,
+                      "resultType": "value",
+                      "type": "cell",
+                    },
+                    {
+                      "canResolve": true,
+                      "directDepsUpdated": false,
+                      "key": "B3",
+                      "resolved": true,
+                      "resultType": "value",
+                      "type": "cell",
+                    },
+                  ],
+                  "directDepsUpdated": false,
+                  "frontierDependencies": [
+                    {
+                      "canResolve": true,
+                      "deps": [
+                        {
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "deps": [
+                                    {
+                                      "canResolve": true,
+                                      "deps": [
+                                        {
+                                          "canResolve": true,
+                                          "deps": [
+                                            {
+                                              "canResolve": true,
+                                              "directDepsUpdated": false,
+                                              "key": "ast:A1:A2",
+                                              "resolved": true,
+                                              "resultType": "spilled-values",
+                                              "type": "cell",
+                                            },
+                                            {
+                                              "canResolve": true,
+                                              "deps": [
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": false,
+                                                      "deps": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "deps": [
+                                                            {
+                                                              "canResolve": true,
+                                                              "deps": [
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "deps": [
+                                                                    {
+                                                                      "canResolve": true,
+                                                                      "directDepsUpdated": false,
+                                                                      "key": "F1",
+                                                                      "resolved": true,
+                                                                      "resultType": "value",
+                                                                      "type": "cell",
+                                                                    },
+                                                                  ],
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:F1",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:2",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                              ],
+                                                              "directDepsUpdated": false,
+                                                              "key": "ast:SEQUENCE(F1,2)",
+                                                              "resolved": true,
+                                                              "resultType": "spilled-values",
+                                                              "type": "cell",
+                                                            },
+                                                          ],
+                                                          "directDepsUpdated": false,
+                                                          "key": "A2",
+                                                          "resolved": true,
+                                                          "resultType": "spilled-values",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "directDepsUpdated": false,
+                                                      "frontierDependencies": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "circular": true,
+                                                          "directDepsUpdated": false,
+                                                          "key": "B1",
+                                                          "resolved": false,
+                                                          "resultType": "does-not-spill",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "key": "B2",
+                                                      "resolved": false,
+                                                      "resultType": "value",
+                                                      "type": "empty",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:B2",
+                                                  "resolved": false,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": true,
+                                                      "directDepsUpdated": false,
+                                                      "key": "A1",
+                                                      "resolved": true,
+                                                      "resultType": "value",
+                                                      "type": "cell",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:A1",
+                                                  "resolved": true,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                              ],
+                                              "directDepsUpdated": false,
+                                              "key": "ast:B2+A1",
+                                              "resolved": false,
+                                              "resultType": "value",
+                                              "type": "cell",
+                                            },
+                                          ],
+                                          "directDepsUpdated": false,
+                                          "key": "ast:A1:A2*(B2+A1)",
+                                          "resolved": false,
+                                          "resultType": "spilled-values",
+                                          "type": "cell",
+                                        },
+                                      ],
+                                      "directDepsUpdated": false,
+                                      "key": "D10",
+                                      "resolved": false,
+                                      "resultType": "spilled-values",
+                                      "type": "cell",
+                                    },
+                                    {
+                                      "canResolve": true,
+                                      "directDepsUpdated": false,
+                                      "key": "A2",
+                                      "resolved": true,
+                                      "resultType": "value",
+                                      "type": "cell",
+                                    },
+                                  ],
+                                  "directDepsUpdated": false,
+                                  "key": "D11",
+                                  "resolved": false,
+                                  "resultType": "value",
+                                  "type": "empty",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "ast:D11",
+                              "resolved": false,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                            {
+                              "canResolve": true,
+                              "directDepsUpdated": false,
+                              "key": "ast:0.5",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "ast:D11*0.5",
+                          "resolved": false,
+                          "resultType": "value",
+                          "type": "cell",
+                        },
+                      ],
+                      "directDepsUpdated": false,
+                      "key": "B1",
+                      "resolved": false,
+                      "resultType": "does-not-spill",
+                      "type": "cell",
+                    },
+                    {
+                      "canResolve": true,
+                      "deps": [
+                        {
+                          "canResolve": true,
                           "deps": [
                             {
                               "canResolve": true,
@@ -509,74 +1855,13 @@ describe("DependencyManager", () => {
                               "type": "cell",
                             },
                           ],
-                          "directDepsUpdated": true,
-                          "key": "ast:SEQUENCE(F1,2)",
-                          "resolved": false,
-                          "resultType": "spilled-values",
-                          "type": "cell",
-                        },
-                        {
-                          "canResolve": true,
                           "directDepsUpdated": false,
-                          "key": "A2",
+                          "key": "ast:SEQUENCE(F1,2)",
                           "resolved": true,
                           "resultType": "spilled-values",
                           "type": "cell",
                         },
                       ],
-                      "directDepsUpdated": true,
-                      "key": "A2",
-                      "resolved": false,
-                      "resultType": "value",
-                      "type": "cell",
-                    },
-                    {
-                      "canResolve": true,
-                      "directDepsUpdated": false,
-                      "key": "A3",
-                      "resolved": true,
-                      "resultType": "value",
-                      "type": "cell",
-                    },
-                  ],
-                  "directDepsUpdated": false,
-                  "key": "A1:A3",
-                  "resolved": false,
-                  "resultType": "range",
-                  "type": "range",
-                },
-                {
-                  "canResolve": false,
-                  "deps": [
-                    {
-                      "canResolve": false,
-                      "directDepsUpdated": false,
-                      "key": "B1",
-                      "resolved": false,
-                      "resultType": "awaiting-evaluation",
-                      "type": "cell",
-                    },
-                    {
-                      "canResolve": false,
-                      "directDepsUpdated": false,
-                      "key": "B3",
-                      "resolved": false,
-                      "resultType": "awaiting-evaluation",
-                      "type": "cell",
-                    },
-                  ],
-                  "directDepsUpdated": true,
-                  "frontierDependencies": [
-                    {
-                      "canResolve": false,
-                      "directDepsUpdated": false,
-                      "key": "B1",
-                      "resolved": false,
-                      "resultType": "awaiting-evaluation",
-                      "type": "cell",
-                    },
-                    {
-                      "canResolve": true,
                       "directDepsUpdated": false,
                       "key": "A2",
                       "resolved": true,
@@ -590,7 +1875,7 @@ describe("DependencyManager", () => {
                   "type": "range",
                 },
               ],
-              "directDepsUpdated": true,
+              "directDepsUpdated": false,
               "key": "ast:SUM(A1:A3*B1:B3)",
               "resolved": false,
               "resultType": "value",
@@ -607,22 +1892,27 @@ describe("DependencyManager", () => {
 
     expect(directDeps("D11")).toMatchInlineSnapshot(`
       {
-        "frontierDependencies": [
+        "deps": [
           "spill-meta:D10",
+          "cell-value:A2",
         ],
       }
     `);
 
     expect(evalOrder("C1")).toMatchInlineSnapshot(`
         [
-          "cell-value:undefined",
-          "cell-value:B1",
-          "cell-value:B3",
+          "spill-meta:D10",
+          "empty:D11",
+          "ast:D11",
+          "ast:D11*0.5",
           "spill-meta:B1",
-          "cell-value:A2",
+          "empty:B2",
+          "ast:B2",
+          "ast:B2+A1",
+          "ast:A1:A2*(B2+A1)",
+          "cell-value:B1",
           "B1:B3",
-          "A1:A3",
-          "cell-value:B3)",
+          "ast:SUM(A1:A3*B1:B3)",
           "cell-value:C1",
         ]
       `);
@@ -636,16 +1926,18 @@ describe("DependencyManager", () => {
     // A1 * B1 resolves fine now so SUM doesn't short circuit on that and continues to A2 * B2
     expect(evalOrder("C1")).toMatchInlineSnapshot(`
         [
-          "cell-value:A2",
           "spill-meta:D10",
-          "A1:A3",
           "empty:D11",
-          "cell-value:undefined",
-          "cell-value:undefined",
-          "cell-value:B1",
+          "ast:D11",
+          "ast:D11*0.5",
           "spill-meta:B1",
+          "empty:B2",
+          "ast:B2",
+          "ast:B2+A1",
+          "ast:A1:A2*(B2+A1)",
+          "cell-value:B1",
           "B1:B3",
-          "cell-value:B3)",
+          "ast:SUM(A1:A3*B1:B3)",
           "cell-value:C1",
         ]
       `);
@@ -695,10 +1987,10 @@ describe("DependencyManager", () => {
                       "type": "cell",
                     },
                     {
-                      "canResolve": false,
-                      "directDepsUpdated": true,
+                      "canResolve": true,
+                      "directDepsUpdated": false,
                       "key": "A2",
-                      "resolved": false,
+                      "resolved": true,
                       "resultType": "value",
                       "type": "cell",
                     },
@@ -713,7 +2005,7 @@ describe("DependencyManager", () => {
                   ],
                   "directDepsUpdated": false,
                   "key": "A1:A3",
-                  "resolved": false,
+                  "resolved": true,
                   "resultType": "range",
                   "type": "range",
                 },
@@ -721,37 +2013,180 @@ describe("DependencyManager", () => {
                   "canResolve": false,
                   "deps": [
                     {
-                      "canResolve": false,
+                      "canResolve": true,
                       "deps": [
                         {
-                          "canResolve": false,
+                          "canResolve": true,
                           "deps": [
                             {
-                              "canResolve": false,
+                              "canResolve": true,
                               "deps": [
                                 {
-                                  "canResolve": false,
-                                  "directDepsUpdated": true,
-                                  "frontierDependencies": [
+                                  "canResolve": true,
+                                  "deps": [
                                     {
-                                      "canResolve": false,
+                                      "canResolve": true,
+                                      "deps": [
+                                        {
+                                          "canResolve": true,
+                                          "deps": [
+                                            {
+                                              "canResolve": true,
+                                              "directDepsUpdated": false,
+                                              "key": "ast:A1:A2",
+                                              "resolved": true,
+                                              "resultType": "spilled-values",
+                                              "type": "cell",
+                                            },
+                                            {
+                                              "canResolve": true,
+                                              "deps": [
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": false,
+                                                      "deps": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "deps": [
+                                                            {
+                                                              "canResolve": true,
+                                                              "deps": [
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "deps": [
+                                                                    {
+                                                                      "canResolve": true,
+                                                                      "directDepsUpdated": false,
+                                                                      "key": "F1",
+                                                                      "resolved": true,
+                                                                      "resultType": "value",
+                                                                      "type": "cell",
+                                                                    },
+                                                                  ],
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:F1",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:2",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                              ],
+                                                              "directDepsUpdated": false,
+                                                              "key": "ast:SEQUENCE(F1,2)",
+                                                              "resolved": true,
+                                                              "resultType": "spilled-values",
+                                                              "type": "cell",
+                                                            },
+                                                          ],
+                                                          "directDepsUpdated": false,
+                                                          "key": "A2",
+                                                          "resolved": true,
+                                                          "resultType": "spilled-values",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "directDepsUpdated": false,
+                                                      "frontierDependencies": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "deps": [
+                                                            {
+                                                              "canResolve": true,
+                                                              "circular": true,
+                                                              "directDepsUpdated": false,
+                                                              "key": "ast:D11*0.5",
+                                                              "resolved": false,
+                                                              "resultType": "value",
+                                                              "type": "cell",
+                                                            },
+                                                          ],
+                                                          "directDepsUpdated": false,
+                                                          "key": "B1",
+                                                          "resolved": false,
+                                                          "resultType": "does-not-spill",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "key": "B2",
+                                                      "resolved": false,
+                                                      "resultType": "value",
+                                                      "type": "empty",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:B2",
+                                                  "resolved": false,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": true,
+                                                      "directDepsUpdated": false,
+                                                      "key": "A1",
+                                                      "resolved": true,
+                                                      "resultType": "value",
+                                                      "type": "cell",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:A1",
+                                                  "resolved": true,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                              ],
+                                              "directDepsUpdated": false,
+                                              "key": "ast:B2+A1",
+                                              "resolved": false,
+                                              "resultType": "value",
+                                              "type": "cell",
+                                            },
+                                          ],
+                                          "directDepsUpdated": false,
+                                          "key": "ast:A1:A2*(B2+A1)",
+                                          "resolved": false,
+                                          "resultType": "spilled-values",
+                                          "type": "cell",
+                                        },
+                                      ],
                                       "directDepsUpdated": false,
                                       "key": "D10",
                                       "resolved": false,
-                                      "resultType": "awaiting-evaluation",
+                                      "resultType": "spilled-values",
+                                      "type": "cell",
+                                    },
+                                    {
+                                      "canResolve": true,
+                                      "directDepsUpdated": false,
+                                      "key": "A2",
+                                      "resolved": true,
+                                      "resultType": "value",
                                       "type": "cell",
                                     },
                                   ],
+                                  "directDepsUpdated": false,
                                   "key": "D11",
                                   "resolved": false,
-                                  "resultType": "awaiting-evaluation",
+                                  "resultType": "value",
                                   "type": "empty",
                                 },
                               ],
                               "directDepsUpdated": false,
                               "key": "ast:D11",
                               "resolved": false,
-                              "resultType": "awaiting-evaluation",
+                              "resultType": "value",
                               "type": "cell",
                             },
                             {
@@ -766,14 +2201,14 @@ describe("DependencyManager", () => {
                           "directDepsUpdated": false,
                           "key": "ast:D11*0.5",
                           "resolved": false,
-                          "resultType": "awaiting-evaluation",
+                          "resultType": "value",
                           "type": "cell",
                         },
                       ],
-                      "directDepsUpdated": true,
+                      "directDepsUpdated": false,
                       "key": "B1",
                       "resolved": false,
-                      "resultType": "awaiting-evaluation",
+                      "resultType": "value",
                       "type": "cell",
                     },
                     {
@@ -788,37 +2223,170 @@ describe("DependencyManager", () => {
                   "directDepsUpdated": false,
                   "frontierDependencies": [
                     {
-                      "canResolve": false,
+                      "canResolve": true,
                       "deps": [
                         {
-                          "canResolve": false,
+                          "canResolve": true,
                           "deps": [
                             {
-                              "canResolve": false,
+                              "canResolve": true,
                               "deps": [
                                 {
-                                  "canResolve": false,
-                                  "directDepsUpdated": true,
-                                  "frontierDependencies": [
+                                  "canResolve": true,
+                                  "deps": [
                                     {
-                                      "canResolve": false,
+                                      "canResolve": true,
+                                      "deps": [
+                                        {
+                                          "canResolve": true,
+                                          "deps": [
+                                            {
+                                              "canResolve": true,
+                                              "directDepsUpdated": false,
+                                              "key": "ast:A1:A2",
+                                              "resolved": true,
+                                              "resultType": "spilled-values",
+                                              "type": "cell",
+                                            },
+                                            {
+                                              "canResolve": true,
+                                              "deps": [
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": false,
+                                                      "deps": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "deps": [
+                                                            {
+                                                              "canResolve": true,
+                                                              "deps": [
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "deps": [
+                                                                    {
+                                                                      "canResolve": true,
+                                                                      "directDepsUpdated": false,
+                                                                      "key": "F1",
+                                                                      "resolved": true,
+                                                                      "resultType": "value",
+                                                                      "type": "cell",
+                                                                    },
+                                                                  ],
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:F1",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:2",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                              ],
+                                                              "directDepsUpdated": false,
+                                                              "key": "ast:SEQUENCE(F1,2)",
+                                                              "resolved": true,
+                                                              "resultType": "spilled-values",
+                                                              "type": "cell",
+                                                            },
+                                                          ],
+                                                          "directDepsUpdated": false,
+                                                          "key": "A2",
+                                                          "resolved": true,
+                                                          "resultType": "spilled-values",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "directDepsUpdated": false,
+                                                      "frontierDependencies": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "circular": true,
+                                                          "directDepsUpdated": false,
+                                                          "key": "B1",
+                                                          "resolved": false,
+                                                          "resultType": "does-not-spill",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "key": "B2",
+                                                      "resolved": false,
+                                                      "resultType": "value",
+                                                      "type": "empty",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:B2",
+                                                  "resolved": false,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                                {
+                                                  "canResolve": true,
+                                                  "deps": [
+                                                    {
+                                                      "canResolve": true,
+                                                      "directDepsUpdated": false,
+                                                      "key": "A1",
+                                                      "resolved": true,
+                                                      "resultType": "value",
+                                                      "type": "cell",
+                                                    },
+                                                  ],
+                                                  "directDepsUpdated": false,
+                                                  "key": "ast:A1",
+                                                  "resolved": true,
+                                                  "resultType": "value",
+                                                  "type": "cell",
+                                                },
+                                              ],
+                                              "directDepsUpdated": false,
+                                              "key": "ast:B2+A1",
+                                              "resolved": false,
+                                              "resultType": "value",
+                                              "type": "cell",
+                                            },
+                                          ],
+                                          "directDepsUpdated": false,
+                                          "key": "ast:A1:A2*(B2+A1)",
+                                          "resolved": false,
+                                          "resultType": "spilled-values",
+                                          "type": "cell",
+                                        },
+                                      ],
                                       "directDepsUpdated": false,
                                       "key": "D10",
                                       "resolved": false,
-                                      "resultType": "awaiting-evaluation",
+                                      "resultType": "spilled-values",
+                                      "type": "cell",
+                                    },
+                                    {
+                                      "canResolve": true,
+                                      "directDepsUpdated": false,
+                                      "key": "A2",
+                                      "resolved": true,
+                                      "resultType": "value",
                                       "type": "cell",
                                     },
                                   ],
+                                  "directDepsUpdated": false,
                                   "key": "D11",
                                   "resolved": false,
-                                  "resultType": "awaiting-evaluation",
+                                  "resultType": "value",
                                   "type": "empty",
                                 },
                               ],
                               "directDepsUpdated": false,
                               "key": "ast:D11",
                               "resolved": false,
-                              "resultType": "awaiting-evaluation",
+                              "resultType": "value",
                               "type": "cell",
                             },
                             {
@@ -833,18 +2401,56 @@ describe("DependencyManager", () => {
                           "directDepsUpdated": false,
                           "key": "ast:D11*0.5",
                           "resolved": false,
-                          "resultType": "awaiting-evaluation",
+                          "resultType": "value",
                           "type": "cell",
                         },
                       ],
-                      "directDepsUpdated": true,
+                      "directDepsUpdated": false,
                       "key": "B1",
                       "resolved": false,
-                      "resultType": "awaiting-evaluation",
+                      "resultType": "does-not-spill",
                       "type": "cell",
                     },
                     {
                       "canResolve": true,
+                      "deps": [
+                        {
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "directDepsUpdated": false,
+                                  "key": "F1",
+                                  "resolved": true,
+                                  "resultType": "value",
+                                  "type": "cell",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "ast:F1",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                            {
+                              "canResolve": true,
+                              "directDepsUpdated": false,
+                              "key": "ast:2",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "ast:SEQUENCE(F1,2)",
+                          "resolved": true,
+                          "resultType": "spilled-values",
+                          "type": "cell",
+                        },
+                      ],
                       "directDepsUpdated": false,
                       "key": "A2",
                       "resolved": true,
@@ -879,21 +2485,18 @@ describe("DependencyManager", () => {
     markAsResolved();
     expect(evalOrder("C1")).toMatchInlineSnapshot(`
         [
-          "A1:A3",
-          "cell-value:undefined",
-          "cell-value:undefined",
           "spill-meta:D10",
           "empty:D11",
-          "cell-value:undefined",
-          "cell-value:undefined",
+          "ast:D11",
+          "ast:D11*0.5",
           "spill-meta:B1",
           "empty:B2",
-          "cell-value:undefined",
-          "cell-value:undefined",
-          "cell-value:undefined",
+          "ast:B2",
+          "ast:B2+A1",
+          "ast:A1:A2*(B2+A1)",
           "cell-value:B1",
           "B1:B3",
-          "cell-value:B3)",
+          "ast:SUM(A1:A3*B1:B3)",
           "cell-value:C1",
         ]
       `);
@@ -978,32 +2581,79 @@ describe("DependencyManager", () => {
                               "canResolve": true,
                               "deps": [
                                 {
-                                  "canResolve": false,
-                                  "directDepsUpdated": false,
-                                  "frontierDependencies": [
+                                  "canResolve": true,
+                                  "deps": [
                                     {
-                                      "canResolve": false,
+                                      "canResolve": true,
                                       "deps": [
                                         {
-                                          "canResolve": false,
+                                          "canResolve": true,
                                           "deps": [
                                             {
                                               "canResolve": true,
                                               "directDepsUpdated": false,
                                               "key": "ast:A1:A2",
-                                              "resolved": false,
+                                              "resolved": true,
                                               "resultType": "spilled-values",
                                               "type": "cell",
                                             },
                                             {
-                                              "canResolve": false,
+                                              "canResolve": true,
                                               "deps": [
                                                 {
-                                                  "canResolve": false,
+                                                  "canResolve": true,
                                                   "deps": [
                                                     {
                                                       "canResolve": false,
-                                                      "directDepsUpdated": true,
+                                                      "deps": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "deps": [
+                                                            {
+                                                              "canResolve": true,
+                                                              "deps": [
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "deps": [
+                                                                    {
+                                                                      "canResolve": true,
+                                                                      "directDepsUpdated": false,
+                                                                      "key": "F1",
+                                                                      "resolved": true,
+                                                                      "resultType": "value",
+                                                                      "type": "cell",
+                                                                    },
+                                                                  ],
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:F1",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:2",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                              ],
+                                                              "directDepsUpdated": false,
+                                                              "key": "ast:SEQUENCE(F1,2)",
+                                                              "resolved": true,
+                                                              "resultType": "spilled-values",
+                                                              "type": "cell",
+                                                            },
+                                                          ],
+                                                          "directDepsUpdated": false,
+                                                          "key": "A2",
+                                                          "resolved": true,
+                                                          "resultType": "spilled-values",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
+                                                      "directDepsUpdated": false,
                                                       "frontierDependencies": [
                                                         {
                                                           "canResolve": true,
@@ -1014,39 +2664,31 @@ describe("DependencyManager", () => {
                                                               "directDepsUpdated": false,
                                                               "key": "ast:D11*0.5",
                                                               "resolved": false,
-                                                              "resultType": "error",
+                                                              "resultType": "value",
                                                               "type": "cell",
                                                             },
                                                           ],
                                                           "directDepsUpdated": false,
                                                           "key": "B1",
                                                           "resolved": false,
-                                                          "resultType": "error",
-                                                          "type": "cell",
-                                                        },
-                                                        {
-                                                          "canResolve": true,
-                                                          "directDepsUpdated": false,
-                                                          "key": "A2",
-                                                          "resolved": true,
-                                                          "resultType": "spilled-values",
+                                                          "resultType": "does-not-spill",
                                                           "type": "cell",
                                                         },
                                                       ],
                                                       "key": "B2",
                                                       "resolved": false,
-                                                      "resultType": "awaiting-evaluation",
+                                                      "resultType": "value",
                                                       "type": "empty",
                                                     },
                                                   ],
-                                                  "directDepsUpdated": true,
+                                                  "directDepsUpdated": false,
                                                   "key": "ast:B2",
                                                   "resolved": false,
-                                                  "resultType": "awaiting-evaluation",
+                                                  "resultType": "value",
                                                   "type": "cell",
                                                 },
                                                 {
-                                                  "canResolve": false,
+                                                  "canResolve": true,
                                                   "deps": [
                                                     {
                                                       "canResolve": true,
@@ -1057,34 +2699,43 @@ describe("DependencyManager", () => {
                                                       "type": "cell",
                                                     },
                                                   ],
-                                                  "directDepsUpdated": true,
+                                                  "directDepsUpdated": false,
                                                   "key": "ast:A1",
-                                                  "resolved": false,
+                                                  "resolved": true,
                                                   "resultType": "value",
                                                   "type": "cell",
                                                 },
                                               ],
-                                              "directDepsUpdated": true,
+                                              "directDepsUpdated": false,
                                               "key": "ast:B2+A1",
                                               "resolved": false,
-                                              "resultType": "awaiting-evaluation",
+                                              "resultType": "value",
                                               "type": "cell",
                                             },
                                           ],
-                                          "directDepsUpdated": true,
+                                          "directDepsUpdated": false,
                                           "key": "ast:A1:A2*(B2+A1)",
                                           "resolved": false,
-                                          "resultType": "awaiting-evaluation",
+                                          "resultType": "spilled-values",
                                           "type": "cell",
                                         },
                                       ],
-                                      "directDepsUpdated": true,
+                                      "directDepsUpdated": false,
                                       "key": "D10",
                                       "resolved": false,
-                                      "resultType": "awaiting-evaluation",
+                                      "resultType": "spilled-values",
+                                      "type": "cell",
+                                    },
+                                    {
+                                      "canResolve": true,
+                                      "directDepsUpdated": false,
+                                      "key": "A2",
+                                      "resolved": true,
+                                      "resultType": "value",
                                       "type": "cell",
                                     },
                                   ],
+                                  "directDepsUpdated": false,
                                   "key": "D11",
                                   "resolved": false,
                                   "resultType": "value",
@@ -1109,14 +2760,14 @@ describe("DependencyManager", () => {
                           "directDepsUpdated": false,
                           "key": "ast:D11*0.5",
                           "resolved": false,
-                          "resultType": "error",
+                          "resultType": "value",
                           "type": "cell",
                         },
                       ],
                       "directDepsUpdated": false,
                       "key": "B1",
                       "resolved": false,
-                      "resultType": "error",
+                      "resultType": "value",
                       "type": "cell",
                     },
                     {
@@ -1140,44 +2791,71 @@ describe("DependencyManager", () => {
                               "canResolve": true,
                               "deps": [
                                 {
-                                  "canResolve": false,
-                                  "directDepsUpdated": false,
-                                  "frontierDependencies": [
+                                  "canResolve": true,
+                                  "deps": [
                                     {
-                                      "canResolve": false,
+                                      "canResolve": true,
                                       "deps": [
                                         {
-                                          "canResolve": false,
+                                          "canResolve": true,
                                           "deps": [
                                             {
                                               "canResolve": true,
                                               "directDepsUpdated": false,
                                               "key": "ast:A1:A2",
-                                              "resolved": false,
+                                              "resolved": true,
                                               "resultType": "spilled-values",
                                               "type": "cell",
                                             },
                                             {
-                                              "canResolve": false,
+                                              "canResolve": true,
                                               "deps": [
                                                 {
-                                                  "canResolve": false,
+                                                  "canResolve": true,
                                                   "deps": [
                                                     {
                                                       "canResolve": false,
-                                                      "directDepsUpdated": true,
-                                                      "frontierDependencies": [
+                                                      "deps": [
                                                         {
                                                           "canResolve": true,
-                                                          "circular": true,
-                                                          "directDepsUpdated": false,
-                                                          "key": "B1",
-                                                          "resolved": false,
-                                                          "resultType": "error",
-                                                          "type": "cell",
-                                                        },
-                                                        {
-                                                          "canResolve": true,
+                                                          "deps": [
+                                                            {
+                                                              "canResolve": true,
+                                                              "deps": [
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "deps": [
+                                                                    {
+                                                                      "canResolve": true,
+                                                                      "directDepsUpdated": false,
+                                                                      "key": "F1",
+                                                                      "resolved": true,
+                                                                      "resultType": "value",
+                                                                      "type": "cell",
+                                                                    },
+                                                                  ],
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:F1",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                                {
+                                                                  "canResolve": true,
+                                                                  "directDepsUpdated": false,
+                                                                  "key": "ast:2",
+                                                                  "resolved": true,
+                                                                  "resultType": "value",
+                                                                  "type": "cell",
+                                                                },
+                                                              ],
+                                                              "directDepsUpdated": false,
+                                                              "key": "ast:SEQUENCE(F1,2)",
+                                                              "resolved": true,
+                                                              "resultType": "spilled-values",
+                                                              "type": "cell",
+                                                            },
+                                                          ],
                                                           "directDepsUpdated": false,
                                                           "key": "A2",
                                                           "resolved": true,
@@ -1185,20 +2863,32 @@ describe("DependencyManager", () => {
                                                           "type": "cell",
                                                         },
                                                       ],
+                                                      "directDepsUpdated": false,
+                                                      "frontierDependencies": [
+                                                        {
+                                                          "canResolve": true,
+                                                          "circular": true,
+                                                          "directDepsUpdated": false,
+                                                          "key": "B1",
+                                                          "resolved": false,
+                                                          "resultType": "does-not-spill",
+                                                          "type": "cell",
+                                                        },
+                                                      ],
                                                       "key": "B2",
                                                       "resolved": false,
-                                                      "resultType": "awaiting-evaluation",
+                                                      "resultType": "value",
                                                       "type": "empty",
                                                     },
                                                   ],
-                                                  "directDepsUpdated": true,
+                                                  "directDepsUpdated": false,
                                                   "key": "ast:B2",
                                                   "resolved": false,
-                                                  "resultType": "awaiting-evaluation",
+                                                  "resultType": "value",
                                                   "type": "cell",
                                                 },
                                                 {
-                                                  "canResolve": false,
+                                                  "canResolve": true,
                                                   "deps": [
                                                     {
                                                       "canResolve": true,
@@ -1209,34 +2899,43 @@ describe("DependencyManager", () => {
                                                       "type": "cell",
                                                     },
                                                   ],
-                                                  "directDepsUpdated": true,
+                                                  "directDepsUpdated": false,
                                                   "key": "ast:A1",
-                                                  "resolved": false,
+                                                  "resolved": true,
                                                   "resultType": "value",
                                                   "type": "cell",
                                                 },
                                               ],
-                                              "directDepsUpdated": true,
+                                              "directDepsUpdated": false,
                                               "key": "ast:B2+A1",
                                               "resolved": false,
-                                              "resultType": "awaiting-evaluation",
+                                              "resultType": "value",
                                               "type": "cell",
                                             },
                                           ],
-                                          "directDepsUpdated": true,
+                                          "directDepsUpdated": false,
                                           "key": "ast:A1:A2*(B2+A1)",
                                           "resolved": false,
-                                          "resultType": "awaiting-evaluation",
+                                          "resultType": "spilled-values",
                                           "type": "cell",
                                         },
                                       ],
-                                      "directDepsUpdated": true,
+                                      "directDepsUpdated": false,
                                       "key": "D10",
                                       "resolved": false,
-                                      "resultType": "awaiting-evaluation",
+                                      "resultType": "spilled-values",
+                                      "type": "cell",
+                                    },
+                                    {
+                                      "canResolve": true,
+                                      "directDepsUpdated": false,
+                                      "key": "A2",
+                                      "resolved": true,
+                                      "resultType": "value",
                                       "type": "cell",
                                     },
                                   ],
+                                  "directDepsUpdated": false,
                                   "key": "D11",
                                   "resolved": false,
                                   "resultType": "value",
@@ -1261,18 +2960,56 @@ describe("DependencyManager", () => {
                           "directDepsUpdated": false,
                           "key": "ast:D11*0.5",
                           "resolved": false,
-                          "resultType": "error",
+                          "resultType": "value",
                           "type": "cell",
                         },
                       ],
                       "directDepsUpdated": false,
                       "key": "B1",
                       "resolved": false,
-                      "resultType": "error",
+                      "resultType": "does-not-spill",
                       "type": "cell",
                     },
                     {
                       "canResolve": true,
+                      "deps": [
+                        {
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "directDepsUpdated": false,
+                                  "key": "F1",
+                                  "resolved": true,
+                                  "resultType": "value",
+                                  "type": "cell",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "ast:F1",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                            {
+                              "canResolve": true,
+                              "directDepsUpdated": false,
+                              "key": "ast:2",
+                              "resolved": true,
+                              "resultType": "value",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "ast:SEQUENCE(F1,2)",
+                          "resolved": true,
+                          "resultType": "spilled-values",
+                          "type": "cell",
+                        },
+                      ],
                       "directDepsUpdated": false,
                       "key": "A2",
                       "resolved": true,
@@ -1303,29 +3040,27 @@ describe("DependencyManager", () => {
 
     expect(directDeps("D11")).toMatchInlineSnapshot(`
         {
-          "frontierDependencies": [
+          "deps": [
             "spill-meta:D10",
+            "cell-value:A2",
           ],
         }
       `);
 
     expect(evalOrder("C1")).toMatchInlineSnapshot(`
         [
-          "A1:A3",
-          "cell-value:undefined",
-          "cell-value:undefined",
           "spill-meta:D10",
           "empty:D11",
-          "cell-value:undefined",
-          "cell-value:undefined",
+          "ast:D11",
+          "ast:D11*0.5",
           "spill-meta:B1",
           "empty:B2",
-          "cell-value:undefined",
-          "cell-value:undefined",
-          "cell-value:undefined",
+          "ast:B2",
+          "ast:B2+A1",
+          "ast:A1:A2*(B2+A1)",
           "cell-value:B1",
           "B1:B3",
-          "cell-value:B3)",
+          "ast:SUM(A1:A3*B1:B3)",
           "cell-value:C1",
         ]
       `);
@@ -1354,8 +3089,9 @@ describe("DependencyManager", () => {
     expect(evalOrder("A1")).toMatchInlineSnapshot(`
         [
           "cell-value:B1",
-          "cell-value:undefined",
+          "ast:B1",
           "cell-value:A1",
+          "ast:A1",
         ]
       `);
   });
@@ -1384,21 +3120,21 @@ describe("DependencyManager", () => {
                 {
                   "canResolve": false,
                   "circular": true,
-                  "directDepsUpdated": true,
+                  "directDepsUpdated": false,
                   "key": "A1",
                   "resolved": false,
                   "resultType": "awaiting-evaluation",
                   "type": "cell",
                 },
               ],
-              "directDepsUpdated": true,
+              "directDepsUpdated": false,
               "key": "ast:A1",
               "resolved": false,
               "resultType": "awaiting-evaluation",
               "type": "cell",
             },
           ],
-          "directDepsUpdated": true,
+          "directDepsUpdated": false,
           "key": "A1",
           "resolved": false,
           "resultType": "awaiting-evaluation",
@@ -1408,7 +3144,7 @@ describe("DependencyManager", () => {
     expect(evalOrder("A1")).toMatchInlineSnapshot(`
         [
           "cell-value:A1",
-          "cell-value:undefined",
+          "ast:A1",
         ]
       `);
     //#endregion
@@ -1473,25 +3209,31 @@ describe("DependencyManager", () => {
     expect(directDeps("A1")).toMatchInlineSnapshot(`
       {
         "deps": [
-          "cell-value:undefined",
+          "ast:SUM(C3:D4)",
         ],
       }
     `);
 
     expect(evalOrder("A1")).toMatchInlineSnapshot(`
         [
+          "ast:10",
+          "ast:I12:K14",
+          "ast:SEQUENCE(10,10)",
           "spill-meta:B2",
+          "spill-meta:H10",
+          "J13:J14",
+          "K13:K14",
           "C3:D4",
-          "cell-value:undefined",
+          "ast:SUM(C3:D4)",
           "cell-value:A1",
         ]
       `);
     expect(dependencyTree("A1")).toMatchInlineSnapshot(`
         {
-          "canResolve": false,
+          "canResolve": true,
           "deps": [
             {
-              "canResolve": false,
+              "canResolve": true,
               "deps": [
                 {
                   "canResolve": true,
@@ -1503,14 +3245,102 @@ describe("DependencyManager", () => {
                 },
                 {
                   "canResolve": false,
-                  "directDepsUpdated": true,
-                  "frontierDependencies": [
+                  "deps": [
                     {
                       "canResolve": false,
                       "directDepsUpdated": false,
+                      "frontierDependencies": [
+                        {
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "directDepsUpdated": false,
+                                  "key": "ast:10",
+                                  "resolved": false,
+                                  "resultType": "value",
+                                  "type": "cell",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "ast:SEQUENCE(10,10)",
+                              "resolved": false,
+                              "resultType": "spilled-values",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "H10",
+                          "resolved": false,
+                          "resultType": "spilled-values",
+                          "type": "cell",
+                        },
+                      ],
+                      "key": "J13:J14",
+                      "resolved": false,
+                      "resultType": "range",
+                      "type": "range",
+                    },
+                    {
+                      "canResolve": false,
+                      "directDepsUpdated": false,
+                      "frontierDependencies": [
+                        {
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "directDepsUpdated": false,
+                                  "key": "ast:10",
+                                  "resolved": false,
+                                  "resultType": "value",
+                                  "type": "cell",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "ast:SEQUENCE(10,10)",
+                              "resolved": false,
+                              "resultType": "spilled-values",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "H10",
+                          "resolved": false,
+                          "resultType": "spilled-values",
+                          "type": "cell",
+                        },
+                      ],
+                      "key": "K13:K14",
+                      "resolved": false,
+                      "resultType": "range",
+                      "type": "range",
+                    },
+                  ],
+                  "directDepsUpdated": false,
+                  "frontierDependencies": [
+                    {
+                      "canResolve": true,
+                      "deps": [
+                        {
+                          "canResolve": true,
+                          "directDepsUpdated": false,
+                          "key": "ast:I12:K14",
+                          "resolved": false,
+                          "resultType": "spilled-values",
+                          "type": "cell",
+                        },
+                      ],
+                      "directDepsUpdated": false,
                       "key": "B2",
                       "resolved": false,
-                      "resultType": "awaiting-evaluation",
+                      "resultType": "spilled-values",
                       "type": "cell",
                     },
                   ],
@@ -1520,14 +3350,14 @@ describe("DependencyManager", () => {
                   "type": "range",
                 },
               ],
-              "directDepsUpdated": true,
+              "directDepsUpdated": false,
               "key": "ast:SUM(C3:D4)",
               "resolved": false,
               "resultType": "value",
               "type": "cell",
             },
           ],
-          "directDepsUpdated": true,
+          "directDepsUpdated": false,
           "key": "A1",
           "resolved": false,
           "resultType": "value",
@@ -1632,83 +3462,12 @@ describe("DependencyManager", () => {
     markAsResolved();
     expect(evalOrder("D1")).toMatchInlineSnapshot(`
       [
-        "cell-value:B1",
-        "cell-value:B2",
-        "B1:B2",
-        "cell-value:undefined",
-        "cell-value:D1",
-      ]
-    `);
-    expect(dependencyTree("D1")).toMatchInlineSnapshot(`
-      {
-        "canResolve": false,
-        "deps": [
-          {
-            "canResolve": false,
-            "deps": [
-              {
-                "canResolve": true,
-                "directDepsUpdated": false,
-                "key": "ast:B1:B2",
-                "resolved": true,
-                "resultType": "spilled-values",
-                "type": "cell",
-              },
-              {
-                "canResolve": false,
-                "deps": [
-                  {
-                    "canResolve": false,
-                    "directDepsUpdated": false,
-                    "key": "B1",
-                    "resolved": false,
-                    "resultType": "awaiting-evaluation",
-                    "type": "cell",
-                  },
-                  {
-                    "canResolve": false,
-                    "directDepsUpdated": false,
-                    "key": "B2",
-                    "resolved": false,
-                    "resultType": "awaiting-evaluation",
-                    "type": "cell",
-                  },
-                ],
-                "directDepsUpdated": true,
-                "key": "B1:B2",
-                "resolved": false,
-                "resultType": "range",
-                "type": "range",
-              },
-            ],
-            "directDepsUpdated": true,
-            "key": "ast:SUM(B1:B2)",
-            "resolved": false,
-            "resultType": "value",
-            "type": "cell",
-          },
-        ],
-        "directDepsUpdated": true,
-        "key": "D1",
-        "resolved": false,
-        "resultType": "value",
-        "type": "cell",
-      }
-    `);
-    //#endregion
-
-    //#region step 2
-    evaluate();
-    markAsResolved();
-    expect(evalOrder("D1")).toMatchInlineSnapshot(`
-      [
-        "cell-value:A1",
         "spill-meta:A1",
         "A1:A2",
-        "cell-value:undefined",
+        "ast:SUM(A1:A2)",
         "cell-value:B1",
         "B1:B2",
-        "cell-value:undefined",
+        "ast:SUM(B1:B2)",
         "cell-value:D1",
       ]
     `);
@@ -1731,10 +3490,10 @@ describe("DependencyManager", () => {
                 "canResolve": true,
                 "deps": [
                   {
-                    "canResolve": false,
+                    "canResolve": true,
                     "deps": [
                       {
-                        "canResolve": false,
+                        "canResolve": true,
                         "deps": [
                           {
                             "canResolve": true,
@@ -1748,22 +3507,80 @@ describe("DependencyManager", () => {
                             "canResolve": false,
                             "deps": [
                               {
-                                "canResolve": false,
+                                "canResolve": true,
+                                "deps": [
+                                  {
+                                    "canResolve": true,
+                                    "directDepsUpdated": false,
+                                    "key": "C1",
+                                    "resolved": true,
+                                    "resultType": "value",
+                                    "type": "cell",
+                                  },
+                                ],
                                 "directDepsUpdated": false,
                                 "key": "A1",
-                                "resolved": false,
-                                "resultType": "awaiting-evaluation",
+                                "resolved": true,
+                                "resultType": "value",
                                 "type": "cell",
                               },
+                              {
+                                "canResolve": true,
+                                "deps": [
+                                  {
+                                    "canResolve": true,
+                                    "deps": [
+                                      {
+                                        "canResolve": true,
+                                        "deps": [
+                                          {
+                                            "canResolve": true,
+                                            "directDepsUpdated": false,
+                                            "key": "ast:2",
+                                            "resolved": true,
+                                            "resultType": "value",
+                                            "type": "cell",
+                                          },
+                                        ],
+                                        "directDepsUpdated": false,
+                                        "key": "ast:SEQUENCE(2)",
+                                        "resolved": true,
+                                        "resultType": "spilled-values",
+                                        "type": "cell",
+                                      },
+                                    ],
+                                    "directDepsUpdated": false,
+                                    "key": "C1",
+                                    "resolved": false,
+                                    "resultType": "spilled-values",
+                                    "type": "cell",
+                                  },
+                                ],
+                                "directDepsUpdated": false,
+                                "key": "C2",
+                                "resolved": true,
+                                "resultType": "value",
+                                "type": "empty",
+                              },
                             ],
-                            "directDepsUpdated": true,
+                            "directDepsUpdated": false,
                             "frontierDependencies": [
                               {
-                                "canResolve": false,
+                                "canResolve": true,
+                                "deps": [
+                                  {
+                                    "canResolve": true,
+                                    "directDepsUpdated": false,
+                                    "key": "ast:C1:C2",
+                                    "resolved": true,
+                                    "resultType": "spilled-values",
+                                    "type": "cell",
+                                  },
+                                ],
                                 "directDepsUpdated": false,
                                 "key": "A1",
                                 "resolved": false,
-                                "resultType": "awaiting-evaluation",
+                                "resultType": "spilled-values",
                                 "type": "cell",
                               },
                             ],
@@ -1773,14 +3590,192 @@ describe("DependencyManager", () => {
                             "type": "range",
                           },
                         ],
-                        "directDepsUpdated": true,
+                        "directDepsUpdated": false,
                         "key": "ast:SUM(A1:A2)",
                         "resolved": false,
                         "resultType": "value",
                         "type": "cell",
                       },
                     ],
-                    "directDepsUpdated": true,
+                    "directDepsUpdated": false,
+                    "key": "B1",
+                    "resolved": false,
+                    "resultType": "value",
+                    "type": "cell",
+                  },
+                  {
+                    "canResolve": true,
+                    "directDepsUpdated": false,
+                    "key": "B2",
+                    "resolved": true,
+                    "resultType": "value",
+                    "type": "cell",
+                  },
+                ],
+                "directDepsUpdated": false,
+                "key": "B1:B2",
+                "resolved": false,
+                "resultType": "range",
+                "type": "range",
+              },
+            ],
+            "directDepsUpdated": false,
+            "key": "ast:SUM(B1:B2)",
+            "resolved": false,
+            "resultType": "value",
+            "type": "cell",
+          },
+        ],
+        "directDepsUpdated": false,
+        "key": "D1",
+        "resolved": false,
+        "resultType": "value",
+        "type": "cell",
+      }
+    `);
+    //#endregion
+
+    //#region step 2
+    evaluate();
+    markAsResolved();
+    expect(evalOrder("D1")).toMatchInlineSnapshot(`
+      [
+        "spill-meta:A1",
+        "A1:A2",
+        "ast:SUM(A1:A2)",
+        "cell-value:B1",
+        "B1:B2",
+        "ast:SUM(B1:B2)",
+        "cell-value:D1",
+      ]
+    `);
+    expect(dependencyTree("D1")).toMatchInlineSnapshot(`
+      {
+        "canResolve": true,
+        "deps": [
+          {
+            "canResolve": true,
+            "deps": [
+              {
+                "canResolve": true,
+                "directDepsUpdated": false,
+                "key": "ast:B1:B2",
+                "resolved": true,
+                "resultType": "spilled-values",
+                "type": "cell",
+              },
+              {
+                "canResolve": true,
+                "deps": [
+                  {
+                    "canResolve": true,
+                    "deps": [
+                      {
+                        "canResolve": true,
+                        "deps": [
+                          {
+                            "canResolve": true,
+                            "directDepsUpdated": false,
+                            "key": "ast:A1:A2",
+                            "resolved": true,
+                            "resultType": "spilled-values",
+                            "type": "cell",
+                          },
+                          {
+                            "canResolve": false,
+                            "deps": [
+                              {
+                                "canResolve": true,
+                                "deps": [
+                                  {
+                                    "canResolve": true,
+                                    "directDepsUpdated": false,
+                                    "key": "C1",
+                                    "resolved": true,
+                                    "resultType": "value",
+                                    "type": "cell",
+                                  },
+                                ],
+                                "directDepsUpdated": false,
+                                "key": "A1",
+                                "resolved": true,
+                                "resultType": "value",
+                                "type": "cell",
+                              },
+                              {
+                                "canResolve": true,
+                                "deps": [
+                                  {
+                                    "canResolve": true,
+                                    "deps": [
+                                      {
+                                        "canResolve": true,
+                                        "deps": [
+                                          {
+                                            "canResolve": true,
+                                            "directDepsUpdated": false,
+                                            "key": "ast:2",
+                                            "resolved": true,
+                                            "resultType": "value",
+                                            "type": "cell",
+                                          },
+                                        ],
+                                        "directDepsUpdated": false,
+                                        "key": "ast:SEQUENCE(2)",
+                                        "resolved": true,
+                                        "resultType": "spilled-values",
+                                        "type": "cell",
+                                      },
+                                    ],
+                                    "directDepsUpdated": false,
+                                    "key": "C1",
+                                    "resolved": false,
+                                    "resultType": "spilled-values",
+                                    "type": "cell",
+                                  },
+                                ],
+                                "directDepsUpdated": false,
+                                "key": "C2",
+                                "resolved": true,
+                                "resultType": "value",
+                                "type": "empty",
+                              },
+                            ],
+                            "directDepsUpdated": false,
+                            "frontierDependencies": [
+                              {
+                                "canResolve": true,
+                                "deps": [
+                                  {
+                                    "canResolve": true,
+                                    "directDepsUpdated": false,
+                                    "key": "ast:C1:C2",
+                                    "resolved": true,
+                                    "resultType": "spilled-values",
+                                    "type": "cell",
+                                  },
+                                ],
+                                "directDepsUpdated": false,
+                                "key": "A1",
+                                "resolved": false,
+                                "resultType": "spilled-values",
+                                "type": "cell",
+                              },
+                            ],
+                            "key": "A1:A2",
+                            "resolved": false,
+                            "resultType": "range",
+                            "type": "range",
+                          },
+                        ],
+                        "directDepsUpdated": false,
+                        "key": "ast:SUM(A1:A2)",
+                        "resolved": false,
+                        "resultType": "value",
+                        "type": "cell",
+                      },
+                    ],
+                    "directDepsUpdated": false,
                     "key": "B1",
                     "resolved": false,
                     "resultType": "value",
@@ -1824,13 +3819,11 @@ describe("DependencyManager", () => {
     expect(evalOrder("D1")).toMatchInlineSnapshot(`
       [
         "spill-meta:A1",
-        "cell-value:C1",
-        "cell-value:A1",
         "A1:A2",
-        "cell-value:undefined",
+        "ast:SUM(A1:A2)",
         "cell-value:B1",
         "B1:B2",
-        "cell-value:undefined",
+        "ast:SUM(B1:B2)",
         "cell-value:D1",
       ]
     `);
@@ -1870,54 +3863,66 @@ describe("DependencyManager", () => {
                             "canResolve": false,
                             "deps": [
                               {
-                                "canResolve": false,
+                                "canResolve": true,
                                 "deps": [
                                   {
                                     "canResolve": true,
                                     "directDepsUpdated": false,
-                                    "key": "ast:C1:C2",
+                                    "key": "C1",
                                     "resolved": true,
-                                    "resultType": "spilled-values",
+                                    "resultType": "value",
                                     "type": "cell",
                                   },
+                                ],
+                                "directDepsUpdated": false,
+                                "key": "A1",
+                                "resolved": true,
+                                "resultType": "value",
+                                "type": "cell",
+                              },
+                              {
+                                "canResolve": true,
+                                "deps": [
                                   {
-                                    "canResolve": false,
+                                    "canResolve": true,
                                     "deps": [
                                       {
                                         "canResolve": true,
+                                        "deps": [
+                                          {
+                                            "canResolve": true,
+                                            "directDepsUpdated": false,
+                                            "key": "ast:2",
+                                            "resolved": true,
+                                            "resultType": "value",
+                                            "type": "cell",
+                                          },
+                                        ],
                                         "directDepsUpdated": false,
-                                        "key": "ast:C1:C2",
+                                        "key": "ast:SEQUENCE(2)",
                                         "resolved": true,
                                         "resultType": "spilled-values",
                                         "type": "cell",
                                       },
                                     ],
-                                    "directDepsUpdated": true,
-                                    "key": "A1",
+                                    "directDepsUpdated": false,
+                                    "key": "C1",
                                     "resolved": false,
                                     "resultType": "spilled-values",
                                     "type": "cell",
                                   },
-                                  {
-                                    "canResolve": false,
-                                    "directDepsUpdated": false,
-                                    "key": "C1",
-                                    "resolved": false,
-                                    "resultType": "awaiting-evaluation",
-                                    "type": "cell",
-                                  },
                                 ],
-                                "directDepsUpdated": true,
-                                "key": "A1",
-                                "resolved": false,
-                                "resultType": "awaiting-evaluation",
-                                "type": "cell",
+                                "directDepsUpdated": false,
+                                "key": "C2",
+                                "resolved": true,
+                                "resultType": "value",
+                                "type": "empty",
                               },
                             ],
                             "directDepsUpdated": false,
                             "frontierDependencies": [
                               {
-                                "canResolve": false,
+                                "canResolve": true,
                                 "deps": [
                                   {
                                     "canResolve": true,
@@ -1928,7 +3933,7 @@ describe("DependencyManager", () => {
                                     "type": "cell",
                                   },
                                 ],
-                                "directDepsUpdated": true,
+                                "directDepsUpdated": false,
                                 "key": "A1",
                                 "resolved": false,
                                 "resultType": "spilled-values",
@@ -2025,57 +4030,48 @@ describe("DependencyManager", () => {
                             "canResolve": false,
                             "deps": [
                               {
-                                "canResolve": false,
+                                "canResolve": true,
                                 "deps": [
                                   {
-                                    "canResolve": false,
+                                    "canResolve": true,
+                                    "directDepsUpdated": false,
+                                    "key": "C1",
+                                    "resolved": true,
+                                    "resultType": "value",
+                                    "type": "cell",
+                                  },
+                                ],
+                                "directDepsUpdated": false,
+                                "key": "A1",
+                                "resolved": true,
+                                "resultType": "value",
+                                "type": "cell",
+                              },
+                              {
+                                "canResolve": true,
+                                "deps": [
+                                  {
+                                    "canResolve": true,
                                     "deps": [
                                       {
-                                        "canResolve": false,
+                                        "canResolve": true,
                                         "deps": [
                                           {
                                             "canResolve": true,
                                             "directDepsUpdated": false,
                                             "key": "ast:2",
-                                            "resolved": false,
+                                            "resolved": true,
                                             "resultType": "value",
                                             "type": "cell",
                                           },
                                         ],
-                                        "directDepsUpdated": true,
-                                        "key": "ast:SEQUENCE(2)",
-                                        "resolved": false,
-                                        "resultType": "spilled-values",
-                                        "type": "cell",
-                                      },
-                                      {
-                                        "canResolve": true,
                                         "directDepsUpdated": false,
-                                        "key": "C1",
-                                        "resolved": false,
+                                        "key": "ast:SEQUENCE(2)",
+                                        "resolved": true,
                                         "resultType": "spilled-values",
                                         "type": "cell",
                                       },
                                     ],
-                                    "directDepsUpdated": true,
-                                    "key": "C1",
-                                    "resolved": false,
-                                    "resultType": "value",
-                                    "type": "cell",
-                                  },
-                                ],
-                                "directDepsUpdated": true,
-                                "key": "A1",
-                                "resolved": false,
-                                "resultType": "value",
-                                "type": "cell",
-                              },
-                              {
-                                "canResolve": false,
-                                "directDepsUpdated": true,
-                                "frontierDependencies": [
-                                  {
-                                    "canResolve": true,
                                     "directDepsUpdated": false,
                                     "key": "C1",
                                     "resolved": false,
@@ -2083,9 +4079,10 @@ describe("DependencyManager", () => {
                                     "type": "cell",
                                   },
                                 ],
+                                "directDepsUpdated": false,
                                 "key": "C2",
-                                "resolved": false,
-                                "resultType": "awaiting-evaluation",
+                                "resolved": true,
+                                "resultType": "value",
                                 "type": "empty",
                               },
                             ],
@@ -2163,18 +4160,12 @@ describe("DependencyManager", () => {
     evaluate(); // to discover new range deps
     expect(evalOrder("D1")).toMatchInlineSnapshot(`
       [
-        "cell-value:C1",
-        "cell-value:undefined",
         "spill-meta:A1",
-        "cell-value:A1",
-        "cell-value:undefined",
-        "spill-meta:C1",
-        "empty:C2",
         "A1:A2",
-        "cell-value:undefined",
+        "ast:SUM(A1:A2)",
         "cell-value:B1",
         "B1:B2",
-        "cell-value:undefined",
+        "ast:SUM(B1:B2)",
         "cell-value:D1",
       ]
     `);
@@ -2183,10 +4174,10 @@ describe("DependencyManager", () => {
       [
         "spill-meta:A1",
         "A1:A2",
-        "cell-value:undefined",
+        "ast:SUM(A1:A2)",
         "cell-value:B1",
         "B1:B2",
-        "cell-value:undefined",
+        "ast:SUM(B1:B2)",
         "cell-value:D1",
       ]
     `);
@@ -2270,7 +4261,7 @@ describe("DependencyManager", () => {
                                     ],
                                     "directDepsUpdated": false,
                                     "key": "C1",
-                                    "resolved": true,
+                                    "resolved": false,
                                     "resultType": "spilled-values",
                                     "type": "cell",
                                   },

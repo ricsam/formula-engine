@@ -166,13 +166,6 @@ export class EvaluationManager {
         if (entry.type === "value") {
           const entryAddress = entry.address;
           const result = entry.node.evaluationResult;
-          if (result.type === "awaiting-evaluation") {
-            return {
-              type: "awaiting-evaluation",
-              waitingFor: entry.node,
-              errAddress: node,
-            };
-          }
 
           const relativePos = {
             x: entryAddress.colIndex - node.address.range.start.col,
@@ -220,6 +213,7 @@ export class EvaluationManager {
                         lookupOrder: "col-major",
                       }
                     );
+
                   if (spilledResults.type === "values") {
                     results.push(...spilledResults.values);
                   } else {
@@ -339,38 +333,31 @@ export class EvaluationManager {
       return;
     }
 
-    let evaluation: FunctionEvaluationResult =
-      this.formulaEvaluator.evaluateFormula(content.slice(1), ctx);
-
-    if (node.cellAddress.colIndex === 5 && node.cellAddress.rowIndex === 0 && content.includes("SEQUENCE")) {
-      console.log(`\n🔍 F1 evaluation:`);
-      console.log(`  Formula: ${content}`);
-      console.log(`  Evaluation type: ${evaluation.type}`);
-    }
+    let evaluation: FunctionEvaluationResult = captureEvaluationErrors(
+      node,
+      () => this.formulaEvaluator.evaluateFormula(content.slice(1), ctx)
+    );
 
     // the evaluated cell IS A spilling formula, e.g. if dependencyKey points to A1, then the formula is e.g. A1=SEQUENCE(10), or A1=A3:B5
     if (evaluation.type === "spilled-values") {
       const spillArea = evaluation.spillArea(node.cellAddress);
-      
-      // Check if spill area is blocked (but allow single-cell "spills")
-      if (!isRangeOneCell(spillArea)) {
-        if (!this.canSpill(node.cellAddress, spillArea)) {
-          // Override evaluation with SPILL error, but continue execution to set up nodes
-          evaluation = {
-            type: "error",
-            err: FormulaError.SPILL,
-            message: "Cannot spill - area is blocked",
-            errAddress: node,
-          };
-        } else {
-          // Spill succeeds - register it
-          this.dependencyManager.setSpilledValue(node.key, {
-            spillOnto: spillArea,
-            origin: node.cellAddress,
-          });
-        }
+
+      if (!this.canSpill(node.cellAddress, spillArea)) {
+        // Override evaluation with SPILL error, but continue execution to set up nodes
+        evaluation = {
+          type: "error",
+          err: FormulaError.SPILL,
+          message: "Cannot spill - area is blocked",
+          errAddress: node,
+        };
+      } else {
+        // Spill succeeds - register it
+        this.dependencyManager.setSpilledValue(node.key, {
+          spillOnto: spillArea,
+          origin: node.cellAddress,
+        });
       }
-      
+
       // Set up spill meta node and evaluation results (even if spill failed)
       if (node instanceof SpillMetaNode) {
         // we have already setup an origin/spill meta node relationship,
@@ -384,24 +371,9 @@ export class EvaluationManager {
         node.addDependency(spillMetaNode);
         node.setSpillMetaNode(spillMetaNode);
         spillMetaNode.setEvaluationResult(evaluation);
-        
+
         if (evaluation.type === "spilled-values") {
-          if (node.cellAddress.colIndex === 5 && node.cellAddress.rowIndex === 0) {
-            console.log(`  About to evaluate origin for F1`);
-            console.log(`    Spill source: ${evaluation.source}`);
-          }
-          
           const originResult = evaluation.evaluate({ x: 0, y: 0 }, ctx);
-          
-          if (node.cellAddress.colIndex === 5 && node.cellAddress.rowIndex === 0) {
-            console.log(`  Origin result for F1:`, originResult);
-            if (originResult.type === "value") {
-              console.log(`    Value:`, originResult.result);
-            } else if (originResult.type === "awaiting-evaluation") {
-              console.log(`    Still awaiting evaluation! Waiting for:`, originResult.waitingFor.key);
-            }
-          }
-          
           node.setEvaluationResult(originResult);
         } else {
           // Spill failed - set error on origin cell
@@ -450,10 +422,9 @@ export class EvaluationManager {
       return;
     }
     if (dependencyKey.startsWith("ast:")) {
-      // we could later move the evaluation logic here,
-      // but for now, let's not do anything and
       // let the evaluateCellNode handle the evaluation
-      // through formulaEvaluator.evaluateNode
+      // through formulaEvaluator.evaluateNode,
+      // because an AST node must be evaluated in the context of the cell it is in
       return;
     }
     if (dependencyKey.startsWith("spill-meta:")) {
@@ -521,7 +492,7 @@ export class EvaluationManager {
       const timeStart = performance.now();
       const durations: { duration: number; key: string }[] = [];
       let numResolved = 0;
-      if (flags.isProfiling && evaluationPlan.evaluationOrder.size > 2000) {
+      if (flags.isProfiling && evaluationPlan.evaluationOrder.size > -1) {
         // console.profile();
       }
       evaluationPlan.evaluationOrder.forEach((dependency) => {
@@ -530,15 +501,16 @@ export class EvaluationManager {
           numResolved++;
         }
         this.evaluateDependencyNode(dependency.key);
+        
         const end = performance.now();
-        if (flags.isProfiling && evaluationPlan.evaluationOrder.size > 2000) {
+        if (flags.isProfiling && evaluationPlan.evaluationOrder.size > -1) {
           durations.push({ duration: end - start, key: dependency.key });
         }
       });
-      if (flags.isProfiling && evaluationPlan.evaluationOrder.size > 2000) {
+      if (flags.isProfiling && evaluationPlan.evaluationOrder.size > -1) {
         // console.profileEnd();
       }
-      if (flags.isProfiling && evaluationPlan.evaluationOrder.size > 2000) {
+      if (flags.isProfiling && evaluationPlan.evaluationOrder.size > -1) {
         const percentResolved = Math.round(
           (100 * numResolved) / evaluationPlan.evaluationOrder.size
         );
@@ -554,11 +526,12 @@ export class EvaluationManager {
         );
       }
 
-      // let's check which nodes can be considered resolved
       this.dependencyManager.markResolvedNodes(node);
 
       const nextEvaluationPlan =
         this.dependencyManager.buildEvaluationOrder(node);
+
+      this.dependencyManager.updateResolvedSCCs(nextEvaluationPlan);
 
       precalculatedPlan = nextEvaluationPlan;
 
@@ -665,17 +638,17 @@ export class EvaluationManager {
     }
 
     if (node.evaluationResult.type === "awaiting-evaluation") {
-      if (cellAddressToKey(cellAddress).includes("F10")) {
-        console.group("Evaluation of F10");
+      if (cellAddressToKey(cellAddress).includes("G10")) {
+        console.group("Evaluation of G10");
         flags.isProfiling = true;
-        console.time("Evaluation of F10");
-        // console.profile("Evaluation of F10");
+        console.time("Evaluation of G10");
+        console.profile("Evaluation of G10");
       }
       this.evaluateCell(node);
       if (flags.isProfiling) {
         flags.isProfiling = false;
-        console.timeEnd("Evaluation of F10");
-        // console.profileEnd("Evaluation of F10");
+        console.timeEnd("Evaluation of G10");
+        console.profileEnd("Evaluation of G10");
         console.groupEnd();
       }
     }

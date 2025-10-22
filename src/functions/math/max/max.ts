@@ -26,8 +26,10 @@ export const MAX: FunctionDefinition = {
   evaluate: function (node, context): FunctionEvaluationResult {
     // Create iterator over all argument values
     const argumentValues = createArgumentIterator(this, node, context, "col-major");
-
+    if (argumentValues.type !== "values") {
+      return argumentValues;
+    }
     // Use shared maximum utility (now with unified error propagation)
-    return performMaximum(argumentValues, context);
+    return performMaximum(argumentValues.values, context);
   },
 };

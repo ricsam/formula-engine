@@ -53,16 +53,6 @@ export const LEN: FunctionDefinition = {
       });
     }
 
-    // Single value
-    if (textResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Invalid text argument",
-        errAddress: context.dependencyNode,
-      };
-    }
-
     // Strict type checking - no coercion
     if (textResult.result.type !== "string") {
       return {

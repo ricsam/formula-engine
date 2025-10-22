@@ -127,3 +127,90 @@ export type ContextDependencyType =
 // *  [astKey, cellAddress.rowIndex, cellAddress.colIndex] // `CELL("address")`
 // *  [astKey, tableKey, cellAddress.rowIndex], // `@Column1`
 // *  [astKey, workbookKey, cellAddress.rowIndex], // `Table1[@Column1]`
+
+type Dim = "workbookName" | "sheetName" | "tableName" | "rowIndex" | "colIndex";
+const DIM_ORDER: readonly Dim[] = [
+  "workbookName",
+  "sheetName",
+  "tableName",
+  "rowIndex",
+  "colIndex",
+] as const;
+
+/** Build the canonical cache key string for a dependency. */
+export function keyFromDependency(dep: ContextDependency): string {
+  return DIM_ORDER.map((k) =>
+    dep[k] !== undefined ? `${k}:[${(dep as any)[k]}]` : `${k}:*`
+  ).join(",");
+}
+
+type Context = {
+  workbookName: string;
+  sheetName: string;
+  tableName?: string;
+  rowIndex: number;
+  colIndex: number;
+};
+
+/** True if `dep` matches `ctx` (i.e., every specified field equals the context’s field). */
+export function dependencyMatchesContext(
+  ctx: Context,
+  dep: ContextDependency
+): boolean {
+  return DIM_ORDER.every(
+    (k) => dep[k] === undefined || (dep as any)[k] === (ctx as any)[k]
+  );
+}
+
+const contextCacheKey = new Map<string, string[]>();
+
+/**
+ * Generate every cache key that would be eligible for `ctx`.
+ * By default returns keys ordered from most-specific to least-specific.
+ */
+export function eligibleKeysForContext(ctx: Context): string[] {
+  const mostRestrictiveKey = keyFromDependency(ctx);
+  const cachedKeys = contextCacheKey.get(mostRestrictiveKey);
+  if (cachedKeys) {
+    return cachedKeys;
+  }
+
+  const results: string[] = [];
+  const n = DIM_ORDER.length;
+
+  // If tableName is undefined in the context, we cannot create combos that "specify" it.
+  const tableIdx = DIM_ORDER.indexOf("tableName");
+
+  const totalMasks = 1 << n; // 2^n
+  for (let mask = 0; mask < totalMasks; mask++) {
+    // Skip combos that specify tableName when ctx.tableName is undefined.
+    if (ctx.tableName === undefined && ((mask >> tableIdx) & 1) === 1) continue;
+
+    const dep: ContextDependency = {};
+    for (let i = 0; i < n; i++) {
+      if (((mask >> i) & 1) === 1) {
+        const k = DIM_ORDER[i];
+        const v = (ctx as any)[k];
+        // Only assign when we actually have a value (guards tableName: undefined)
+        if (v !== undefined) (dep as any)[k] = v;
+      }
+    }
+    results.push(keyFromDependency(dep));
+  }
+
+  contextCacheKey.set(mostRestrictiveKey, results);
+
+  return results;
+}
+
+export function getContextDependencyKey(contextDependency: ContextDependency) {
+  const keys: (string | number)[] = [];
+  contextDependencyKeys.forEach((key) => {
+    if (contextDependency[key] !== undefined) {
+      keys.push(`${key}:[${contextDependency[key]}]`);
+    } else {
+      keys.push(`${key}:*`);
+    }
+  });
+  return keys.join(",");
+}

@@ -37,19 +37,28 @@ export const MID: FunctionDefinition = {
 
     // Evaluate the text argument
     const textResult = this.evaluateNode(node.args[0]!, context);
-    if (textResult.type === "error" || textResult.type === "awaiting-evaluation") {
+    if (
+      textResult.type === "error" ||
+      textResult.type === "awaiting-evaluation"
+    ) {
       return textResult;
     }
 
     // Evaluate the start_num argument
     const startNumResult = this.evaluateNode(node.args[1]!, context);
-    if (startNumResult.type === "error" || startNumResult.type === "awaiting-evaluation") {
+    if (
+      startNumResult.type === "error" ||
+      startNumResult.type === "awaiting-evaluation"
+    ) {
       return startNumResult;
     }
 
     // Evaluate the num_chars argument
     const numCharsResult = this.evaluateNode(node.args[2]!, context);
-    if (numCharsResult.type === "error" || numCharsResult.type === "awaiting-evaluation") {
+    if (
+      numCharsResult.type === "error" ||
+      numCharsResult.type === "awaiting-evaluation"
+    ) {
       return numCharsResult;
     }
 
@@ -65,34 +74,6 @@ export const MID: FunctionDefinition = {
         numCharsResult,
         context,
       });
-    }
-
-    // All arguments are single values
-    if (textResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Invalid text argument",
-        errAddress: context.dependencyNode,
-      };
-    }
-
-    if (startNumResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Invalid start_num argument",
-        errAddress: context.dependencyNode,
-      };
-    }
-
-    if (numCharsResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Invalid num_chars argument",
-        errAddress: context.dependencyNode,
-      };
     }
 
     // Strict type checking - no coercion
@@ -123,7 +104,12 @@ export const MID: FunctionDefinition = {
       };
     }
 
-    const result = midOperation(textResult, startNumResult, numCharsResult, context);
+    const result = midOperation(
+      textResult,
+      startNumResult,
+      numCharsResult,
+      context
+    );
     if (result.type === "error" || result.type === "awaiting-evaluation") {
       return result;
     }

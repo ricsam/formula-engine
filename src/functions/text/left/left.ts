@@ -71,22 +71,12 @@ export const LEFT: FunctionDefinition = {
     }
 
     // Both arguments are single values
-    if (textResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Invalid text argument",
-        errAddress: context.dependencyNode,
-      };
+    if (textResult.type === "awaiting-evaluation") {
+      return textResult;
     }
 
-    if (numCharsResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Invalid numChars argument",
-        errAddress: context.dependencyNode,
-      };
+    if (numCharsResult.type === "awaiting-evaluation") {
+      return numCharsResult;
     }
 
     // Strict type checking - no coercion

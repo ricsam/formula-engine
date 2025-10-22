@@ -141,25 +141,6 @@ export const RIGHT: FunctionDefinition = {
       });
     }
 
-    // Both arguments are single values
-    if (textResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Invalid text argument",
-        errAddress: context.dependencyNode,
-      };
-    }
-
-    if (numCharsResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Invalid numChars argument",
-        errAddress: context.dependencyNode,
-      };
-    }
-
     // Strict type checking - no coercion
     if (textResult.result.type !== "string") {
       return {
