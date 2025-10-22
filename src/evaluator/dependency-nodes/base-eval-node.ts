@@ -6,12 +6,7 @@ import type {
 } from "src/core/types";
 import type { SpillMetaNode } from "./spill-meta-node";
 
-export class BaseEvalNode<
-  T extends
-    | FunctionEvaluationResult
-    | SpilledValuesEvaluationResult
-    | DoesNotSpillResult,
-> {
+export class BaseEvalNode<T> {
   public key: string;
   private _dependencies: Set<DependencyNode> = new Set();
   private _lastDependencies: Set<DependencyNode> = new Set();
@@ -49,7 +44,7 @@ export class BaseEvalNode<
 
   public canResolve() {
     return (
-      this.evaluationResult.type !== "awaiting-evaluation" &&
+      (this.evaluationResult as any).type !== "awaiting-evaluation" &&
       !this.directDepsUpdated
     );
   }

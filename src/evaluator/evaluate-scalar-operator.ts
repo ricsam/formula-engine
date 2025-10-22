@@ -58,11 +58,6 @@ export function evaluateScalarOperator(
     }
   }
   if (left.type === "spilled-values" && right.type === "value") {
-    if (name === "add") {
-      console.log(`\n➕ Spilled + Value addition:`);
-      console.log(`  Right value:`, right.result);
-    }
-    
     return {
       type: "spilled-values",
       spillArea: (origin: CellAddress) => left.spillArea(origin),
@@ -75,13 +70,6 @@ export function evaluateScalarOperator(
         ) {
           return evaledLeft;
         }
-        
-        if (name === "add" && spilled.x === 0 && spilled.y === 0) {
-          console.log(`  Evaluating origin (0,0):`);
-          console.log(`    Left value:`, evaledLeft.result);
-          console.log(`    Right value:`, right.result);
-        }
-        
         return evaluateSingleScalarOperator(
           evaledLeft.result,
           right.result,

@@ -1,5 +1,9 @@
 import type { LookupOrder } from "src/core/managers";
-import { type SingleEvaluationResult } from "src/core/types";
+import {
+  type ErrorEvaluationResult,
+  type SingleEvaluationResult,
+} from "src/core/types";
+import { getCellReference } from "src/core/utils";
 import type { EvaluationContext } from "src/evaluator/evaluation-context";
 import { AwaitingEvaluationError } from "src/evaluator/evaluation-error";
 import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
@@ -22,24 +26,13 @@ export function createArgumentIterator(
   node: FunctionNode,
   context: EvaluationContext,
   lookupOrder: LookupOrder
-): SingleEvaluationResult[] {
+): { type: "values"; values: SingleEvaluationResult[] } | ErrorEvaluationResult {
   const results: SingleEvaluationResult[] = [];
 
   for (const arg of node.args) {
     const result = evaluator.evaluateNode(arg, context);
 
-    if (result.type === "awaiting-evaluation") {
-      throw new AwaitingEvaluationError(
-        context.dependencyNode,
-        result.waitingFor
-      );
-    }
-
-    if (result.type === "error") {
-      results.push(result);
-    } else if (result.type === "value") {
-      results.push(result);
-    } else if (result.type === "spilled-values") {
+    if (result.type === "spilled-values") {
       // Get all cells in the spilled range
       const cellValues = result.evaluateAllCells.call(evaluator, {
         context,
@@ -48,15 +41,21 @@ export function createArgumentIterator(
         lookupOrder,
       });
 
-      if (cellValues.type !== "values") {
+      if (cellValues.type === "awaiting-evaluation") {
+        return cellValues;
+      }
+
+      if (cellValues.type === "error") {
         results.push(cellValues);
       } else {
         for (const cellValue of cellValues.values) {
           results.push(cellValue.result);
         }
       }
+    } else {
+      results.push(result);
     }
   }
 
-  return results;
+  return { type: "values", values: results };
 }

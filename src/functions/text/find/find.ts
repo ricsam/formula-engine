@@ -404,13 +404,11 @@ function createFindSpilledResult(
     findTextResult.type !== "spilled-values" &&
     withinTextResult.type !== "spilled-values"
   ) {
-    if (findTextResult.type !== "value" || withinTextResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Invalid findText or withinText argument",
-        errAddress: context.dependencyNode,
-      };
+    if (findTextResult.type !== "value") {
+      return findTextResult;
+    }
+    if (withinTextResult.type !== "value") {
+      return withinTextResult;
     }
 
     // Strict type checking
@@ -547,14 +545,11 @@ export const FIND: FunctionDefinition = {
       });
     }
 
-    // Both findText and withinText are single values
-    if (findTextResult.type !== "value" || withinTextResult.type !== "value") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Invalid findText or withinText argument",
-        errAddress: context.dependencyNode,
-      };
+    if (findTextResult.type === "awaiting-evaluation") {
+      return findTextResult;
+    }
+    if (withinTextResult.type === "awaiting-evaluation") {
+      return withinTextResult;
     }
 
     // Strict type checking - no coercion

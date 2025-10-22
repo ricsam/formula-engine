@@ -16,7 +16,11 @@ export const SUM: FunctionDefinition = {
       "col-major"
     );
 
+    if (argumentIterator.type !== "values") {
+      return argumentIterator;
+    }
+
     // Perform summation with error propagation (SUM propagates errors from direct arguments)
-    return performSummation(argumentIterator);
+    return performSummation(argumentIterator.values);
   },
 };

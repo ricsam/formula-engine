@@ -1,6 +1,9 @@
 import {
   contextDependencyKeys,
+  eligibleKeysForContext,
+  getContextDependencyKey,
   type ContextDependency,
+  type ContextDependencyType,
 } from "src/evaluator/evaluation-context";
 import {
   type CellAddress,
@@ -23,6 +26,7 @@ import type {
 } from "./dependency-node";
 import { WorkbookManager } from "./workbook-manager";
 import { SpillMetaNode } from "src/evaluator/dependency-nodes/spill-meta-node";
+import { flags } from "src/debug/flags";
 
 export interface DependencyTreeNode {
   type: "cell" | "range" | "empty";
@@ -310,10 +314,17 @@ export class DependencyManager {
      */
     string,
     {
-      evalNode: AstEvaluationNode;
-      contextDependency: ContextDependency;
-      contextDependencyKey: string;
-    }[]
+      entries: Map<
+        /**
+         * context dependency key
+         */
+        string,
+        {
+          evalNode: AstEvaluationNode;
+          contextDependency: ContextDependency;
+        }
+      >;
+    }
   > = new Map();
 
   getAstNode(
@@ -325,26 +336,35 @@ export class DependencyManager {
     const astKey = `ast:${astToString(ast)}`; // cache normalize this later
     const astEntries = this.asts.get(astKey);
 
+    const keys = eligibleKeysForContext(currentContext);
+
+    for (const key of keys) {
+      const astEntry = astEntries?.entries.get(key);
+      if (astEntry) {
+        return astEntry.evalNode;
+      }
+    }
+
     // if any of the ast entries match the current context, then we can return the ast node
     // otherwise we have to evalute the ast node to understand if it is context dependent
     // and later it will be saved using saveAstNode
-    if (astEntries) {
-      for (const entry of astEntries) {
-        // e.g. we have a row dependent ast dependency, dependent on row 1, and the current context dependency has rowIndex 1
-        // then we will get a match
-        const matches = Object.entries(entry.contextDependency).every(
-          ([key, value]) => {
-            if (typeof value === "undefined") {
-              return true;
-            }
-            return currentContext[key as keyof ContextDependency] === value;
-          }
-        );
-        if (matches) {
-          return entry.evalNode;
-        }
-      }
-    }
+    // if (astEntries) {
+    //   for (const entry of astEntries.entries.values()) {
+    //     // e.g. we have a row dependent ast dependency, dependent on row 1, and the current context dependency has rowIndex 1
+    //     // then we will get a match
+    //     const matches = Object.entries(entry.contextDependency).every(
+    //       ([key, value]) => {
+    //         if (typeof value === "undefined") {
+    //           return true;
+    //         }
+    //         return currentContext[key as keyof ContextDependency] === value;
+    //       }
+    //     );
+    //     if (matches) {
+    //       return entry.evalNode;
+    //     }
+    //   }
+    // }
 
     // by default the ast node is cell specific
     // but later, setContextDependency is called with a more open context dependency
@@ -353,18 +373,6 @@ export class DependencyManager {
     // but later, once resolved, we can store it under a looser dependency key, e.g. only sheet, workbook and table dependent
     this.saveAstNode(node, currentContext);
     return node;
-  }
-
-  getContextDependencyKey(contextDependency: ContextDependency) {
-    const keys: (string | number)[] = [];
-    contextDependencyKeys.forEach((key) => {
-      if (contextDependency[key] !== undefined) {
-        keys.push(`${key}:[${contextDependency[key]}]`);
-      } else {
-        keys.push(`${key}:*`);
-      }
-    });
-    return keys.join(",");
   }
 
   /**
@@ -379,26 +387,21 @@ export class DependencyManager {
     contextDependency: ContextDependency
   ) {
     const astKey = ast.key;
-    const contextDependencyKey =
-      this.getContextDependencyKey(contextDependency);
+    const contextDependencyKey = getContextDependencyKey(contextDependency);
     const astEntries = this.asts.get(astKey);
+
     if (astEntries) {
       // if we don't already have an entry, then let's add it
-      if (
-        !astEntries.some(
-          (entry) => entry.contextDependencyKey === contextDependencyKey
-        )
-      ) {
-        astEntries.push({
-          evalNode: ast,
-          contextDependency,
-          contextDependencyKey,
-        });
-      }
+      astEntries.entries.set(contextDependencyKey, {
+        evalNode: ast,
+        contextDependency,
+      });
     } else {
-      this.asts.set(astKey, [
-        { evalNode: ast, contextDependency, contextDependencyKey },
-      ]);
+      this.asts.set(astKey, {
+        entries: new Map([
+          [contextDependencyKey, { evalNode: ast, contextDependency }],
+        ]),
+      });
     }
   }
 
@@ -465,7 +468,9 @@ export class DependencyManager {
    * 5. For each SCC, create internal evaluation order with cycle breaking
    * 6. Join the sorted SCC evaluation orders to create final evaluation order
    */
-  buildEvaluationOrder(node: CellValueNode | EmptyCellEvaluationNode): EvaluationOrder {
+  buildEvaluationOrder(
+    node: CellValueNode | EmptyCellEvaluationNode
+  ): EvaluationOrder {
     if (node.resolved && this.cacheManager.getEvaluationOrder(node.key)) {
       return this.cacheManager.getEvaluationOrder(node.key)!;
     }
@@ -475,11 +480,7 @@ export class DependencyManager {
     const visitedForDiscovery = new Set<DependencyNode>();
 
     const discoverNodes = (currentNode: DependencyNode) => {
-      // Skip resolved nodes, BUT always include range nodes even if resolved
-      // because ranges need to be re-evaluated in different contexts
-      const isRangeNode = currentNode instanceof RangeEvaluationNode;
-
-      if (currentNode && currentNode.resolved && !isRangeNode) {
+      if (currentNode && currentNode.resolved) {
         return;
       }
 
@@ -956,7 +957,7 @@ export class DependencyManager {
   }
   //#endregion
 
-  markResolvedNodes(node: CellValueNode | EmptyCellEvaluationNode): void {
+  markResolvedNodes(node: DependencyNode): void {
     // Track visited nodes to avoid infinite loops in circular dependencies
     const visited = new Set<DependencyNode>();
     visited.add(node); // Don't revisit the current cell
@@ -964,7 +965,7 @@ export class DependencyManager {
     const areTransitiveDepsResolved = (nodes: Set<DependencyNode>): boolean => {
       let canResolve = true;
       for (const node of nodes) {
-        if (visited.has(node)) {
+        if (visited.has(node) || node.resolved) {
           continue;
         }
         visited.add(node);
@@ -996,19 +997,16 @@ export class DependencyManager {
       node.canResolve()
     ) {
       node.resolve();
+      if (node instanceof AstEvaluationNode) {
+        this.saveAstNode(node, node.getContextDependency());
+      }
     }
-
-    // After marking nodes as resolved, update SCC cache with resolved status
-    this.updateResolvedSCCs(node);
   }
 
   /**
    * Update SCCs in cache to mark them as resolved if all their nodes are resolved
    */
-  private updateResolvedSCCs(startNode: CellValueNode | EmptyCellEvaluationNode): void {
-    // Get evaluation order which contains SCC information
-    const evalOrder = this.buildEvaluationOrder(startNode);
-
+  public updateResolvedSCCs(evalOrder: EvaluationOrder): void {
     if (!evalOrder.sccDAG) {
       return;
     }

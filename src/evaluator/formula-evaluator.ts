@@ -101,6 +101,10 @@ export class FormulaEvaluator {
     const astNode = this.dependencyManager.getAstNode(node, currentContext);
     context.dependencyNode.addDependency(astNode);
 
+    // if (astNode.evaluationResult.type !== "awaiting-evaluation") {
+    //   return astNode.evaluationResult;
+    // }
+
     if (astNode.resolved) {
       const astContextDependency = astNode.getContextDependency();
       context.appendContextDependency(astContextDependency);
@@ -168,7 +172,9 @@ export class FormulaEvaluator {
       astNode,
       context.cellAddress
     );
-    const result = runEvaluation.call(this, newContext);
+    const result = captureEvaluationErrors(astNode, () =>
+      runEvaluation.call(this, newContext)
+    );
     astNode.setEvaluationResult(result);
     const astContextDependency = newContext.getContextDependency();
 

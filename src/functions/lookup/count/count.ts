@@ -29,8 +29,11 @@ export const COUNT: FunctionDefinition = {
   evaluate: function (node, context): FunctionEvaluationResult {
     // Create iterator over all argument values
     const argumentValues = createArgumentIterator(this, node, context, "col-major");
-    
+
+    if (argumentValues.type !== "values") {
+      return argumentValues;
+    }
     // Use shared counting utility
-    return performCount(argumentValues);
+    return performCount(argumentValues.values);
   },
 };

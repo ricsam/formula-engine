@@ -32,7 +32,11 @@ export const AVERAGE: FunctionDefinition = {
       "col-major"
     );
 
+    if (argumentValues.type !== "values") {
+      return argumentValues;
+    }
+
     // Use shared averaging utility (now with unified error propagation)
-    return performAverage(argumentValues, context);
+    return performAverage(argumentValues.values, context);
   },
 };
