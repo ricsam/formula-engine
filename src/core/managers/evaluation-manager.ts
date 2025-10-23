@@ -501,7 +501,7 @@ export class EvaluationManager {
           numResolved++;
         }
         this.evaluateDependencyNode(dependency.key);
-        
+
         const end = performance.now();
         if (flags.isProfiling && evaluationPlan.evaluationOrder.size > -1) {
           durations.push({ duration: end - start, key: dependency.key });
@@ -638,19 +638,19 @@ export class EvaluationManager {
     }
 
     if (node.evaluationResult.type === "awaiting-evaluation") {
-      if (cellAddressToKey(cellAddress).includes("G10")) {
-        console.group("Evaluation of G10");
-        flags.isProfiling = true;
-        console.time("Evaluation of G10");
-        console.profile("Evaluation of G10");
-      }
+      // if (cellAddressToKey(cellAddress).includes("G10")) {
+      //   console.group("Evaluation of G10");
+      //   flags.isProfiling = true;
+      //   console.time("Evaluation of G10");
+      //   console.profile("Evaluation of G10");
+      // }
       this.evaluateCell(node);
-      if (flags.isProfiling) {
-        flags.isProfiling = false;
-        console.timeEnd("Evaluation of G10");
-        console.profileEnd("Evaluation of G10");
-        console.groupEnd();
-      }
+      // if (flags.isProfiling) {
+      //   flags.isProfiling = false;
+      //   console.timeEnd("Evaluation of G10");
+      //   console.profileEnd("Evaluation of G10");
+      //   console.groupEnd();
+      // }
     }
 
     const result = node.evaluationResult;

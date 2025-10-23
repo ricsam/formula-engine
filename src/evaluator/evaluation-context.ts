@@ -190,9 +190,9 @@ export function eligibleKeysForContext(ctx: Context): string[] {
     for (let i = 0; i < n; i++) {
       if (((mask >> i) & 1) === 1) {
         const k = DIM_ORDER[i];
-        const v = (ctx as any)[k];
+        const v = (ctx as any)[k!];
         // Only assign when we actually have a value (guards tableName: undefined)
-        if (v !== undefined) (dep as any)[k] = v;
+        if (v !== undefined) (dep as any)[k!] = v;
       }
     }
     results.push(keyFromDependency(dep));
