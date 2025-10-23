@@ -314,10 +314,7 @@ export function processMultiCriteriaValues(
             break;
           }
         } else if (criteriaCell.type === "awaiting-evaluation") {
-          throw new AwaitingEvaluationError(
-            context.dependencyNode,
-            criteriaCell.waitingFor
-          );
+          return criteriaCell;
         } else {
           allMatch = false;
           break;
