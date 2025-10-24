@@ -508,7 +508,7 @@ describe("Formula Formatter", () => {
       "[MyWorkbook]Sheet1!Table1[Column1]"
     ];
 
-    test.each(testCases)("should round-trip formula: %s", (formula) => {
+    test.each(testCases)("should round-trip formula: %s", (formula: string) => {
       const ast = parseFormula(formula);
       const formatted = astToString(ast);
       const reparsed = parseFormula(formatted);
