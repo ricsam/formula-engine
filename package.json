@@ -1,5 +1,6 @@
 {
   "name": "@ricsam/formula-engine",
+  "version": "0.0.1",
   "module": "index.ts",
   "type": "module",
   "scripts": {
@@ -12,14 +13,16 @@
     "test:e2e:debug-visible": "npx playwright test --headed --debug",
     "test:e2e:with-logs": "./scripts/run-test.sh",
     "typecheck": "tsc --noEmit",
-    "dev": "bun demo/index.tsx",
-    "start": "NODE_ENV=production bun demo/index.tsx",
-    "build": "tsr generate && bun run build.ts",
-    "generate-routes": "tsr generate",
-    "watch-routes": "tsr watch",
-    "knip": "knip"
+    "demo:dev": "bun demo/index.tsx",
+    "demo:start": "NODE_ENV=production bun demo/index.tsx",
+    "demo:build": "tsr generate && bun run build.ts",
+    "demo:generate-routes": "tsr generate",
+    "demo:watch-routes": "tsr watch",
+    "knip": "knip",
+    "build": "bun build-lib.ts"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.29.4",
     "@anocca-pub/components": "^0.0.33",
     "@playwright/test": "^1.55.0",
     "@radix-ui/react-label": "^2.1.7",
