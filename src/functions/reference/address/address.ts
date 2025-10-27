@@ -9,8 +9,8 @@ import {
   type SpreadsheetRange,
   type SpilledValuesEvaluationResult,
   type SingleEvaluationResult,
-} from "src/core/types";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
+} from "../../../core/types";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
 
 /**
  * ADDRESS function - Creates a cell reference as text given row and column numbers

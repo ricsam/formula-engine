@@ -1,8 +1,8 @@
-import type { DependencyManager } from "src/core/managers/dependency-manager";
-import { FrontierDependencyManager } from "src/core/managers/frontier-dependency-manager";
-import type { WorkbookManager } from "src/core/managers/workbook-manager";
-import type { EvaluateAllCellsResult, RangeAddress } from "src/core/types";
-import { getRangeKey, keyToRangeAddress } from "src/core/utils";
+import type { DependencyManager } from "../core/managers/dependency-manager";
+import { FrontierDependencyManager } from "../core/managers/frontier-dependency-manager";
+import type { WorkbookManager } from "../core/managers/workbook-manager";
+import type { EvaluateAllCellsResult, RangeAddress } from "../core/types";
+import { getRangeKey, keyToRangeAddress } from "../core/utils";
 
 export class RangeEvaluationNode extends FrontierDependencyManager {
   public key: string;

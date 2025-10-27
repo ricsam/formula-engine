@@ -10,14 +10,14 @@ import {
 } from "../types";
 import { getCellReference, parseCellReference } from "../utils";
 
-import type { RangeAddress } from "src/core/types";
+import type { RangeAddress } from "../types";
 import { buildRangeEvalOrder } from "./range-eval-order-builder";
 import {
   EvaluationError,
   SheetNotFoundError,
   WorkbookNotFoundError,
-} from "src/evaluator/evaluation-error";
-import { normalizeSerializedCellValue } from "src/parser/formatter";
+} from "../../evaluator/evaluation-error";
+import { normalizeSerializedCellValue } from "../../parser/formatter";
 
 interface IndexEntry {
   number: number;

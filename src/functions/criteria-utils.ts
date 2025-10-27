@@ -1,27 +1,24 @@
+import type { LookupOrder } from "../core/managers/range-eval-order-builder";
 import {
   FormulaError,
-  type FunctionDefinition,
+  type CellInfinity,
+  type ErrorEvaluationResult,
   type FunctionEvaluationResult,
   type SingleEvaluationResult,
-  type CellInfinity,
-  type ValueEvaluationResult,
-  type ErrorEvaluationResult,
-} from "src/core/types";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
-import type { FunctionNode, ASTNode } from "src/parser/ast";
+  type ValueEvaluationResult
+} from "../core/types";
+import { getRelativeRange } from "../core/utils";
+import type { EvaluationContext } from "../evaluator/evaluation-context";
 import {
-  parseCriteria,
+  EvaluationError
+} from "../evaluator/evaluation-error";
+import type { FormulaEvaluator } from "../evaluator/formula-evaluator";
+import type { ASTNode, FunctionNode } from "../parser/ast";
+import {
   matchesParsedCriteria,
+  parseCriteria,
   type ParsedCriteria,
 } from "./criteria-parser";
-import { flags } from "src/debug/flags";
-import { getRelativeRange } from "src/core/utils";
-import type { LookupOrder } from "src/core/managers";
-import {
-  AwaitingEvaluationError,
-  EvaluationError,
-} from "src/evaluator/evaluation-error";
 
 /**
  * Criteria pair for criteria-based functions

@@ -1,16 +1,13 @@
 import {
-  FormulaError,
   type FunctionDefinition,
-  type FunctionEvaluationResult,
-} from "src/core/types";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
+  type FunctionEvaluationResult
+} from "../../../core/types";
 import {
   parseCriteriaPairs,
   processMultiCriteriaValues,
   validateMultiCriteriaArgs,
 } from "../../criteria-utils";
 import { performMinimum } from "./min-utils";
-import { parseCriteria, matchesParsedCriteria } from "../../criteria-parser";
 
 /**
  * MINIFS function - Returns the minimum value among cells specified by multiple criteria

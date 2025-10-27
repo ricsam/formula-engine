@@ -1,18 +1,16 @@
 import {
   FormulaError,
+  type CellAddress,
   type CellValue,
-  type CellNumber,
+  type ErrorEvaluationResult,
   type FunctionDefinition,
   type FunctionEvaluationResult,
-  type ValueEvaluationResult,
-  type CellAddress,
-  type SpreadsheetRange,
-  type SpilledValuesEvaluationResult,
   type SingleEvaluationResult,
-  type ErrorEvaluationResult,
-} from "src/core/types";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+  type SpilledValuesEvaluationResult,
+  type SpreadsheetRange
+} from "../../../core/types";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
+import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
 
 /**
  * IF function - Returns one value if a condition is true and another value if it's false

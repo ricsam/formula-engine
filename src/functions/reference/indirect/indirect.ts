@@ -1,17 +1,9 @@
 import {
   FormulaError,
-  type CellValue,
-  type CellNumber,
   type FunctionDefinition,
-  type FunctionEvaluationResult,
-  type ValueEvaluationResult,
-  type CellAddress,
-  type SpreadsheetRange,
-  type SpilledValuesEvaluationResult,
-  type SingleEvaluationResult,
-} from "src/core/types";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import { parseFormula } from "src/parser/parser";
+  type FunctionEvaluationResult
+} from "../../../core/types";
+import { parseFormula } from "../../../parser/parser";
 
 /**
  * INDIRECT function - Returns the reference specified by a text string

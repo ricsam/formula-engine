@@ -1,10 +1,8 @@
 import {
-  contextDependencyKeys,
   eligibleKeysForContext,
   getContextDependencyKey,
   type ContextDependency,
-  type ContextDependencyType,
-} from "src/evaluator/evaluation-context";
+} from "../../evaluator/evaluation-context";
 import {
   type CellAddress,
   type EvaluationOrder,
@@ -12,12 +10,13 @@ import {
 } from "../types";
 import { isCellInRange, keyToCellAddress } from "../utils";
 
-import { AstEvaluationNode } from "src/evaluator/dependency-nodes/ast-evaluation-node";
-import { CellValueNode } from "src/evaluator/dependency-nodes/cell-value-node";
-import { EmptyCellEvaluationNode } from "src/evaluator/dependency-nodes/empty-cell-evaluation-node";
-import { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
-import type { ASTNode } from "src/parser/ast";
-import { astToString } from "src/parser/formatter";
+import { AstEvaluationNode } from "../../evaluator/dependency-nodes/ast-evaluation-node";
+import { CellValueNode } from "../../evaluator/dependency-nodes/cell-value-node";
+import { EmptyCellEvaluationNode } from "../../evaluator/dependency-nodes/empty-cell-evaluation-node";
+import { SpillMetaNode } from "../../evaluator/dependency-nodes/spill-meta-node";
+import { RangeEvaluationNode } from "../../evaluator/range-evaluation-node";
+import type { ASTNode } from "../../parser/ast";
+import { astToString } from "../../parser/formatter";
 import { CacheManager } from "./cache-manager";
 import type {
   CellNodeKeyDictionary,
@@ -25,8 +24,6 @@ import type {
   DependencyNode,
 } from "./dependency-node";
 import { WorkbookManager } from "./workbook-manager";
-import { SpillMetaNode } from "src/evaluator/dependency-nodes/spill-meta-node";
-import { flags } from "src/debug/flags";
 
 export interface DependencyTreeNode {
   type: "cell" | "range" | "empty";

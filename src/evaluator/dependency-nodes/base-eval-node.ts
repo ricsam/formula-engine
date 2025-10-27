@@ -1,9 +1,4 @@
-import { type DependencyNode } from "src/core/managers/dependency-node";
-import type {
-  DoesNotSpillResult,
-  FunctionEvaluationResult,
-  SpilledValuesEvaluationResult,
-} from "src/core/types";
+import { type DependencyNode } from "../../core/managers/dependency-node";
 import type { SpillMetaNode } from "./spill-meta-node";
 
 export class BaseEvalNode<T> {

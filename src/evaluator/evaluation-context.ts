@@ -1,7 +1,6 @@
-import type { TableManager } from "src/core/managers";
-import type { DependencyNode } from "src/core/managers/dependency-node";
-import type { WorkbookManager } from "src/core/managers/workbook-manager";
-import type { CellAddress } from "src/core/types";
+import type { DependencyNode } from "../core/managers/dependency-node";
+import type { TableManager } from "../core/managers/table-manager";
+import type { CellAddress } from "../core/types";
 
 export class EvaluationContext {
   private _cellAddress: CellAddress;

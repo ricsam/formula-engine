@@ -3,8 +3,8 @@ import type {
   DoesNotSpillResult,
   ErrorEvaluationResult,
   SpilledValuesEvaluationResult,
-} from "src/core/types";
-import { getCellReference, keyToCellAddress } from "src/core/utils";
+} from "../../core/types";
+import { getCellReference, keyToCellAddress } from "../../core/utils";
 import { BaseEvalNode } from "./base-eval-node";
 
 export class SpillMetaNode extends BaseEvalNode<

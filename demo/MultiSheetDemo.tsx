@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button";
 import { FormulaEngine } from "../src/core/engine";
 import type { SelectionManager } from "@ricsam/selection-manager";
 import { createEngineWithMultiSheetData } from "./lib/multisheet-data";
-import { useEngine } from "src/react/hooks";
-import type { CellAddress } from "src/core/types";
+import { useEngine } from "../src/react/hooks";
+import type { CellAddress } from "../src/core/types";
 
 interface SheetComponentProps {
   sheetName: "Dashboard" | "Sales" | "Products";

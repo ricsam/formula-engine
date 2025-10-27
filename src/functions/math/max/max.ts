@@ -1,9 +1,9 @@
 import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
-} from "src/core/types";
+} from "../../../core/types";
 import { performMaximum } from "./max-utils";
-import { createArgumentIterator } from "src/functions/function-utils";
+import { createArgumentIterator } from "../../function-utils";
 
 /**
  * MAX function - Returns the largest number in the arguments

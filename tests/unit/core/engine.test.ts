@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { FormulaEngine } from "../../../src/core/engine";
 import {
   FormulaError,
   type SerializedCellValue,
   type TableDefinition,
-} from "src/core/types";
-import { getCellReference, parseCellReference } from "src/core/utils";
-import { FormulaEngine } from "../../../src/core/engine";
+} from "../../../src/core/types";
+import { getCellReference, parseCellReference } from "../../../src/core/utils";
 
 describe("FormulaEngine", () => {
   const workbookName = "TestWorkbook";

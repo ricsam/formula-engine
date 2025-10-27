@@ -1,4 +1,3 @@
-import { parseFormula } from "src/parser/parser";
 import type {
   LocalCellAddress,
   RangeAddress,
@@ -13,15 +12,26 @@ import {
   type SpreadsheetRangeEnd,
   type TableDefinition,
 } from "../core/types";
+import { parseFormula } from "../parser/parser";
 
-import type { DependencyManager } from "src/core/managers/dependency-manager";
-import type { TableManager } from "src/core/managers/table-manager";
-import type { WorkbookManager } from "src/core/managers/workbook-manager";
+import type { DependencyManager } from "../core/managers/dependency-manager";
+import type { NamedExpressionManager } from "../core/managers/named-expression-manager";
+import type { TableManager } from "../core/managers/table-manager";
+import {
+  captureEvaluationErrors,
+  cellAddressToKey,
+  getAbsoluteRange,
+  getRangeIntersection,
+  getRangeKey,
+  getRelativeRange,
+  isRangeOneCell,
+  rangeAddressToKey,
+} from "../core/utils";
 import {
   evaluateScalarOperator,
   type EvaluateScalarOperatorOptions,
-} from "src/evaluator/evaluate-scalar-operator";
-import { functions } from "src/functions";
+} from "../evaluator/evaluate-scalar-operator";
+import { functions } from "../functions";
 import type {
   ArrayNode,
   ASTNode,
@@ -34,19 +44,7 @@ import type {
   ThreeDRangeNode,
   UnaryOpNode,
   ValueNode,
-} from "src/parser/ast";
-import {
-  captureEvaluationErrors,
-  cellAddressToKey,
-  getAbsoluteRange,
-  getCellReference,
-  getRangeIntersection,
-  getRangeKey,
-  getRelativeRange,
-  getRelativeRangeKey,
-  isRangeOneCell,
-  rangeAddressToKey,
-} from "../core/utils";
+} from "../parser/ast";
 import { add } from "./arithmetic/add/add";
 import { divide } from "./arithmetic/divide/divide";
 import { multiply } from "./arithmetic/multiply/multiply";
@@ -59,12 +57,8 @@ import { lessThan } from "./comparison/less-than";
 import { lessThanOrEqual } from "./comparison/less-than-or-equal";
 import { notEquals } from "./comparison/not-equals";
 import { concatenate } from "./concatenation/concatenate";
-import type { NamedExpressionManager } from "src/core/managers/named-expression-manager";
-import { EvaluationContext } from "./evaluation-context";
-import { flags } from "src/debug/flags";
-import { AwaitingEvaluationError, EvaluationError } from "./evaluation-error";
-import { formatFormula } from "src/parser/formatter";
 import { CellValueNode } from "./dependency-nodes/cell-value-node";
+import { EvaluationContext } from "./evaluation-context";
 
 export class FormulaEvaluator {
   constructor(

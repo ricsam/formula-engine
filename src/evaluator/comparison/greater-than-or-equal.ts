@@ -1,5 +1,5 @@
-import type { ArethmeticEvaluator } from "src/core/types";
-import { FormulaError } from "src/core/types";
+import type { ArethmeticEvaluator } from "../../core/types";
+import { FormulaError } from "../../core/types";
 import { lessThan } from "./less-than";
 
 /**

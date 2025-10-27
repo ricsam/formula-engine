@@ -10,9 +10,9 @@ import {
   type SpilledValuesEvaluationResult,
   type SingleEvaluationResult,
   type ErrorEvaluationResult,
-} from "src/core/types";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
+} from "../../../core/types";
+import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
 
 /**
  * AND function - Returns TRUE if all arguments are TRUE, FALSE otherwise

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { FormulaEngine } from "src/core/engine";
-import { FormulaError, type SerializedCellValue } from "src/core/types";
-import { parseCellReference } from "src/core/utils";
-import { visualizeSpreadsheet } from "src/core/utils/spreadsheet-visualizer";
+import { FormulaEngine } from "../../../core/engine";
+import { FormulaError, type SerializedCellValue } from "../../../core/types";
+import { parseCellReference } from "../../../core/utils";
+import { visualizeSpreadsheet } from "../../../core/utils/spreadsheet-visualizer";
 
 const sheetName = "TestSheet";
 const workbookName = "TestWorkbook";

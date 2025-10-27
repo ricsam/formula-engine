@@ -9,10 +9,10 @@ import {
   type SpreadsheetRange,
   type SpilledValuesEvaluationResult,
   type SingleEvaluationResult,
-} from "src/core/types";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import type { ReferenceNode } from "src/parser/ast";
-import { isCellAddress, isRangeAddress } from "src/core/utils";
+} from "../../../core/types";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
+import type { ReferenceNode } from "../../../parser/ast";
+import { isCellAddress, isRangeAddress } from "../../../core/utils";
 
 /**
  * CELL function - Returns information about the formatting, location, or contents of a cell

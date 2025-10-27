@@ -1,8 +1,8 @@
-import { AstEvaluationNode } from "src/evaluator/dependency-nodes/ast-evaluation-node";
-import { CellValueNode } from "src/evaluator/dependency-nodes/cell-value-node";
-import { EmptyCellEvaluationNode } from "src/evaluator/dependency-nodes/empty-cell-evaluation-node";
-import { SpillMetaNode } from "src/evaluator/dependency-nodes/spill-meta-node";
-import { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
+import { AstEvaluationNode } from "../../evaluator/dependency-nodes/ast-evaluation-node";
+import { CellValueNode } from "../../evaluator/dependency-nodes/cell-value-node";
+import { EmptyCellEvaluationNode } from "../../evaluator/dependency-nodes/empty-cell-evaluation-node";
+import { SpillMetaNode } from "../../evaluator/dependency-nodes/spill-meta-node";
+import { RangeEvaluationNode } from "../../evaluator/range-evaluation-node";
 import type { DependencyNode } from "./dependency-node";
 
 

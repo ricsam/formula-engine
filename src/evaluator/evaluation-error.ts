@@ -1,6 +1,6 @@
-import type { DependencyNode } from "src/core/managers/dependency-node";
-import type { CellAddress, FormulaError } from "src/core/types";
-import { cellAddressToKey } from "src/core/utils";
+import type { DependencyNode } from "../core/managers/dependency-node";
+import type { CellAddress, FormulaError } from "../core/types";
+import { cellAddressToKey } from "../core/utils";
 
 export class EvaluationError extends Error {
   constructor(

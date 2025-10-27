@@ -2,13 +2,12 @@ import {
   FormulaError,
   type FunctionDefinition,
   type FunctionEvaluationResult,
-} from "src/core/types";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import { 
-  processMultiCriteriaValues, 
+} from "../../../core/types";
+import { parseCriteria } from "../../criteria-parser";
+import {
+  processMultiCriteriaValues,
   validateSingleCriteriaArgs,
 } from "../../criteria-utils";
-import { parseCriteria, matchesParsedCriteria } from "../../criteria-parser";
 import { performAverage } from "./average-utils";
 
 /**

@@ -1,7 +1,7 @@
 import { describe, expect, test, beforeEach } from "bun:test";
-import { FormulaEngine } from "src/core/engine";
-import { parseCellReference } from "src/core/utils";
-import type { SerializedCellValue } from "src/core/types";
+import { FormulaEngine } from "../../../core/engine";
+import { parseCellReference } from "../../../core/utils";
+import type { SerializedCellValue } from "../../../core/types";
 
 describe("AVERAGEIFS function", () => {
   const sheetName = "TestSheet";

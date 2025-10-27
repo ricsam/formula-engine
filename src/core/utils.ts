@@ -1,7 +1,7 @@
 import {
   AwaitingEvaluationError,
   EvaluationError,
-} from "src/evaluator/evaluation-error";
+} from "../evaluator/evaluation-error";
 import {
   FormulaError,
   type CellAddress,

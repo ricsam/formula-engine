@@ -1,16 +1,15 @@
 import {
   FormulaError,
+  type CellAddress,
   type CellNumber,
+  type ErrorEvaluationResult,
   type FunctionDefinition,
   type FunctionEvaluationResult,
   type ValueEvaluationResult,
-  type CellAddress,
-  type ErrorEvaluationResult,
-} from "src/core/types";
-import type { FormulaEngine } from "src/core/engine";
+} from "../../../core/types";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
+import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
 import { convertToString, extractNumericValue } from "../text-helpers";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 // Helper function for FIND operation - returns the result, error, or null if not found
 function findOperation(

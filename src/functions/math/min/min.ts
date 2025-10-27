@@ -1,6 +1,6 @@
-import { type FunctionDefinition } from "src/core/types";
+import { type FunctionDefinition } from "../../../core/types";
+import { createArgumentIterator } from "../../../functions/function-utils";
 import { performMinimum } from "./min-utils";
-import { createArgumentIterator } from "src/functions/function-utils";
 
 /**
  * MIN function - Returns the smallest number in the arguments

@@ -1,19 +1,12 @@
 import {
   FormulaError,
   type CellValue,
-  type CellNumber,
-  type FunctionDefinition,
-  type FunctionEvaluationResult,
-  type ValueEvaluationResult,
-  type CellAddress,
-  type SpreadsheetRange,
-  type SpilledValuesEvaluationResult,
-  type SingleEvaluationResult,
   type ErrorEvaluationResult,
-  type CellString,
-} from "src/core/types";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+  type FunctionDefinition,
+  type FunctionEvaluationResult
+} from "../../../core/types";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
+import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
 
 /**
  * TEXTJOIN function - Joins text from multiple ranges and/or strings with a specified delimiter

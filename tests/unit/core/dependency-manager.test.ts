@@ -1,13 +1,12 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { FormulaEngine } from "src/core/engine";
-import type { DependencyNode } from "src/core/managers/dependency-node";
-import { type SerializedCellValue } from "src/core/types";
-import { parseCellReference } from "src/core/utils";
-import type { CellValueNode } from "src/evaluator/dependency-nodes/cell-value-node";
-import { AstEvaluationNode } from "src/evaluator/dependency-nodes/ast-evaluation-node";
-import { EmptyCellEvaluationNode } from "src/evaluator/dependency-nodes/empty-cell-evaluation-node";
-import { SpillMetaNode } from "src/evaluator/dependency-nodes/spill-meta-node";
-import { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
+import { FormulaEngine } from "../../../src/core/engine";
+import type { DependencyNode } from "../../../src/core/managers/dependency-node";
+import { type SerializedCellValue } from "../../../src/core/types";
+import { parseCellReference } from "../../../src/core/utils";
+import { AstEvaluationNode } from "../../../src/evaluator/dependency-nodes/ast-evaluation-node";
+import { EmptyCellEvaluationNode } from "../../../src/evaluator/dependency-nodes/empty-cell-evaluation-node";
+import { SpillMetaNode } from "../../../src/evaluator/dependency-nodes/spill-meta-node";
+import { RangeEvaluationNode } from "../../../src/evaluator/range-evaluation-node";
 
 describe("DependencyManager", () => {
   const sheetName = "TestSheet";

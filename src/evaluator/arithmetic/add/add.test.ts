@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { add } from "./add";
-import { FormulaError, type CellAddress } from "src/core/types";
-import { EvaluationContext } from "src/evaluator/evaluation-context";
-import { TableManager } from "src/core/managers/table-manager";
-import { WorkbookManager } from "src/core/managers/workbook-manager";
-import { CellValueNode } from "src/evaluator/dependency-nodes/cell-value-node";
+import { FormulaError, type CellAddress } from "../../../core/types";
+import { EvaluationContext } from "../../evaluation-context";
+import { TableManager } from "../../../core/managers/table-manager";
+import { WorkbookManager } from "../../../core/managers/workbook-manager";
+import { CellValueNode } from "../../dependency-nodes/cell-value-node";
 
 const errAddress: CellAddress = {
   sheetName: "Sheet1",

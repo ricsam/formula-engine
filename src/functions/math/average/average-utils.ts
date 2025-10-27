@@ -2,8 +2,8 @@ import {
   FormulaError,
   type FunctionEvaluationResult,
   type SingleEvaluationResult,
-} from "src/core/types";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
+} from "../../../core/types";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
 
 /**
  * Performs averaging of an iterable of SingleEvaluationResult values

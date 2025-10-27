@@ -3,10 +3,10 @@ import {
   FormulaError,
   type SerializedCellValue,
   type TableDefinition,
-} from "src/core/types";
-import { getCellReference, parseCellReference } from "src/core/utils";
+} from "../../../src/core/types";
+import { getCellReference, parseCellReference } from "../../../src/core/utils";
 import { FormulaEngine } from "../../../src/core/engine";
-import { visualizeSpreadsheet } from "src/core/utils/spreadsheet-visualizer";
+import { visualizeSpreadsheet } from "../../../src/core/utils/spreadsheet-visualizer";
 
 describe("Reproduce issue with evalution order", () => {
   const workbookName = "TestWorkbook";

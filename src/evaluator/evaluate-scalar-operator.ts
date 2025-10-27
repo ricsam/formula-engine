@@ -1,4 +1,4 @@
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import type { FormulaEvaluator } from "./formula-evaluator";
 import {
   FormulaError,
   type ArethmeticEvaluator,

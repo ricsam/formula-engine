@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { type SerializedCellValue } from "src/core/types";
-import { parseCellReference } from "src/core/utils";
+import { type SerializedCellValue } from "../../../src/core/types";
+import { parseCellReference } from "../../../src/core/utils";
 import { FormulaEngine } from "../../../src/core/engine";
 import { visualizeSpreadsheet } from "../../../src/core/utils/spreadsheet-visualizer";
 

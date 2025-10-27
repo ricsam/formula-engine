@@ -1,6 +1,6 @@
-import { type FunctionDefinition } from "src/core/types";
+import { type FunctionDefinition } from "../../../core/types";
 import { performSummation } from "./summation-utils";
-import { createArgumentIterator } from "src/functions/function-utils";
+import { createArgumentIterator } from "../../function-utils";
 
 /**
  * SUM function - Adds all numbers in the arguments

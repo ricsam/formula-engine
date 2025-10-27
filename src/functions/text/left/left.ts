@@ -2,8 +2,8 @@ import {
   FormulaError,
   type FunctionDefinition,
   type FunctionEvaluationResult,
-} from "src/core/types";
-import { midOperation, createMidSpilledResult } from "../text-helpers";
+} from "../../../core/types";
+import { createMidSpilledResult, midOperation } from "../text-helpers";
 
 /**
  * LEFT function - Returns the leftmost characters from a text string

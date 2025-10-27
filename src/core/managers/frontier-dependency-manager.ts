@@ -1,10 +1,10 @@
-import { CellValueNode } from "src/evaluator/dependency-nodes/cell-value-node";
+import { CellValueNode } from "../../evaluator/dependency-nodes/cell-value-node";
 import type { CellAddress, CellInRangeResult, RangeAddress } from "../types";
 import { cellAddressToKey, checkRangeIntersection } from "../utils";
 import type { DependencyManager } from "./dependency-manager";
 import type { DependencyNode } from "./dependency-node";
 import type { WorkbookManager } from "./workbook-manager";
-import type { SpillMetaNode } from "src/evaluator/dependency-nodes/spill-meta-node";
+import type { SpillMetaNode } from "../../evaluator/dependency-nodes/spill-meta-node";
 
 type EvalOrderEntry =
   | {

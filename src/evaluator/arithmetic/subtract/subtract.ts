@@ -1,5 +1,5 @@
-import type { ArethmeticEvaluator } from "src/core/types";
-import { FormulaError } from "src/core/types";
+import type { ArethmeticEvaluator } from "../../../core/types";
+import { FormulaError } from "../../../core/types";
 
 export const subtract: ArethmeticEvaluator = (left, right, context) => {
   // Only allow number and infinity types

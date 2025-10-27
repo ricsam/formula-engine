@@ -3,13 +3,9 @@
  * This file contains all fundamental types used throughout the engine
  */
 
-import type { ASTNode, FunctionNode } from "src/parser/ast";
-import type { FormulaEngine } from "./engine";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import type { CellValueNode } from "src/evaluator/dependency-nodes/cell-value-node";
-import type { EmptyCellEvaluationNode } from "src/evaluator/dependency-nodes/empty-cell-evaluation-node";
-import type { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
+import type { EvaluationContext } from "../evaluator/evaluation-context";
+import type { FormulaEvaluator } from "../evaluator/formula-evaluator";
+import type { FunctionNode } from "../parser/ast";
 import type { DependencyNode } from "./managers/dependency-node";
 import type { LookupOrder } from "./managers/range-eval-order-builder";
 

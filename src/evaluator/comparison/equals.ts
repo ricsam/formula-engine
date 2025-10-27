@@ -1,5 +1,5 @@
-import type { ArethmeticEvaluator } from "src/core/types";
-import { FormulaError } from "src/core/types";
+import type { ArethmeticEvaluator } from "../../core/types";
+import { FormulaError } from "../../core/types";
 
 /**
  * Equals operator (=) - Returns TRUE if both values are exactly equal

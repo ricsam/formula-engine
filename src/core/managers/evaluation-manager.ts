@@ -1,13 +1,13 @@
-import { flags } from "src/debug/flags";
-import { AstEvaluationNode } from "src/evaluator/dependency-nodes/ast-evaluation-node";
-import { CellValueNode } from "src/evaluator/dependency-nodes/cell-value-node";
-import { EvaluationContext } from "src/evaluator/evaluation-context";
+import { flags } from "../../debug/flags";
+import { AstEvaluationNode } from "../../evaluator/dependency-nodes/ast-evaluation-node";
+import { CellValueNode } from "../../evaluator/dependency-nodes/cell-value-node";
+import { EvaluationContext } from "../../evaluator/evaluation-context";
 import {
   EvaluationError,
   SheetNotFoundError,
-} from "src/evaluator/evaluation-error";
-import { RangeEvaluationNode } from "src/evaluator/range-evaluation-node";
-import { normalizeSerializedCellValue } from "src/parser/formatter";
+} from "../../evaluator/evaluation-error";
+import { RangeEvaluationNode } from "../../evaluator/range-evaluation-node";
+import { normalizeSerializedCellValue } from "../../parser/formatter";
 import { FormulaEvaluator } from "../../evaluator/formula-evaluator";
 import {
   FormulaError,
@@ -36,8 +36,8 @@ import {
 } from "../utils";
 import type { DependencyManager } from "./dependency-manager";
 import type { WorkbookManager } from "./workbook-manager";
-import { SpillMetaNode } from "src/evaluator/dependency-nodes/spill-meta-node";
-import { EmptyCellEvaluationNode } from "src/evaluator/dependency-nodes/empty-cell-evaluation-node";
+import { SpillMetaNode } from "../../evaluator/dependency-nodes/spill-meta-node";
+import { EmptyCellEvaluationNode } from "../../evaluator/dependency-nodes/empty-cell-evaluation-node";
 import type { TableManager } from "./table-manager";
 
 export class EvaluationManager {

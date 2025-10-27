@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { FormulaEngine } from "src/core/engine";
+import { FormulaEngine } from "../../../core/engine";
 import {
   FormulaError,
   type SerializedCellValue,
-} from "src/core/types";
-import { parseCellReference } from "src/core/utils";
+} from "../../../core/types";
+import { parseCellReference } from "../../../core/utils";
 
 describe("INDEX function", () => {
   const sheetName = "TestSheet";

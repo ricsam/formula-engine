@@ -1,8 +1,8 @@
 import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
-} from "src/core/types";
-import { createArgumentIterator } from "src/functions/function-utils";
+} from "../../../core/types";
+import { createArgumentIterator } from "../../../functions/function-utils";
 import { performCount } from "./count-utils";
 
 /**

@@ -1,4 +1,4 @@
-import { FormulaError, type CellValue } from "src/core/types";
+import { FormulaError, type CellValue } from "../core/types";
 
 /**
  * Parsed criteria result

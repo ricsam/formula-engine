@@ -4,8 +4,8 @@ import {
   type EvaluateAllCellsResult,
   type FunctionDefinition,
   type FunctionEvaluationResult,
-} from "src/core/types";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
+} from "../../../core/types";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
 
 /**
  * MATCH function - Returns the position of a value in an array

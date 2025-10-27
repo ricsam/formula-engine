@@ -1,13 +1,13 @@
-import type { LookupOrder } from "src/core/managers";
+import type { LookupOrder } from "../core/managers/range-eval-order-builder";
 import {
   type ErrorEvaluationResult,
   type SingleEvaluationResult,
-} from "src/core/types";
-import { getCellReference } from "src/core/utils";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import { AwaitingEvaluationError } from "src/evaluator/evaluation-error";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
-import type { FunctionNode } from "src/parser/ast";
+} from "../core/types";
+import { getCellReference } from "../core/utils";
+import type { EvaluationContext } from "../evaluator/evaluation-context";
+import { AwaitingEvaluationError } from "../evaluator/evaluation-error";
+import type { FormulaEvaluator } from "../evaluator/formula-evaluator";
+import type { FunctionNode } from "../parser/ast";
 
 /**
  * Creates an array of all values from arguments of a function node

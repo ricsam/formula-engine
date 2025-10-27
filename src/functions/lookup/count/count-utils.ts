@@ -2,8 +2,8 @@ import {
   type CellAddress,
   type FunctionEvaluationResult,
   type SingleEvaluationResult,
-} from "src/core/types";
-import type { ParsedCriteria } from "src/functions/criteria-parser";
+} from "../../../core/types";
+import type { ParsedCriteria } from "../../criteria-parser";
 
 /**
  * Performs counting of numeric values from an iterable of SingleEvaluationResult values

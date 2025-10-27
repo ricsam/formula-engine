@@ -1,8 +1,8 @@
 import type { NamedExpression } from "../types";
 import { renameNamedExpressionInFormula } from "../named-expression-renamer";
 import type { EventManager } from "./event-manager";
-import type { NamedExpressionNode } from "src/parser/ast";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
+import type { NamedExpressionNode } from "../../parser/ast";
+import type { EvaluationContext } from "../../evaluator/evaluation-context";
 
 export class NamedExpressionManager {
   sheetExpressions: Map<string, Map<string, Map<string, NamedExpression>>> =

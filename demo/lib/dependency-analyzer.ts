@@ -1,4 +1,4 @@
-import type { SerializedCellValue } from "src/core/types";
+import type { SerializedCellValue } from "../../src/core/types";
 import { FormulaEngine } from "../../src/core/engine";
 
 // Helper functions for column conversion

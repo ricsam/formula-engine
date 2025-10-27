@@ -8,10 +8,10 @@ import {
   type CellAddress,
   type SpreadsheetRange,
   type ErrorEvaluationResult,
-} from "src/core/types";
-import type { FormulaEngine } from "src/core/engine";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
+} from "../../../core/types";
+import type { FormulaEngine } from "../../../core/engine";
+import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
 
 /**
  * INDEX function - Returns a value from a table or array

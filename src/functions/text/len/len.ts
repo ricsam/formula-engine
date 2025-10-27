@@ -1,14 +1,11 @@
 import {
   FormulaError,
-  type FunctionDefinition,
-  type FunctionEvaluationResult,
-  type CellNumber,
   type CellAddress,
-  type SpreadsheetRange,
-} from "src/core/types";
-import { convertToString } from "../text-helpers";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
+  type FunctionDefinition,
+  type FunctionEvaluationResult
+} from "../../../core/types";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
+import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
 
 /**
  * LEN function - Returns the length of a text string

@@ -1,8 +1,7 @@
 import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
-} from "src/core/types";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
+} from "../../../core/types";
 import {
   parseCriteriaPairs,
   processMultiCriteriaValues,

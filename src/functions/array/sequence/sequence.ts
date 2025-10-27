@@ -7,9 +7,9 @@ import {
   type FunctionEvaluationResult,
   type SpilledValuesEvaluationResult,
   type SpreadsheetRange,
-} from "src/core/types";
-import { getRangeIntersection, isRangeOneCell } from "src/core/utils";
-import { EvaluationError } from "src/evaluator/evaluation-error";
+} from "../../../core/types";
+import { getRangeIntersection, isRangeOneCell } from "../../../core/utils";
+import { EvaluationError } from "../../../evaluator/evaluation-error";
 
 /**
  * SEQUENCE(rows, [columns], [start], [step])

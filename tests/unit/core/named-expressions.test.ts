@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import { type NamedExpression, type SerializedCellValue } from "src/core/types";
-import { parseCellReference } from "src/core/utils";
 import { FormulaEngine } from "../../../src/core/engine";
+import { type NamedExpression, type SerializedCellValue } from "../../../src/core/types";
+import { parseCellReference } from "../../../src/core/utils";
 
 describe("Named Expressions", () => {
   const sheetName = "TestSheet";

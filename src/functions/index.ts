@@ -1,4 +1,4 @@
-import type { FunctionDefinition } from "src/core/types";
+import type { FunctionDefinition } from "../core/types";
 // import { arrayFunctions } from "./array/array-functions";
 // import { infoFunctions } from "./info/info-functions";
 // import { logicalComparisonFunctions } from "./logical/comparisons";

@@ -11,9 +11,9 @@ import {
   type SingleEvaluationResult,
   type CellInRangeResult,
   type EvaluateAllCellsResult,
-} from "src/core/types";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+} from "../../../core/types";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
+import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
 
 /**
  * XLOOKUP function - Searches for a value and returns a corresponding value from another array

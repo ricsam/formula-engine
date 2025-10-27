@@ -10,10 +10,10 @@ import {
   type SpilledValuesEvaluationResult,
   type SingleEvaluationResult,
   type ErrorEvaluationResult,
-} from "src/core/types";
-import { captureEvaluationErrors } from "src/core/utils";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+} from "../../../core/types";
+import { captureEvaluationErrors } from "../../../core/utils";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
+import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
 
 /**
  * IFERROR function - Returns a value you specify if a formula evaluates to an error

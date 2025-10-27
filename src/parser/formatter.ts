@@ -1,4 +1,4 @@
-import { indexToColumn } from "src/core/utils";
+import { indexToColumn } from "../core/utils";
 import { type CellValue, type SerializedCellValue } from "../core/types";
 import { parseOpenEndedRange, parseInfiniteRange } from "./grammar";
 import type {

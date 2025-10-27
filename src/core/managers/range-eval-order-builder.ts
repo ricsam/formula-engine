@@ -1,18 +1,16 @@
-import { flags } from "src/debug/flags";
+import { EvaluationError } from "../../evaluator/evaluation-error";
 import {
   FormulaError,
   type CellAddress,
   type RangeAddress,
-  type SerializedCellValue,
-  type Sheet,
+  type Sheet
 } from "../types";
-import { getCellReference, parseCellReference } from "../utils";
+import { getCellReference } from "../utils";
 import {
-  type WorkbookManager,
-  type SheetIndexes,
   IndexEntryBinarySearch,
+  type SheetIndexes,
+  type WorkbookManager,
 } from "./workbook-manager";
-import { EvaluationError } from "src/evaluator/evaluation-error";
 
 export type LookupOrder = "row-major" | "col-major";
 

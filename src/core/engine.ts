@@ -15,15 +15,8 @@ import {
 } from "./types";
 
 import type { FillDirection } from "@ricsam/selection-manager";
-import { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+import { FormulaEvaluator } from "../evaluator/formula-evaluator";
 import { AutoFill } from "./autofill-utils";
-import {
-  DependencyManager,
-  EvaluationManager,
-  EventManager,
-  NamedExpressionManager,
-  TableManager,
-} from "./managers";
 import { WorkbookManager } from "./managers/workbook-manager";
 import { deserialize, serialize } from "./map-serializer";
 import { renameNamedExpressionInFormula } from "./named-expression-renamer";
@@ -32,6 +25,11 @@ import { renameTableInFormula } from "./table-renamer";
 import { renameWorkbookInFormula } from "./workbook-renamer";
 import { cellAddressToKey, keyToCellAddress } from "./utils";
 import { CacheManager } from "./managers/cache-manager";
+import { NamedExpressionManager } from "./managers/named-expression-manager";
+import { TableManager } from "./managers/table-manager";
+import { EventManager } from "./managers/event-manager";
+import { EvaluationManager } from "./managers/evaluation-manager";
+import { DependencyManager } from "./managers/dependency-manager";
 
 /**
  * Main FormulaEngine class

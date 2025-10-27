@@ -1,19 +1,18 @@
-import { describe, expect, test, beforeEach } from "bun:test";
-import { WorkbookManager } from "../../../src/core/managers/workbook-manager";
+import { beforeEach, describe, expect, test } from "bun:test";
+import { FormulaEngine } from "../../../src/core/engine";
 import {
   buildRangeEvalOrder,
   type RangeEvalOrderEntry,
-  type LookupOrder,
   type RangeEvalOrderEntryDict,
 } from "../../../src/core/managers/range-eval-order-builder";
+import { WorkbookManager } from "../../../src/core/managers/workbook-manager";
 import type {
-  RangeAddress,
   CellAddress,
+  RangeAddress,
   SerializedCellValue,
 } from "../../../src/core/types";
-import { getCellReference, parseCellReference } from "../../../src/core/utils";
-import { visualizeSpreadsheet } from "src/core/utils/spreadsheet-visualizer";
-import { FormulaEngine } from "src/core/engine";
+import { parseCellReference } from "../../../src/core/utils";
+import { visualizeSpreadsheet } from "../../../src/core/utils/spreadsheet-visualizer";
 
 function assertType<T extends keyof RangeEvalOrderEntryDict>(
   value: RangeEvalOrderEntry | undefined,
@@ -1122,7 +1121,7 @@ describe("buildRangeEvalOrder", () => {
     // Set up a few formulas at large indices
     setCell("A", 1, "=1");
     setCell("Z", 1000, "=2");
-    
+
     // Lookup range B1001:∞∞
     const range: RangeAddress = {
       workbookName,
@@ -1142,7 +1141,7 @@ describe("buildRangeEvalOrder", () => {
 
     // Should complete very quickly (< 50ms)
     expect(duration).toBeLessThan(50);
-    
+
     // Should just have one infinite range with candidates
     expect(result.length).toBe(1);
     expect(result[0]?.type).toBe("empty_range");
@@ -1153,7 +1152,7 @@ describe("buildRangeEvalOrder", () => {
     // This simulates the worst case where we have many diagonal candidates
     // With the old O(n²) algorithm, this would take ~500ms for 25k candidates
     // With O(n log n), should complete in < 10ms
-    
+
     const gridSize = 100; // 100x100 = 10,000 formulas
     for (let row = 1; row <= gridSize; row++) {
       for (let col = 0; col < gridSize; col++) {
@@ -1171,7 +1170,7 @@ describe("buildRangeEvalOrder", () => {
     };
 
     const startTime = performance.now();
-    
+
     // This will trigger findAllDiagonalStepCandidates with ~10k candidates
     const range: RangeAddress = {
       workbookName,
@@ -1184,11 +1183,11 @@ describe("buildRangeEvalOrder", () => {
         },
       },
     };
-    
+
     buildRangeEvalOrder.call(manager, "col-major", range);
-    
+
     const duration = performance.now() - startTime;
-    
+
     // Performance regression check: Should complete in < 50ms
     // (Would be ~500ms with O(n²) algorithm for 25k candidates)
     // With O(n log n), typically ~10ms for 10k candidates

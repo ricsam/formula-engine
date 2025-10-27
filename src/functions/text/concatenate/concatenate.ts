@@ -8,10 +8,10 @@ import {
   type SpilledValuesEvaluationResult,
   type ErrorEvaluationResult,
   type SingleEvaluationResult,
-} from "src/core/types";
-import { FormulaEvaluator } from "src/evaluator/formula-evaluator";
-import type { FunctionNode } from "src/parser/ast";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
+} from "../../../core/types";
+import { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
+import type { FunctionNode } from "../../../parser/ast";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
 
 /**
  * CONCATENATE function - Joins several text strings into one text string

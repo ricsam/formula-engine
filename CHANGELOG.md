@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.4
+
+### Patch Changes
+
+- fix base import path
+
 ## 0.0.3
 
 ### Patch Changes

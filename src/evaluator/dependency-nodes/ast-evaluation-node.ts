@@ -1,6 +1,6 @@
-import type { FunctionEvaluationResult } from "src/core/types";
-import type { ASTNode } from "src/parser/ast";
-import { astToString } from "src/parser/formatter";
+import type { FunctionEvaluationResult } from "../../core/types";
+import type { ASTNode } from "../../parser/ast";
+import { astToString } from "../../parser/formatter";
 import type { ContextDependency } from "../evaluation-context";
 import { BaseEvalNode } from "./base-eval-node";
 

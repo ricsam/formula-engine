@@ -1,12 +1,12 @@
-import type { DependencyManager } from "src/core/managers/dependency-manager";
-import { FrontierDependencyManager } from "src/core/managers/frontier-dependency-manager";
-import type { WorkbookManager } from "src/core/managers/workbook-manager";
+import type { DependencyManager } from "../../core/managers/dependency-manager";
+import { FrontierDependencyManager } from "../../core/managers/frontier-dependency-manager";
+import type { WorkbookManager } from "../../core/managers/workbook-manager";
 import type {
   CellAddress,
   RangeAddress,
   SingleEvaluationResult,
-} from "src/core/types";
-import { getCellReference, keyToCellAddress } from "src/core/utils";
+} from "../../core/types";
+import { getCellReference, keyToCellAddress } from "../../core/utils";
 
 export class EmptyCellEvaluationNode extends FrontierDependencyManager {
   public key: string;

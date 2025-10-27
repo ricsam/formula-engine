@@ -3,10 +3,10 @@ import {
   type FunctionEvaluationResult,
   type SingleEvaluationResult,
   type CellInfinity,
-} from "src/core/types";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import type { FormulaEvaluator } from "src/evaluator/formula-evaluator";
-import type { FunctionNode } from "src/parser/ast";
+} from "../../../core/types";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
+import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
+import type { FunctionNode } from "../../../parser/ast";
 
 /**
  * Result type for processInfinity in min functions

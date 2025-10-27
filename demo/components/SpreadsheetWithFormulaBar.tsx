@@ -10,9 +10,9 @@ import type {
   SerializedCellValue,
   SpreadsheetRange,
   SpreadsheetRangeEnd,
-} from "src/core/types";
-import { indexToColumn } from "src/core/utils";
-import { useEngine } from "src/react/hooks";
+} from "../../src/core/types";
+import { indexToColumn } from "../../src/core/utils";
+import { useEngine } from "../../src/react/hooks";
 import { FormulaEngine } from "../../src/core/engine";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";

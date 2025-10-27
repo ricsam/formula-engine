@@ -1,7 +1,7 @@
 import { test, expect, describe, beforeEach } from "bun:test";
 import { FormulaEngine } from "../../../src/core/engine";
-import type { SerializedCellValue } from "src/core/types";
-import { parseCellReference } from "src/core/utils";
+import type { SerializedCellValue } from "../../../src/core/types";
+import { parseCellReference } from "../../../src/core/utils";
 
 describe("FormulaEngine - isCellInTable", () => {
   const sheetName = "TestSheet";

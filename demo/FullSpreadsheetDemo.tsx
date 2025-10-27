@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { getCellReference, parseCellReference, Spreadsheet } from "@anocca-pub/components";
 import { Input } from "@/components/ui/input";
 import { FormulaEngine } from "../src/core/engine";
-import { useEngine } from "src/react/hooks";
-import type { CellAddress } from "src/core/types";
+import { useEngine } from "../src/react/hooks";
+import type { CellAddress } from "../src/core/types";
 
 // Create a shared engine instance with rich example data
 const createEngineWithExampleData = () => {

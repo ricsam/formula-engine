@@ -1,22 +1,21 @@
 import {
   FormulaError,
+  type CellAddress,
+  type CellString,
+  type ErrorEvaluationResult,
   type FunctionDefinition,
   type FunctionEvaluationResult,
-  type CellString,
-  type CellAddress,
-  type SpreadsheetRange,
-  type SpilledValuesEvaluationResult,
-  type ErrorEvaluationResult,
   type SingleEvaluationResult,
-} from "src/core/types";
-import { FormulaEvaluator } from "src/evaluator/formula-evaluator";
+  type SpilledValuesEvaluationResult,
+  type SpreadsheetRange,
+} from "../../../core/types";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
+import { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
 import {
-  midOperation,
-  createMidSpilledResult,
   convertToString,
   extractNumericValue,
+  midOperation
 } from "../text-helpers";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
 
 /**
  * RIGHT function - Returns the rightmost characters from a text string

@@ -4,8 +4,8 @@ import type {
   ErrorEvaluationResult,
   SingleEvaluationResult,
   SpilledValuesEvaluationResult,
-} from "src/core/types";
-import { getCellReference, keyToCellAddress } from "src/core/utils";
+} from "../../core/types";
+import { getCellReference, keyToCellAddress } from "../../core/utils";
 import { BaseEvalNode } from "./base-eval-node";
 import type { SpillMetaNode } from "./spill-meta-node";
 

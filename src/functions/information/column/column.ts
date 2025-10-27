@@ -10,15 +10,15 @@ import {
   type SpilledValuesEvaluationResult,
   type SingleEvaluationResult,
   type CellInRangeResult,
-} from "src/core/types";
-import type { EvaluationContext } from "src/evaluator/evaluation-context";
-import type { ReferenceNode, RangeNode } from "src/parser/ast";
-import { EvaluationError } from "src/evaluator/evaluation-error";
+} from "../../../core/types";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
+import type { ReferenceNode, RangeNode } from "../../../parser/ast";
+import { EvaluationError } from "../../../evaluator/evaluation-error";
 import {
   getRangeIntersection,
   isCellAddress,
   isRangeAddress,
-} from "src/core/utils";
+} from "../../../core/utils";
 
 /**
  * COLUMN function - Returns the column number of a reference

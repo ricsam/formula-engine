@@ -1,9 +1,9 @@
 import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
-} from "src/core/types";
+} from "../../../core/types";
 import { performAverage } from "./average-utils";
-import { createArgumentIterator } from "src/functions/function-utils";
+import { createArgumentIterator } from "../../function-utils";
 
 /**
  * AVERAGE function - Calculates the arithmetic mean of all numbers in the arguments
