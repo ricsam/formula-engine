@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.5
+
+### Patch Changes
+
+- remove last index.ts file
+
 ## 0.0.4
 
 ### Patch Changes

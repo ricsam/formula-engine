@@ -31,7 +31,7 @@ import {
   evaluateScalarOperator,
   type EvaluateScalarOperatorOptions,
 } from "../evaluator/evaluate-scalar-operator";
-import { functions } from "../functions";
+import { functions } from "../functions/function-registry";
 import type {
   ArrayNode,
   ASTNode,
