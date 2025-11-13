@@ -116,6 +116,14 @@ export class FormulaEngine {
     );
   }
 
+  evaluateFormula(
+    /**
+     * formula without the leading = sign
+     */
+    formula: string, cellAddress: CellAddress): SerializedCellValue {
+    return this.evaluationManager.evaluateFormula(formula, cellAddress);
+  }
+
   getCellDependents(
     address: CellAddress | SpreadsheetRange
   ): (SpreadsheetRange | CellAddress)[] {

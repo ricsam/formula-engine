@@ -39,6 +39,9 @@ import type { WorkbookManager } from "./workbook-manager";
 import { SpillMetaNode } from "../../evaluator/dependency-nodes/spill-meta-node";
 import { EmptyCellEvaluationNode } from "../../evaluator/dependency-nodes/empty-cell-evaluation-node";
 import type { TableManager } from "./table-manager";
+import { parseFormula } from "../../parser/parser";
+import type { DependencyNode } from "./dependency-node";
+import { VirtualCellValueNode } from "../../evaluator/dependency-nodes/virtual-cell-value-node";
 
 export class EvaluationManager {
   private isEvaluating = false;
@@ -274,7 +277,9 @@ export class EvaluationManager {
     node.setResult(result);
   }
 
-  evaluateCellNode(node: CellValueNode | SpillMetaNode): void {
+  evaluateCellNode(
+    node: CellValueNode | SpillMetaNode | VirtualCellValueNode
+  ): void {
     // Enable caching for resolved nodes
     if (node.resolved) {
       return;
@@ -305,7 +310,11 @@ export class EvaluationManager {
 
     let content: SerializedCellValue;
     try {
-      content = this.workbookManager.getSerializedCellValue(node.cellAddress);
+      if (node instanceof VirtualCellValueNode) {
+        content = node.cellValue;
+      } else {
+        content = this.workbookManager.getSerializedCellValue(node.cellAddress);
+      }
     } catch (err) {
       const evaluationResult: ErrorEvaluationResult = {
         type: "error",
@@ -398,61 +407,70 @@ export class EvaluationManager {
     node.setEvaluationResult(evaluation);
   }
 
-  evaluateDependencyNode(dependencyKey: string): void {
-    if (dependencyKey.startsWith("empty:")) {
-      this.evaluateEmptyCell(
-        this.dependencyManager.getEmptyCellNode(dependencyKey)
-      );
+  evaluateDependencyNode(dependency: DependencyNode): void {
+    if (dependency instanceof EmptyCellEvaluationNode) {
+      this.evaluateEmptyCell(dependency);
       return;
     }
-    if (dependencyKey.startsWith("range:")) {
-      this.evaluateRangeNode(
-        this.dependencyManager.getRangeNode(dependencyKey)
-      );
+    if (dependency instanceof RangeEvaluationNode) {
+      this.evaluateRangeNode(dependency);
       return;
     }
-    if (dependencyKey.startsWith("cell-value:")) {
-      const node =
-        this.dependencyManager.getCellValueOrEmptyCellNode(dependencyKey);
-      if (node instanceof EmptyCellEvaluationNode) {
-        this.evaluateEmptyCell(node);
-        return;
-      }
-      this.evaluateCellNode(node);
+    if (
+      dependency instanceof CellValueNode ||
+      dependency instanceof VirtualCellValueNode
+    ) {
+      this.evaluateCellNode(dependency);
       return;
     }
-    if (dependencyKey.startsWith("ast:")) {
-      // let the evaluateCellNode handle the evaluation
-      // through formulaEvaluator.evaluateNode,
-      // because an AST node must be evaluated in the context of the cell it is in
+    if (dependency instanceof AstEvaluationNode) {
       return;
     }
-    if (dependencyKey.startsWith("spill-meta:")) {
-      const node =
-        this.dependencyManager.getSpillMetaOrEmptySpillMetaNode(dependencyKey);
-      if (node instanceof EmptyCellEvaluationNode) {
-        this.evaluateEmptyCell(node);
-        return;
-      }
-      this.evaluateCellNode(node);
+    if (dependency instanceof SpillMetaNode) {
+      this.evaluateCellNode(dependency);
       return;
     }
-    throw new Error("Invalid dependency key: " + dependencyKey);
+    throw new Error("Invalid dependency: " + (dependency as any).key);
+  }
+
+  /**
+   * User exposed method to evaluate a formula
+   */
+  evaluateFormula(
+    /**
+     * formula for example
+     */
+    cellValue: SerializedCellValue,
+    cellAddress: CellAddress
+  ): SerializedCellValue {
+    if (this.isEvaluating) {
+      throw new Error("Evaluation in progress");
+    }
+
+    const node = this.dependencyManager.getVirtualCellValueNode(
+      cellAddress,
+      cellValue
+    );
+
+    if (node.evaluationResult.type === "awaiting-evaluation") {
+      this.evaluateCell(node);
+    }
+
+    const result = node.evaluationResult;
+
+    return this.evaluationResultToSerializedValue(result, cellAddress);
   }
 
   /**
    * Evaluates a cell by building the evaluation order and evaluating the dependencies in order
    */
-  evaluateCell(node: CellValueNode | EmptyCellEvaluationNode): void {
+  evaluateCell(
+    node: CellValueNode | EmptyCellEvaluationNode | VirtualCellValueNode
+  ): void {
     if (this.isEvaluating) {
       throw new Error("Evaluation in progress");
     }
     this.isEvaluating = true;
-    const sheet = this.workbookManager.getSheet(node.cellAddress);
-    if (!sheet) {
-      this.isEvaluating = false;
-      throw new SheetNotFoundError(node.cellAddress.sheetName);
-    }
 
     let precalculatedPlan: EvaluationOrder | undefined;
 
@@ -477,11 +495,7 @@ export class EvaluationManager {
         if (evaluationPlan.cycleNodes) {
           for (const node of evaluationPlan.cycleNodes) {
             if (!(node instanceof RangeEvaluationNode)) {
-              if (node instanceof AstEvaluationNode) {
-                node.setEvaluationResult(evaluationResult);
-              } else {
-                node.setEvaluationResult(evaluationResult);
-              }
+              node.setEvaluationResult(evaluationResult);
             }
           }
         }
@@ -500,7 +514,7 @@ export class EvaluationManager {
         if (dependency.resolved) {
           numResolved++;
         }
-        this.evaluateDependencyNode(dependency.key);
+        this.evaluateDependencyNode(dependency);
 
         const end = performance.now();
         if (flags.isProfiling && evaluationPlan.evaluationOrder.size > -1) {
@@ -517,7 +531,13 @@ export class EvaluationManager {
         const avgDuration =
           durations.reduce((a, b) => a + b.duration, 0) / durations.length || 0;
         console.log(
-          `%c[Evaluation] %c${evaluationPlan.evaluationOrder.size} deps | %c${(performance.now() - timeStart).toFixed(1)}ms | %c${percentResolved}% resolved | %c${avgDuration.toFixed(2)}ms avg`,
+          `%c[Evaluation] %c${evaluationPlan.evaluationOrder.size} deps | %c${(
+            performance.now() - timeStart
+          ).toFixed(
+            1
+          )}ms | %c${percentResolved}% resolved | %c${avgDuration.toFixed(
+            2
+          )}ms avg`,
           "color:#83aaff;font-weight:bold;",
           "color:#fff;font-weight:bold;",
           "color:#7fff9e",
