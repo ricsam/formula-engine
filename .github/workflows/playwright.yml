@@ -15,6 +15,8 @@ jobs:
       run: bun install
     - name: Install Playwright Browsers
       run: bunx playwright install --with-deps
+    - name: Generate routes
+      run: bun run demo:generate-routes
     - name: Run Playwright tests
       run: bun test:e2e
       env:
