@@ -88,11 +88,12 @@ export default defineConfig({
   ],
 
   /* Use existing dev server on port 3000 */
-  // Run `bun run dev` manually to see console logs and debug output
-  // webServer: {
-  //   command: 'bun run dev',
-  //   url: 'http://localhost:3000',
-  //   reuseExistingServer: !process.env.CI,
-  //   timeout: 120 * 1000,
-  // },
+  // Run `bun run demo:dev` manually to see console logs and debug output
+  // In CI, automatically start the server
+  webServer: process.env.CI ? {
+    command: 'bun run demo:dev',
+    url: 'http://localhost:3000',
+    reuseExistingServer: false,
+    timeout: 120 * 1000,
+  } : undefined,
 });
