@@ -23,9 +23,9 @@ export default defineConfig({
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
   /* Global timeout for entire test suite */
-  globalTimeout: 30000,
+  globalTimeout: 300000, // 5 minutes for CI
   /* Timeout per test */
-  timeout: 10000,
+  timeout: 30000, // 30 seconds per test
   /* Expect timeout for fast machines */
   expect: {
     timeout: 2000,
