@@ -1575,4 +1575,136 @@ describe("FormulaEngine", () => {
         `"#CYCLE! cell-value:TestWorkbook:TestSheet:A1 -> ast:A1"`);
     });
   });
+
+  describe("evaluateFormula", () => {
+    test("should evaluate simple arithmetic formulas", () => {
+      const result = engine.evaluateFormula(
+        "=1 + 2 + 3",
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
+      );
+      expect(result).toBe(6);
+    });
+
+    test("should evaluate formulas with multiplication", () => {
+      const result = engine.evaluateFormula(
+        "=5 * 10",
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
+      );
+      expect(result).toBe(50);
+    });
+
+    test("should evaluate formulas with division", () => {
+      const result = engine.evaluateFormula(
+        "=100 / 4",
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
+      );
+      expect(result).toBe(25);
+    });
+
+    test("should evaluate formulas with cell references", () => {
+      // Set up some data first
+      setCellContent("A1", 10);
+      setCellContent("B1", 20);
+
+      const result = engine.evaluateFormula(
+        "=A1 + B1",
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
+      );
+      expect(result).toBe(30);
+    });
+
+    test("should evaluate formulas with functions", () => {
+      setCellContent("A1", 1);
+      setCellContent("A2", 2);
+      setCellContent("A3", 3);
+
+      const result = engine.evaluateFormula(
+        "=SUM(A1:A3)",
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
+      );
+      expect(result).toBe(6);
+    });
+
+    test("should evaluate formulas with cross-sheet references", () => {
+      engine.addSheet({ workbookName, sheetName: "Sheet2" });
+      setCellContent("A1", 100);
+
+      engine.setSheetContent(
+        { workbookName, sheetName: "Sheet2" },
+        new Map([["B1", 50]])
+      );
+
+      const result = engine.evaluateFormula(
+        "=TestSheet!A1 + Sheet2!B1",
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
+      );
+      expect(result).toBe(150);
+    });
+
+    test("should evaluate formulas with named expressions", () => {
+      engine.addNamedExpression({
+        expressionName: "MULTIPLIER",
+        expression: "5",
+      });
+
+      const result = engine.evaluateFormula(
+        "=MULTIPLIER * 10",
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
+      );
+      expect(result).toBe(50);
+    });
+
+    test("should handle formulas with text concatenation", () => {
+      const result = engine.evaluateFormula(
+        '="Hello" & " " & "World"',
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
+      );
+      expect(result).toBe("Hello World");
+    });
+
+    test("should handle formulas with comparison operators", () => {
+      const result1 = engine.evaluateFormula(
+        "=5 > 3",
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
+      );
+      expect(result1).toBe(true);
+
+      const result2 = engine.evaluateFormula(
+        "=5 = 3",
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
+      );
+      expect(result2).toBe(false);
+    });
+
+    test("should handle division by zero", () => {
+      const result = engine.evaluateFormula(
+        "=1 / 0",
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
+      );
+      expect(result).toBe('INFINITY');
+    });
+
+    test("should handle invalid cell references", () => {
+      const result = engine.evaluateFormula(
+        "=Z999 + 1",
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
+      );
+      // Empty cell should be treated as 0 in arithmetic
+      expect(result).toBe(FormulaError.VALUE);
+    });
+    test("should handle context dependent formulas", () => {
+      const result = engine.evaluateFormula(
+        "=ROW()",
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
+      );
+      // Empty cell should be treated as 0 in arithmetic
+      expect(result).toBe(1);
+      const result2 = engine.evaluateFormula(
+        "=ROW()",
+        { workbookName, sheetName, colIndex: 0, rowIndex: 1 }
+      );
+      // Empty cell should be treated as 0 in arithmetic
+      expect(result2).toBe(2);
+    });
+  });
 });

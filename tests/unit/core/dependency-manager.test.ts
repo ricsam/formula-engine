@@ -93,12 +93,6 @@ describe("DependencyManager", () => {
     return "cell-value:" + dep.key.split(":")[3]!;
   };
 
-  const evalCell = (cellRef: string) => {
-    return engine._evaluationManager.evaluateDependencyNode(
-      cellToDepNode(cellRef).key
-    );
-  };
-
   const directDeps = (cell: string) => {
     const node = cellToDepNode(cell);
 
@@ -129,58 +123,69 @@ describe("DependencyManager", () => {
   };
 
   const evalOrder = (cell: string) => {
-    const key = `cell-value:TestWorkbook:TestSheet:${cell.replace(/^[^:]+:/, "")}`
+    const key = `cell-value:TestWorkbook:TestSheet:${cell.replace(
+      /^[^:]+:/,
+      ""
+    )}`;
     const node = engine._dependencyManager.getCellValueNode(key);
     const o = Array.from(
-      engine._dependencyManager.buildEvaluationOrder(node)
-        .evaluationOrder
+      engine._dependencyManager.buildEvaluationOrder(node).evaluationOrder
     );
     const order = o.map(depToKey);
     return order;
   };
 
   const dependencyTree = (cell: string) => {
-    const key = `cell-value:TestWorkbook:TestSheet:${cell.replace(/^[^:]+:/, "")}`
+    const key = `cell-value:TestWorkbook:TestSheet:${cell.replace(
+      /^[^:]+:/,
+      ""
+    )}`;
     const node = engine._dependencyManager.getCellValueNode(key);
     return engine._dependencyManager.getDependencyTree(node);
   };
   const markAsResolved = (cell: string) => {
-    const key = `cell-value:TestWorkbook:TestSheet:${cell.replace(/^[^:]+:/, "")}`
+    const key = `cell-value:TestWorkbook:TestSheet:${cell.replace(
+      /^[^:]+:/,
+      ""
+    )}`;
     const node = engine._dependencyManager.getCellValueNode(key);
-    
+
     // After marking resolved, need to iterate until hash stabilizes
     // to discover dependencies that were blocked before
     let prevHash: string | undefined;
     let maxIterations = 10;
     let iteration = 0;
-    
+
     while (iteration < maxIterations) {
       engine._dependencyManager.markResolvedNodes(node);
-      
+
       const evalOrder = engine._dependencyManager.buildEvaluationOrder(node);
-      
+
       if (prevHash && prevHash === evalOrder.hash) {
         break;
       }
-      
+
       prevHash = evalOrder.hash;
-      
+
       // Evaluate any newly discovered dependencies
       for (const c of evalOrder.evaluationOrder) {
         if (!c.resolved) {
-          engine._evaluationManager.evaluateDependencyNode(c.key);
+          engine._evaluationManager.evaluateDependencyNode(c);
         }
       }
-      
+
       iteration++;
     }
   };
   const evaluate = (cell: string) => {
-    const key = `cell-value:TestWorkbook:TestSheet:${cell.replace(/^[^:]+:/, "")}`
+    const key = `cell-value:TestWorkbook:TestSheet:${cell.replace(
+      /^[^:]+:/,
+      ""
+    )}`;
     const node = engine._dependencyManager.getCellValueNode(key);
     const evalOrder = engine._dependencyManager.buildEvaluationOrder(node);
     for (const c of evalOrder.evaluationOrder) {
-      engine._evaluationManager.evaluateDependencyNode(c.key);
+      engine._evaluationManager.evaluateDependencyNode(c);
     }
   };
   const generalEvaluate = evaluate;
@@ -3405,11 +3410,11 @@ describe("DependencyManager", () => {
       `);
     expect(dependencyTree("D11")).toMatchInlineSnapshot(`
         {
-          "canResolve": false,
+          "canResolve": true,
           "directDepsUpdated": false,
           "key": "D11",
-          "resolved": false,
-          "resultType": "awaiting-evaluation",
+          "resolved": true,
+          "resultType": "value",
           "type": "cell",
         }
       `);
@@ -3425,11 +3430,11 @@ describe("DependencyManager", () => {
       `);
     expect(dependencyTree("D11")).toMatchInlineSnapshot(`
         {
-          "canResolve": false,
+          "canResolve": true,
           "directDepsUpdated": false,
           "key": "D11",
-          "resolved": false,
-          "resultType": "awaiting-evaluation",
+          "resolved": true,
+          "resultType": "value",
           "type": "cell",
         }
       `);

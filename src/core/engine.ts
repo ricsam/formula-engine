@@ -5,6 +5,9 @@
 
 import {
   type CellAddress,
+  type CellStyle,
+  type ConditionalStyle,
+  type DirectCellStyle,
   type NamedExpression,
   type RangeAddress,
   type SerializedCellValue,
@@ -30,6 +33,7 @@ import { TableManager } from "./managers/table-manager";
 import { EventManager } from "./managers/event-manager";
 import { EvaluationManager } from "./managers/evaluation-manager";
 import { DependencyManager } from "./managers/dependency-manager";
+import { StyleManager } from "./managers/style-manager";
 
 /**
  * Main FormulaEngine class
@@ -42,6 +46,7 @@ export class FormulaEngine {
   private evaluationManager: EvaluationManager;
   private autoFillManager: AutoFill;
   private dependencyManager: DependencyManager;
+  private styleManager: StyleManager;
 
   /**
    * Public access to the store manager for testing
@@ -53,6 +58,7 @@ export class FormulaEngine {
   public _evaluationManager: EvaluationManager;
   public _autoFillManager: AutoFill;
   public _dependencyManager: DependencyManager;
+  public _styleManager: StyleManager;
 
   constructor() {
     this.eventManager = new EventManager();
@@ -78,6 +84,11 @@ export class FormulaEngine {
       this.dependencyManager
     );
 
+    this.styleManager = new StyleManager(
+      this.workbookManager,
+      this.evaluationManager
+    );
+
     this.autoFillManager = new AutoFill(this.workbookManager, this);
 
     this._workbookManager = this.workbookManager;
@@ -87,6 +98,7 @@ export class FormulaEngine {
     this._evaluationManager = this.evaluationManager;
     this._autoFillManager = this.autoFillManager;
     this._dependencyManager = this.dependencyManager;
+    this._styleManager = this.styleManager;
   }
 
   /**
@@ -114,6 +126,14 @@ export class FormulaEngine {
       cellAddress,
       debug
     );
+  }
+
+  evaluateFormula(
+    /**
+     * formula without the leading = sign
+     */
+    formula: string, cellAddress: CellAddress): SerializedCellValue {
+    return this.evaluationManager.evaluateFormula(formula, cellAddress);
   }
 
   getCellDependents(
@@ -351,6 +371,68 @@ export class FormulaEngine {
 
   //#endregion
 
+  //#region Conditional Styling
+  /**
+   * Add a conditional style rule
+   */
+  addConditionalStyle(style: ConditionalStyle): void {
+    this.styleManager.addConditionalStyle(style);
+    this.eventManager.emitUpdate();
+  }
+
+  /**
+   * Remove a conditional style rule by index
+   */
+  removeConditionalStyle(workbookName: string, index: number): boolean {
+    const removed = this.styleManager.removeConditionalStyle(workbookName, index);
+    if (removed) {
+      this.eventManager.emitUpdate();
+    }
+    return removed;
+  }
+
+  /**
+   * Get all conditional styles for a workbook
+   */
+  getConditionalStyles(workbookName: string): ConditionalStyle[] {
+    return this.styleManager.getConditionalStyles(workbookName);
+  }
+
+  /**
+   * Get the computed style for a specific cell
+   */
+  getCellStyle(cellAddress: CellAddress): CellStyle | undefined {
+    return this.styleManager.getCellStyle(cellAddress);
+  }
+
+  /**
+   * Add a direct cell style rule
+   */
+  addCellStyle(style: DirectCellStyle): void {
+    this.styleManager.addCellStyle(style);
+    this.eventManager.emitUpdate();
+  }
+
+  /**
+   * Remove a direct cell style rule by index
+   */
+  removeCellStyle(workbookName: string, index: number): boolean {
+    const removed = this.styleManager.removeCellStyle(workbookName, index);
+    if (removed) {
+      this.eventManager.emitUpdate();
+    }
+    return removed;
+  }
+
+  /**
+   * Get all direct cell styles for a workbook
+   */
+  getCellStyles(workbookName: string): DirectCellStyle[] {
+    return this.styleManager.getCellStyles(workbookName);
+  }
+
+  //#endregion
+
   //#region Sheets
   addSheet(opts: { workbookName: string; sheetName: string }) {
     const newSheet = this.workbookManager.addSheet(opts);
@@ -366,6 +448,7 @@ export class FormulaEngine {
     // Clean up related data
     this.namedExpressionManager.removeSheet(opts);
     this.tableManager.removeSheet(opts);
+    this.styleManager.removeSheetStyles(opts.workbookName, opts.sheetName);
 
     // Add engine-specific logic: re-evaluate since references might be affected
     this.reevaluate();
@@ -386,6 +469,13 @@ export class FormulaEngine {
 
     // Update tables that belong to the renamed sheet
     this.tableManager.updateTablesForSheetRename(opts);
+
+    // Update conditional styles that reference this sheet
+    this.styleManager.updateSheetName(
+      opts.workbookName,
+      opts.sheetName,
+      opts.newSheetName
+    );
 
     // Update all formulas that reference this sheet
     this.workbookManager.updateAllFormulas((formula) =>
@@ -440,6 +530,7 @@ export class FormulaEngine {
     this.workbookManager.removeWorkbook(workbookName);
     this.namedExpressionManager.removeWorkbook(workbookName);
     this.tableManager.removeWorkbook(workbookName);
+    this.styleManager.removeWorkbookStyles(workbookName);
 
     this.reevaluate();
     this.eventManager.emitUpdate();
@@ -541,6 +632,12 @@ export class FormulaEngine {
     // Update tables that belong to the renamed sheet
     this.tableManager.updateTablesForWorkbookRename(opts);
 
+    // Update conditional styles that reference this workbook
+    this.styleManager.updateWorkbookName(
+      opts.workbookName,
+      opts.newWorkbookName
+    );
+
     // Update all formulas that reference this workbook
     this.workbookManager.updateAllFormulas((formula) =>
       renameWorkbookInFormula({
@@ -638,6 +735,8 @@ export class FormulaEngine {
       workbooks: this.workbookManager.getWorkbooks(),
       namedExpressions: this.namedExpressionManager.getNamedExpressions(),
       tables: this.tableManager.tables,
+      conditionalStyles: this.styleManager.getAllConditionalStyles(),
+      cellStyles: this.styleManager.getAllCellStyles(),
     };
   }
 
@@ -669,6 +768,29 @@ export class FormulaEngine {
       deserialized.namedExpressions
     );
     this.tableManager.resetTables(deserialized.tables);
+    
+    // Reset styles if present
+    // Handle backward compatibility: if conditionalStyles is a Map, convert it
+    let conditionalStylesArray: ConditionalStyle[] | undefined;
+    let cellStylesArray: DirectCellStyle[] | undefined;
+    
+    if (deserialized.conditionalStyles) {
+      if (deserialized.conditionalStyles instanceof Map) {
+        // Old format: Map<string, ConditionalStyle[]>
+        conditionalStylesArray = Array.from(deserialized.conditionalStyles.values()).flat();
+      } else if (Array.isArray(deserialized.conditionalStyles)) {
+        // New format: ConditionalStyle[]
+        conditionalStylesArray = deserialized.conditionalStyles;
+      }
+    }
+    
+    if (deserialized.cellStyles) {
+      if (Array.isArray(deserialized.cellStyles)) {
+        cellStylesArray = deserialized.cellStyles;
+      }
+    }
+    
+    this.styleManager.resetStyles(conditionalStylesArray, cellStylesArray);
 
     // Re-evaluate all sheets to ensure all dependencies are resolved correctly
     this.reevaluate();

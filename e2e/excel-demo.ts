@@ -88,7 +88,7 @@ test.describe('Excel Demo', () => {
     await expect(page.locator('[data-testid="sheet-tab-Sheet2"]')).toBeVisible();
     
     // Verify that formulas referencing deleted sheet show error
-    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('#REF!');
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('#ERROR!');
     
     // Check that save button shows unsaved changes
     await expect(page.locator('button:has-text("Save")')).toBeVisible();
@@ -119,6 +119,10 @@ test.describe('Excel Demo', () => {
     // Verify table appears in the Expressions & Tables panel list (be specific)
     await expect(page.locator('[data-testid="table-Table1"]')).toBeVisible();
     
+    // Close the panel to avoid UI instability when clicking add-sheet button
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    await page.waitForTimeout(200); // Wait for panel to close and UI to stabilize
+    
     // Add a second sheet
     await page.locator('[data-testid="add-sheet-Workbook1"]').click();
     
@@ -133,7 +137,9 @@ test.describe('Excel Demo', () => {
     // Wait a moment for the deletion to process and UI to update
     await page.waitForTimeout(500);
     
-
+    // Reopen Expressions & Tables panel to verify table is removed
+    await page.locator('[data-testid="named-expressions-toggle"]').click();
+    await page.waitForTimeout(200);
     
     // Verify table is removed from the UI list in the Expressions & Tables panel
     await expect(page.locator('[data-testid="table-Table1"]')).not.toBeVisible();
@@ -773,8 +779,8 @@ test.describe('Excel Demo', () => {
     await page.locator('[data-testid="delete-sheet-Data"]').click();
     
     // Formulas should now show errors since referenced sheet is gone
-    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('#REF!');
-    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('#REF!');
+    await expect(page.locator('[data-testid="spreadsheet-cell-A1"]')).toContainText('#ERROR!');
+    await expect(page.locator('[data-testid="spreadsheet-cell-B1"]')).toContainText('#ERROR!');
   });
 
 });

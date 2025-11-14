@@ -6,9 +6,10 @@ import {
 import {
   type CellAddress,
   type EvaluationOrder,
+  type SerializedCellValue,
   type SpilledValue,
 } from "../types";
-import { isCellInRange, keyToCellAddress } from "../utils";
+import { cellAddressToKey, isCellInRange, keyToCellAddress } from "../utils";
 
 import { AstEvaluationNode } from "../../evaluator/dependency-nodes/ast-evaluation-node";
 import { CellValueNode } from "../../evaluator/dependency-nodes/cell-value-node";
@@ -16,7 +17,10 @@ import { EmptyCellEvaluationNode } from "../../evaluator/dependency-nodes/empty-
 import { SpillMetaNode } from "../../evaluator/dependency-nodes/spill-meta-node";
 import { RangeEvaluationNode } from "../../evaluator/range-evaluation-node";
 import type { ASTNode } from "../../parser/ast";
-import { astToString } from "../../parser/formatter";
+import {
+  astToString,
+  normalizeSerializedCellValue,
+} from "../../parser/formatter";
 import { CacheManager } from "./cache-manager";
 import type {
   CellNodeKeyDictionary,
@@ -24,6 +28,8 @@ import type {
   DependencyNode,
 } from "./dependency-node";
 import { WorkbookManager } from "./workbook-manager";
+import { VirtualCellValueNode } from "../../evaluator/dependency-nodes/virtual-cell-value-node";
+import { parseFormula } from "../../parser/parser";
 
 export interface DependencyTreeNode {
   type: "cell" | "range" | "empty";
@@ -54,9 +60,9 @@ export interface DependencyTreeNode {
  */
 export class DependencyManager {
   /**
-   * The dependency graph
+   * The dependency graph AKA cellNodes
    */
-  private evaluatedNodes: Map<
+  private cellNodes: Map<
     /**
      * key is the cell key, from cellAddressToKey
      */
@@ -67,6 +73,8 @@ export class DependencyManager {
   private spillMetaNodes: Map<string, SpillMetaNode> = new Map();
 
   private emptyCells: Map<string, EmptyCellEvaluationNode> = new Map();
+
+  private virtualCellValueNodes: Map<string, VirtualCellValueNode> = new Map();
 
   /**
    * registry of spilled values
@@ -160,8 +168,9 @@ export class DependencyManager {
 
   clearEvaluationCache(): void {
     this.cacheManager.clear();
-    this.evaluatedNodes.clear();
+    this.cellNodes.clear();
     this.emptyCells.clear();
+    this.virtualCellValueNodes.clear();
     this.asts.clear();
     this.spillMetaNodes.clear();
     this.ranges.clear();
@@ -208,12 +217,12 @@ export class DependencyManager {
     if (!nodeKey.startsWith("cell-value:")) {
       throw new Error("Invalid cell value node key: " + nodeKey);
     }
-    if (!this.evaluatedNodes.has(nodeKey)) {
+    if (!this.cellNodes.has(nodeKey)) {
       const node = new CellValueNode(nodeKey);
-      this.evaluatedNodes.set(nodeKey, node);
+      this.cellNodes.set(nodeKey, node);
       return node;
     }
-    return this.evaluatedNodes.get(nodeKey)!;
+    return this.cellNodes.get(nodeKey)!;
   }
 
   getCellValueOrEmptyCellNode(
@@ -246,47 +255,41 @@ export class DependencyManager {
     return this.getSpillMetaNode(spillMetaKey);
   }
 
-  lookupCellNode<T extends CellNodeType>(
-    nodeKey: string,
-    types: T[]
-  ): CellNodeKeyDictionary[T][] {
-    const cellAddress = keyToCellAddress(nodeKey);
+  getVirtualCellValueNode(
+    cellAddress: CellAddress,
+    cellValue: SerializedCellValue
+  ): VirtualCellValueNode {
+    let nodeKey = cellAddressToKey(cellAddress).replace(/^[^:]+:/, "virtual:");
+    nodeKey += ":";
+    const normalizedCellValue = normalizeSerializedCellValue(cellValue);
 
-    const emptyKey = nodeKey.replace(/^[^:]+:/, "empty:");
-    const cellValueKey = nodeKey.replace(/^[^:]+:/, "cell-value:");
-    const cellValueNode = this.evaluatedNodes.get(cellValueKey);
-    const cellMetaKey = nodeKey.replace(/^[^:]+:/, "cell-meta:");
-    const cellMetaNode = this.evaluatedNodes.get(cellMetaKey);
-
-    if (this.workbookManager.isCellEmpty(cellAddress)) {
-      if ((types as string[]).includes("empty")) {
-        return [this.getEmptyCellNode(emptyKey) as any];
-      } else {
-        return [];
-      }
+    if (
+      typeof normalizedCellValue === "string" &&
+      normalizedCellValue.startsWith("=")
+    ) {
+      const ast = parseFormula(normalizedCellValue.slice(1));
+      nodeKey += "ast:" + astToString(ast);
+    } else if (
+      typeof normalizedCellValue === "string" &&
+      normalizedCellValue !== ""
+    ) {
+      nodeKey += "string:" + normalizedCellValue;
+    } else if (typeof normalizedCellValue === "number") {
+      nodeKey += "number:" + normalizedCellValue;
+    } else if (typeof normalizedCellValue === "boolean") {
+      nodeKey += "boolean:" + normalizedCellValue;
+    } else if (normalizedCellValue === undefined) {
+      nodeKey += "string:";
+    } else {
+      throw new Error("Invalid cell value: " + normalizedCellValue);
     }
 
-    const results: any[] = [];
-
-    if ((types as string[]).includes("cell")) {
-      if (cellValueNode) {
-        results.push(cellValueNode);
-      } else {
-        results.push(this.getCellValueNode(cellValueKey));
-      }
+    if (!this.virtualCellValueNodes.has(nodeKey)) {
+      const node = new VirtualCellValueNode(nodeKey, cellAddress, cellValue);
+      this.virtualCellValueNodes.set(nodeKey, node);
+      return node;
     }
-
-    if (this.workbookManager.isFormulaCell(cellAddress)) {
-      if ((types as string[]).includes("spill-meta")) {
-        if (cellMetaNode) {
-          results.push(cellMetaNode);
-        } else {
-          results.push(this.getSpillMetaNode(cellValueKey));
-        }
-      }
-    }
-
-    return results;
+    return this.virtualCellValueNodes.get(nodeKey)!;
   }
 
   getRangeNode(rangeKey: string): RangeEvaluationNode {
@@ -333,6 +336,10 @@ export class DependencyManager {
     const astKey = `ast:${astToString(ast)}`; // cache normalize this later
     const astEntries = this.asts.get(astKey);
 
+    // if any of the ast entries match the current context, then we can return the ast node
+    // otherwise we have to evalute the ast node to understand if it is context dependent
+    // and later it will be saved using saveAstNode
+    // eligibleKeysForContext returns keys ordered from most-specific to least-specific
     const keys = eligibleKeysForContext(currentContext);
 
     for (const key of keys) {
@@ -341,27 +348,6 @@ export class DependencyManager {
         return astEntry.evalNode;
       }
     }
-
-    // if any of the ast entries match the current context, then we can return the ast node
-    // otherwise we have to evalute the ast node to understand if it is context dependent
-    // and later it will be saved using saveAstNode
-    // if (astEntries) {
-    //   for (const entry of astEntries.entries.values()) {
-    //     // e.g. we have a row dependent ast dependency, dependent on row 1, and the current context dependency has rowIndex 1
-    //     // then we will get a match
-    //     const matches = Object.entries(entry.contextDependency).every(
-    //       ([key, value]) => {
-    //         if (typeof value === "undefined") {
-    //           return true;
-    //         }
-    //         return currentContext[key as keyof ContextDependency] === value;
-    //       }
-    //     );
-    //     if (matches) {
-    //       return entry.evalNode;
-    //     }
-    //   }
-    // }
 
     // by default the ast node is cell specific
     // but later, setContextDependency is called with a more open context dependency
@@ -400,10 +386,6 @@ export class DependencyManager {
         ]),
       });
     }
-  }
-
-  getEvaluatedNodes(): Map<string, CellValueNode> {
-    return this.evaluatedNodes;
   }
 
   //#region dependency graph methods
@@ -466,7 +448,7 @@ export class DependencyManager {
    * 6. Join the sorted SCC evaluation orders to create final evaluation order
    */
   buildEvaluationOrder(
-    node: CellValueNode | EmptyCellEvaluationNode
+    node: CellValueNode | EmptyCellEvaluationNode | VirtualCellValueNode
   ): EvaluationOrder {
     if (node.resolved && this.cacheManager.getEvaluationOrder(node.key)) {
       return this.cacheManager.getEvaluationOrder(node.key)!;
@@ -880,8 +862,8 @@ export class DependencyManager {
             node instanceof RangeEvaluationNode
               ? "range"
               : node.evaluationResult
-                ? node.evaluationResult.type
-                : "awaiting-evaluation",
+              ? node.evaluationResult.type
+              : "awaiting-evaluation",
           canResolve: node.canResolve(),
           key: cellRef,
           directDepsUpdated: node.directDepsUpdated,
@@ -899,8 +881,8 @@ export class DependencyManager {
             node instanceof RangeEvaluationNode
               ? "range"
               : node.evaluationResult
-                ? node.evaluationResult.type
-                : "awaiting-evaluation",
+              ? node.evaluationResult.type
+              : "awaiting-evaluation",
           canResolve: node.canResolve(),
           key: cellRef,
           directDepsUpdated: node.directDepsUpdated,
@@ -931,8 +913,8 @@ export class DependencyManager {
           node instanceof RangeEvaluationNode
             ? "range"
             : node.evaluationResult
-              ? node.evaluationResult.type
-              : "awaiting-evaluation",
+            ? node.evaluationResult.type
+            : "awaiting-evaluation",
         canResolve: node.canResolve(),
         key: cellRef,
         directDepsUpdated: node.directDepsUpdated,

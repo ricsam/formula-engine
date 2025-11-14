@@ -328,3 +328,43 @@ export type EvaluationOrder = {
   hash: string;
   sccDAG?: SCCDAG;
 };
+
+// Conditional Styling types
+export interface LCHColor {
+  l: number; // Lightness: 0-100
+  c: number; // Chroma: 0-150+
+  h: number; // Hue: 0-360
+}
+
+export interface FormulaStyleCondition {
+  type: "formula";
+  formula: string;
+  color: LCHColor;
+}
+
+export interface GradientStyleCondition {
+  type: "gradient";
+  min:
+    | { type: "lowest_value"; color: LCHColor }
+    | { type: "number"; color: LCHColor; valueFormula: string };
+  max:
+    | { type: "highest_value"; color: LCHColor }
+    | { type: "number"; color: LCHColor; valueFormula: string };
+}
+
+export type StyleCondition = FormulaStyleCondition | GradientStyleCondition;
+
+export interface ConditionalStyle {
+  area: RangeAddress;
+  condition: StyleCondition;
+}
+
+export interface DirectCellStyle {
+  area: RangeAddress;
+  style: CellStyle
+}
+
+export interface CellStyle {
+  backgroundColor?: string; // Hex color format
+  color?: string; // Text color in hex format
+}

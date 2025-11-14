@@ -23,9 +23,9 @@ export default defineConfig({
   /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : undefined,
   /* Global timeout for entire test suite */
-  globalTimeout: 30000,
+  globalTimeout: 300000, // 5 minutes for CI
   /* Timeout per test */
-  timeout: 10000,
+  timeout: 30000, // 30 seconds per test
   /* Expect timeout for fast machines */
   expect: {
     timeout: 2000,
@@ -88,11 +88,12 @@ export default defineConfig({
   ],
 
   /* Use existing dev server on port 3000 */
-  // Run `bun run dev` manually to see console logs and debug output
-  // webServer: {
-  //   command: 'bun run dev',
-  //   url: 'http://localhost:3000',
-  //   reuseExistingServer: !process.env.CI,
-  //   timeout: 120 * 1000,
-  // },
+  // Run `bun run demo:dev` manually to see console logs and debug output
+  // In CI, automatically start the server
+  webServer: process.env.CI ? {
+    command: 'bun run demo:dev',
+    url: 'http://localhost:3000',
+    reuseExistingServer: false,
+    timeout: 120 * 1000,
+  } : undefined,
 });

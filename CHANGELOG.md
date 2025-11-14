@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.6
+
+### Patch Changes
+
+- add conditional formatting and cell styling support
+
 ## 0.0.5
 
 ### Patch Changes
