@@ -11,7 +11,6 @@ import {
   File,
   Files,
   FileText,
-  FolderOpen,
   Plus,
   Save,
   Trash2,
@@ -20,8 +19,9 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { FormulaEngine } from "../src/core/engine";
+import { deserialize, serialize } from "../src/core/map-serializer";
+import { hexToLch, lchToHex } from "../src/core/utils/color-utils";
 import { useEngine } from "../src/react/hooks";
-import { serialize, deserialize } from "../src/core/map-serializer";
 import { SpreadsheetWithFormulaBar } from "./components/SpreadsheetWithFormulaBar";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -37,7 +37,7 @@ interface WorkbookGridItem {
 
 interface SavedState {
   workbookGridItems: WorkbookGridItem[];
-  engineState: ReturnType<FormulaEngine["getState"]>;
+  engineStateSerialized: string; // Serialized engine state as string
   viewport?: ViewportState;
 }
 
@@ -187,6 +187,42 @@ export function ExcelDemo() {
     "global" | "workbook" | "sheet"
   >("global");
 
+  // Conditional Formatting UI state
+  const [showConditionalFormatting, setShowConditionalFormatting] =
+    useState(false);
+  const [newStyleArea, setNewStyleArea] = useState("");
+  const [newStyleType, setNewStyleType] = useState<"formula" | "gradient">(
+    "formula"
+  );
+  const [newStyleFormula, setNewStyleFormula] = useState("ROW() > 4");
+  const [newStyleColorL, setNewStyleColorL] = useState("70");
+  const [newStyleColorC, setNewStyleColorC] = useState("80");
+  const [newStyleColorH, setNewStyleColorH] = useState("0");
+  const [newStyleGradientType, setNewStyleGradientType] = useState<
+    "lowest_highest" | "number"
+  >("lowest_highest");
+  const [newStyleMinColorL, setNewStyleMinColorL] = useState("90");
+  const [newStyleMinColorC, setNewStyleMinColorC] = useState("10");
+  const [newStyleMinColorH, setNewStyleMinColorH] = useState("120");
+  const [newStyleMaxColorL, setNewStyleMaxColorL] = useState("30");
+  const [newStyleMaxColorC, setNewStyleMaxColorC] = useState("80");
+  const [newStyleMaxColorH, setNewStyleMaxColorH] = useState("0");
+  const [newStyleMinFormula, setNewStyleMinFormula] = useState("0");
+  const [newStyleMaxFormula, setNewStyleMaxFormula] = useState("100");
+  const [editingStyle, setEditingStyle] = useState<{
+    workbookName: string;
+    index: number;
+  } | null>(null);
+
+  // Cell Styles UI state
+  const [newCellStyleArea, setNewCellStyleArea] = useState("");
+  const [newCellStyleBackgroundColor, setNewCellStyleBackgroundColor] = useState("#FFFFFF");
+  const [newCellStyleColor, setNewCellStyleColor] = useState("#000000");
+  const [editingCellStyle, setEditingCellStyle] = useState<{
+    workbookName: string;
+    index: number;
+  } | null>(null);
+
   // Sheet management state
   const [renamingSheet, setRenamingSheet] = useState<{
     workbookName: string;
@@ -214,28 +250,9 @@ export function ExcelDemo() {
 
         if (fileToLoad) {
           const data = await loadFromOPFS(fileToLoad);
-          if (data && data.engineState && data.workbookGridItems) {
-            // Reset the engine using the loaded state
-            engine._workbookManager.resetWorkbooks(data.engineState.workbooks);
-
-            data.engineState.workbooks.forEach((workbook) => {
-              engine._namedExpressionManager.addWorkbook(workbook.name);
-              engine._tableManager.addWorkbook(workbook.name);
-              workbook.sheets.forEach((sheet) => {
-                engine._namedExpressionManager.addSheet({
-                  workbookName: workbook.name,
-                  sheetName: sheet.name,
-                });
-              });
-            });
-
-            engine._namedExpressionManager.resetNamedExpressions(
-              data.engineState.namedExpressions
-            );
-            engine._tableManager.resetTables(data.engineState.tables);
-
-            engine.reevaluate();
-            engine._eventManager.emitUpdate();
+          if (data && data.engineStateSerialized && data.workbookGridItems) {
+            // Reset the engine using the serialized state
+            engine.resetToSerializedEngine(data.engineStateSerialized);
 
             setWorkbookGridItems(data.workbookGridItems);
             if (data.viewport) {
@@ -261,7 +278,7 @@ export function ExcelDemo() {
     try {
       const dataToSave: SavedState = {
         workbookGridItems,
-        engineState: engine.getState(),
+        engineStateSerialized: engine.serializeEngine(),
         viewport,
       };
 
@@ -275,7 +292,9 @@ export function ExcelDemo() {
     } catch (error) {
       console.error("Failed to save to OPFS:", error);
       alert(
-        `Failed to save: ${error instanceof Error ? error.message : "Unknown error"}`
+        `Failed to save: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
       );
     }
   }, [workbookGridItems, engine, viewport, currentFileName]);
@@ -285,31 +304,12 @@ export function ExcelDemo() {
     async (filename: string) => {
       try {
         const data = await loadFromOPFS(filename);
-        if (!data || !data.engineState || !data.workbookGridItems) {
+        if (!data || !data.engineStateSerialized || !data.workbookGridItems) {
           throw new Error("Invalid file format");
         }
 
-        // Reset the engine using the loaded state
-        engine._workbookManager.resetWorkbooks(data.engineState.workbooks);
-
-        data.engineState.workbooks.forEach((workbook) => {
-          engine._namedExpressionManager.addWorkbook(workbook.name);
-          engine._tableManager.addWorkbook(workbook.name);
-          workbook.sheets.forEach((sheet) => {
-            engine._namedExpressionManager.addSheet({
-              workbookName: workbook.name,
-              sheetName: sheet.name,
-            });
-          });
-        });
-
-        engine._namedExpressionManager.resetNamedExpressions(
-          data.engineState.namedExpressions
-        );
-        engine._tableManager.resetTables(data.engineState.tables);
-
-        engine.reevaluate();
-        engine._eventManager.emitUpdate();
+        // Reset the engine using the serialized state
+        engine.resetToSerializedEngine(data.engineStateSerialized);
 
         setWorkbookGridItems(data.workbookGridItems);
         if (data.viewport) {
@@ -321,7 +321,9 @@ export function ExcelDemo() {
       } catch (error) {
         console.error(`Failed to load ${filename}:`, error);
         alert(
-          `Failed to load file: ${error instanceof Error ? error.message : "Unknown error"}`
+          `Failed to load file: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
         );
       }
     },
@@ -387,7 +389,7 @@ export function ExcelDemo() {
     // Save the new file immediately
     const dataToSave: SavedState = {
       workbookGridItems: [defaultWorkbookItem],
-      engineState: engine.getState(),
+      engineStateSerialized: engine.serializeEngine(),
       viewport: undefined,
     };
     await saveToOPFS(fullFileName, dataToSave);
@@ -420,7 +422,9 @@ export function ExcelDemo() {
       } catch (error) {
         console.error(`Failed to delete ${filename}:`, error);
         alert(
-          `Failed to delete file: ${error instanceof Error ? error.message : "Unknown error"}`
+          `Failed to delete file: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
         );
       }
     },
@@ -454,7 +458,9 @@ export function ExcelDemo() {
     } catch (error) {
       console.error("Failed to rename file:", error);
       alert(
-        `Failed to rename file: ${error instanceof Error ? error.message : "Unknown error"}`
+        `Failed to rename file: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
       );
     }
   }, [currentFileName, opfsFiles]);
@@ -464,7 +470,7 @@ export function ExcelDemo() {
     try {
       const dataToExport: SavedState = {
         workbookGridItems,
-        engineState: engine.getState(),
+        engineStateSerialized: engine.serializeEngine(),
         viewport,
       };
 
@@ -506,7 +512,10 @@ export function ExcelDemo() {
           ) as SavedState;
 
           // Validate the imported data structure
-          if (!importedData.engineState || !importedData.workbookGridItems) {
+          if (
+            !importedData.engineStateSerialized ||
+            !importedData.workbookGridItems
+          ) {
             throw new Error("Invalid file format: missing required fields");
           }
 
@@ -540,7 +549,9 @@ export function ExcelDemo() {
         } catch (error) {
           console.error("Failed to import file:", error);
           alert(
-            `Failed to import file: ${error instanceof Error ? error.message : "Unknown error"}`
+            `Failed to import file: ${
+              error instanceof Error ? error.message : "Unknown error"
+            }`
           );
         }
       };
@@ -827,7 +838,9 @@ export function ExcelDemo() {
       } catch (error) {
         console.error("Failed to clone workbook:", error);
         alert(
-          `Failed to clone workbook: ${error instanceof Error ? error.message : "Unknown error"}`
+          `Failed to clone workbook: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
         );
       }
     },
@@ -866,7 +879,9 @@ export function ExcelDemo() {
       } catch (error) {
         console.error("Failed to delete workbook:", error);
         alert(
-          `Failed to delete workbook: ${error instanceof Error ? error.message : "Unknown error"}`
+          `Failed to delete workbook: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
         );
       }
     },
@@ -887,6 +902,800 @@ export function ExcelDemo() {
     },
     [engine, markUnsavedChanges]
   );
+
+  // Reset style form to default values
+  const resetStyleForm = useCallback(() => {
+    setNewStyleArea("");
+    setNewStyleType("formula");
+    setNewStyleFormula("ROW() > 4");
+    setNewStyleColorL("70");
+    setNewStyleColorC("80");
+    setNewStyleColorH("0");
+    setNewStyleGradientType("lowest_highest");
+    setNewStyleMinColorL("90");
+    setNewStyleMinColorC("10");
+    setNewStyleMinColorH("120");
+    setNewStyleMaxColorL("30");
+    setNewStyleMaxColorC("80");
+    setNewStyleMaxColorH("0");
+    setNewStyleMinFormula("0");
+    setNewStyleMaxFormula("100");
+    setEditingStyle(null);
+  }, []);
+
+  // Add conditional style
+  const addConditionalStyle = useCallback(() => {
+    try {
+      // Parse the range format: [workbook]'sheet'!A1:C10 or just A1:C10
+      let workbookName: string;
+      let sheetName: string;
+      let rangeStr: string;
+
+      // Check if the input includes workbook and sheet references
+      const fullRangeMatch = newStyleArea.match(
+        /^\[([^\]]+)\](?:'([^']+(?:''[^']*)*)'|([^!]+))!(.+)$/
+      );
+
+      if (fullRangeMatch) {
+        // Format: [workbook]'sheet'!range or [workbook]sheet!range
+        workbookName = fullRangeMatch[1]!;
+        sheetName = fullRangeMatch[2]
+          ? fullRangeMatch[2].replace(/''/g, "'")
+          : fullRangeMatch[3]!;
+        rangeStr = fullRangeMatch[4]!;
+      } else {
+        // Simple format: just the range, use default workbook/sheet
+        workbookName = workbookGridItems[0]?.name!;
+        sheetName = workbookGridItems[0]?.activeSheet!;
+        rangeStr = newStyleArea;
+
+        if (!workbookName || !sheetName) {
+          alert("No active workbook or sheet");
+          return;
+        }
+      }
+
+      const colToIndex = (col: string): number => {
+        let result = 0;
+        for (let i = 0; i < col.length; i++) {
+          result = result * 26 + (col.charCodeAt(i) - 64);
+        }
+        return result - 1;
+      };
+
+      // Parse the range part - supports multiple formats
+      let startCol: number, startRow: number;
+      let endCol: number, endRow: number;
+
+      // Match different range formats
+      // A5:D10 (closed), A5:10 (row-bounded), A5:D (col-bounded), A5:INFINITY (open both)
+      const closedMatch = rangeStr.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+      const rowBoundedMatch = rangeStr.match(/^([A-Z]+)(\d+):(\d+)$/);
+      const colBoundedMatch = rangeStr.match(/^([A-Z]+)(\d+):([A-Z]+)$/);
+      const openBothMatch = rangeStr.match(/^([A-Z]+)(\d+):INFINITY$/);
+
+      if (closedMatch) {
+        // Closed rectangle: A5:D10
+        startCol = colToIndex(closedMatch[1]!);
+        startRow = parseInt(closedMatch[2]!) - 1;
+        endCol = colToIndex(closedMatch[3]!);
+        endRow = parseInt(closedMatch[4]!) - 1;
+      } else if (rowBoundedMatch) {
+        // Row-bounded (col-infinite): A5:10
+        startCol = colToIndex(rowBoundedMatch[1]!);
+        startRow = parseInt(rowBoundedMatch[2]!) - 1;
+        endCol = Infinity; // Will be set as infinity type below
+        endRow = parseInt(rowBoundedMatch[3]!) - 1;
+      } else if (colBoundedMatch) {
+        // Col-bounded (row-infinite): A5:D
+        startCol = colToIndex(colBoundedMatch[1]!);
+        startRow = parseInt(colBoundedMatch[2]!) - 1;
+        endCol = colToIndex(colBoundedMatch[3]!);
+        endRow = Infinity; // Will be set as infinity type below
+      } else if (openBothMatch) {
+        // Open both: A5:INFINITY
+        startCol = colToIndex(openBothMatch[1]!);
+        startRow = parseInt(openBothMatch[2]!) - 1;
+        endCol = Infinity;
+        endRow = Infinity;
+      } else {
+        alert(
+          "Invalid range format. Use format like [Workbook]Sheet!A1:C10 or A1:C10"
+        );
+        return;
+      }
+
+      // Normalize the range: ensure start is always before end
+      // Swap columns if startCol > endCol (only if both are finite numbers)
+      if (
+        typeof startCol === "number" &&
+        typeof endCol === "number" &&
+        isFinite(startCol) &&
+        isFinite(endCol) &&
+        startCol > endCol
+      ) {
+        [startCol, endCol] = [endCol, startCol];
+      }
+      // Swap rows if startRow > endRow (only if both are finite numbers)
+      if (
+        typeof startRow === "number" &&
+        typeof endRow === "number" &&
+        isFinite(startRow) &&
+        isFinite(endRow) &&
+        startRow > endRow
+      ) {
+        [startRow, endRow] = [endRow, startRow];
+      }
+
+      let condition;
+      if (newStyleType === "formula") {
+        condition = {
+          type: "formula" as const,
+          formula: newStyleFormula,
+          color: {
+            l: parseFloat(newStyleColorL),
+            c: parseFloat(newStyleColorC),
+            h: parseFloat(newStyleColorH),
+          },
+        };
+      } else {
+        if (newStyleGradientType === "lowest_highest") {
+          condition = {
+            type: "gradient" as const,
+            min: {
+              type: "lowest_value" as const,
+              color: {
+                l: parseFloat(newStyleMinColorL),
+                c: parseFloat(newStyleMinColorC),
+                h: parseFloat(newStyleMinColorH),
+              },
+            },
+            max: {
+              type: "highest_value" as const,
+              color: {
+                l: parseFloat(newStyleMaxColorL),
+                c: parseFloat(newStyleMaxColorC),
+                h: parseFloat(newStyleMaxColorH),
+              },
+            },
+          };
+        } else {
+          condition = {
+            type: "gradient" as const,
+            min: {
+              type: "number" as const,
+              color: {
+                l: parseFloat(newStyleMinColorL),
+                c: parseFloat(newStyleMinColorC),
+                h: parseFloat(newStyleMinColorH),
+              },
+              valueFormula: newStyleMinFormula,
+            },
+            max: {
+              type: "number" as const,
+              color: {
+                l: parseFloat(newStyleMaxColorL),
+                c: parseFloat(newStyleMaxColorC),
+                h: parseFloat(newStyleMaxColorH),
+              },
+              valueFormula: newStyleMaxFormula,
+            },
+          };
+        }
+      }
+
+      // If editing, remove the old style first, then add the new one
+      if (editingStyle && editingStyle.workbookName === workbookName) {
+        // Remove the old style
+        engine.removeConditionalStyle(
+          editingStyle.workbookName,
+          editingStyle.index
+        );
+        // If the index would change after removal, adjust it
+        const insertIndex = editingStyle.index;
+        // Add the new style (it will be added at the end, so we need to handle ordering)
+        // For simplicity, we'll just add it and the order might change slightly
+        engine.addConditionalStyle({
+          area: {
+            workbookName,
+            sheetName,
+            range: {
+              start: { col: startCol, row: startRow },
+              end: {
+                col:
+                  endCol === Infinity
+                    ? { type: "infinity" as const, sign: "positive" as const }
+                    : { type: "number" as const, value: endCol },
+                row:
+                  endRow === Infinity
+                    ? { type: "infinity" as const, sign: "positive" as const }
+                    : { type: "number" as const, value: endRow },
+              },
+            },
+          },
+          condition,
+        });
+        setEditingStyle(null);
+        resetStyleForm();
+      } else {
+        engine.addConditionalStyle({
+          area: {
+            workbookName,
+            sheetName,
+            range: {
+              start: { col: startCol, row: startRow },
+              end: {
+                col:
+                  endCol === Infinity
+                    ? { type: "infinity" as const, sign: "positive" as const }
+                    : { type: "number" as const, value: endCol },
+                row:
+                  endRow === Infinity
+                    ? { type: "infinity" as const, sign: "positive" as const }
+                    : { type: "number" as const, value: endRow },
+              },
+            },
+          },
+          condition,
+        });
+      }
+
+      markUnsavedChanges();
+    } catch (error) {
+      console.error("Failed to add conditional style:", error);
+      alert(
+        `Failed to add conditional style: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  }, [
+    workbookGridItems,
+    engine,
+    markUnsavedChanges,
+    newStyleArea,
+    newStyleType,
+    newStyleFormula,
+    newStyleColorL,
+    newStyleColorC,
+    newStyleColorH,
+    newStyleGradientType,
+    newStyleMinColorL,
+    newStyleMinColorC,
+    newStyleMinColorH,
+    newStyleMaxColorL,
+    newStyleMaxColorC,
+    newStyleMaxColorH,
+    newStyleMinFormula,
+    newStyleMaxFormula,
+    editingStyle,
+    resetStyleForm,
+  ]);
+
+  // Delete conditional style
+  const deleteConditionalStyle = useCallback(
+    (workbookName: string, index: number) => {
+      try {
+        const success = engine.removeConditionalStyle(workbookName, index);
+        if (success) {
+          markUnsavedChanges();
+          // If we're editing this style, cancel editing
+          if (
+            editingStyle &&
+            editingStyle.workbookName === workbookName &&
+            editingStyle.index === index
+          ) {
+            setEditingStyle(null);
+            resetStyleForm();
+          }
+        }
+      } catch (error) {
+        console.error("Failed to delete conditional style:", error);
+      }
+    },
+    [engine, markUnsavedChanges, editingStyle, resetStyleForm]
+  );
+
+  // Load style into form for editing
+  const editConditionalStyle = useCallback(
+    (workbookName: string, index: number) => {
+      const styles = engine.getConditionalStyles(workbookName);
+      const style = styles[index];
+      if (!style) return;
+
+      // Convert range to canonical format
+      const colToLetter = (col: number): string => {
+        let result = "";
+        let c = col;
+        while (c >= 0) {
+          result = String.fromCharCode(65 + (c % 26)) + result;
+          c = Math.floor(c / 26) - 1;
+        }
+        return result;
+      };
+
+      const startCol = colToLetter(style.area.range.start.col);
+      const startRow = style.area.range.start.row + 1;
+      const isColInfinity = style.area.range.end.col.type === "infinity";
+      const isRowInfinity = style.area.range.end.row.type === "infinity";
+
+      let cellRange: string;
+      if (isColInfinity && isRowInfinity) {
+        cellRange = `${startCol}${startRow}:INFINITY`;
+      } else if (isColInfinity) {
+        const endRow =
+          style.area.range.end.row.type === "number"
+            ? style.area.range.end.row.value + 1
+            : startRow;
+        cellRange = `${startCol}${startRow}:${endRow}`;
+      } else if (isRowInfinity) {
+        const endCol =
+          style.area.range.end.col.type === "number"
+            ? colToLetter(style.area.range.end.col.value)
+            : startCol;
+        cellRange = `${startCol}${startRow}:${endCol}`;
+      } else {
+        const endCol =
+          style.area.range.end.col.type === "number"
+            ? colToLetter(style.area.range.end.col.value)
+            : startCol;
+        const endRow =
+          style.area.range.end.row.type === "number"
+            ? style.area.range.end.row.value + 1
+            : startRow;
+        cellRange = `${startCol}${startRow}:${endCol}${endRow}`;
+      }
+
+      // Quote sheet name if needed
+      const needsQuotes = /[ '!]/.test(style.area.sheetName);
+      const sheetRef = needsQuotes
+        ? `'${style.area.sheetName.replace(/'/g, "''")}'`
+        : style.area.sheetName;
+      const rangeStr = `[${style.area.workbookName}]${sheetRef}!${cellRange}`;
+
+      setNewStyleArea(rangeStr);
+
+      if (style.condition.type === "formula") {
+        setNewStyleType("formula");
+        setNewStyleFormula(style.condition.formula);
+        setNewStyleColorL(style.condition.color.l.toFixed(0));
+        setNewStyleColorC(style.condition.color.c.toFixed(0));
+        setNewStyleColorH(style.condition.color.h.toFixed(0));
+      } else {
+        setNewStyleType("gradient");
+        setNewStyleMinColorL(style.condition.min.color.l.toFixed(0));
+        setNewStyleMinColorC(style.condition.min.color.c.toFixed(0));
+        setNewStyleMinColorH(style.condition.min.color.h.toFixed(0));
+        setNewStyleMaxColorL(style.condition.max.color.l.toFixed(0));
+        setNewStyleMaxColorC(style.condition.max.color.c.toFixed(0));
+        setNewStyleMaxColorH(style.condition.max.color.h.toFixed(0));
+
+        if (
+          style.condition.min.type === "lowest_value" &&
+          style.condition.max.type === "highest_value"
+        ) {
+          setNewStyleGradientType("lowest_highest");
+        } else {
+          setNewStyleGradientType("number");
+          if (style.condition.min.type === "number") {
+            setNewStyleMinFormula(style.condition.min.valueFormula);
+          }
+          if (style.condition.max.type === "number") {
+            setNewStyleMaxFormula(style.condition.max.valueFormula);
+          }
+        }
+      }
+
+      setEditingStyle({ workbookName, index });
+    },
+    [engine]
+  );
+
+  // Reset cell style form
+  const resetCellStyleForm = useCallback(() => {
+    setNewCellStyleArea("");
+    setNewCellStyleBackgroundColor("#FFFFFF");
+    setNewCellStyleColor("#000000");
+    setEditingCellStyle(null);
+  }, []);
+
+  // Add cell style
+  const addCellStyle = useCallback(() => {
+    try {
+      // Parse the range format: [workbook]'sheet'!A1:C10 or just A1:C10
+      let workbookName: string;
+      let sheetName: string;
+      let rangeStr: string;
+
+      // Check if the input includes workbook and sheet references
+      const fullRangeMatch = newCellStyleArea.match(
+        /^\[([^\]]+)\](?:'([^']+(?:''[^']*)*)'|([^!]+))!(.+)$/
+      );
+
+      if (fullRangeMatch) {
+        // Format: [workbook]'sheet'!range or [workbook]sheet!range
+        workbookName = fullRangeMatch[1]!;
+        sheetName = fullRangeMatch[2]
+          ? fullRangeMatch[2].replace(/''/g, "'")
+          : fullRangeMatch[3]!;
+        rangeStr = fullRangeMatch[4]!;
+      } else {
+        // Simple format: just the range, use default workbook/sheet
+        workbookName = workbookGridItems[0]?.name!;
+        sheetName = workbookGridItems[0]?.activeSheet!;
+        rangeStr = newCellStyleArea;
+
+        if (!workbookName || !sheetName) {
+          alert("No active workbook or sheet");
+          return;
+        }
+      }
+
+      const colToIndex = (col: string): number => {
+        let result = 0;
+        for (let i = 0; i < col.length; i++) {
+          result = result * 26 + (col.charCodeAt(i) - 64);
+        }
+        return result - 1;
+      };
+
+      // Parse the range part - supports multiple formats
+      let startCol: number, startRow: number;
+      let endCol: number, endRow: number;
+
+      // Match different range formats
+      const closedMatch = rangeStr.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+      const rowBoundedMatch = rangeStr.match(/^([A-Z]+)(\d+):(\d+)$/);
+      const colBoundedMatch = rangeStr.match(/^([A-Z]+)(\d+):([A-Z]+)$/);
+      const openBothMatch = rangeStr.match(/^([A-Z]+)(\d+):INFINITY$/);
+
+      if (closedMatch) {
+        startCol = colToIndex(closedMatch[1]!);
+        startRow = parseInt(closedMatch[2]!) - 1;
+        endCol = colToIndex(closedMatch[3]!);
+        endRow = parseInt(closedMatch[4]!) - 1;
+      } else if (rowBoundedMatch) {
+        startCol = colToIndex(rowBoundedMatch[1]!);
+        startRow = parseInt(rowBoundedMatch[2]!) - 1;
+        endCol = Infinity;
+        endRow = parseInt(rowBoundedMatch[3]!) - 1;
+      } else if (colBoundedMatch) {
+        startCol = colToIndex(colBoundedMatch[1]!);
+        startRow = parseInt(colBoundedMatch[2]!) - 1;
+        endCol = colToIndex(colBoundedMatch[3]!);
+        endRow = Infinity;
+      } else if (openBothMatch) {
+        startCol = colToIndex(openBothMatch[1]!);
+        startRow = parseInt(openBothMatch[2]!) - 1;
+        endCol = Infinity;
+        endRow = Infinity;
+      } else {
+        alert(
+          "Invalid range format. Use format like [Workbook]Sheet!A1:C10 or A1:C10"
+        );
+        return;
+      }
+
+      // Normalize the range: ensure start is always before end
+      if (endCol !== Infinity && startCol > endCol) {
+        [startCol, endCol] = [endCol, startCol];
+      }
+      if (endRow !== Infinity && startRow > endRow) {
+        [startRow, endRow] = [endRow, startRow];
+      }
+
+      if (editingCellStyle && editingCellStyle.workbookName === workbookName) {
+        // Remove the old style
+        engine.removeCellStyle(editingCellStyle.workbookName, editingCellStyle.index);
+        // Add the new style
+        engine.addCellStyle({
+          area: {
+            workbookName,
+            sheetName,
+            range: {
+              start: { col: startCol, row: startRow },
+              end: {
+                col:
+                  endCol === Infinity
+                    ? { type: "infinity" as const, sign: "positive" as const }
+                    : { type: "number" as const, value: endCol },
+                row:
+                  endRow === Infinity
+                    ? { type: "infinity" as const, sign: "positive" as const }
+                    : { type: "number" as const, value: endRow },
+              },
+            },
+          },
+          style: {
+            backgroundColor: newCellStyleBackgroundColor,
+            color: newCellStyleColor,
+          },
+        });
+        setEditingCellStyle(null);
+        resetCellStyleForm();
+      } else {
+        engine.addCellStyle({
+          area: {
+            workbookName,
+            sheetName,
+            range: {
+              start: { col: startCol, row: startRow },
+              end: {
+                col:
+                  endCol === Infinity
+                    ? { type: "infinity" as const, sign: "positive" as const }
+                    : { type: "number" as const, value: endCol },
+                row:
+                  endRow === Infinity
+                    ? { type: "infinity" as const, sign: "positive" as const }
+                    : { type: "number" as const, value: endRow },
+              },
+            },
+          },
+          style: {
+            backgroundColor: newCellStyleBackgroundColor,
+            color: newCellStyleColor,
+          },
+        });
+      }
+
+      markUnsavedChanges();
+      resetCellStyleForm();
+    } catch (error) {
+      console.error("Failed to add cell style:", error);
+      alert(
+        `Failed to add cell style: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
+  }, [
+    workbookGridItems,
+    engine,
+    markUnsavedChanges,
+    newCellStyleArea,
+    newCellStyleBackgroundColor,
+    newCellStyleColor,
+    editingCellStyle,
+    resetCellStyleForm,
+  ]);
+
+  // Delete cell style
+  const deleteCellStyle = useCallback(
+    (workbookName: string, index: number) => {
+      try {
+        const success = engine.removeCellStyle(workbookName, index);
+        if (success) {
+          markUnsavedChanges();
+          // If we're editing this style, cancel editing
+          if (
+            editingCellStyle &&
+            editingCellStyle.workbookName === workbookName &&
+            editingCellStyle.index === index
+          ) {
+            setEditingCellStyle(null);
+            resetCellStyleForm();
+          }
+        }
+      } catch (error) {
+        console.error("Failed to delete cell style:", error);
+        alert(
+          `Failed to delete cell style: ${
+            error instanceof Error ? error.message : "Unknown error"
+          }`
+        );
+      }
+    },
+    [engine, markUnsavedChanges, editingCellStyle, resetCellStyleForm]
+  );
+
+  // Edit cell style
+  const editCellStyle = useCallback(
+    (workbookName: string, index: number) => {
+      const styles = engine.getCellStyles(workbookName);
+      const style = styles[index];
+      if (!style) return;
+
+      // Convert range to canonical format
+      const colToLetter = (col: number): string => {
+        let result = "";
+        let c = col;
+        while (c >= 0) {
+          result = String.fromCharCode(65 + (c % 26)) + result;
+          c = Math.floor(c / 26) - 1;
+        }
+        return result;
+      };
+
+      const startCol = colToLetter(style.area.range.start.col);
+      const startRow = style.area.range.start.row + 1;
+      const isColInfinity = style.area.range.end.col.type === "infinity";
+      const isRowInfinity = style.area.range.end.row.type === "infinity";
+
+      let cellRange: string;
+      if (isColInfinity && isRowInfinity) {
+        cellRange = `${startCol}${startRow}:INFINITY`;
+      } else if (isColInfinity) {
+        const endRow =
+          style.area.range.end.row.type === "number"
+            ? style.area.range.end.row.value + 1
+            : startRow;
+        cellRange = `${startCol}${startRow}:${endRow}`;
+      } else if (isRowInfinity) {
+        const endCol =
+          style.area.range.end.col.type === "number"
+            ? colToLetter(style.area.range.end.col.value)
+            : startCol;
+        cellRange = `${startCol}${startRow}:${endCol}`;
+      } else {
+        const endCol =
+          style.area.range.end.col.type === "number"
+            ? colToLetter(style.area.range.end.col.value)
+            : startCol;
+        const endRow =
+          style.area.range.end.row.type === "number"
+            ? style.area.range.end.row.value + 1
+            : startRow;
+        cellRange = `${startCol}${startRow}:${endCol}${endRow}`;
+      }
+
+      // Quote sheet name if needed
+      const needsQuotes = /[ '!]/.test(style.area.sheetName);
+      const sheetRef = needsQuotes
+        ? `'${style.area.sheetName.replace(/'/g, "''")}'`
+        : style.area.sheetName;
+      const rangeStr = `[${style.area.workbookName}]${sheetRef}!${cellRange}`;
+
+      setNewCellStyleArea(rangeStr);
+      setNewCellStyleBackgroundColor(style.style.backgroundColor || "#FFFFFF");
+      setNewCellStyleColor(style.style.color || "#000000");
+
+      setEditingCellStyle({ workbookName, index });
+    },
+    [engine]
+  );
+
+  // Handle selection change from spreadsheet
+  const handleSelectionChange = useCallback(
+    (
+      selection: {
+        workbookName: string;
+        sheetName: string;
+        area: {
+          start: { col: number; row: number };
+          end: {
+            col: { type: string; value?: number } | number;
+            row: { type: string; value?: number } | number;
+          };
+        };
+      } | null
+    ) => {
+      // Always update the input when there's a selection
+      // Only clear it when panel is visible and there's no selection
+      if (!selection) {
+        // Clear the input when there's no selection (only if panel is visible)
+        if (showConditionalFormatting) {
+          setNewStyleArea("");
+        }
+        // Also clear cell style area if needed
+        setNewCellStyleArea("");
+        return;
+      }
+
+      // Update the input with the selection (always, regardless of panel visibility)
+      const colToLetter = (col: number): string => {
+        let result = "";
+        let c = col;
+        while (c >= 0) {
+          result = String.fromCharCode(65 + (c % 26)) + result;
+          c = Math.floor(c / 26) - 1;
+        }
+        return result;
+      };
+
+      // Extract and normalize start/end coordinates
+      let startColIdx = selection.area.start.col;
+      let startRowIdx = selection.area.start.row;
+      let endColIdx: number | "infinity";
+      let endRowIdx: number | "infinity";
+
+      // Extract end column
+      if (typeof selection.area.end.col === "object") {
+        if (selection.area.end.col.type === "infinity") {
+          endColIdx = "infinity";
+        } else if (
+          selection.area.end.col.type === "number" &&
+          selection.area.end.col.value !== undefined
+        ) {
+          endColIdx = selection.area.end.col.value;
+        } else {
+          endColIdx = startColIdx; // Fallback
+        }
+      } else {
+        endColIdx = selection.area.end.col;
+      }
+
+      // Extract end row
+      if (typeof selection.area.end.row === "object") {
+        if (selection.area.end.row.type === "infinity") {
+          endRowIdx = "infinity";
+        } else if (
+          selection.area.end.row.type === "number" &&
+          selection.area.end.row.value !== undefined
+        ) {
+          endRowIdx = selection.area.end.row.value;
+        } else {
+          endRowIdx = startRowIdx; // Fallback
+        }
+      } else {
+        endRowIdx = selection.area.end.row;
+      }
+
+      // Normalize: ensure start is always before end (swap if needed)
+      if (
+        endColIdx !== "infinity" &&
+        typeof endColIdx === "number" &&
+        startColIdx > endColIdx
+      ) {
+        [startColIdx, endColIdx] = [endColIdx, startColIdx];
+      }
+      if (
+        endRowIdx !== "infinity" &&
+        typeof endRowIdx === "number" &&
+        startRowIdx > endRowIdx
+      ) {
+        [startRowIdx, endRowIdx] = [endRowIdx, startRowIdx];
+      }
+
+      // Convert to strings
+      const startCol = colToLetter(startColIdx);
+      const startRow = startRowIdx + 1; // Convert to 1-based
+
+      let endColStr: string;
+      let endRowStr: string;
+
+      if (endColIdx === "infinity") {
+        endColStr = "INFINITY";
+      } else {
+        endColStr = colToLetter(endColIdx);
+      }
+
+      if (endRowIdx === "infinity") {
+        endRowStr = "INFINITY";
+      } else {
+        endRowStr = String(endRowIdx + 1); // Convert to 1-based
+      }
+
+      // Build canonical range format based on CANONICAL_RANGES.md
+      let cellRange: string;
+      if (endColStr === "INFINITY" && endRowStr === "INFINITY") {
+        // Open both: A5:INFINITY
+        cellRange = `${startCol}${startRow}:INFINITY`;
+      } else if (endColStr === "INFINITY") {
+        // Open→ (row-bounded): A5:10
+        cellRange = `${startCol}${startRow}:${endRowStr}`;
+      } else if (endRowStr === "INFINITY") {
+        // Open↓ (col-bounded): A5:D
+        cellRange = `${startCol}${startRow}:${endColStr}`;
+      } else {
+        // Closed rectangle: A5:D10
+        cellRange = `${startCol}${startRow}:${endColStr}${endRowStr}`;
+      }
+
+      // Add workbook and sheet name in format: [workbook]'sheet'!range
+      // Quote sheet name if it contains spaces or special characters
+      const needsQuotes = /[ '!]/.test(selection.sheetName);
+      const sheetRef = needsQuotes
+        ? `'${selection.sheetName.replace(/'/g, "''")}'`
+        : selection.sheetName;
+      const rangeStr = `[${selection.workbookName}]${sheetRef}!${cellRange}`;
+
+      setNewStyleArea(rangeStr);
+      // Also update cell style area
+      setNewCellStyleArea(rangeStr);
+     },
+     [showConditionalFormatting]
+   );
 
   // Create WorkbookComponent for grid
   const WorkbookComponent = useCallback(
@@ -1006,6 +1815,7 @@ export function ExcelDemo() {
               workbookName={workbookName}
               engine={engine}
               verboseErrors={verboseErrors}
+              onSelectionChange={handleSelectionChange}
             />
           </div>
 
@@ -1157,6 +1967,7 @@ export function ExcelDemo() {
       cancelWorkbookRenaming,
       cloneWorkbook,
       deleteWorkbook,
+      handleSelectionChange,
     ]
   );
 
@@ -1183,9 +1994,10 @@ export function ExcelDemo() {
     [WorkbookComponent]
   );
 
-  const numTables = engineState.tables
-    .values()
-    .reduce((sum, wb) => sum + wb.size, 0);
+  const numTables = Array.from(engineState.tables.values()).reduce(
+    (sum, wb) => sum + wb.size,
+    0
+  );
 
   // Show loading spinner while initializing
   if (isLoading) {
@@ -1219,7 +2031,12 @@ export function ExcelDemo() {
                     {currentFileName}
                   </span>
                   {hasUnsavedChanges && (
-                    <span className="text-xs text-orange-600" data-testid="unsaved-changes-indicator">●</span>
+                    <span
+                      className="text-xs text-orange-600"
+                      data-testid="unsaved-changes-indicator"
+                    >
+                      ●
+                    </span>
                   )}
                 </div>
               )}
@@ -1340,7 +2157,7 @@ export function ExcelDemo() {
                   data-testid="named-expressions-toggle"
                 >
                   <Calculator className="h-4 w-4 mr-1" />
-                  Expressions & Tables
+                  Expressions, Tables & Formatting
                   {showNamedExpressions ? (
                     <ChevronUp className="h-3 w-3 ml-1" />
                   ) : (
@@ -1814,6 +2631,495 @@ export function ExcelDemo() {
                         )
                     )
                   )}
+                </div>
+              </div>
+
+              {/* Conditional Formatting */}
+              <div
+                className="bg-white p-3 rounded border border-gray-200"
+                data-testid="conditional-formatting-section"
+              >
+                <h3
+                  className="text-sm font-semibold text-gray-800 mb-3"
+                  data-testid="conditional-formatting-title"
+                >
+                  Conditional Formatting (
+                  {engineState.conditionalStyles?.length || 0}
+                  )
+                </h3>
+                <div className="space-y-3">
+                  {/* Add Form */}
+                  <div className="space-y-2 border-b border-gray-200 pb-2">
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Select a range in the spreadsheet..."
+                        value={newStyleArea}
+                        onChange={(e) => setNewStyleArea(e.target.value)}
+                        className="text-xs flex-1"
+                      />
+                      <select
+                        value={newStyleType}
+                        onChange={(e) =>
+                          setNewStyleType(
+                            e.target.value as "formula" | "gradient"
+                          )
+                        }
+                        className="text-xs border border-gray-300 rounded px-2"
+                      >
+                        <option value="formula">Formula</option>
+                        <option value="gradient">Gradient</option>
+                      </select>
+                    </div>
+
+                    {newStyleType === "formula" && (
+                      <div className="space-y-2">
+                        <Input
+                          placeholder="Formula (e.g., ROW() > 4)"
+                          value={newStyleFormula}
+                          onChange={(e) => setNewStyleFormula(e.target.value)}
+                          className="text-xs"
+                        />
+                        <div className="flex gap-2 items-center">
+                          <label className="text-xs text-gray-600">
+                            Color:
+                          </label>
+                          <input
+                            type="color"
+                            value={lchToHex({
+                              l: parseFloat(newStyleColorL),
+                              c: parseFloat(newStyleColorC),
+                              h: parseFloat(newStyleColorH),
+                            })}
+                            onChange={(e) => {
+                              const hex = e.target.value;
+                              const lch = hexToLch(hex);
+                              setNewStyleColorL(lch.l.toFixed(0));
+                              setNewStyleColorC(lch.c.toFixed(0));
+                              setNewStyleColorH(lch.h.toFixed(0));
+                            }}
+                            className="w-12 h-8 border border-gray-300 rounded cursor-pointer"
+                          />
+                          <span className="text-xs text-gray-500">
+                            L:{newStyleColorL} C:{newStyleColorC} H:
+                            {newStyleColorH}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {newStyleType === "gradient" && (
+                      <div className="space-y-2">
+                        <select
+                          value={newStyleGradientType}
+                          onChange={(e) =>
+                            setNewStyleGradientType(
+                              e.target.value as "lowest_highest" | "number"
+                            )
+                          }
+                          className="text-xs border border-gray-300 rounded px-2 w-full"
+                        >
+                          <option value="lowest_highest">
+                            Lowest to Highest Value
+                          </option>
+                          <option value="number">Custom Min/Max</option>
+                        </select>
+
+                        {newStyleGradientType === "number" && (
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="Min formula"
+                              value={newStyleMinFormula}
+                              onChange={(e) =>
+                                setNewStyleMinFormula(e.target.value)
+                              }
+                              className="text-xs flex-1"
+                            />
+                            <Input
+                              placeholder="Max formula"
+                              value={newStyleMaxFormula}
+                              onChange={(e) =>
+                                setNewStyleMaxFormula(e.target.value)
+                              }
+                              className="text-xs flex-1"
+                            />
+                          </div>
+                        )}
+
+                        <div className="flex gap-2">
+                          <div className="flex-1">
+                            <label className="text-xs text-gray-600">
+                              Min Color:
+                            </label>
+                            <div className="flex gap-1 items-center mt-1">
+                              <input
+                                type="color"
+                                value={lchToHex({
+                                  l: parseFloat(newStyleMinColorL),
+                                  c: parseFloat(newStyleMinColorC),
+                                  h: parseFloat(newStyleMinColorH),
+                                })}
+                                onChange={(e) => {
+                                  const hex = e.target.value;
+                                  const lch = hexToLch(hex);
+                                  setNewStyleMinColorL(lch.l.toFixed(0));
+                                  setNewStyleMinColorC(lch.c.toFixed(0));
+                                  setNewStyleMinColorH(lch.h.toFixed(0));
+                                }}
+                                className="w-10 h-6 border border-gray-300 rounded cursor-pointer"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex-1">
+                            <label className="text-xs text-gray-600">
+                              Max Color:
+                            </label>
+                            <div className="flex gap-1 items-center mt-1">
+                              <input
+                                type="color"
+                                value={lchToHex({
+                                  l: parseFloat(newStyleMaxColorL),
+                                  c: parseFloat(newStyleMaxColorC),
+                                  h: parseFloat(newStyleMaxColorH),
+                                })}
+                                onChange={(e) => {
+                                  const hex = e.target.value;
+                                  const lch = hexToLch(hex);
+                                  setNewStyleMaxColorL(lch.l.toFixed(0));
+                                  setNewStyleMaxColorC(lch.c.toFixed(0));
+                                  setNewStyleMaxColorH(lch.h.toFixed(0));
+                                }}
+                                className="w-10 h-6 border border-gray-300 rounded cursor-pointer"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      {editingStyle && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setEditingStyle(null);
+                            resetStyleForm();
+                          }}
+                          className="text-xs flex-1"
+                        >
+                          Cancel
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        onClick={addConditionalStyle}
+                        disabled={!newStyleArea}
+                        className="text-xs flex-1"
+                      >
+                        {editingStyle ? (
+                          <>
+                            <Edit2 className="h-3 w-3 mr-1" />
+                            Update Rule
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="h-3 w-3 mr-1" />
+                            Add Rule
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* List of styles */}
+                  <div
+                    className="space-y-2 max-h-40 overflow-y-auto"
+                    data-testid="conditional-formatting-list"
+                  >
+                    {(engineState.conditionalStyles || []).map((style, index) => {
+                      const workbookName = style.area.workbookName;
+                      const colToLetter = (col: number): string => {
+                        let result = "";
+                        let c = col;
+                        while (c >= 0) {
+                          result =
+                            String.fromCharCode(65 + (c % 26)) + result;
+                          c = Math.floor(c / 26) - 1;
+                        }
+                        return result;
+                      };
+
+                      const rangeStr = `${colToLetter(
+                          style.area.range.start.col
+                        )}${style.area.range.start.row + 1}:${
+                          style.area.range.end.col.type === "infinity"
+                            ? "∞"
+                            : colToLetter(style.area.range.end.col.value!)
+                        }${
+                          style.area.range.end.row.type === "infinity"
+                            ? "∞"
+                            : style.area.range.end.row.value! + 1
+                      }`;
+
+                      // Get color preview
+                      const getColorPreview = () => {
+                          if (style.condition.type === "formula") {
+                            const color = style.condition.color;
+                            return `hsl(${color.h}, ${color.c}%, ${color.l}%)`;
+                          } else {
+                            // Show gradient preview
+                            const minColor = style.condition.min.color;
+                            const maxColor = style.condition.max.color;
+                            return `linear-gradient(90deg, hsl(${minColor.h}, ${minColor.c}%, ${minColor.l}%), hsl(${maxColor.h}, ${maxColor.c}%, ${maxColor.l}%))`;
+                        }
+                      };
+
+                      return (
+                        <div
+                          key={`${workbookName}-${index}`}
+                          className="flex items-center gap-2 bg-gray-50 p-2 rounded"
+                          data-testid={`conditional-style-${index}`}
+                        >
+                          <div
+                            className="w-6 h-6 rounded border border-gray-300 flex-shrink-0"
+                            style={{ background: getColorPreview() }}
+                            title="Color preview"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs text-gray-800 truncate">
+                              <span className="font-medium text-purple-600">
+                                {workbookName}
+                              </span>
+                              {" → "}
+                              <span className="font-medium text-blue-600">
+                                {style.area.sheetName}
+                              </span>
+                              {" • "}
+                              <span className="font-medium">{rangeStr}</span>
+                            </div>
+                            <div className="text-xs text-gray-600 truncate">
+                              {style.condition.type === "formula"
+                                ? `Formula: ${style.condition.formula}`
+                                : style.condition.min.type === "lowest_value"
+                                ? "Gradient: Min to Max"
+                                : `Gradient: ${
+                                    style.condition.min.type === "number"
+                                      ? style.condition.min.valueFormula
+                                      : ""
+                                  } to ${
+                                    style.condition.max.type === "number"
+                                      ? style.condition.max.valueFormula
+                                      : ""
+                                  }`}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0 text-blue-500 hover:text-blue-700"
+                              onClick={() =>
+                                editConditionalStyle(workbookName, index)
+                              }
+                              data-testid={`edit-conditional-style-${index}`}
+                              title="Edit rule"
+                            >
+                              <Edit2 className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                              onClick={() =>
+                                deleteConditionalStyle(workbookName, index)
+                              }
+                              data-testid={`delete-conditional-style-${index}`}
+                              title="Delete rule"
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {(!engineState.conditionalStyles ||
+                      engineState.conditionalStyles.length === 0) && (
+                      <p className="text-xs text-gray-500 italic">
+                        No conditional formatting rules
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Cell Styles */}
+              <div
+                className="bg-white p-3 rounded border border-gray-200"
+                data-testid="cell-styles-section"
+              >
+                <h3
+                  className="text-sm font-semibold text-gray-800 mb-3"
+                  data-testid="cell-styles-title"
+                >
+                  Cell Styles (
+                  {engineState.cellStyles?.length || 0}
+                  )
+                </h3>
+                <div className="space-y-3">
+                  {/* Add Form */}
+                  <div className="space-y-2 border-b border-gray-200 pb-2">
+                    <Input
+                      placeholder="Select a range in the spreadsheet..."
+                      value={newCellStyleArea}
+                      onChange={(e) => setNewCellStyleArea(e.target.value)}
+                      className="text-xs"
+                    />
+                    <div className="flex gap-2 items-center">
+                      <label className="text-xs text-gray-600">
+                        Background:
+                      </label>
+                      <input
+                        type="color"
+                        value={newCellStyleBackgroundColor}
+                        onChange={(e) =>
+                          setNewCellStyleBackgroundColor(e.target.value)
+                        }
+                        className="w-12 h-8 border border-gray-300 rounded cursor-pointer"
+                      />
+                      <label className="text-xs text-gray-600">Text:</label>
+                      <input
+                        type="color"
+                        value={newCellStyleColor}
+                        onChange={(e) => setNewCellStyleColor(e.target.value)}
+                        className="w-12 h-8 border border-gray-300 rounded cursor-pointer"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={addCellStyle}
+                        disabled={!newCellStyleArea}
+                        size="sm"
+                        className="text-xs"
+                      >
+                        {editingCellStyle ? (
+                          <>
+                            <Edit2 className="h-3 w-3 mr-1" /> Update Style
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="h-3 w-3 mr-1" /> Add Style
+                          </>
+                        )}
+                      </Button>
+                      {editingCellStyle && (
+                        <Button onClick={resetCellStyleForm} size="sm" variant="outline" className="text-xs">
+                          Cancel
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* List of styles */}
+                  <div
+                    className="space-y-2 max-h-40 overflow-y-auto"
+                    data-testid="cell-styles-list"
+                  >
+                    {(engineState.cellStyles || []).map((style, index) => {
+                      const workbookName = style.area.workbookName;
+                      const colToLetter = (col: number): string => {
+                        let result = "";
+                        let c = col;
+                        while (c >= 0) {
+                          result =
+                            String.fromCharCode(65 + (c % 26)) + result;
+                          c = Math.floor(c / 26) - 1;
+                        }
+                        return result;
+                      };
+
+                      const rangeStr = `${colToLetter(
+                        style.area.range.start.col
+                      )}${style.area.range.start.row + 1}:${
+                        style.area.range.end.col.type === "infinity"
+                          ? "∞"
+                          : colToLetter(style.area.range.end.col.value!)
+                      }${
+                        style.area.range.end.row.type === "infinity"
+                          ? "∞"
+                          : style.area.range.end.row.value! + 1
+                      }`;
+
+                      return (
+                        <div
+                          key={`${workbookName}-${index}`}
+                          className="flex items-center gap-2 bg-gray-50 p-2 rounded"
+                          data-testid={`cell-style-${index}`}
+                        >
+                          <div
+                            className="w-6 h-6 rounded border border-gray-300 flex-shrink-0"
+                            style={{
+                              backgroundColor: style.style.backgroundColor,
+                              color: style.style.color,
+                            }}
+                            title="Style preview"
+                          >
+                            <div className="w-full h-full flex items-center justify-center text-xs">
+                              A
+                            </div>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs text-gray-800 truncate">
+                              <span className="font-medium text-purple-600">
+                                {workbookName}
+                              </span>
+                              {" → "}
+                              <span className="font-medium text-blue-600">
+                                {style.area.sheetName}
+                              </span>
+                              {" • "}
+                              <span className="font-medium">{rangeStr}</span>
+                            </div>
+                            <div className="text-xs text-gray-600 truncate">
+                              BG: {style.style.backgroundColor} • Text:{" "}
+                              {style.style.color}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0 text-blue-500 hover:text-blue-700"
+                              onClick={() => editCellStyle(workbookName, index)}
+                              data-testid={`edit-cell-style-${index}`}
+                              title="Edit style"
+                            >
+                              <Edit2 className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                              onClick={() =>
+                                deleteCellStyle(workbookName, index)
+                              }
+                              data-testid={`delete-cell-style-${index}`}
+                              title="Delete style"
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {(!engineState.cellStyles ||
+                      engineState.cellStyles.length === 0) && (
+                      <p className="text-xs text-gray-500 italic">
+                        No cell styles
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

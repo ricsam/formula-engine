@@ -23,6 +23,13 @@ interface SpreadsheetWithFormulaBarProps {
   workbookName: string;
   engine: FormulaEngine;
   verboseErrors?: boolean;
+  onSelectionChange?: (
+    selection: {
+      workbookName: string;
+      sheetName: string;
+      area: SMArea;
+    } | null
+  ) => void;
 }
 
 export function SpreadsheetWithFormulaBar({
@@ -30,6 +37,7 @@ export function SpreadsheetWithFormulaBar({
   workbookName,
   engine,
   verboseErrors = false,
+  onSelectionChange,
 }: SpreadsheetWithFormulaBarProps) {
   const [selectedCell, setSelectedCell] = useState<string | null>(null);
   const [selectedArea, setSelectedArea] = useState<SMArea | null>(null);
@@ -270,6 +278,12 @@ export function SpreadsheetWithFormulaBar({
           },
           (selection) => {
             setSelectedArea(selection ?? null);
+            // Notify parent component of selection change
+            if (onSelectionChange) {
+              onSelectionChange(
+                selection ? { workbookName, sheetName, area: selection } : null
+              );
+            }
           }
         ),
       ];
@@ -277,7 +291,7 @@ export function SpreadsheetWithFormulaBar({
         cleanups.forEach((cleanup) => cleanup());
       };
     },
-    [setSelectedCell]
+    [setSelectedCell, onSelectionChange, workbookName, sheetName]
   );
 
   return (
@@ -482,14 +496,14 @@ export function SpreadsheetWithFormulaBar({
                   {selectedArea.end.col.type === "infinity"
                     ? "∞"
                     : selectedArea.end.col.type === "number"
-                      ? selectedArea.end.col.value - selectedArea.start.col + 1
-                      : 0}{" "}
+                    ? selectedArea.end.col.value - selectedArea.start.col + 1
+                    : 0}{" "}
                   ×{" "}
                   {selectedArea.end.row.type === "infinity"
                     ? "∞"
                     : selectedArea.end.row.type === "number"
-                      ? selectedArea.end.row.value - selectedArea.start.row + 1
-                      : 0}
+                    ? selectedArea.end.row.value - selectedArea.start.row + 1
+                    : 0}
                   )
                 </span>
                 <Input
@@ -550,6 +564,14 @@ export function SpreadsheetWithFormulaBar({
             } as React.HTMLAttributes<HTMLDivElement>
           }
           customCellStyle={(cell) => {
+            // Check for conditional styling first
+            const conditionalStyle = engine.getCellStyle({
+              sheetName,
+              colIndex: cell.colIndex,
+              rowIndex: cell.rowIndex,
+              workbookName,
+            });
+
             const tableInfo = engine.isCellInTable({
               sheetName,
               colIndex: cell.colIndex,
@@ -558,7 +580,16 @@ export function SpreadsheetWithFormulaBar({
             });
 
             if (!tableInfo) {
-              return {}; // Not in a table, no special styling
+              // Not in a table, just apply conditional styling if any
+              if (conditionalStyle?.backgroundColor || conditionalStyle?.color) {
+                return {
+                  ...(conditionalStyle.backgroundColor && {
+                    backgroundColor: conditionalStyle.backgroundColor,
+                  }),
+                  ...(conditionalStyle.color && { color: conditionalStyle.color }),
+                };
+              }
+              return {};
             }
 
             const isHeaderRow = cell.rowIndex === tableInfo.start.rowIndex;
@@ -609,6 +640,16 @@ export function SpreadsheetWithFormulaBar({
               style.borderBottom = "2px solid #4472c4";
             }
 
+            // Merge conditional styling with table styling
+            // Conditional styling takes precedence for background color on non-header rows
+            if (conditionalStyle?.backgroundColor && !isHeaderRow) {
+              style.backgroundColor = conditionalStyle.backgroundColor;
+            }
+            // Apply text color from conditional styling (but not on header rows to preserve white text)
+            if (conditionalStyle?.color && !isHeaderRow) {
+              style.color = conditionalStyle.color;
+            }
+
             return style;
           }}
           customCellRenderer={(cell) => {
@@ -622,10 +663,30 @@ export function SpreadsheetWithFormulaBar({
               verboseErrors
             );
 
+            const conditionalStyle = engine.getCellStyle({
+              sheetName,
+              colIndex: cell.colIndex,
+              rowIndex: cell.rowIndex,
+              workbookName,
+            });
+
+            const conditionalStyleProps: React.CSSProperties = {};
+            if (conditionalStyle?.backgroundColor) {
+              conditionalStyleProps.backgroundColor = conditionalStyle.backgroundColor;
+            }
+            if (conditionalStyle?.color) {
+              conditionalStyleProps.color = conditionalStyle.color;
+            }
+
             if (typeof value === "number") {
               // Format numbers nicely
               return (
-                <div>
+                <div
+                  data-conditional-background={conditionalStyle?.backgroundColor}
+                  data-conditional-text-color={conditionalStyle?.color}
+                  data-type="number"
+                  style={conditionalStyleProps}
+                >
                   {value.toLocaleString("en-US", {
                     minimumFractionDigits: 0,
                     maximumFractionDigits: 10,
@@ -634,7 +695,15 @@ export function SpreadsheetWithFormulaBar({
               );
             }
 
-            return <div>{value?.toString() || ""}</div>;
+            return (
+              <div
+                data-conditional-background={conditionalStyle?.backgroundColor}
+                data-conditional-text-color={conditionalStyle?.color}
+                style={conditionalStyleProps}
+              >
+                {value?.toString() || ""}
+              </div>
+            );
           }}
         />
       </div>
