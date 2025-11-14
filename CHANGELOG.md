@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.7
+
+### Patch Changes
+
+- export color utils
+
 ## 0.0.6
 
 ### Patch Changes
