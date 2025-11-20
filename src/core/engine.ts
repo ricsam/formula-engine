@@ -7,6 +7,7 @@ import {
   type CellAddress,
   type CellStyle,
   type ConditionalStyle,
+  type CopyCellsOptions,
   type DirectCellStyle,
   type NamedExpression,
   type RangeAddress,
@@ -34,6 +35,7 @@ import { EventManager } from "./managers/event-manager";
 import { EvaluationManager } from "./managers/evaluation-manager";
 import { DependencyManager } from "./managers/dependency-manager";
 import { StyleManager } from "./managers/style-manager";
+import { CopyManager } from "./managers/copy-manager";
 
 /**
  * Main FormulaEngine class
@@ -47,6 +49,7 @@ export class FormulaEngine {
   private autoFillManager: AutoFill;
   private dependencyManager: DependencyManager;
   private styleManager: StyleManager;
+  private copyManager: CopyManager;
 
   /**
    * Public access to the store manager for testing
@@ -87,6 +90,11 @@ export class FormulaEngine {
     this.styleManager = new StyleManager(
       this.workbookManager,
       this.evaluationManager
+    );
+    this.copyManager = new CopyManager(
+      this.workbookManager,
+      this.evaluationManager,
+      this.styleManager
     );
 
     this.autoFillManager = new AutoFill(this.workbookManager, this);
@@ -431,6 +439,21 @@ export class FormulaEngine {
     return this.styleManager.getCellStyles(workbookName);
   }
 
+  //#endregion
+
+  //#region Copy/Paste
+  /**
+   * Copy cells from source to target
+   */
+  copyCells(
+    source: CellAddress[],
+    target: CellAddress,
+    options: CopyCellsOptions
+  ): void {
+    this.copyManager.copyCells(source, target, options);
+    this.reevaluate();
+    this.eventManager.emitUpdate();
+  }
   //#endregion
 
   //#region Sheets

@@ -368,3 +368,9 @@ export interface CellStyle {
   backgroundColor?: string; // Hex color format
   color?: string; // Text color in hex format
 }
+
+export interface CopyCellsOptions {
+  cut: boolean;
+  type: "value" | "formula";
+  formatting: boolean;
+}
