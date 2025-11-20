@@ -367,6 +367,10 @@ export interface DirectCellStyle {
 export interface CellStyle {
   backgroundColor?: string; // Hex color format
   color?: string; // Text color in hex format
+  fontSize?: number; // Font size in pixels
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
 }
 
 export interface CopyCellsOptions {

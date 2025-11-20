@@ -581,13 +581,27 @@ export function SpreadsheetWithFormulaBar({
 
             if (!tableInfo) {
               // Not in a table, just apply conditional styling if any
-              if (conditionalStyle?.backgroundColor || conditionalStyle?.color) {
-                return {
-                  ...(conditionalStyle.backgroundColor && {
-                    backgroundColor: conditionalStyle.backgroundColor,
-                  }),
-                  ...(conditionalStyle.color && { color: conditionalStyle.color }),
-                };
+              if (conditionalStyle) {
+                const style: React.CSSProperties = {};
+                if (conditionalStyle.backgroundColor) {
+                  style.backgroundColor = conditionalStyle.backgroundColor;
+                }
+                if (conditionalStyle.color) {
+                  style.color = conditionalStyle.color;
+                }
+                if (conditionalStyle.fontSize) {
+                  style.fontSize = `${conditionalStyle.fontSize}px`;
+                }
+                if (conditionalStyle.bold) {
+                  style.fontWeight = 'bold';
+                }
+                if (conditionalStyle.italic) {
+                  style.fontStyle = 'italic';
+                }
+                if (conditionalStyle.underline) {
+                  style.textDecoration = 'underline';
+                }
+                return style;
               }
               return {};
             }
@@ -641,13 +655,26 @@ export function SpreadsheetWithFormulaBar({
             }
 
             // Merge conditional styling with table styling
-            // Conditional styling takes precedence for background color on non-header rows
-            if (conditionalStyle?.backgroundColor && !isHeaderRow) {
-              style.backgroundColor = conditionalStyle.backgroundColor;
-            }
-            // Apply text color from conditional styling (but not on header rows to preserve white text)
-            if (conditionalStyle?.color && !isHeaderRow) {
-              style.color = conditionalStyle.color;
+            // Conditional styling takes precedence on non-header rows
+            if (conditionalStyle && !isHeaderRow) {
+              if (conditionalStyle.backgroundColor) {
+                style.backgroundColor = conditionalStyle.backgroundColor;
+              }
+              if (conditionalStyle.color) {
+                style.color = conditionalStyle.color;
+              }
+              if (conditionalStyle.fontSize) {
+                style.fontSize = `${conditionalStyle.fontSize}px`;
+              }
+              if (conditionalStyle.bold) {
+                style.fontWeight = 'bold';
+              }
+              if (conditionalStyle.italic) {
+                style.fontStyle = 'italic';
+              }
+              if (conditionalStyle.underline) {
+                style.textDecoration = 'underline';
+              }
             }
 
             return style;
@@ -676,6 +703,18 @@ export function SpreadsheetWithFormulaBar({
             }
             if (conditionalStyle?.color) {
               conditionalStyleProps.color = conditionalStyle.color;
+            }
+            if (conditionalStyle?.fontSize) {
+              conditionalStyleProps.fontSize = `${conditionalStyle.fontSize}px`;
+            }
+            if (conditionalStyle?.bold) {
+              conditionalStyleProps.fontWeight = 'bold';
+            }
+            if (conditionalStyle?.italic) {
+              conditionalStyleProps.fontStyle = 'italic';
+            }
+            if (conditionalStyle?.underline) {
+              conditionalStyleProps.textDecoration = 'underline';
             }
 
             if (typeof value === "number") {

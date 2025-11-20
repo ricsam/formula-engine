@@ -127,7 +127,10 @@ export class StyleManager {
   /**
    * Reset all styles (for deserialization)
    */
-  resetStyles(conditionalStyles?: ConditionalStyle[], cellStyles?: DirectCellStyle[]): void {
+  resetStyles(
+    conditionalStyles?: ConditionalStyle[],
+    cellStyles?: DirectCellStyle[]
+  ): void {
     this.conditionalStyles = conditionalStyles ? [...conditionalStyles] : [];
     this.cellStyles = cellStyles ? [...cellStyles] : [];
   }
@@ -254,10 +257,7 @@ export class StyleManager {
         cellStyle.area.sheetName === cellAddress.sheetName &&
         isCellInRange(cellAddress, cellStyle.area.range)
       ) {
-        return {
-          backgroundColor: cellStyle.style.backgroundColor,
-          color: cellStyle.style.color,
-        };
+        return cellStyle.style;
       }
     }
 
@@ -308,7 +308,7 @@ export class StyleManager {
       const formula = style.condition.formula.startsWith("=")
         ? style.condition.formula
         : `=${style.condition.formula}`;
-      
+
       const result = this.evaluationManager.evaluateFormula(
         formula,
         cellAddress
@@ -346,7 +346,8 @@ export class StyleManager {
 
     try {
       // Get the cell's evaluation result
-      const evalResult = this.evaluationManager.getCellEvaluationResult(cellAddress);
+      const evalResult =
+        this.evaluationManager.getCellEvaluationResult(cellAddress);
       if (!evalResult || evalResult.type !== "value") {
         return undefined;
       }
@@ -512,7 +513,10 @@ export class StyleManager {
       }
     } else {
       // Closed rectangle: A5:D10
-      if (area.range.end.col.type === "number" && area.range.end.row.type === "number") {
+      if (
+        area.range.end.col.type === "number" &&
+        area.range.end.row.type === "number"
+      ) {
         const endCol = colToLetter(area.range.end.col.value);
         const endRow = area.range.end.row.value + 1; // Convert to 1-based
         rangeStr = `${startCol}${startRow}:${endCol}${endRow}`;
@@ -524,10 +528,11 @@ export class StyleManager {
 
     // Quote sheet name if it contains spaces or special characters
     const needsQuotes = /[ '!]/.test(area.sheetName);
-    const sheetRef = needsQuotes ? `'${area.sheetName.replace(/'/g, "''")}'` : area.sheetName;
+    const sheetRef = needsQuotes
+      ? `'${area.sheetName.replace(/'/g, "''")}'`
+      : area.sheetName;
 
     // Construct the full reference: [workbook]'sheet'!range
     return `[${area.workbookName}]${sheetRef}!${rangeStr}`;
   }
 }
-

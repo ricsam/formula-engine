@@ -218,6 +218,10 @@ export function ExcelDemo() {
   const [newCellStyleArea, setNewCellStyleArea] = useState("");
   const [newCellStyleBackgroundColor, setNewCellStyleBackgroundColor] = useState("#FFFFFF");
   const [newCellStyleColor, setNewCellStyleColor] = useState("#000000");
+  const [newCellStyleFontSize, setNewCellStyleFontSize] = useState("12");
+  const [newCellStyleBold, setNewCellStyleBold] = useState(false);
+  const [newCellStyleItalic, setNewCellStyleItalic] = useState(false);
+  const [newCellStyleUnderline, setNewCellStyleUnderline] = useState(false);
   const [editingCellStyle, setEditingCellStyle] = useState<{
     workbookName: string;
     index: number;
@@ -1296,6 +1300,10 @@ export function ExcelDemo() {
     setNewCellStyleArea("");
     setNewCellStyleBackgroundColor("#FFFFFF");
     setNewCellStyleColor("#000000");
+    setNewCellStyleFontSize("12");
+    setNewCellStyleBold(false);
+    setNewCellStyleItalic(false);
+    setNewCellStyleUnderline(false);
     setEditingCellStyle(null);
   }, []);
 
@@ -1409,6 +1417,10 @@ export function ExcelDemo() {
           style: {
             backgroundColor: newCellStyleBackgroundColor,
             color: newCellStyleColor,
+            fontSize: parseInt(newCellStyleFontSize) || 12,
+            bold: newCellStyleBold,
+            italic: newCellStyleItalic,
+            underline: newCellStyleUnderline,
           },
         });
         setEditingCellStyle(null);
@@ -1435,6 +1447,10 @@ export function ExcelDemo() {
           style: {
             backgroundColor: newCellStyleBackgroundColor,
             color: newCellStyleColor,
+            fontSize: parseInt(newCellStyleFontSize) || 12,
+            bold: newCellStyleBold,
+            italic: newCellStyleItalic,
+            underline: newCellStyleUnderline,
           },
         });
       }
@@ -1456,6 +1472,10 @@ export function ExcelDemo() {
     newCellStyleArea,
     newCellStyleBackgroundColor,
     newCellStyleColor,
+    newCellStyleFontSize,
+    newCellStyleBold,
+    newCellStyleItalic,
+    newCellStyleUnderline,
     editingCellStyle,
     resetCellStyleForm,
   ]);
@@ -1549,6 +1569,10 @@ export function ExcelDemo() {
       setNewCellStyleArea(rangeStr);
       setNewCellStyleBackgroundColor(style.style.backgroundColor || "#FFFFFF");
       setNewCellStyleColor(style.style.color || "#000000");
+      setNewCellStyleFontSize(String(style.style.fontSize || 12));
+      setNewCellStyleBold(style.style.bold || false);
+      setNewCellStyleItalic(style.style.italic || false);
+      setNewCellStyleUnderline(style.style.underline || false);
 
       setEditingCellStyle({ workbookName, index });
     },
@@ -2975,25 +2999,65 @@ export function ExcelDemo() {
                       onChange={(e) => setNewCellStyleArea(e.target.value)}
                       className="text-xs"
                     />
-                    <div className="flex gap-2 items-center">
-                      <label className="text-xs text-gray-600">
-                        Background:
-                      </label>
-                      <input
-                        type="color"
-                        value={newCellStyleBackgroundColor}
-                        onChange={(e) =>
-                          setNewCellStyleBackgroundColor(e.target.value)
-                        }
-                        className="w-12 h-8 border border-gray-300 rounded cursor-pointer"
-                      />
-                      <label className="text-xs text-gray-600">Text:</label>
-                      <input
-                        type="color"
-                        value={newCellStyleColor}
-                        onChange={(e) => setNewCellStyleColor(e.target.value)}
-                        className="w-12 h-8 border border-gray-300 rounded cursor-pointer"
-                      />
+                    <div className="space-y-2">
+                      <div className="flex gap-2 items-center">
+                        <label className="text-xs text-gray-600">
+                          Background:
+                        </label>
+                        <input
+                          type="color"
+                          value={newCellStyleBackgroundColor}
+                          onChange={(e) =>
+                            setNewCellStyleBackgroundColor(e.target.value)
+                          }
+                          className="w-12 h-8 border border-gray-300 rounded cursor-pointer"
+                        />
+                        <label className="text-xs text-gray-600">Text:</label>
+                        <input
+                          type="color"
+                          value={newCellStyleColor}
+                          onChange={(e) => setNewCellStyleColor(e.target.value)}
+                          className="w-12 h-8 border border-gray-300 rounded cursor-pointer"
+                        />
+                      </div>
+                      <div className="flex gap-2 items-center">
+                        <label className="text-xs text-gray-600">Font Size:</label>
+                        <input
+                          type="number"
+                          value={newCellStyleFontSize}
+                          onChange={(e) => setNewCellStyleFontSize(e.target.value)}
+                          min="8"
+                          max="72"
+                          className="w-16 h-8 px-2 border border-gray-300 rounded"
+                        />
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={newCellStyleBold}
+                            onChange={(e) => setNewCellStyleBold(e.target.checked)}
+                            className="h-4 w-4"
+                          />
+                          <span className="font-bold">Bold</span>
+                        </label>
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={newCellStyleItalic}
+                            onChange={(e) => setNewCellStyleItalic(e.target.checked)}
+                            className="h-4 w-4"
+                          />
+                          <span className="italic">Italic</span>
+                        </label>
+                        <label className="flex items-center gap-1 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={newCellStyleUnderline}
+                            onChange={(e) => setNewCellStyleUnderline(e.target.checked)}
+                            className="h-4 w-4"
+                          />
+                          <span className="underline">Underline</span>
+                        </label>
+                      </div>
                     </div>
                     <div className="flex gap-2">
                       <Button
