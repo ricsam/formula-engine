@@ -1152,5 +1152,280 @@ describe("StyleManager", () => {
       expect(styles2[0]).toEqual(cellStyle2);
     });
   });
+
+  describe("clearCellStyles", () => {
+    test("removes cellStyle completely contained in clear range", () => {
+      const cellStyle: DirectCellStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 2, row: 2 },
+            end: { col: { type: "number", value: 4 }, row: { type: "number", value: 4 } },
+          },
+        },
+        style: {
+          backgroundColor: "#FF0000",
+        },
+      };
+
+      engine.addCellStyle(cellStyle);
+      expect(engine.getCellStyles(workbookName)).toHaveLength(1);
+
+      // Clear a range that contains the style
+      engine.clearCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: { col: { type: "number", value: 10 }, row: { type: "number", value: 10 } },
+        },
+      });
+
+      expect(engine.getCellStyles(workbookName)).toHaveLength(0);
+    });
+
+    test("adjusts cellStyle when clear range overlaps edge", () => {
+      // Style: A1:E5 (0,0 to 4,4)
+      const cellStyle: DirectCellStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: { col: { type: "number", value: 4 }, row: { type: "number", value: 4 } },
+          },
+        },
+        style: {
+          backgroundColor: "#FF0000",
+        },
+      };
+
+      engine.addCellStyle(cellStyle);
+
+      // Clear top portion: A1:E2 (0,0 to 4,1)
+      engine.clearCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: { col: { type: "number", value: 4 }, row: { type: "number", value: 1 } },
+        },
+      });
+
+      const styles = engine.getCellStyles(workbookName);
+      expect(styles).toHaveLength(1);
+      // Should have bottom portion: A3:E5 (0,2 to 4,4)
+      expect(styles[0]!.area.range.start).toEqual({ col: 0, row: 2 });
+      expect(styles[0]!.area.range.end).toEqual({ col: { type: "number", value: 4 }, row: { type: "number", value: 4 } });
+    });
+
+    test("splits cellStyle when clear range creates hole", () => {
+      // Style: A1:E5 (0,0 to 4,4)
+      const cellStyle: DirectCellStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: { col: { type: "number", value: 4 }, row: { type: "number", value: 4 } },
+          },
+        },
+        style: {
+          backgroundColor: "#FF0000",
+        },
+      };
+
+      engine.addCellStyle(cellStyle);
+
+      // Clear middle: B2:D4 (1,1 to 3,3)
+      engine.clearCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 1, row: 1 },
+          end: { col: { type: "number", value: 3 }, row: { type: "number", value: 3 } },
+        },
+      });
+
+      const styles = engine.getCellStyles(workbookName);
+      // Should have 4 rectangles: top, bottom, left, right
+      expect(styles).toHaveLength(4);
+    });
+
+    test("preserves cellStyle that doesn't intersect", () => {
+      const cellStyle1: DirectCellStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+          },
+        },
+        style: {
+          backgroundColor: "#FF0000",
+        },
+      };
+
+      const cellStyle2: DirectCellStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 10, row: 10 },
+            end: { col: { type: "number", value: 12 }, row: { type: "number", value: 12 } },
+          },
+        },
+        style: {
+          backgroundColor: "#00FF00",
+        },
+      };
+
+      engine.addCellStyle(cellStyle1);
+      engine.addCellStyle(cellStyle2);
+
+      // Clear a range that only affects cellStyle1
+      engine.clearCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+        },
+      });
+
+      const styles = engine.getCellStyles(workbookName);
+      // cellStyle1 removed, cellStyle2 preserved
+      expect(styles).toHaveLength(1);
+      expect(styles[0]!.area.range.start).toEqual({ col: 10, row: 10 });
+    });
+
+    test("clears conditional styles similarly to cellStyles", () => {
+      const conditionalStyle: ConditionalStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: { col: { type: "number", value: 4 }, row: { type: "number", value: 4 } },
+          },
+        },
+        condition: {
+          type: "formula",
+          formula: "TRUE",
+          color: { l: 50, c: 80, h: 0 },
+        },
+      };
+
+      engine.addConditionalStyle(conditionalStyle);
+      expect(engine.getConditionalStyles(workbookName)).toHaveLength(1);
+
+      // Clear top portion
+      engine.clearCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: { col: { type: "number", value: 4 }, row: { type: "number", value: 1 } },
+        },
+      });
+
+      const styles = engine.getConditionalStyles(workbookName);
+      expect(styles).toHaveLength(1);
+      // Should have bottom portion
+      expect(styles[0]!.area.range.start).toEqual({ col: 0, row: 2 });
+    });
+
+    test("clears both cellStyles and conditionalStyles in one call", () => {
+      const cellStyle: DirectCellStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+          },
+        },
+        style: {
+          backgroundColor: "#FF0000",
+        },
+      };
+
+      const conditionalStyle: ConditionalStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+          },
+        },
+        condition: {
+          type: "formula",
+          formula: "TRUE",
+          color: { l: 50, c: 80, h: 0 },
+        },
+      };
+
+      engine.addCellStyle(cellStyle);
+      engine.addConditionalStyle(conditionalStyle);
+
+      // Clear the entire range
+      engine.clearCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+        },
+      });
+
+      expect(engine.getCellStyles(workbookName)).toHaveLength(0);
+      expect(engine.getConditionalStyles(workbookName)).toHaveLength(0);
+    });
+
+    test("preserves style properties when splitting", () => {
+      const cellStyle: DirectCellStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: { col: { type: "number", value: 4 }, row: { type: "number", value: 4 } },
+          },
+        },
+        style: {
+          backgroundColor: "#FF0000",
+          color: "#FFFFFF",
+          fontSize: 14,
+          bold: true,
+        },
+      };
+
+      engine.addCellStyle(cellStyle);
+
+      // Clear middle to create hole
+      engine.clearCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 1, row: 1 },
+          end: { col: { type: "number", value: 3 }, row: { type: "number", value: 3 } },
+        },
+      });
+
+      const styles = engine.getCellStyles(workbookName);
+      expect(styles).toHaveLength(4);
+      
+      // All resulting styles should preserve the original style properties
+      for (const style of styles) {
+        expect(style.style.backgroundColor).toBe("#FF0000");
+        expect(style.style.color).toBe("#FFFFFF");
+        expect(style.style.fontSize).toBe(14);
+        expect(style.style.bold).toBe(true);
+      }
+    });
+  });
 });
 

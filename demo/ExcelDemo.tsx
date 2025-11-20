@@ -3064,7 +3064,7 @@ export function ExcelDemo() {
                         onClick={addCellStyle}
                         disabled={!newCellStyleArea}
                         size="sm"
-                        className="text-xs"
+                        className="text-xs flex-1"
                       >
                         {editingCellStyle ? (
                           <>
@@ -3075,6 +3075,100 @@ export function ExcelDemo() {
                             <Plus className="h-3 w-3 mr-1" /> Add Style
                           </>
                         )}
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          if (!newCellStyleArea) return;
+                          
+                          // Parse range
+                          let workbookName: string;
+                          let sheetName: string;
+                          let rangeStr: string;
+                          
+                          const fullRangeMatch = newCellStyleArea.match(
+                            /^\[([^\]]+)\](?:'([^']+(?:''[^']*)*)'|([^!]+))!(.+)$/
+                          );
+                          
+                          if (fullRangeMatch) {
+                            workbookName = fullRangeMatch[1]!;
+                            sheetName = fullRangeMatch[2]
+                              ? fullRangeMatch[2].replace(/''/g, "'")
+                              : fullRangeMatch[3]!;
+                            rangeStr = fullRangeMatch[4]!;
+                          } else {
+                            workbookName = workbookGridItems[0]?.name!;
+                            sheetName = workbookGridItems[0]?.activeSheet!;
+                            rangeStr = newCellStyleArea;
+                          }
+                          
+                          // Parse range coordinates (reuse parsing logic)
+                          const colToIndex = (col: string): number => {
+                            let result = 0;
+                            for (let i = 0; i < col.length; i++) {
+                              result = result * 26 + (col.charCodeAt(i) - 64);
+                            }
+                            return result - 1;
+                          };
+                          
+                          let startCol: number, startRow: number;
+                          let endCol: number, endRow: number;
+                          
+                          const closedMatch = rangeStr.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+                          const rowBoundedMatch = rangeStr.match(/^([A-Z]+)(\d+):(\d+)$/);
+                          const colBoundedMatch = rangeStr.match(/^([A-Z]+)(\d+):([A-Z]+)$/);
+                          const openBothMatch = rangeStr.match(/^([A-Z]+)(\d+):INFINITY$/);
+                          
+                          if (closedMatch) {
+                            startCol = colToIndex(closedMatch[1]!);
+                            startRow = parseInt(closedMatch[2]!) - 1;
+                            endCol = colToIndex(closedMatch[3]!);
+                            endRow = parseInt(closedMatch[4]!) - 1;
+                          } else if (rowBoundedMatch) {
+                            startCol = colToIndex(rowBoundedMatch[1]!);
+                            startRow = parseInt(rowBoundedMatch[2]!) - 1;
+                            endCol = Infinity;
+                            endRow = parseInt(rowBoundedMatch[3]!) - 1;
+                          } else if (colBoundedMatch) {
+                            startCol = colToIndex(colBoundedMatch[1]!);
+                            startRow = parseInt(colBoundedMatch[2]!) - 1;
+                            endCol = colToIndex(colBoundedMatch[3]!);
+                            endRow = Infinity;
+                          } else if (openBothMatch) {
+                            startCol = colToIndex(openBothMatch[1]!);
+                            startRow = parseInt(openBothMatch[2]!) - 1;
+                            endCol = Infinity;
+                            endRow = Infinity;
+                          } else {
+                            alert("Invalid range format");
+                            return;
+                          }
+                          
+                          engine.clearCellStyles({
+                            workbookName,
+                            sheetName,
+                            range: {
+                              start: { col: startCol, row: startRow },
+                              end: {
+                                col: endCol === Infinity 
+                                  ? { type: "infinity" as const, sign: "positive" as const }
+                                  : { type: "number" as const, value: endCol },
+                                row: endRow === Infinity
+                                  ? { type: "infinity" as const, sign: "positive" as const }
+                                  : { type: "number" as const, value: endRow },
+                              },
+                            },
+                          });
+                          
+                          markUnsavedChanges();
+                        }}
+                        disabled={!newCellStyleArea}
+                        size="sm"
+                        variant="destructive"
+                        className="text-xs"
+                        title="Clear all styles in selected range"
+                      >
+                        <Trash2 className="h-3 w-3 mr-1" />
+                        Clear Range
                       </Button>
                       {editingCellStyle && (
                         <Button onClick={resetCellStyleForm} size="sm" variant="outline" className="text-xs">

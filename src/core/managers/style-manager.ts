@@ -18,6 +18,7 @@ import {
   interpolateLCH,
   lchToHex,
 } from "../utils/color-utils";
+import { subtractRange, rangesIntersect } from "../utils/range-utils";
 
 export class StyleManager {
   private conditionalStyles: ConditionalStyle[] = [];
@@ -534,5 +535,81 @@ export class StyleManager {
 
     // Construct the full reference: [workbook]'sheet'!range
     return `[${area.workbookName}]${sheetRef}!${rangeStr}`;
+  }
+
+  /**
+   * Clear cell styles and conditional styles for a given range
+   * Adjusts existing style ranges rather than deleting them entirely
+   */
+  clearCellStyles(range: RangeAddress): void {
+    // Process cellStyles
+    const newCellStyles: DirectCellStyle[] = [];
+    for (const cellStyle of this.cellStyles) {
+      if (!cellStyle || !cellStyle.area) {
+        newCellStyles.push(cellStyle);
+        continue;
+      }
+
+      // Check if this style intersects with the clear range
+      if (
+        cellStyle.area.workbookName === range.workbookName &&
+        cellStyle.area.sheetName === range.sheetName &&
+        rangesIntersect(cellStyle.area.range, range.range)
+      ) {
+        // Subtract the clear range from this style's range
+        const remainingRanges = subtractRange(cellStyle.area.range, range.range);
+        
+        // Add new styles for each remaining range
+        for (const remainingRange of remainingRanges) {
+          newCellStyles.push({
+            area: {
+              workbookName: cellStyle.area.workbookName,
+              sheetName: cellStyle.area.sheetName,
+              range: remainingRange,
+            },
+            style: cellStyle.style,
+          });
+        }
+      } else {
+        // No intersection, keep the style as-is
+        newCellStyles.push(cellStyle);
+      }
+    }
+    this.cellStyles = newCellStyles;
+
+    // Process conditionalStyles
+    const newConditionalStyles: ConditionalStyle[] = [];
+    for (const conditionalStyle of this.conditionalStyles) {
+      if (!conditionalStyle || !conditionalStyle.area) {
+        newConditionalStyles.push(conditionalStyle);
+        continue;
+      }
+
+      // Check if this style intersects with the clear range
+      if (
+        conditionalStyle.area.workbookName === range.workbookName &&
+        conditionalStyle.area.sheetName === range.sheetName &&
+        rangesIntersect(conditionalStyle.area.range, range.range)
+      ) {
+        // Subtract the clear range from this style's range
+        const remainingRanges = subtractRange(conditionalStyle.area.range, range.range);
+        
+        // Add new styles for each remaining range
+        for (const remainingRange of remainingRanges) {
+          newConditionalStyles.push({
+            area: {
+              workbookName: conditionalStyle.area.workbookName,
+              sheetName: conditionalStyle.area.sheetName,
+              range: remainingRange,
+            },
+            condition: conditionalStyle.condition,
+          });
+        }
+      } else {
+        // No intersection, keep the style as-is
+        newConditionalStyles.push(conditionalStyle);
+      }
+    }
+    this.conditionalStyles = newConditionalStyles;
   }
 }

@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.9
+
+### Patch Changes
+
+- add engine.clearCellStyles()
+
 ## 0.0.8
 
 ### Patch Changes

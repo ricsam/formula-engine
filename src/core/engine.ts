@@ -439,6 +439,15 @@ export class FormulaEngine {
     return this.styleManager.getCellStyles(workbookName);
   }
 
+  /**
+   * Clear all cell styles and conditional styles for a given range
+   * Adjusts existing style ranges rather than deleting them entirely
+   */
+  clearCellStyles(range: RangeAddress): void {
+    this.styleManager.clearCellStyles(range);
+    this.eventManager.emitUpdate();
+  }
+
   //#endregion
 
   //#region Copy/Paste
