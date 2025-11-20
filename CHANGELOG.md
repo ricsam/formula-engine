@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.8
+
+### Patch Changes
+
+- add copyCells method and expand styling capabilities
+
 ## 0.0.7
 
 ### Patch Changes
