@@ -607,6 +607,86 @@ describe("CopyManager", () => {
       });
       expect(sourceValue).toBe("");
     });
+
+    test("copies only selected cell styling, not entire styled range", () => {
+      // Style the entire A column (A:A or A1:A with infinite rows)
+      engine.addCellStyle({
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: { 
+              col: { type: "number", value: 0 }, 
+              row: { type: "infinity", sign: "positive" } 
+            },
+          },
+        },
+        style: {
+          backgroundColor: "#FF0000",
+          fontSize: 16,
+        },
+      });
+
+      // Copy only cell A5 to B2
+      const source: CellAddress[] = [
+        { workbookName, sheetName, colIndex: 0, rowIndex: 4 }, // A5
+      ];
+      const target: CellAddress = {
+        workbookName,
+        sheetName,
+        colIndex: 1, // B
+        rowIndex: 1, // 2
+      };
+
+      engine.copyCells(source, target, {
+        cut: false,
+        type: "formula",
+        formatting: true,
+      });
+
+      // Only B2 should be styled, not the entire B column
+      const b2Style = engine.getCellStyle({
+        workbookName,
+        sheetName,
+        colIndex: 1,
+        rowIndex: 1,
+      });
+      expect(b2Style).toBeDefined();
+      expect(b2Style?.backgroundColor).toBe("#FF0000");
+      expect(b2Style?.fontSize).toBe(16);
+
+      // B1 should NOT be styled
+      const b1Style = engine.getCellStyle({
+        workbookName,
+        sheetName,
+        colIndex: 1,
+        rowIndex: 0,
+      });
+      expect(b1Style).toBeUndefined();
+
+      // B10 should NOT be styled
+      const b10Style = engine.getCellStyle({
+        workbookName,
+        sheetName,
+        colIndex: 1,
+        rowIndex: 9,
+      });
+      expect(b10Style).toBeUndefined();
+
+      // Verify we didn't create a B:B style - check the cellStyles array
+      const cellStyles = engine.getCellStyles(workbookName);
+      // Should have original A:A + new B2:B2 (single cell)
+      expect(cellStyles).toHaveLength(2);
+      
+      const b2StyleRule = cellStyles.find(s => 
+        s.area.range.start.col === 1 && 
+        s.area.range.start.row === 1
+      );
+      expect(b2StyleRule).toBeDefined();
+      expect(b2StyleRule?.area.range.end.col).toEqual({ type: "number", value: 1 });
+      expect(b2StyleRule?.area.range.end.row).toEqual({ type: "number", value: 1 });
+    });
   });
 });
 

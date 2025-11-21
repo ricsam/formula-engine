@@ -19,6 +19,7 @@ import { astToString } from "../../parser/formatter";
 import { transformAST } from "../ast-traverser";
 import type { ReferenceNode, RangeNode } from "../../parser/ast";
 import { isCellInRange } from "../utils";
+import { intersectRanges } from "../utils/range-utils";
 
 export class CopyManager {
   constructor(
@@ -274,19 +275,22 @@ export class CopyManager {
     for (const style of allConditionalStyles) {
       if (
         style.area.workbookName === sourceTopLeft.workbookName &&
-        style.area.sheetName === sourceTopLeft.sheetName &&
-        this.rangesIntersect(style.area.range, sourceRange)
+        style.area.sheetName === sourceTopLeft.sheetName
       ) {
-        // Create a new style with adjusted range
-        const newStyle: ConditionalStyle = {
-          area: {
-            workbookName: target.workbookName,
-            sheetName: target.sheetName,
-            range: this.adjustRange(style.area.range, rowOffset, colOffset),
-          },
-          condition: style.condition,
-        };
-        this.styleManager.addConditionalStyle(newStyle);
+        // Calculate intersection of style range with source bounding box
+        const intersection = intersectRanges(style.area.range, sourceRange);
+        if (intersection) {
+          // Copy only the intersection, offset to target
+          const newStyle: ConditionalStyle = {
+            area: {
+              workbookName: target.workbookName,
+              sheetName: target.sheetName,
+              range: this.adjustRange(intersection, rowOffset, colOffset),
+            },
+            condition: style.condition,
+          };
+          this.styleManager.addConditionalStyle(newStyle);
+        }
       }
     }
 
@@ -294,19 +298,22 @@ export class CopyManager {
     for (const style of allCellStyles) {
       if (
         style.area.workbookName === sourceTopLeft.workbookName &&
-        style.area.sheetName === sourceTopLeft.sheetName &&
-        this.rangesIntersect(style.area.range, sourceRange)
+        style.area.sheetName === sourceTopLeft.sheetName
       ) {
-        // Create a new style with adjusted range
-        const newStyle: DirectCellStyle = {
-          area: {
-            workbookName: target.workbookName,
-            sheetName: target.sheetName,
-            range: this.adjustRange(style.area.range, rowOffset, colOffset),
-          },
-          style: style.style,
-        };
-        this.styleManager.addCellStyle(newStyle);
+        // Calculate intersection of style range with source bounding box
+        const intersection = intersectRanges(style.area.range, sourceRange);
+        if (intersection) {
+          // Copy only the intersection, offset to target
+          const newStyle: DirectCellStyle = {
+            area: {
+              workbookName: target.workbookName,
+              sheetName: target.sheetName,
+              range: this.adjustRange(intersection, rowOffset, colOffset),
+            },
+            style: style.style,
+          };
+          this.styleManager.addCellStyle(newStyle);
+        }
       }
     }
   }
@@ -336,31 +343,6 @@ export class CopyManager {
     };
   }
 
-  /**
-   * Check if two ranges intersect
-   */
-  private rangesIntersect(
-    range1: SpreadsheetRange,
-    range2: SpreadsheetRange
-  ): boolean {
-    // Get finite end values
-    const r1EndCol =
-      range1.end.col.type === "number" ? range1.end.col.value : Infinity;
-    const r1EndRow =
-      range1.end.row.type === "number" ? range1.end.row.value : Infinity;
-    const r2EndCol =
-      range2.end.col.type === "number" ? range2.end.col.value : Infinity;
-    const r2EndRow =
-      range2.end.row.type === "number" ? range2.end.row.value : Infinity;
-
-    // Check if ranges overlap
-    const colOverlap =
-      range1.start.col <= r2EndCol && range2.start.col <= r1EndCol;
-    const rowOverlap =
-      range1.start.row <= r2EndRow && range2.start.row <= r1EndRow;
-
-    return colOverlap && rowOverlap;
-  }
 
   /**
    * Adjust a range by row and column offsets

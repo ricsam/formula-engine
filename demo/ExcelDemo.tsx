@@ -25,6 +25,7 @@ import { useEngine } from "../src/react/hooks";
 import { SpreadsheetWithFormulaBar } from "./components/SpreadsheetWithFormulaBar";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
+import { WorkbookClipboardManager } from "./WorkbookClipboardManager";
 
 interface WorkbookGridItem {
   name: string;
@@ -125,6 +126,7 @@ async function renameInOPFS(oldName: string, newName: string): Promise<void> {
 
 const createEngine = () => {
   const engine = FormulaEngine.buildEmpty();
+  const clipboardManager = new WorkbookClipboardManager(engine);
 
   // Create first workbook and sheet with sample data
   const workbookName = "Workbook1";
@@ -147,6 +149,7 @@ const createEngine = () => {
     engine,
     workbookGridItems: [defaultWorkbookItem],
     viewport: undefined,
+    clipboardManager,
   };
 };
 
@@ -154,6 +157,7 @@ const {
   engine,
   workbookGridItems: initialWorkbookGridItems,
   viewport: initialViewport,
+  clipboardManager,
 } = createEngine();
 console.log("engine", engine);
 export function ExcelDemo() {
@@ -216,7 +220,8 @@ export function ExcelDemo() {
 
   // Cell Styles UI state
   const [newCellStyleArea, setNewCellStyleArea] = useState("");
-  const [newCellStyleBackgroundColor, setNewCellStyleBackgroundColor] = useState("#FFFFFF");
+  const [newCellStyleBackgroundColor, setNewCellStyleBackgroundColor] =
+    useState("#FFFFFF");
   const [newCellStyleColor, setNewCellStyleColor] = useState("#000000");
   const [newCellStyleFontSize, setNewCellStyleFontSize] = useState("12");
   const [newCellStyleBold, setNewCellStyleBold] = useState(false);
@@ -1394,7 +1399,10 @@ export function ExcelDemo() {
 
       if (editingCellStyle && editingCellStyle.workbookName === workbookName) {
         // Remove the old style
-        engine.removeCellStyle(editingCellStyle.workbookName, editingCellStyle.index);
+        engine.removeCellStyle(
+          editingCellStyle.workbookName,
+          editingCellStyle.index
+        );
         // Add the new style
         engine.addCellStyle({
           area: {
@@ -1717,9 +1725,9 @@ export function ExcelDemo() {
       setNewStyleArea(rangeStr);
       // Also update cell style area
       setNewCellStyleArea(rangeStr);
-     },
-     [showConditionalFormatting]
-   );
+    },
+    [showConditionalFormatting]
+  );
 
   // Create WorkbookComponent for grid
   const WorkbookComponent = useCallback(
@@ -1834,6 +1842,7 @@ export function ExcelDemo() {
           {/* Spreadsheet Content */}
           <div className="flex-1 overflow-hidden">
             <SpreadsheetWithFormulaBar
+              clipboardManager={clipboardManager}
               key={`${workbookName}-${workbookItem.activeSheet}`}
               sheetName={workbookItem.activeSheet}
               workbookName={workbookName}
@@ -2668,8 +2677,7 @@ export function ExcelDemo() {
                   data-testid="conditional-formatting-title"
                 >
                   Conditional Formatting (
-                  {engineState.conditionalStyles?.length || 0}
-                  )
+                  {engineState.conditionalStyles?.length || 0})
                 </h3>
                 <div className="space-y-3">
                   {/* Add Form */}
@@ -2860,20 +2868,21 @@ export function ExcelDemo() {
                     className="space-y-2 max-h-40 overflow-y-auto"
                     data-testid="conditional-formatting-list"
                   >
-                    {(engineState.conditionalStyles || []).map((style, index) => {
-                      const workbookName = style.area.workbookName;
-                      const colToLetter = (col: number): string => {
-                        let result = "";
-                        let c = col;
-                        while (c >= 0) {
-                          result =
-                            String.fromCharCode(65 + (c % 26)) + result;
-                          c = Math.floor(c / 26) - 1;
-                        }
-                        return result;
-                      };
+                    {(engineState.conditionalStyles || []).map(
+                      (style, index) => {
+                        const workbookName = style.area.workbookName;
+                        const colToLetter = (col: number): string => {
+                          let result = "";
+                          let c = col;
+                          while (c >= 0) {
+                            result =
+                              String.fromCharCode(65 + (c % 26)) + result;
+                            c = Math.floor(c / 26) - 1;
+                          }
+                          return result;
+                        };
 
-                      const rangeStr = `${colToLetter(
+                        const rangeStr = `${colToLetter(
                           style.area.range.start.col
                         )}${style.area.range.start.row + 1}:${
                           style.area.range.end.col.type === "infinity"
@@ -2883,10 +2892,10 @@ export function ExcelDemo() {
                           style.area.range.end.row.type === "infinity"
                             ? "∞"
                             : style.area.range.end.row.value! + 1
-                      }`;
+                        }`;
 
-                      // Get color preview
-                      const getColorPreview = () => {
+                        // Get color preview
+                        const getColorPreview = () => {
                           if (style.condition.type === "formula") {
                             const color = style.condition.color;
                             return `hsl(${color.h}, ${color.c}%, ${color.l}%)`;
@@ -2895,77 +2904,78 @@ export function ExcelDemo() {
                             const minColor = style.condition.min.color;
                             const maxColor = style.condition.max.color;
                             return `linear-gradient(90deg, hsl(${minColor.h}, ${minColor.c}%, ${minColor.l}%), hsl(${maxColor.h}, ${maxColor.c}%, ${maxColor.l}%))`;
-                        }
-                      };
+                          }
+                        };
 
-                      return (
-                        <div
-                          key={`${workbookName}-${index}`}
-                          className="flex items-center gap-2 bg-gray-50 p-2 rounded"
-                          data-testid={`conditional-style-${index}`}
-                        >
+                        return (
                           <div
-                            className="w-6 h-6 rounded border border-gray-300 flex-shrink-0"
-                            style={{ background: getColorPreview() }}
-                            title="Color preview"
-                          />
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs text-gray-800 truncate">
-                              <span className="font-medium text-purple-600">
-                                {workbookName}
-                              </span>
-                              {" → "}
-                              <span className="font-medium text-blue-600">
-                                {style.area.sheetName}
-                              </span>
-                              {" • "}
-                              <span className="font-medium">{rangeStr}</span>
+                            key={`${workbookName}-${index}`}
+                            className="flex items-center gap-2 bg-gray-50 p-2 rounded"
+                            data-testid={`conditional-style-${index}`}
+                          >
+                            <div
+                              className="w-6 h-6 rounded border border-gray-300 flex-shrink-0"
+                              style={{ background: getColorPreview() }}
+                              title="Color preview"
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs text-gray-800 truncate">
+                                <span className="font-medium text-purple-600">
+                                  {workbookName}
+                                </span>
+                                {" → "}
+                                <span className="font-medium text-blue-600">
+                                  {style.area.sheetName}
+                                </span>
+                                {" • "}
+                                <span className="font-medium">{rangeStr}</span>
+                              </div>
+                              <div className="text-xs text-gray-600 truncate">
+                                {style.condition.type === "formula"
+                                  ? `Formula: ${style.condition.formula}`
+                                  : style.condition.min.type === "lowest_value"
+                                  ? "Gradient: Min to Max"
+                                  : `Gradient: ${
+                                      style.condition.min.type === "number"
+                                        ? style.condition.min.valueFormula
+                                        : ""
+                                    } to ${
+                                      style.condition.max.type === "number"
+                                        ? style.condition.max.valueFormula
+                                        : ""
+                                    }`}
+                              </div>
                             </div>
-                            <div className="text-xs text-gray-600 truncate">
-                              {style.condition.type === "formula"
-                                ? `Formula: ${style.condition.formula}`
-                                : style.condition.min.type === "lowest_value"
-                                ? "Gradient: Min to Max"
-                                : `Gradient: ${
-                                    style.condition.min.type === "number"
-                                      ? style.condition.min.valueFormula
-                                      : ""
-                                  } to ${
-                                    style.condition.max.type === "number"
-                                      ? style.condition.max.valueFormula
-                                      : ""
-                                  }`}
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 p-0 text-blue-500 hover:text-blue-700"
+                                onClick={() =>
+                                  editConditionalStyle(workbookName, index)
+                                }
+                                data-testid={`edit-conditional-style-${index}`}
+                                title="Edit rule"
+                              >
+                                <Edit2 className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                                onClick={() =>
+                                  deleteConditionalStyle(workbookName, index)
+                                }
+                                data-testid={`delete-conditional-style-${index}`}
+                                title="Delete rule"
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-6 w-6 p-0 text-blue-500 hover:text-blue-700"
-                              onClick={() =>
-                                editConditionalStyle(workbookName, index)
-                              }
-                              data-testid={`edit-conditional-style-${index}`}
-                              title="Edit rule"
-                            >
-                              <Edit2 className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
-                              onClick={() =>
-                                deleteConditionalStyle(workbookName, index)
-                              }
-                              data-testid={`delete-conditional-style-${index}`}
-                              title="Delete rule"
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      }
+                    )}
 
                     {(!engineState.conditionalStyles ||
                       engineState.conditionalStyles.length === 0) && (
@@ -2986,9 +2996,7 @@ export function ExcelDemo() {
                   className="text-sm font-semibold text-gray-800 mb-3"
                   data-testid="cell-styles-title"
                 >
-                  Cell Styles (
-                  {engineState.cellStyles?.length || 0}
-                  )
+                  Cell Styles ({engineState.cellStyles?.length || 0})
                 </h3>
                 <div className="space-y-3">
                   {/* Add Form */}
@@ -3021,11 +3029,15 @@ export function ExcelDemo() {
                         />
                       </div>
                       <div className="flex gap-2 items-center">
-                        <label className="text-xs text-gray-600">Font Size:</label>
+                        <label className="text-xs text-gray-600">
+                          Font Size:
+                        </label>
                         <input
                           type="number"
                           value={newCellStyleFontSize}
-                          onChange={(e) => setNewCellStyleFontSize(e.target.value)}
+                          onChange={(e) =>
+                            setNewCellStyleFontSize(e.target.value)
+                          }
                           min="8"
                           max="72"
                           className="w-16 h-8 px-2 border border-gray-300 rounded"
@@ -3034,7 +3046,9 @@ export function ExcelDemo() {
                           <input
                             type="checkbox"
                             checked={newCellStyleBold}
-                            onChange={(e) => setNewCellStyleBold(e.target.checked)}
+                            onChange={(e) =>
+                              setNewCellStyleBold(e.target.checked)
+                            }
                             className="h-4 w-4"
                           />
                           <span className="font-bold">Bold</span>
@@ -3043,7 +3057,9 @@ export function ExcelDemo() {
                           <input
                             type="checkbox"
                             checked={newCellStyleItalic}
-                            onChange={(e) => setNewCellStyleItalic(e.target.checked)}
+                            onChange={(e) =>
+                              setNewCellStyleItalic(e.target.checked)
+                            }
                             className="h-4 w-4"
                           />
                           <span className="italic">Italic</span>
@@ -3052,7 +3068,9 @@ export function ExcelDemo() {
                           <input
                             type="checkbox"
                             checked={newCellStyleUnderline}
-                            onChange={(e) => setNewCellStyleUnderline(e.target.checked)}
+                            onChange={(e) =>
+                              setNewCellStyleUnderline(e.target.checked)
+                            }
                             className="h-4 w-4"
                           />
                           <span className="underline">Underline</span>
@@ -3079,16 +3097,16 @@ export function ExcelDemo() {
                       <Button
                         onClick={() => {
                           if (!newCellStyleArea) return;
-                          
+
                           // Parse range
                           let workbookName: string;
                           let sheetName: string;
                           let rangeStr: string;
-                          
+
                           const fullRangeMatch = newCellStyleArea.match(
                             /^\[([^\]]+)\](?:'([^']+(?:''[^']*)*)'|([^!]+))!(.+)$/
                           );
-                          
+
                           if (fullRangeMatch) {
                             workbookName = fullRangeMatch[1]!;
                             sheetName = fullRangeMatch[2]
@@ -3100,7 +3118,7 @@ export function ExcelDemo() {
                             sheetName = workbookGridItems[0]?.activeSheet!;
                             rangeStr = newCellStyleArea;
                           }
-                          
+
                           // Parse range coordinates (reuse parsing logic)
                           const colToIndex = (col: string): number => {
                             let result = 0;
@@ -3109,15 +3127,23 @@ export function ExcelDemo() {
                             }
                             return result - 1;
                           };
-                          
+
                           let startCol: number, startRow: number;
                           let endCol: number, endRow: number;
-                          
-                          const closedMatch = rangeStr.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
-                          const rowBoundedMatch = rangeStr.match(/^([A-Z]+)(\d+):(\d+)$/);
-                          const colBoundedMatch = rangeStr.match(/^([A-Z]+)(\d+):([A-Z]+)$/);
-                          const openBothMatch = rangeStr.match(/^([A-Z]+)(\d+):INFINITY$/);
-                          
+
+                          const closedMatch = rangeStr.match(
+                            /^([A-Z]+)(\d+):([A-Z]+)(\d+)$/
+                          );
+                          const rowBoundedMatch = rangeStr.match(
+                            /^([A-Z]+)(\d+):(\d+)$/
+                          );
+                          const colBoundedMatch = rangeStr.match(
+                            /^([A-Z]+)(\d+):([A-Z]+)$/
+                          );
+                          const openBothMatch = rangeStr.match(
+                            /^([A-Z]+)(\d+):INFINITY$/
+                          );
+
                           if (closedMatch) {
                             startCol = colToIndex(closedMatch[1]!);
                             startRow = parseInt(closedMatch[2]!) - 1;
@@ -3142,23 +3168,37 @@ export function ExcelDemo() {
                             alert("Invalid range format");
                             return;
                           }
-                          
+
                           engine.clearCellStyles({
                             workbookName,
                             sheetName,
                             range: {
                               start: { col: startCol, row: startRow },
                               end: {
-                                col: endCol === Infinity 
-                                  ? { type: "infinity" as const, sign: "positive" as const }
-                                  : { type: "number" as const, value: endCol },
-                                row: endRow === Infinity
-                                  ? { type: "infinity" as const, sign: "positive" as const }
-                                  : { type: "number" as const, value: endRow },
+                                col:
+                                  endCol === Infinity
+                                    ? {
+                                        type: "infinity" as const,
+                                        sign: "positive" as const,
+                                      }
+                                    : {
+                                        type: "number" as const,
+                                        value: endCol,
+                                      },
+                                row:
+                                  endRow === Infinity
+                                    ? {
+                                        type: "infinity" as const,
+                                        sign: "positive" as const,
+                                      }
+                                    : {
+                                        type: "number" as const,
+                                        value: endRow,
+                                      },
                               },
                             },
                           });
-                          
+
                           markUnsavedChanges();
                         }}
                         disabled={!newCellStyleArea}
@@ -3171,7 +3211,12 @@ export function ExcelDemo() {
                         Clear Range
                       </Button>
                       {editingCellStyle && (
-                        <Button onClick={resetCellStyleForm} size="sm" variant="outline" className="text-xs">
+                        <Button
+                          onClick={resetCellStyleForm}
+                          size="sm"
+                          variant="outline"
+                          className="text-xs"
+                        >
                           Cancel
                         </Button>
                       )}
@@ -3189,8 +3234,7 @@ export function ExcelDemo() {
                         let result = "";
                         let c = col;
                         while (c >= 0) {
-                          result =
-                            String.fromCharCode(65 + (c % 26)) + result;
+                          result = String.fromCharCode(65 + (c % 26)) + result;
                           c = Math.floor(c / 26) - 1;
                         }
                         return result;

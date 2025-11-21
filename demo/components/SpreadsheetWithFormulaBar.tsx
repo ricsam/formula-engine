@@ -17,12 +17,14 @@ import { FormulaEngine } from "../../src/core/engine";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
+import type { WorkbookClipboardManager } from "@/WorkbookClipboardManager";
 
 interface SpreadsheetWithFormulaBarProps {
   sheetName: string;
   workbookName: string;
   engine: FormulaEngine;
   verboseErrors?: boolean;
+  clipboardManager: WorkbookClipboardManager;
   onSelectionChange?: (
     selection: {
       workbookName: string;
@@ -38,6 +40,7 @@ export function SpreadsheetWithFormulaBar({
   engine,
   verboseErrors = false,
   onSelectionChange,
+  clipboardManager,
 }: SpreadsheetWithFormulaBarProps) {
   const [selectedCell, setSelectedCell] = useState<string | null>(null);
   const [selectedArea, setSelectedArea] = useState<SMArea | null>(null);
@@ -199,6 +202,24 @@ export function SpreadsheetWithFormulaBar({
   const selectionManagerEffects = useCallback(
     (selectionManager: SelectionManager) => {
       const cleanups = [
+        selectionManager.listenToCopy(() => {
+          clipboardManager.triggerCopy({
+            workbookName,
+            sheetName,
+            selectionManager: selectionManager,
+            copyType: "value",
+          });
+        }),
+        selectionManager.listenToPaste(({ updates, rawString }) => {
+          clipboardManager.triggerPaste({
+            workbookName,
+            sheetName,
+            selectionManager: selectionManager,
+            updates,
+            rawString,
+            pasteType: "formula",
+          });
+        }),
         selectionManager.listenToFill((ev) => {
           const convertSmAreaToSpreadsheetRange = (
             area: SMArea
@@ -593,13 +614,13 @@ export function SpreadsheetWithFormulaBar({
                   style.fontSize = `${conditionalStyle.fontSize}px`;
                 }
                 if (conditionalStyle.bold) {
-                  style.fontWeight = 'bold';
+                  style.fontWeight = "bold";
                 }
                 if (conditionalStyle.italic) {
-                  style.fontStyle = 'italic';
+                  style.fontStyle = "italic";
                 }
                 if (conditionalStyle.underline) {
-                  style.textDecoration = 'underline';
+                  style.textDecoration = "underline";
                 }
                 return style;
               }
@@ -667,13 +688,13 @@ export function SpreadsheetWithFormulaBar({
                 style.fontSize = `${conditionalStyle.fontSize}px`;
               }
               if (conditionalStyle.bold) {
-                style.fontWeight = 'bold';
+                style.fontWeight = "bold";
               }
               if (conditionalStyle.italic) {
-                style.fontStyle = 'italic';
+                style.fontStyle = "italic";
               }
               if (conditionalStyle.underline) {
-                style.textDecoration = 'underline';
+                style.textDecoration = "underline";
               }
             }
 
@@ -699,7 +720,8 @@ export function SpreadsheetWithFormulaBar({
 
             const conditionalStyleProps: React.CSSProperties = {};
             if (conditionalStyle?.backgroundColor) {
-              conditionalStyleProps.backgroundColor = conditionalStyle.backgroundColor;
+              conditionalStyleProps.backgroundColor =
+                conditionalStyle.backgroundColor;
             }
             if (conditionalStyle?.color) {
               conditionalStyleProps.color = conditionalStyle.color;
@@ -708,20 +730,22 @@ export function SpreadsheetWithFormulaBar({
               conditionalStyleProps.fontSize = `${conditionalStyle.fontSize}px`;
             }
             if (conditionalStyle?.bold) {
-              conditionalStyleProps.fontWeight = 'bold';
+              conditionalStyleProps.fontWeight = "bold";
             }
             if (conditionalStyle?.italic) {
-              conditionalStyleProps.fontStyle = 'italic';
+              conditionalStyleProps.fontStyle = "italic";
             }
             if (conditionalStyle?.underline) {
-              conditionalStyleProps.textDecoration = 'underline';
+              conditionalStyleProps.textDecoration = "underline";
             }
 
             if (typeof value === "number") {
               // Format numbers nicely
               return (
                 <div
-                  data-conditional-background={conditionalStyle?.backgroundColor}
+                  data-conditional-background={
+                    conditionalStyle?.backgroundColor
+                  }
                   data-conditional-text-color={conditionalStyle?.color}
                   data-type="number"
                   style={conditionalStyleProps}

@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.10
+
+### Patch Changes
+
+- Update range/copy-manager logic and tests
+
 ## 0.0.9
 
 ### Patch Changes

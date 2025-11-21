@@ -3,6 +3,7 @@ import {
   subtractRange,
   rangesIntersect,
   isRangeContained,
+  intersectRanges,
 } from "../../../../src/core/utils/range-utils";
 import type { SpreadsheetRange } from "../../../../src/core/types";
 
@@ -388,6 +389,92 @@ describe("range-utils", () => {
         start: { col: 1, row: 1 },
         end: { col: { type: "number", value: 3 }, row: { type: "number", value: 1 } },
       });
+    });
+  });
+
+  describe("intersectRanges", () => {
+    test("returns intersection of two overlapping ranges", () => {
+      const range1: SpreadsheetRange = {
+        start: { col: 0, row: 0 },
+        end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+      };
+      const range2: SpreadsheetRange = {
+        start: { col: 3, row: 3 },
+        end: { col: { type: "number", value: 7 }, row: { type: "number", value: 7 } },
+      };
+      
+      const result = intersectRanges(range1, range2);
+      expect(result).toBeDefined();
+      expect(result).toEqual({
+        start: { col: 3, row: 3 },
+        end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+      });
+    });
+
+    test("returns null for non-intersecting ranges", () => {
+      const range1: SpreadsheetRange = {
+        start: { col: 0, row: 0 },
+        end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+      };
+      const range2: SpreadsheetRange = {
+        start: { col: 5, row: 5 },
+        end: { col: { type: "number", value: 7 }, row: { type: "number", value: 7 } },
+      };
+      
+      const result = intersectRanges(range1, range2);
+      expect(result).toBeNull();
+    });
+
+    test("handles single cell intersection", () => {
+      const range1: SpreadsheetRange = {
+        start: { col: 0, row: 0 },
+        end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+      };
+      const range2: SpreadsheetRange = {
+        start: { col: 2, row: 2 },
+        end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+      };
+      
+      const result = intersectRanges(range1, range2);
+      expect(result).toBeDefined();
+      expect(result).toEqual({
+        start: { col: 2, row: 2 },
+        end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+      });
+    });
+
+    test("handles infinite range intersection", () => {
+      // A:A (col 0, all rows) intersected with A1:C5
+      const infiniteCol: SpreadsheetRange = {
+        start: { col: 0, row: 0 },
+        end: { col: { type: "number", value: 0 }, row: { type: "infinity", sign: "positive" } },
+      };
+      const finite: SpreadsheetRange = {
+        start: { col: 0, row: 0 },
+        end: { col: { type: "number", value: 2 }, row: { type: "number", value: 4 } },
+      };
+      
+      const result = intersectRanges(infiniteCol, finite);
+      expect(result).toBeDefined();
+      expect(result).toEqual({
+        start: { col: 0, row: 0 },
+        end: { col: { type: "number", value: 0 }, row: { type: "number", value: 4 } },
+      });
+    });
+
+    test("returns contained range when one is inside the other", () => {
+      const outer: SpreadsheetRange = {
+        start: { col: 0, row: 0 },
+        end: { col: { type: "number", value: 10 }, row: { type: "number", value: 10 } },
+      };
+      const inner: SpreadsheetRange = {
+        start: { col: 2, row: 2 },
+        end: { col: { type: "number", value: 4 }, row: { type: "number", value: 4 } },
+      };
+      
+      const result = intersectRanges(outer, inner);
+      expect(result).toBeDefined();
+      expect(result).toEqual(inner);
     });
   });
 });

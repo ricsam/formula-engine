@@ -154,3 +154,40 @@ function createRangeEnd(value: number): SpreadsheetRangeEnd {
   return { type: "number", value };
 }
 
+/**
+ * Calculate the intersection of two ranges
+ * Returns the overlapping rectangle, or null if ranges don't intersect
+ */
+export function intersectRanges(
+  range1: SpreadsheetRange,
+  range2: SpreadsheetRange
+): SpreadsheetRange | null {
+  if (!rangesIntersect(range1, range2)) {
+    return null;
+  }
+
+  // Get finite end values
+  const r1EndCol =
+    range1.end.col.type === "number" ? range1.end.col.value : Infinity;
+  const r1EndRow =
+    range1.end.row.type === "number" ? range1.end.row.value : Infinity;
+  const r2EndCol =
+    range2.end.col.type === "number" ? range2.end.col.value : Infinity;
+  const r2EndRow =
+    range2.end.row.type === "number" ? range2.end.row.value : Infinity;
+
+  // Calculate intersection bounds
+  const startCol = Math.max(range1.start.col, range2.start.col);
+  const startRow = Math.max(range1.start.row, range2.start.row);
+  const endCol = Math.min(r1EndCol, r2EndCol);
+  const endRow = Math.min(r1EndRow, r2EndRow);
+
+  return {
+    start: { col: startCol, row: startRow },
+    end: {
+      col: createRangeEnd(endCol),
+      row: createRangeEnd(endRow),
+    },
+  };
+}
+
