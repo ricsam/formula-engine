@@ -399,10 +399,10 @@ export class FormulaEngine {
   }
 
   /**
-   * Get all conditional styles for a range
+   * Get all conditional styles intersecting with a range
    */
-  getConditionalStyles(range: RangeAddress): ConditionalStyle[] {
-    return this.styleManager.getConditionalStyles(range);
+  getConditionalStylesIntersectingWithRange(range: RangeAddress): ConditionalStyle[] {
+    return this.styleManager.getConditionalStylesIntersectingWithRange(range);
   }
 
   /**
@@ -432,10 +432,19 @@ export class FormulaEngine {
   }
 
   /**
-   * Get all direct cell styles for a range
+   * Get all direct cell styles intersecting with a range
    */
-  getCellStyles(range: RangeAddress): DirectCellStyle[] {
-    return this.styleManager.getCellStyles(range);
+  getStylesIntersectingWithRange(range: RangeAddress): DirectCellStyle[] {
+    return this.styleManager.getStylesIntersectingWithRange(range);
+  }
+
+  /**
+   * Get the style for a range if all cells in the range have the same style
+   * Returns the DirectCellStyle if the range is completely contained within a single style's area
+   * Returns undefined if multiple styles, partial coverage, or no styles apply
+   */
+  getStyleForRange(range: RangeAddress): DirectCellStyle | undefined {
+    return this.styleManager.getStyleForRange(range);
   }
 
   /**

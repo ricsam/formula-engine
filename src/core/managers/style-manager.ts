@@ -18,7 +18,7 @@ import {
   interpolateLCH,
   lchToHex,
 } from "../utils/color-utils";
-import { subtractRange, rangesIntersect } from "../utils/range-utils";
+import { subtractRange, rangesIntersect, isRangeContained } from "../utils/range-utils";
 
 export class StyleManager {
   private conditionalStyles: ConditionalStyle[] = [];
@@ -59,9 +59,9 @@ export class StyleManager {
   }
 
   /**
-   * Get all conditional styles for a range
+   * Get all conditional styles intersecting with a range
    */
-  getConditionalStyles(range: RangeAddress): ConditionalStyle[] {
+  getConditionalStylesIntersectingWithRange(range: RangeAddress): ConditionalStyle[] {
     return this.conditionalStyles.filter(
       (style) =>
         style.area.workbookName === range.workbookName &&
@@ -103,9 +103,9 @@ export class StyleManager {
   }
 
   /**
-   * Get all direct cell styles for a workbook
+   * Get all direct cell styles intersecting with a range
    */
-  getCellStyles(range: RangeAddress): DirectCellStyle[] {
+  getStylesIntersectingWithRange(range: RangeAddress): DirectCellStyle[] {
     return this.cellStyles.filter(
       (style) =>
         style &&
@@ -113,6 +113,34 @@ export class StyleManager {
         style.area.workbookName === range.workbookName &&
         rangesIntersect(style.area.range, range.range)
     );
+  }
+
+  /**
+   * Get the style for a range if all cells in the range have the same style
+   * Returns the DirectCellStyle if the range is completely contained within a single style's area
+   * Returns undefined if multiple styles, partial coverage, or no styles apply
+   */
+  getStyleForRange(range: RangeAddress): DirectCellStyle | undefined {
+    const intersectingStyles = this.getStylesIntersectingWithRange(range);
+    
+    // If no styles intersect, return undefined
+    if (intersectingStyles.length === 0) {
+      return undefined;
+    }
+    
+    // If multiple styles intersect, return undefined (range has mixed styles)
+    if (intersectingStyles.length > 1) {
+      return undefined;
+    }
+    
+    // Check if the range is completely contained within the single style's area
+    const style = intersectingStyles[0]!;
+    if (isRangeContained(range.range, style.area.range)) {
+      return style;
+    }
+    
+    // Range is not completely contained, return undefined
+    return undefined;
   }
 
   /**

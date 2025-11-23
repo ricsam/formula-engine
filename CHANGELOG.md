@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.12
+
+### Patch Changes
+
+- add getStyleForRange
+
 ## 0.0.11
 
 ### Patch Changes

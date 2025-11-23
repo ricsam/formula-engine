@@ -328,7 +328,7 @@ describe("CopyManager", () => {
       });
 
       // Check that conditional style was copied
-      const styles = engine.getConditionalStyles({
+      const styles = engine.getConditionalStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -381,7 +381,7 @@ describe("CopyManager", () => {
         rowIndex: 5,
       };
 
-      const stylesBefore = engine.getCellStyles({
+      const stylesBefore = engine.getStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -400,7 +400,7 @@ describe("CopyManager", () => {
       });
 
       // Formatting should not be copied
-      const stylesAfter = engine.getCellStyles({
+      const stylesAfter = engine.getStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -717,7 +717,7 @@ describe("CopyManager", () => {
       expect(b10Style).toBeUndefined();
 
       // Verify we didn't create a B:B style - check the cellStyles array
-      const cellStyles = engine.getCellStyles({
+      const cellStyles = engine.getStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {

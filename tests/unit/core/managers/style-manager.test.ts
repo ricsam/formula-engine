@@ -41,7 +41,7 @@ describe("StyleManager", () => {
       };
 
       engine.addConditionalStyle(style);
-      const styles = engine.getConditionalStyles({
+      const styles = engine.getConditionalStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -77,7 +77,7 @@ describe("StyleManager", () => {
       };
 
       engine.addConditionalStyle(style);
-      const styles = engine.getConditionalStyles({
+      const styles = engine.getConditionalStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -134,7 +134,7 @@ describe("StyleManager", () => {
       engine.addConditionalStyle(style1);
       engine.addConditionalStyle(style2);
 
-      const styles = engine.getConditionalStyles({
+      const styles = engine.getConditionalStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -174,7 +174,7 @@ describe("StyleManager", () => {
 
       engine.addConditionalStyle(style);
       expect(
-        engine.getConditionalStyles({
+        engine.getConditionalStylesIntersectingWithRange({
           workbookName,
           sheetName,
           range: {
@@ -190,7 +190,7 @@ describe("StyleManager", () => {
       const removed = engine.removeConditionalStyle(workbookName, 0);
       expect(removed).toBe(true);
       expect(
-        engine.getConditionalStyles({
+        engine.getConditionalStylesIntersectingWithRange({
           workbookName,
           sheetName,
           range: {
@@ -807,7 +807,7 @@ describe("StyleManager", () => {
 
       engine.addConditionalStyle(style);
       expect(
-        engine.getConditionalStyles({
+        engine.getConditionalStylesIntersectingWithRange({
           workbookName,
           sheetName,
           range: {
@@ -825,7 +825,7 @@ describe("StyleManager", () => {
       // Re-create the workbook to check if styles were cleared
       engine.addWorkbook(workbookName);
       expect(
-        engine.getConditionalStyles({
+        engine.getConditionalStylesIntersectingWithRange({
           workbookName,
           sheetName,
           range: {
@@ -861,7 +861,7 @@ describe("StyleManager", () => {
 
       engine.addConditionalStyle(style);
       expect(
-        engine.getConditionalStyles({
+        engine.getConditionalStylesIntersectingWithRange({
           workbookName,
           sheetName,
           range: {
@@ -878,7 +878,7 @@ describe("StyleManager", () => {
       engine.renameWorkbook({ workbookName, newWorkbookName });
 
       expect(
-        engine.getConditionalStyles({
+        engine.getConditionalStylesIntersectingWithRange({
           workbookName,
           sheetName,
           range: {
@@ -891,7 +891,7 @@ describe("StyleManager", () => {
         })
       ).toHaveLength(0);
       expect(
-        engine.getConditionalStyles({
+        engine.getConditionalStylesIntersectingWithRange({
           workbookName: newWorkbookName,
           sheetName,
           range: {
@@ -904,7 +904,7 @@ describe("StyleManager", () => {
         })
       ).toHaveLength(1);
       expect(
-        engine.getConditionalStyles({
+        engine.getConditionalStylesIntersectingWithRange({
           workbookName: newWorkbookName,
           sheetName,
           range: {
@@ -940,7 +940,7 @@ describe("StyleManager", () => {
 
       engine.addConditionalStyle(style);
       expect(
-        engine.getConditionalStyles({
+        engine.getConditionalStylesIntersectingWithRange({
           workbookName,
           sheetName,
           range: {
@@ -955,7 +955,7 @@ describe("StyleManager", () => {
 
       engine.removeSheet({ workbookName, sheetName });
       expect(
-        engine.getConditionalStyles({
+        engine.getConditionalStylesIntersectingWithRange({
           workbookName,
           sheetName,
           range: {
@@ -994,7 +994,7 @@ describe("StyleManager", () => {
       const newSheetName = "RenamedSheet";
       engine.renameSheet({ workbookName, sheetName, newSheetName });
 
-      const styles = engine.getConditionalStyles({
+      const styles = engine.getConditionalStylesIntersectingWithRange({
         workbookName,
         sheetName: newSheetName,
         range: {
@@ -1069,7 +1069,7 @@ describe("StyleManager", () => {
       const newEngine = FormulaEngine.buildEmpty();
       newEngine.resetToSerializedEngine(serialized);
 
-      const restoredStyles = newEngine.getConditionalStyles({
+      const restoredStyles = newEngine.getConditionalStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -1106,7 +1106,7 @@ describe("StyleManager", () => {
       };
 
       engine.addCellStyle(cellStyle);
-      const styles = engine.getCellStyles({
+      const styles = engine.getStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -1161,7 +1161,7 @@ describe("StyleManager", () => {
       engine.addCellStyle(cellStyle1);
       engine.addCellStyle(cellStyle2);
 
-      const styles = engine.getCellStyles({
+      const styles = engine.getStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -1218,7 +1218,7 @@ describe("StyleManager", () => {
       const removed = engine.removeCellStyle(workbookName, 0);
       expect(removed).toBe(true);
 
-      const styles = engine.getCellStyles({
+      const styles = engine.getStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -1256,7 +1256,7 @@ describe("StyleManager", () => {
       const removed = engine.removeCellStyle(workbookName, 10);
       expect(removed).toBe(false);
 
-      const styles = engine.getCellStyles({
+      const styles = engine.getStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -1293,7 +1293,7 @@ describe("StyleManager", () => {
       const removed = engine.removeCellStyle(workbookName, -1);
       expect(removed).toBe(false);
 
-      const styles = engine.getCellStyles({
+      const styles = engine.getStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -1471,7 +1471,7 @@ describe("StyleManager", () => {
       engine.addCellStyle(cellStyle1);
       engine.addCellStyle(cellStyle2);
 
-      const styles1 = engine.getCellStyles({
+      const styles1 = engine.getStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -1485,7 +1485,7 @@ describe("StyleManager", () => {
       expect(styles1).toHaveLength(1);
       expect(styles1[0]).toEqual(cellStyle1);
 
-      const styles2 = engine.getCellStyles({
+      const styles2 = engine.getStylesIntersectingWithRange({
         workbookName: otherWorkbookName,
         sheetName,
         range: {
@@ -1522,7 +1522,7 @@ describe("StyleManager", () => {
 
       engine.addCellStyle(cellStyle);
       expect(
-        engine.getCellStyles({
+        engine.getStylesIntersectingWithRange({
           workbookName,
           sheetName,
           range: {
@@ -1549,7 +1549,7 @@ describe("StyleManager", () => {
       });
 
       expect(
-        engine.getCellStyles({
+        engine.getStylesIntersectingWithRange({
           workbookName,
           sheetName,
           range: {
@@ -1597,7 +1597,7 @@ describe("StyleManager", () => {
         },
       });
 
-      const styles = engine.getCellStyles({
+      const styles = engine.getStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -1651,7 +1651,7 @@ describe("StyleManager", () => {
         },
       });
 
-      const styles = engine.getCellStyles({
+      const styles = engine.getStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -1717,7 +1717,7 @@ describe("StyleManager", () => {
         },
       });
 
-      const styles = engine.getCellStyles({
+      const styles = engine.getStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -1755,7 +1755,7 @@ describe("StyleManager", () => {
 
       engine.addConditionalStyle(conditionalStyle);
       expect(
-        engine.getConditionalStyles({
+        engine.getConditionalStylesIntersectingWithRange({
           workbookName,
           sheetName,
           range: {
@@ -1781,7 +1781,7 @@ describe("StyleManager", () => {
         },
       });
 
-      const styles = engine.getConditionalStyles({
+      const styles = engine.getConditionalStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -1851,7 +1851,7 @@ describe("StyleManager", () => {
       });
 
       expect(
-        engine.getCellStyles({
+        engine.getStylesIntersectingWithRange({
           workbookName,
           sheetName,
           range: {
@@ -1864,7 +1864,7 @@ describe("StyleManager", () => {
         })
       ).toHaveLength(0);
       expect(
-        engine.getConditionalStyles({
+        engine.getConditionalStylesIntersectingWithRange({
           workbookName,
           sheetName,
           range: {
@@ -1914,7 +1914,7 @@ describe("StyleManager", () => {
         },
       });
 
-      const styles = engine.getCellStyles({
+      const styles = engine.getStylesIntersectingWithRange({
         workbookName,
         sheetName,
         range: {
@@ -1934,6 +1934,248 @@ describe("StyleManager", () => {
         expect(style.style.fontSize).toBe(14);
         expect(style.style.bold).toBe(true);
       }
+    });
+  });
+
+  describe("getStyleForRange", () => {
+    test("returns style when range is completely contained within a single style", () => {
+      const cellStyle: DirectCellStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
+          },
+        },
+        style: {
+          backgroundColor: "#FF0000",
+          color: "#FFFFFF",
+          fontSize: 14,
+          bold: true,
+        },
+      };
+
+      engine.addCellStyle(cellStyle);
+
+      const result = engine.getStyleForRange({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 1, row: 1 },
+          end: {
+            col: { type: "number", value: 3 },
+            row: { type: "number", value: 3 },
+          },
+        },
+      });
+
+      expect(result).toBeDefined();
+      expect(result?.style.backgroundColor).toBe("#FF0000");
+      expect(result?.style.color).toBe("#FFFFFF");
+      expect(result?.style.fontSize).toBe(14);
+      expect(result?.style.bold).toBe(true);
+    });
+
+    test("returns undefined when range spans multiple styles", () => {
+      const cellStyle1: DirectCellStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 2 },
+            },
+          },
+        },
+        style: {
+          backgroundColor: "#FF0000",
+        },
+      };
+
+      const cellStyle2: DirectCellStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 3, row: 0 },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 2 },
+            },
+          },
+        },
+        style: {
+          backgroundColor: "#0000FF",
+        },
+      };
+
+      engine.addCellStyle(cellStyle1);
+      engine.addCellStyle(cellStyle2);
+
+      const result = engine.getStyleForRange({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number", value: 5 },
+            row: { type: "number", value: 2 },
+          },
+        },
+      });
+
+      expect(result).toBeUndefined();
+    });
+
+    test("returns undefined when range is not completely contained", () => {
+      const cellStyle: DirectCellStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 3 },
+              row: { type: "number", value: 3 },
+            },
+          },
+        },
+        style: {
+          backgroundColor: "#FF0000",
+        },
+      };
+
+      engine.addCellStyle(cellStyle);
+
+      const result = engine.getStyleForRange({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number", value: 5 },
+            row: { type: "number", value: 5 },
+          },
+        },
+      });
+
+      expect(result).toBeUndefined();
+    });
+
+    test("returns undefined when no styles intersect with range", () => {
+      const cellStyle: DirectCellStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 2 },
+            },
+          },
+        },
+        style: {
+          backgroundColor: "#FF0000",
+        },
+      };
+
+      engine.addCellStyle(cellStyle);
+
+      const result = engine.getStyleForRange({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 10, row: 10 },
+          end: {
+            col: { type: "number", value: 12 },
+            row: { type: "number", value: 12 },
+          },
+        },
+      });
+
+      expect(result).toBeUndefined();
+    });
+
+    test("returns undefined when range matches style exactly but is in different workbook", () => {
+      const otherWorkbookName = "OtherWorkbook";
+      engine.addWorkbook(otherWorkbookName);
+      engine.addSheet({ workbookName: otherWorkbookName, sheetName });
+
+      const cellStyle: DirectCellStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 3 },
+              row: { type: "number", value: 3 },
+            },
+          },
+        },
+        style: {
+          backgroundColor: "#FF0000",
+        },
+      };
+
+      engine.addCellStyle(cellStyle);
+
+      const result = engine.getStyleForRange({
+        workbookName: otherWorkbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number", value: 3 },
+            row: { type: "number", value: 3 },
+          },
+        },
+      });
+
+      expect(result).toBeUndefined();
+    });
+
+    test("works with infinite ranges", () => {
+      const cellStyle: DirectCellStyle = {
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        },
+        style: {
+          backgroundColor: "#FF0000",
+        },
+      };
+
+      engine.addCellStyle(cellStyle);
+
+      const result = engine.getStyleForRange({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 5, row: 5 },
+          end: {
+            col: { type: "number", value: 10 },
+            row: { type: "number", value: 10 },
+          },
+        },
+      });
+
+      expect(result).toBeDefined();
+      expect(result?.style.backgroundColor).toBe("#FF0000");
     });
   });
 });
