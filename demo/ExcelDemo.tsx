@@ -1208,8 +1208,8 @@ export function ExcelDemo() {
   // Load style into form for editing
   const editConditionalStyle = useCallback(
     (workbookName: string, index: number) => {
-      const styles = engine.getConditionalStyles(workbookName);
-      const style = styles[index];
+      // Get style directly from engineState since index is global
+      const style = engineState.conditionalStyles?.[index];
       if (!style) return;
 
       // Convert range to canonical format
@@ -1297,7 +1297,7 @@ export function ExcelDemo() {
 
       setEditingStyle({ workbookName, index });
     },
-    [engine]
+    [engineState]
   );
 
   // Reset cell style form
@@ -1520,8 +1520,8 @@ export function ExcelDemo() {
   // Edit cell style
   const editCellStyle = useCallback(
     (workbookName: string, index: number) => {
-      const styles = engine.getCellStyles(workbookName);
-      const style = styles[index];
+      // Get style directly from engineState since index is global
+      const style = engineState.cellStyles?.[index];
       if (!style) return;
 
       // Convert range to canonical format
@@ -1584,7 +1584,7 @@ export function ExcelDemo() {
 
       setEditingCellStyle({ workbookName, index });
     },
-    [engine]
+    [engineState]
   );
 
   // Handle selection change from spreadsheet

@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.11
+
+### Patch Changes
+
+- make getCellStyles take a range
+
 ## 0.0.10
 
 ### Patch Changes

@@ -245,7 +245,10 @@ describe("CopyManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 1 }, row: { type: "number", value: 0 } },
+            end: {
+              col: { type: "number", value: 1 },
+              row: { type: "number", value: 0 },
+            },
           },
         },
         style: {
@@ -292,7 +295,10 @@ describe("CopyManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 1 }, row: { type: "number", value: 1 } },
+            end: {
+              col: { type: "number", value: 1 },
+              row: { type: "number", value: 1 },
+            },
           },
         },
         condition: {
@@ -322,7 +328,17 @@ describe("CopyManager", () => {
       });
 
       // Check that conditional style was copied
-      const styles = engine.getConditionalStyles(workbookName);
+      const styles = engine.getConditionalStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(styles.length).toBeGreaterThan(1); // Should have original + copied style
 
       // Find the copied style (should be at row 10-11)
@@ -344,7 +360,10 @@ describe("CopyManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 1 }, row: { type: "number", value: 0 } },
+            end: {
+              col: { type: "number", value: 1 },
+              row: { type: "number", value: 0 },
+            },
           },
         },
         style: {
@@ -362,7 +381,17 @@ describe("CopyManager", () => {
         rowIndex: 5,
       };
 
-      const stylesBefore = engine.getCellStyles(workbookName).length;
+      const stylesBefore = engine.getCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number", value: 1 },
+            row: { type: "number", value: 0 },
+          },
+        },
+      }).length;
 
       engine.copyCells(source, target, {
         cut: false,
@@ -371,7 +400,17 @@ describe("CopyManager", () => {
       });
 
       // Formatting should not be copied
-      const stylesAfter = engine.getCellStyles(workbookName).length;
+      const stylesAfter = engine.getCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number", value: 1 },
+            row: { type: "number", value: 0 },
+          },
+        },
+      }).length;
       expect(stylesAfter).toBe(stylesBefore); // No new styles added
     });
   });
@@ -557,7 +596,10 @@ describe("CopyManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } },
+            end: {
+              col: { type: "number", value: 0 },
+              row: { type: "number", value: 0 },
+            },
           },
         },
         style: {
@@ -616,9 +658,9 @@ describe("CopyManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { 
-              col: { type: "number", value: 0 }, 
-              row: { type: "infinity", sign: "positive" } 
+            end: {
+              col: { type: "number", value: 0 },
+              row: { type: "infinity", sign: "positive" },
             },
           },
         },
@@ -675,18 +717,32 @@ describe("CopyManager", () => {
       expect(b10Style).toBeUndefined();
 
       // Verify we didn't create a B:B style - check the cellStyles array
-      const cellStyles = engine.getCellStyles(workbookName);
+      const cellStyles = engine.getCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       // Should have original A:A + new B2:B2 (single cell)
       expect(cellStyles).toHaveLength(2);
-      
-      const b2StyleRule = cellStyles.find(s => 
-        s.area.range.start.col === 1 && 
-        s.area.range.start.row === 1
+
+      const b2StyleRule = cellStyles.find(
+        (s) => s.area.range.start.col === 1 && s.area.range.start.row === 1
       );
       expect(b2StyleRule).toBeDefined();
-      expect(b2StyleRule?.area.range.end.col).toEqual({ type: "number", value: 1 });
-      expect(b2StyleRule?.area.range.end.row).toEqual({ type: "number", value: 1 });
+      expect(b2StyleRule?.area.range.end.col).toEqual({
+        type: "number",
+        value: 1,
+      });
+      expect(b2StyleRule?.area.range.end.row).toEqual({
+        type: "number",
+        value: 1,
+      });
     });
   });
 });
-

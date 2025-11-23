@@ -27,7 +27,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 9 }, row: { type: "number", value: 9 } },
+            end: {
+              col: { type: "number", value: 9 },
+              row: { type: "number", value: 9 },
+            },
           },
         },
         condition: {
@@ -38,7 +41,17 @@ describe("StyleManager", () => {
       };
 
       engine.addConditionalStyle(style);
-      const styles = engine.getConditionalStyles(workbookName);
+      const styles = engine.getConditionalStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(styles).toHaveLength(1);
       expect(styles[0]).toEqual(style);
     });
@@ -50,7 +63,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         condition: {
@@ -61,7 +77,17 @@ describe("StyleManager", () => {
       };
 
       engine.addConditionalStyle(style);
-      const styles = engine.getConditionalStyles(workbookName);
+      const styles = engine.getConditionalStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(styles).toHaveLength(1);
       expect(styles[0]).toEqual(style);
     });
@@ -73,7 +99,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         condition: {
@@ -89,7 +118,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         condition: {
@@ -102,7 +134,17 @@ describe("StyleManager", () => {
       engine.addConditionalStyle(style1);
       engine.addConditionalStyle(style2);
 
-      const styles = engine.getConditionalStyles(workbookName);
+      const styles = engine.getConditionalStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(styles).toHaveLength(2);
       expect(styles[0]).toEqual(style1);
       expect(styles[1]).toEqual(style2);
@@ -117,7 +159,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         condition: {
@@ -128,11 +173,35 @@ describe("StyleManager", () => {
       };
 
       engine.addConditionalStyle(style);
-      expect(engine.getConditionalStyles(workbookName)).toHaveLength(1);
+      expect(
+        engine.getConditionalStyles({
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        })
+      ).toHaveLength(1);
 
       const removed = engine.removeConditionalStyle(workbookName, 0);
       expect(removed).toBe(true);
-      expect(engine.getConditionalStyles(workbookName)).toHaveLength(0);
+      expect(
+        engine.getConditionalStyles({
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        })
+      ).toHaveLength(0);
     });
 
     test("returns false for invalid index", () => {
@@ -147,7 +216,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         condition: {
@@ -179,7 +251,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 9 }, row: { type: "number", value: 9 } },
+            end: {
+              col: { type: "number", value: 9 },
+              row: { type: "number", value: 9 },
+            },
           },
         },
         condition: {
@@ -211,7 +286,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 9 }, row: { type: "number", value: 9 } },
+            end: {
+              col: { type: "number", value: 9 },
+              row: { type: "number", value: 9 },
+            },
           },
         },
         condition: {
@@ -249,7 +327,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 9 }, row: { type: "number", value: 9 } },
+            end: {
+              col: { type: "number", value: 9 },
+              row: { type: "number", value: 9 },
+            },
           },
         },
         condition: {
@@ -291,7 +372,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 0 }, row: { type: "number", value: 2 } },
+            end: {
+              col: { type: "number", value: 0 },
+              row: { type: "number", value: 2 },
+            },
           },
         },
         condition: {
@@ -334,9 +418,10 @@ describe("StyleManager", () => {
       expect(style0?.backgroundColor).not.toBe(style1?.backgroundColor);
       expect(style1?.backgroundColor).not.toBe(style2?.backgroundColor);
 
-      expect(style0?.backgroundColor).toEqual(lchToHex({ l: 90, c: 10, h: 120 }));
+      expect(style0?.backgroundColor).toEqual(
+        lchToHex({ l: 90, c: 10, h: 120 })
+      );
       expect(style2?.backgroundColor).toEqual(lchToHex({ l: 30, c: 80, h: 0 }));
-
     });
 
     test("applies gradient with number-based min/max using valueFormula", () => {
@@ -360,7 +445,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 0 }, row: { type: "number", value: 2 } },
+            end: {
+              col: { type: "number", value: 0 },
+              row: { type: "number", value: 2 },
+            },
           },
         },
         condition: {
@@ -403,7 +491,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } },
+            end: {
+              col: { type: "number", value: 0 },
+              row: { type: "number", value: 0 },
+            },
           },
         },
         condition: {
@@ -457,7 +548,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 0 }, row: { type: "number", value: 4 } },
+            end: {
+              col: { type: "number", value: 0 },
+              row: { type: "number", value: 4 },
+            },
           },
         },
         condition: {
@@ -567,7 +661,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 0 }, row: { type: "number", value: 3 } },
+            end: {
+              col: { type: "number", value: 0 },
+              row: { type: "number", value: 3 },
+            },
           },
         },
         condition: {
@@ -643,7 +740,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         condition: {
@@ -659,7 +759,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         condition: {
@@ -689,7 +792,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         condition: {
@@ -700,13 +806,37 @@ describe("StyleManager", () => {
       };
 
       engine.addConditionalStyle(style);
-      expect(engine.getConditionalStyles(workbookName)).toHaveLength(1);
+      expect(
+        engine.getConditionalStyles({
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        })
+      ).toHaveLength(1);
 
       engine.removeWorkbook(workbookName);
-      
+
       // Re-create the workbook to check if styles were cleared
       engine.addWorkbook(workbookName);
-      expect(engine.getConditionalStyles(workbookName)).toHaveLength(0);
+      expect(
+        engine.getConditionalStyles({
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        })
+      ).toHaveLength(0);
     });
 
     test("updates workbook name in styles when workbook is renamed", () => {
@@ -716,7 +846,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         condition: {
@@ -727,16 +860,62 @@ describe("StyleManager", () => {
       };
 
       engine.addConditionalStyle(style);
-      expect(engine.getConditionalStyles(workbookName)).toHaveLength(1);
+      expect(
+        engine.getConditionalStyles({
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        })
+      ).toHaveLength(1);
 
       const newWorkbookName = "RenamedWorkbook";
       engine.renameWorkbook({ workbookName, newWorkbookName });
 
-      expect(engine.getConditionalStyles(workbookName)).toHaveLength(0);
-      expect(engine.getConditionalStyles(newWorkbookName)).toHaveLength(1);
-      expect(engine.getConditionalStyles(newWorkbookName)[0]!.area.workbookName).toBe(
-        newWorkbookName
-      );
+      expect(
+        engine.getConditionalStyles({
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        })
+      ).toHaveLength(0);
+      expect(
+        engine.getConditionalStyles({
+          workbookName: newWorkbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        })
+      ).toHaveLength(1);
+      expect(
+        engine.getConditionalStyles({
+          workbookName: newWorkbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        })[0]!.area.workbookName
+      ).toBe(newWorkbookName);
     });
 
     test("removes styles when sheet is removed", () => {
@@ -746,7 +925,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         condition: {
@@ -757,10 +939,34 @@ describe("StyleManager", () => {
       };
 
       engine.addConditionalStyle(style);
-      expect(engine.getConditionalStyles(workbookName)).toHaveLength(1);
+      expect(
+        engine.getConditionalStyles({
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        })
+      ).toHaveLength(1);
 
       engine.removeSheet({ workbookName, sheetName });
-      expect(engine.getConditionalStyles(workbookName)).toHaveLength(0);
+      expect(
+        engine.getConditionalStyles({
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        })
+      ).toHaveLength(0);
     });
 
     test("updates sheet name in styles when sheet is renamed", () => {
@@ -770,7 +976,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         condition: {
@@ -785,7 +994,17 @@ describe("StyleManager", () => {
       const newSheetName = "RenamedSheet";
       engine.renameSheet({ workbookName, sheetName, newSheetName });
 
-      const styles = engine.getConditionalStyles(workbookName);
+      const styles = engine.getConditionalStyles({
+        workbookName,
+        sheetName: newSheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(styles).toHaveLength(1);
       expect(styles[0]!.area.sheetName).toBe(newSheetName);
     });
@@ -799,7 +1018,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         condition: {
@@ -814,7 +1036,11 @@ describe("StyleManager", () => {
       const state = engine.getState();
       expect(state.conditionalStyles).toBeDefined();
       expect(Array.isArray(state.conditionalStyles)).toBe(true);
-      expect(state.conditionalStyles.filter(s => s.area.workbookName === workbookName)).toHaveLength(1);
+      expect(
+        state.conditionalStyles.filter(
+          (s) => s.area.workbookName === workbookName
+        )
+      ).toHaveLength(1);
     });
 
     test("restores conditional styles from serialized state", () => {
@@ -824,7 +1050,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         condition: {
@@ -840,7 +1069,17 @@ describe("StyleManager", () => {
       const newEngine = FormulaEngine.buildEmpty();
       newEngine.resetToSerializedEngine(serialized);
 
-      const restoredStyles = newEngine.getConditionalStyles(workbookName);
+      const restoredStyles = newEngine.getConditionalStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(restoredStyles).toHaveLength(1);
       expect(restoredStyles[0]).toEqual(style);
     });
@@ -854,7 +1093,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         style: {
@@ -864,7 +1106,17 @@ describe("StyleManager", () => {
       };
 
       engine.addCellStyle(cellStyle);
-      const styles = engine.getCellStyles(workbookName);
+      const styles = engine.getCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(styles).toHaveLength(1);
       expect(styles[0]).toEqual(cellStyle);
     });
@@ -876,7 +1128,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 2 },
+            },
           },
         },
         style: {
@@ -891,7 +1146,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 3, row: 3 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         style: {
@@ -903,7 +1161,17 @@ describe("StyleManager", () => {
       engine.addCellStyle(cellStyle1);
       engine.addCellStyle(cellStyle2);
 
-      const styles = engine.getCellStyles(workbookName);
+      const styles = engine.getCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(styles).toHaveLength(2);
       expect(styles[0]).toEqual(cellStyle1);
       expect(styles[1]).toEqual(cellStyle2);
@@ -916,7 +1184,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 2 },
+            },
           },
         },
         style: {
@@ -930,7 +1201,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 3, row: 3 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         style: {
@@ -944,7 +1218,17 @@ describe("StyleManager", () => {
       const removed = engine.removeCellStyle(workbookName, 0);
       expect(removed).toBe(true);
 
-      const styles = engine.getCellStyles(workbookName);
+      const styles = engine.getCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(styles).toHaveLength(1);
       expect(styles[0]).toEqual(cellStyle2);
     });
@@ -956,7 +1240,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         style: {
@@ -969,7 +1256,17 @@ describe("StyleManager", () => {
       const removed = engine.removeCellStyle(workbookName, 10);
       expect(removed).toBe(false);
 
-      const styles = engine.getCellStyles(workbookName);
+      const styles = engine.getCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(styles).toHaveLength(1);
     });
 
@@ -980,7 +1277,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         style: {
@@ -993,7 +1293,17 @@ describe("StyleManager", () => {
       const removed = engine.removeCellStyle(workbookName, -1);
       expect(removed).toBe(false);
 
-      const styles = engine.getCellStyles(workbookName);
+      const styles = engine.getCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(styles).toHaveLength(1);
     });
 
@@ -1004,7 +1314,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 2 },
+            },
           },
         },
         style: {
@@ -1035,7 +1348,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 2 },
+            },
           },
         },
         style: {
@@ -1064,7 +1380,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         condition: {
@@ -1081,7 +1400,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+            end: {
+              col: { type: "number", value: 5 },
+              row: { type: "number", value: 5 },
+            },
           },
         },
         style: {
@@ -1118,7 +1440,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 2 },
+            },
           },
         },
         style: {
@@ -1132,7 +1457,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 2 },
+            },
           },
         },
         style: {
@@ -1143,11 +1471,31 @@ describe("StyleManager", () => {
       engine.addCellStyle(cellStyle1);
       engine.addCellStyle(cellStyle2);
 
-      const styles1 = engine.getCellStyles(workbookName);
+      const styles1 = engine.getCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(styles1).toHaveLength(1);
       expect(styles1[0]).toEqual(cellStyle1);
 
-      const styles2 = engine.getCellStyles(otherWorkbookName);
+      const styles2 = engine.getCellStyles({
+        workbookName: otherWorkbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(styles2).toHaveLength(1);
       expect(styles2[0]).toEqual(cellStyle2);
     });
@@ -1161,7 +1509,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 2, row: 2 },
-            end: { col: { type: "number", value: 4 }, row: { type: "number", value: 4 } },
+            end: {
+              col: { type: "number", value: 4 },
+              row: { type: "number", value: 4 },
+            },
           },
         },
         style: {
@@ -1170,7 +1521,19 @@ describe("StyleManager", () => {
       };
 
       engine.addCellStyle(cellStyle);
-      expect(engine.getCellStyles(workbookName)).toHaveLength(1);
+      expect(
+        engine.getCellStyles({
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        })
+      ).toHaveLength(1);
 
       // Clear a range that contains the style
       engine.clearCellStyles({
@@ -1178,11 +1541,26 @@ describe("StyleManager", () => {
         sheetName,
         range: {
           start: { col: 0, row: 0 },
-          end: { col: { type: "number", value: 10 }, row: { type: "number", value: 10 } },
+          end: {
+            col: { type: "number", value: 10 },
+            row: { type: "number", value: 10 },
+          },
         },
       });
 
-      expect(engine.getCellStyles(workbookName)).toHaveLength(0);
+      expect(
+        engine.getCellStyles({
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        })
+      ).toHaveLength(0);
     });
 
     test("adjusts cellStyle when clear range overlaps edge", () => {
@@ -1193,7 +1571,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 4 }, row: { type: "number", value: 4 } },
+            end: {
+              col: { type: "number", value: 4 },
+              row: { type: "number", value: 4 },
+            },
           },
         },
         style: {
@@ -1209,15 +1590,31 @@ describe("StyleManager", () => {
         sheetName,
         range: {
           start: { col: 0, row: 0 },
-          end: { col: { type: "number", value: 4 }, row: { type: "number", value: 1 } },
+          end: {
+            col: { type: "number", value: 4 },
+            row: { type: "number", value: 1 },
+          },
         },
       });
 
-      const styles = engine.getCellStyles(workbookName);
+      const styles = engine.getCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(styles).toHaveLength(1);
       // Should have bottom portion: A3:E5 (0,2 to 4,4)
       expect(styles[0]!.area.range.start).toEqual({ col: 0, row: 2 });
-      expect(styles[0]!.area.range.end).toEqual({ col: { type: "number", value: 4 }, row: { type: "number", value: 4 } });
+      expect(styles[0]!.area.range.end).toEqual({
+        col: { type: "number", value: 4 },
+        row: { type: "number", value: 4 },
+      });
     });
 
     test("splits cellStyle when clear range creates hole", () => {
@@ -1228,7 +1625,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 4 }, row: { type: "number", value: 4 } },
+            end: {
+              col: { type: "number", value: 4 },
+              row: { type: "number", value: 4 },
+            },
           },
         },
         style: {
@@ -1244,11 +1644,24 @@ describe("StyleManager", () => {
         sheetName,
         range: {
           start: { col: 1, row: 1 },
-          end: { col: { type: "number", value: 3 }, row: { type: "number", value: 3 } },
+          end: {
+            col: { type: "number", value: 3 },
+            row: { type: "number", value: 3 },
+          },
         },
       });
 
-      const styles = engine.getCellStyles(workbookName);
+      const styles = engine.getCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       // Should have 4 rectangles: top, bottom, left, right
       expect(styles).toHaveLength(4);
     });
@@ -1260,7 +1673,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 2 },
+            },
           },
         },
         style: {
@@ -1274,7 +1690,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 10, row: 10 },
-            end: { col: { type: "number", value: 12 }, row: { type: "number", value: 12 } },
+            end: {
+              col: { type: "number", value: 12 },
+              row: { type: "number", value: 12 },
+            },
           },
         },
         style: {
@@ -1291,11 +1710,24 @@ describe("StyleManager", () => {
         sheetName,
         range: {
           start: { col: 0, row: 0 },
-          end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
+          end: {
+            col: { type: "number", value: 5 },
+            row: { type: "number", value: 5 },
+          },
         },
       });
 
-      const styles = engine.getCellStyles(workbookName);
+      const styles = engine.getCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       // cellStyle1 removed, cellStyle2 preserved
       expect(styles).toHaveLength(1);
       expect(styles[0]!.area.range.start).toEqual({ col: 10, row: 10 });
@@ -1308,7 +1740,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 4 }, row: { type: "number", value: 4 } },
+            end: {
+              col: { type: "number", value: 4 },
+              row: { type: "number", value: 4 },
+            },
           },
         },
         condition: {
@@ -1319,7 +1754,19 @@ describe("StyleManager", () => {
       };
 
       engine.addConditionalStyle(conditionalStyle);
-      expect(engine.getConditionalStyles(workbookName)).toHaveLength(1);
+      expect(
+        engine.getConditionalStyles({
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        })
+      ).toHaveLength(1);
 
       // Clear top portion
       engine.clearCellStyles({
@@ -1327,11 +1774,24 @@ describe("StyleManager", () => {
         sheetName,
         range: {
           start: { col: 0, row: 0 },
-          end: { col: { type: "number", value: 4 }, row: { type: "number", value: 1 } },
+          end: {
+            col: { type: "number", value: 4 },
+            row: { type: "number", value: 1 },
+          },
         },
       });
 
-      const styles = engine.getConditionalStyles(workbookName);
+      const styles = engine.getConditionalStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(styles).toHaveLength(1);
       // Should have bottom portion
       expect(styles[0]!.area.range.start).toEqual({ col: 0, row: 2 });
@@ -1344,7 +1804,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 2 },
+            },
           },
         },
         style: {
@@ -1358,7 +1821,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 2 },
+            },
           },
         },
         condition: {
@@ -1377,12 +1843,39 @@ describe("StyleManager", () => {
         sheetName,
         range: {
           start: { col: 0, row: 0 },
-          end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
+          end: {
+            col: { type: "number", value: 2 },
+            row: { type: "number", value: 2 },
+          },
         },
       });
 
-      expect(engine.getCellStyles(workbookName)).toHaveLength(0);
-      expect(engine.getConditionalStyles(workbookName)).toHaveLength(0);
+      expect(
+        engine.getCellStyles({
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        })
+      ).toHaveLength(0);
+      expect(
+        engine.getConditionalStyles({
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "infinity", sign: "positive" },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        })
+      ).toHaveLength(0);
     });
 
     test("preserves style properties when splitting", () => {
@@ -1392,7 +1885,10 @@ describe("StyleManager", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 4 }, row: { type: "number", value: 4 } },
+            end: {
+              col: { type: "number", value: 4 },
+              row: { type: "number", value: 4 },
+            },
           },
         },
         style: {
@@ -1411,13 +1907,26 @@ describe("StyleManager", () => {
         sheetName,
         range: {
           start: { col: 1, row: 1 },
-          end: { col: { type: "number", value: 3 }, row: { type: "number", value: 3 } },
+          end: {
+            col: { type: "number", value: 3 },
+            row: { type: "number", value: 3 },
+          },
         },
       });
 
-      const styles = engine.getCellStyles(workbookName);
+      const styles = engine.getCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "infinity", sign: "positive" },
+            row: { type: "infinity", sign: "positive" },
+          },
+        },
+      });
       expect(styles).toHaveLength(4);
-      
+
       // All resulting styles should preserve the original style properties
       for (const style of styles) {
         expect(style.style.backgroundColor).toBe("#FF0000");
@@ -1428,4 +1937,3 @@ describe("StyleManager", () => {
     });
   });
 });
-

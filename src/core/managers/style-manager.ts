@@ -24,10 +24,7 @@ export class StyleManager {
   private conditionalStyles: ConditionalStyle[] = [];
   private cellStyles: DirectCellStyle[] = [];
 
-  constructor(
-    private workbookManager: WorkbookManager,
-    private evaluationManager: EvaluationManager
-  ) {}
+  constructor(private evaluationManager: EvaluationManager) {}
 
   /**
    * Add a conditional style rule
@@ -62,11 +59,14 @@ export class StyleManager {
   }
 
   /**
-   * Get all conditional styles for a workbook
+   * Get all conditional styles for a range
    */
-  getConditionalStyles(workbookName: string): ConditionalStyle[] {
+  getConditionalStyles(range: RangeAddress): ConditionalStyle[] {
     return this.conditionalStyles.filter(
-      (style) => style && style.area && style.area.workbookName === workbookName
+      (style) =>
+        style.area.workbookName === range.workbookName &&
+        style.area.sheetName === range.sheetName &&
+        rangesIntersect(style.area.range, range.range)
     );
   }
 
@@ -105,9 +105,13 @@ export class StyleManager {
   /**
    * Get all direct cell styles for a workbook
    */
-  getCellStyles(workbookName: string): DirectCellStyle[] {
+  getCellStyles(range: RangeAddress): DirectCellStyle[] {
     return this.cellStyles.filter(
-      (style) => style && style.area && style.area.workbookName === workbookName
+      (style) =>
+        style &&
+        style.area.sheetName === range.sheetName &&
+        style.area.workbookName === range.workbookName &&
+        rangesIntersect(style.area.range, range.range)
     );
   }
 
@@ -557,8 +561,11 @@ export class StyleManager {
         rangesIntersect(cellStyle.area.range, range.range)
       ) {
         // Subtract the clear range from this style's range
-        const remainingRanges = subtractRange(cellStyle.area.range, range.range);
-        
+        const remainingRanges = subtractRange(
+          cellStyle.area.range,
+          range.range
+        );
+
         // Add new styles for each remaining range
         for (const remainingRange of remainingRanges) {
           newCellStyles.push({
@@ -592,8 +599,11 @@ export class StyleManager {
         rangesIntersect(conditionalStyle.area.range, range.range)
       ) {
         // Subtract the clear range from this style's range
-        const remainingRanges = subtractRange(conditionalStyle.area.range, range.range);
-        
+        const remainingRanges = subtractRange(
+          conditionalStyle.area.range,
+          range.range
+        );
+
         // Add new styles for each remaining range
         for (const remainingRange of remainingRanges) {
           newConditionalStyles.push({

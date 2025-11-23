@@ -88,7 +88,6 @@ export class FormulaEngine {
     );
 
     this.styleManager = new StyleManager(
-      this.workbookManager,
       this.evaluationManager
     );
     this.copyManager = new CopyManager(
@@ -400,10 +399,10 @@ export class FormulaEngine {
   }
 
   /**
-   * Get all conditional styles for a workbook
+   * Get all conditional styles for a range
    */
-  getConditionalStyles(workbookName: string): ConditionalStyle[] {
-    return this.styleManager.getConditionalStyles(workbookName);
+  getConditionalStyles(range: RangeAddress): ConditionalStyle[] {
+    return this.styleManager.getConditionalStyles(range);
   }
 
   /**
@@ -433,10 +432,10 @@ export class FormulaEngine {
   }
 
   /**
-   * Get all direct cell styles for a workbook
+   * Get all direct cell styles for a range
    */
-  getCellStyles(workbookName: string): DirectCellStyle[] {
-    return this.styleManager.getCellStyles(workbookName);
+  getCellStyles(range: RangeAddress): DirectCellStyle[] {
+    return this.styleManager.getCellStyles(range);
   }
 
   /**
