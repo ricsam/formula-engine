@@ -8,6 +8,7 @@ import type {
   ConditionalStyle,
   DirectCellStyle,
   LocalCellAddress,
+  RangeAddress,
   SerializedCellValue,
   SpreadsheetRange,
 } from "../types";
@@ -29,7 +30,7 @@ export class CopyManager {
   ) {}
 
   /**
-   * Copy cells from source to target
+   * Paste cells from source to target
    */
   copyCells(
     source: CellAddress[],
@@ -387,6 +388,442 @@ export class CopyManager {
           cell.rowIndex + 1
         }`;
         sheet.content.delete(key);
+      }
+    }
+  }
+
+  /**
+   * Fill one or more areas with a seed range's content/style
+   * Uses column-first strategy: fills down, then replicates right
+   * Formulas are adjusted based on each target cell's offset from the seed
+   */
+  fillAreas(
+    seedRange: RangeAddress,
+    targetRanges: RangeAddress[],
+    options: CopyCellsOptions
+  ): void {
+    for (const targetRange of targetRanges) {
+      this.fillRangeWithSeed(seedRange, targetRange, {
+        copyContent: options.target !== 'style',
+        copyStyles: options.target === 'all' || options.target === 'style',
+        contentType: options.type,
+        adjustFormulas: true,
+      });
+    }
+
+    // Clear seed range if cut operation
+    if (options.cut) {
+      const seedCells = this.expandRangeToCells(seedRange);
+      this.clearSourceCells(seedCells);
+    }
+  }
+
+  /**
+   * Fill a target range with a seed range using column-first strategy
+   * Step 1: Fill down - extend seed pattern vertically to match target height
+   * Step 2: Replicate right - copy filled columns horizontally
+   */
+  private fillRangeWithSeed(
+    seedRange: RangeAddress,
+    targetRange: RangeAddress,
+    options: {
+      copyContent: boolean;
+      copyStyles: boolean;
+      contentType: "value" | "formula";
+      adjustFormulas: boolean;
+    }
+  ): void {
+    const seedCells = this.expandRangeToCells(seedRange);
+    const seedWidth = this.getRangeWidth(seedRange);
+    const seedHeight = this.getRangeHeight(seedRange);
+    const targetWidth = this.getRangeWidth(targetRange);
+    const targetHeight = this.getRangeHeight(targetRange);
+
+    // Step 1: Fill down - replicate seed pattern vertically
+    const filledColumns: Map<string, { cell: CellAddress; content: SerializedCellValue }> = new Map();
+    
+    for (let col = 0; col < seedWidth; col++) {
+      for (let row = 0; row < targetHeight; row++) {
+        const seedRow = row % seedHeight;
+        const seedCell = seedCells.find(
+          (c) => 
+            c.colIndex === seedRange.range.start.col + col &&
+            c.rowIndex === seedRange.range.start.row + seedRow
+        );
+
+        if (seedCell) {
+          const targetCell: CellAddress = {
+            workbookName: targetRange.workbookName,
+            sheetName: targetRange.sheetName,
+            colIndex: targetRange.range.start.col + col,
+            rowIndex: targetRange.range.start.row + row,
+          };
+
+          const rowDelta = targetCell.rowIndex - seedCell.rowIndex;
+          const colDelta = targetCell.colIndex - seedCell.colIndex;
+
+          if (options.copyContent) {
+            this.copyCellContentWithOffset(seedCell, targetCell, rowDelta, colDelta, {
+              type: options.contentType,
+              cut: false,
+              target: 'content',
+            });
+          }
+
+          if (options.copyStyles) {
+            this.copyCellFormatting(seedCell, targetCell);
+          }
+
+          // Store filled column for horizontal replication
+          const key = `${targetCell.colIndex}-${targetCell.rowIndex}`;
+          const sheet = this.workbookManager.getSheet({
+            workbookName: targetCell.workbookName,
+            sheetName: targetCell.sheetName,
+          });
+          const cellKey = `${String.fromCharCode(65 + targetCell.colIndex)}${targetCell.rowIndex + 1}`;
+          const content = sheet?.content.get(cellKey) || "";
+          filledColumns.set(key, { cell: targetCell, content });
+        }
+      }
+    }
+
+    // Step 2: Replicate right - copy filled columns horizontally
+    if (targetWidth > seedWidth) {
+      for (let col = seedWidth; col < targetWidth; col++) {
+        const sourceCol = col % seedWidth;
+        
+        for (let row = 0; row < targetHeight; row++) {
+          const sourceCell: CellAddress = {
+            workbookName: targetRange.workbookName,
+            sheetName: targetRange.sheetName,
+            colIndex: targetRange.range.start.col + sourceCol,
+            rowIndex: targetRange.range.start.row + row,
+          };
+
+          const targetCell: CellAddress = {
+            workbookName: targetRange.workbookName,
+            sheetName: targetRange.sheetName,
+            colIndex: targetRange.range.start.col + col,
+            rowIndex: targetRange.range.start.row + row,
+          };
+
+          const colDelta = targetCell.colIndex - sourceCell.colIndex;
+
+          if (options.copyContent) {
+            this.copyCellContentWithOffset(sourceCell, targetCell, 0, colDelta, {
+              type: options.contentType,
+              cut: false,
+              target: 'content',
+            });
+          }
+
+          if (options.copyStyles) {
+            this.copyCellFormatting(sourceCell, targetCell);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Get the width of a range (number of columns)
+   */
+  private getRangeWidth(range: RangeAddress): number {
+    if (range.range.end.col.type === "infinity") {
+      return 100; // Default for infinite
+    }
+    return range.range.end.col.value - range.range.start.col + 1;
+  }
+
+  /**
+   * Get the height of a range (number of rows)
+   */
+  private getRangeHeight(range: RangeAddress): number {
+    if (range.range.end.row.type === "infinity") {
+      return 100; // Default for infinite
+    }
+    return range.range.end.row.value - range.range.start.row + 1;
+  }
+
+  /**
+   * Expand a RangeAddress into an array of CellAddress
+   * Handles finite ranges, row-bounded, and column-bounded ranges
+   */
+  private expandRangeToCells(rangeAddress: RangeAddress): CellAddress[] {
+    const { workbookName, sheetName, range } = rangeAddress;
+    const cells: CellAddress[] = [];
+
+    const startCol = range.start.col;
+    const startRow = range.start.row;
+
+    // Determine end column
+    let endCol: number;
+    if (range.end.col.type === "infinity") {
+      // Limit infinite column ranges to a reasonable size (e.g., 100 columns)
+      endCol = startCol + 99;
+    } else {
+      endCol = range.end.col.value;
+    }
+
+    // Determine end row
+    let endRow: number;
+    if (range.end.row.type === "infinity") {
+      // Limit infinite row ranges to a reasonable size (e.g., 100 rows)
+      endRow = startRow + 99;
+    } else {
+      endRow = range.end.row.value;
+    }
+
+    // Generate all cells in the range
+    for (let row = startRow; row <= endRow; row++) {
+      for (let col = startCol; col <= endCol; col++) {
+        cells.push({
+          workbookName,
+          sheetName,
+          colIndex: col,
+          rowIndex: row,
+        });
+      }
+    }
+
+    return cells;
+  }
+
+  /**
+   * Copy cell content with explicit row/column offset for fill operations
+   */
+  private copyCellContentWithOffset(
+    sourceCell: CellAddress,
+    targetCell: CellAddress,
+    rowDelta: number,
+    colDelta: number,
+    options: CopyCellsOptions
+  ): void {
+    const sheet = this.workbookManager.getSheet({
+      workbookName: sourceCell.workbookName,
+      sheetName: sourceCell.sheetName,
+    });
+
+    if (!sheet) {
+      return;
+    }
+
+    const key = `${String.fromCharCode(65 + sourceCell.colIndex)}${
+      sourceCell.rowIndex + 1
+    }`;
+    const cellContent = sheet.content.get(key);
+
+    if (!cellContent) {
+      // Source cell is empty - clear target
+      const targetSheet = this.workbookManager.getSheet({
+        workbookName: targetCell.workbookName,
+        sheetName: targetCell.sheetName,
+      });
+      if (targetSheet) {
+        const targetKey = `${String.fromCharCode(65 + targetCell.colIndex)}${
+          targetCell.rowIndex + 1
+        }`;
+        targetSheet.content.delete(targetKey);
+      }
+      return;
+    }
+
+    let targetContent: SerializedCellValue;
+
+    if (options.type === "value") {
+      // Copy evaluated value
+      const evalResult = this.evaluationManager.getCellEvaluationResult(sourceCell);
+      
+      if (!evalResult || evalResult.type !== "value") {
+        // If evaluation failed or is not a value, copy as-is
+        targetContent = cellContent;
+      } else {
+        // Convert to literal value
+        const result = evalResult.result;
+        if (result.type === "number") {
+          targetContent = result.value;
+        } else if (result.type === "string") {
+          targetContent = result.value;
+        } else if (result.type === "boolean") {
+          targetContent = result.value;
+        } else {
+          // Error or other type, copy as-is
+          targetContent = cellContent;
+        }
+      }
+    } else {
+      // Copy formula with offset adjustment
+      if (typeof cellContent === "string" && cellContent.startsWith("=")) {
+        // Adjust formula references based on offset
+        targetContent = this.adjustFormulaWithOffset(
+          cellContent,
+          rowDelta,
+          colDelta
+        );
+      } else {
+        // Not a formula, copy as-is
+        targetContent = cellContent;
+      }
+    }
+
+    // Set target cell content
+    const targetSheet = this.workbookManager.getSheet({
+      workbookName: targetCell.workbookName,
+      sheetName: targetCell.sheetName,
+    });
+
+    if (targetSheet) {
+      const targetKey = `${String.fromCharCode(65 + targetCell.colIndex)}${
+        targetCell.rowIndex + 1
+      }`;
+      targetSheet.content.set(targetKey, targetContent);
+    }
+  }
+
+  /**
+   * Adjust formula references by a specific row/column offset
+   */
+  private adjustFormulaWithOffset(
+    formula: string,
+    rowDelta: number,
+    colDelta: number
+  ): string {
+    try {
+      const ast = parseFormula(formula.slice(1)); // Remove the "=" sign
+
+      const adjustedAst = transformAST(ast, (node) => {
+        if (node.type === "reference") {
+          const refNode = node as ReferenceNode;
+          return {
+            ...refNode,
+            address: {
+              colIndex: refNode.isAbsolute.col
+                ? refNode.address.colIndex
+                : refNode.address.colIndex + colDelta,
+              rowIndex: refNode.isAbsolute.row
+                ? refNode.address.rowIndex
+                : refNode.address.rowIndex + rowDelta,
+            },
+          };
+        } else if (node.type === "range") {
+          const rangeNode = node as RangeNode;
+          return {
+            ...rangeNode,
+            range: {
+              start: {
+                col: rangeNode.isAbsolute.start.col
+                  ? rangeNode.range.start.col
+                  : rangeNode.range.start.col + colDelta,
+                row: rangeNode.isAbsolute.start.row
+                  ? rangeNode.range.start.row
+                  : rangeNode.range.start.row + rowDelta,
+              },
+              end: {
+                col:
+                  rangeNode.range.end.col.type === "number"
+                    ? rangeNode.isAbsolute.end.col
+                      ? rangeNode.range.end.col
+                      : {
+                          type: "number" as const,
+                          value: rangeNode.range.end.col.value + colDelta,
+                        }
+                    : rangeNode.range.end.col,
+                row:
+                  rangeNode.range.end.row.type === "number"
+                    ? rangeNode.isAbsolute.end.row
+                      ? rangeNode.range.end.row
+                      : {
+                          type: "number" as const,
+                          value: rangeNode.range.end.row.value + rowDelta,
+                        }
+                    : rangeNode.range.end.row,
+              },
+            },
+          };
+        }
+        return node;
+      });
+
+      return `=${astToString(adjustedAst)}`;
+    } catch (error) {
+      // If parsing fails, return the original formula
+      console.warn("Failed to adjust formula with offset:", error);
+      return formula;
+    }
+  }
+
+  /**
+   * Copy formatting from one cell to another
+   */
+  private copyCellFormatting(
+    sourceCell: CellAddress,
+    targetCell: CellAddress
+  ): void {
+    // Get all styles that intersect with the source cell
+    const allConditionalStyles = this.styleManager.getAllConditionalStyles();
+    const allCellStyles = this.styleManager.getAllCellStyles();
+
+    const sourceCellRange: SpreadsheetRange = {
+      start: { col: sourceCell.colIndex, row: sourceCell.rowIndex },
+      end: {
+        col: { type: "number", value: sourceCell.colIndex },
+        row: { type: "number", value: sourceCell.rowIndex },
+      },
+    };
+
+    // Copy conditional styles that apply to source cell
+    for (const style of allConditionalStyles) {
+      if (
+        style.area.workbookName === sourceCell.workbookName &&
+        style.area.sheetName === sourceCell.sheetName
+      ) {
+        const intersection = intersectRanges(style.area.range, sourceCellRange);
+        if (intersection) {
+          // Apply style to target cell
+          const newStyle: ConditionalStyle = {
+            area: {
+              workbookName: targetCell.workbookName,
+              sheetName: targetCell.sheetName,
+              range: {
+                start: { col: targetCell.colIndex, row: targetCell.rowIndex },
+                end: {
+                  col: { type: "number", value: targetCell.colIndex },
+                  row: { type: "number", value: targetCell.rowIndex },
+                },
+              },
+            },
+            condition: style.condition,
+          };
+          this.styleManager.addConditionalStyle(newStyle);
+        }
+      }
+    }
+
+    // Copy cell styles that apply to source cell
+    for (const style of allCellStyles) {
+      if (
+        style.area.workbookName === sourceCell.workbookName &&
+        style.area.sheetName === sourceCell.sheetName
+      ) {
+        const intersection = intersectRanges(style.area.range, sourceCellRange);
+        if (intersection) {
+          // Apply style to target cell
+          const newStyle: DirectCellStyle = {
+            area: {
+              workbookName: targetCell.workbookName,
+              sheetName: targetCell.sheetName,
+              range: {
+                start: { col: targetCell.colIndex, row: targetCell.rowIndex },
+                end: {
+                  col: { type: "number", value: targetCell.colIndex },
+                  row: { type: "number", value: targetCell.rowIndex },
+                },
+              },
+            },
+            style: style.style,
+          };
+          this.styleManager.addCellStyle(newStyle);
+        }
       }
     }
   }

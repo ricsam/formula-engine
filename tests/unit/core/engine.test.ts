@@ -1576,6 +1576,344 @@ describe("FormulaEngine", () => {
     });
   });
 
+  describe("smartPaste", () => {
+    test("should use pasteCells when paste area matches source size", () => {
+      // Set up 2x2 source
+      setCellContent("A1", 10);
+      setCellContent("B1", 20);
+      setCellContent("A2", 30);
+      setCellContent("B2", 40);
+
+      const sourceCells = [
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        { workbookName, sheetName, colIndex: 1, rowIndex: 0 },
+        { workbookName, sheetName, colIndex: 0, rowIndex: 1 },
+        { workbookName, sheetName, colIndex: 1, rowIndex: 1 },
+      ];
+
+      // Paste into same-size area at D5:E6
+      engine.smartPaste(
+        sourceCells,
+        {
+          workbookName,
+          sheetName,
+          areas: [{
+            start: { col: 3, row: 4 },
+            end: {
+              col: { type: "number", value: 4 },
+              row: { type: "number", value: 5 },
+            },
+          }],
+        },
+        { cut: false, type: "formula", target: "all" }
+      );
+
+      // Should paste normally (not fill)
+      expect(cell("D5")).toBe(10);
+      expect(cell("E5")).toBe(20);
+      expect(cell("D6")).toBe(30);
+      expect(cell("E6")).toBe(40);
+    });
+
+    test("should use fillAreas when paste area is larger than source", () => {
+      // Set up 1x1 source
+      setCellContent("A1", 42);
+
+      const sourceCells = [
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+      ];
+
+      // Paste into larger area F6:H8 (3x3)
+      engine.smartPaste(
+        sourceCells,
+        {
+          workbookName,
+          sheetName,
+          areas: [{
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number", value: 7 },
+              row: { type: "number", value: 7 },
+            },
+          }],
+        },
+        { cut: false, type: "formula", target: "all" }
+      );
+
+      // Should fill entire area
+      for (let row = 5; row <= 7; row++) {
+        for (let col = 5; col <= 7; col++) {
+          const value = engine.getCellValue({
+            workbookName,
+            sheetName,
+            colIndex: col,
+            rowIndex: row,
+          });
+          expect(value).toBe(42);
+        }
+      }
+    });
+
+    test("should use fillAreas with formulas and adjust references", () => {
+      // Set up source with formula
+      setCellContent("A1", "=ROW()+COLUMN()");
+
+      const sourceCells = [
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+      ];
+
+      // Paste into larger area D5:E6 (2x2)
+      engine.smartPaste(
+        sourceCells,
+        {
+          workbookName,
+          sheetName,
+          areas: [{
+            start: { col: 3, row: 4 },
+            end: {
+              col: { type: "number", value: 4 },
+              row: { type: "number", value: 5 },
+            },
+          }],
+        },
+        { cut: false, type: "formula", target: "all" }
+      );
+
+      // Check formulas were adjusted (column-first fill)
+      const sheetContent = engine.getSheetSerialized({ workbookName, sheetName });
+      expect(sheetContent.get("D5")).toBe("=ROW()+COLUMN()");
+      expect(sheetContent.get("D6")).toBe("=ROW()+COLUMN()");
+      expect(sheetContent.get("E5")).toBe("=ROW()+COLUMN()");
+      expect(sheetContent.get("E6")).toBe("=ROW()+COLUMN()");
+    });
+
+    test("should handle 2x2 source filling into 5x5 area", () => {
+      // Set up 2x2 source
+      setCellContent("A1", 1);
+      setCellContent("B1", 2);
+      setCellContent("A2", 3);
+      setCellContent("B2", 4);
+
+      const sourceCells = [
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        { workbookName, sheetName, colIndex: 1, rowIndex: 0 },
+        { workbookName, sheetName, colIndex: 0, rowIndex: 1 },
+        { workbookName, sheetName, colIndex: 1, rowIndex: 1 },
+      ];
+
+      // Paste into F6:J10 (5x5)
+      engine.smartPaste(
+        sourceCells,
+        {
+          workbookName,
+          sheetName,
+          areas: [{
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number", value: 9 },
+              row: { type: "number", value: 9 },
+            },
+          }],
+        },
+        { cut: false, type: "formula", target: "all" }
+      );
+
+      // Check column-first fill pattern
+      expect(cell("F6")).toBe(1);  // First column repeats: 1,3,1,3,1
+      expect(cell("F7")).toBe(3);
+      expect(cell("F8")).toBe(1);
+      expect(cell("F9")).toBe(3);
+      expect(cell("F10")).toBe(1);
+
+      expect(cell("G6")).toBe(2);  // Second column: 2,4,2,4,2
+      expect(cell("G7")).toBe(4);
+
+      expect(cell("H6")).toBe(1);  // Replicates first column
+      expect(cell("H7")).toBe(3);
+
+      expect(cell("I6")).toBe(2);  // Replicates second column
+      expect(cell("I7")).toBe(4);
+
+      expect(cell("J6")).toBe(1);  // Partial replication
+    });
+
+    test("should use pasteCells when paste area equals source size", () => {
+      // Set up 2x2 source
+      setCellContent("A1", 10);
+      setCellContent("B1", 20);
+      setCellContent("A2", 30);
+      setCellContent("B2", 40);
+
+      const sourceCells = [
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        { workbookName, sheetName, colIndex: 1, rowIndex: 0 },
+        { workbookName, sheetName, colIndex: 0, rowIndex: 1 },
+        { workbookName, sheetName, colIndex: 1, rowIndex: 1 },
+      ];
+
+      // Paste into 2x2 area at F6:G7 (same size)
+      engine.smartPaste(
+        sourceCells,
+        {
+          workbookName,
+          sheetName,
+          areas: [{
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number", value: 6 },
+              row: { type: "number", value: 6 },
+            },
+          }],
+        },
+        { cut: false, type: "formula", target: "all" }
+      );
+
+      // Should use pasteCells - normal paste
+      expect(cell("F6")).toBe(10);
+      expect(cell("G6")).toBe(20);
+      expect(cell("F7")).toBe(30);
+      expect(cell("G7")).toBe(40);
+    });
+
+    test("should respect paste type option", () => {
+      // Set up source with formula
+      setCellContent("B1", 10);
+      setCellContent("A1", "=B1*2");
+
+      const sourceCells = [
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+      ];
+
+      // Paste as value into larger area
+      engine.smartPaste(
+        sourceCells,
+        {
+          workbookName,
+          sheetName,
+          areas: [{
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number", value: 6 },
+              row: { type: "number", value: 6 },
+            },
+          }],
+        },
+        { cut: false, type: "value", target: "all" }
+      );
+
+      // Should paste evaluated values, not formulas
+      const sheetContent = engine.getSheetSerialized({ workbookName, sheetName });
+      expect(sheetContent.get("F6")).toBe(20); // Value, not formula
+      expect(sheetContent.get("G6")).toBe(20);
+    });
+
+    test("should paste to multiple areas independently", () => {
+      // Set up single cell source
+      setCellContent("A1", "Test");
+
+      const sourceCells = [
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+      ];
+
+      // Paste into two different areas
+      engine.smartPaste(
+        sourceCells,
+        {
+          workbookName,
+          sheetName,
+          areas: [
+            {
+              start: { col: 5, row: 5 },
+              end: {
+                col: { type: "number", value: 6 },
+                row: { type: "number", value: 6 },
+              },
+            },
+            {
+              start: { col: 10, row: 10 },
+              end: {
+                col: { type: "number", value: 11 },
+                row: { type: "number", value: 11 },
+              },
+            },
+          ],
+        },
+        { cut: false, type: "formula", target: "all" }
+      );
+
+      // Both areas should be filled
+      expect(cell("F6")).toBe("Test");
+      expect(cell("G6")).toBe("Test");
+      expect(cell("F7")).toBe("Test");
+      expect(cell("G7")).toBe("Test");
+
+      expect(cell("K11")).toBe("Test");
+      expect(cell("L11")).toBe("Test");
+      expect(cell("K12")).toBe("Test");
+      expect(cell("L12")).toBe("Test");
+    });
+
+    test("should handle mixed paste and fill across multiple areas", () => {
+      // Set up 2x2 source
+      setCellContent("A1", 10);
+      setCellContent("B1", 20);
+      setCellContent("A2", 30);
+      setCellContent("B2", 40);
+
+      const sourceCells = [
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        { workbookName, sheetName, colIndex: 1, rowIndex: 0 },
+        { workbookName, sheetName, colIndex: 0, rowIndex: 1 },
+        { workbookName, sheetName, colIndex: 1, rowIndex: 1 },
+      ];
+
+      // Paste into two areas: one same-size (paste), one larger (fill)
+      engine.smartPaste(
+        sourceCells,
+        {
+          workbookName,
+          sheetName,
+          areas: [
+            // Area 1: same size as source (2x2) - should paste
+            {
+              start: { col: 5, row: 5 },
+              end: {
+                col: { type: "number", value: 6 },
+                row: { type: "number", value: 6 },
+              },
+            },
+            // Area 2: larger than source (4x4) - should fill
+            {
+              start: { col: 10, row: 10 },
+              end: {
+                col: { type: "number", value: 13 },
+                row: { type: "number", value: 13 },
+              },
+            },
+          ],
+        },
+        { cut: false, type: "formula", target: "all" }
+      );
+
+      // Area 1 (F6:G7) - should paste normally
+      expect(cell("F6")).toBe(10);
+      expect(cell("G6")).toBe(20);
+      expect(cell("F7")).toBe(30);
+      expect(cell("G7")).toBe(40);
+
+      // Area 2 (K11:N14) - should fill with pattern
+      expect(cell("K11")).toBe(10);
+      expect(cell("L11")).toBe(20);
+      expect(cell("K12")).toBe(30);
+      expect(cell("L12")).toBe(40);
+      // Pattern repeats
+      expect(cell("M11")).toBe(10);
+      expect(cell("N11")).toBe(20);
+      expect(cell("K13")).toBe(10);
+      expect(cell("L13")).toBe(20);
+    });
+  });
+
   describe("evaluateFormula", () => {
     test("should evaluate simple arithmetic formulas", () => {
       const result = engine.evaluateFormula(

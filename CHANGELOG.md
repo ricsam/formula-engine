@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.14
+
+### Patch Changes
+
+- 7c967ac: add smartPaste
+
 ## 0.0.13
 
 ### Patch Changes

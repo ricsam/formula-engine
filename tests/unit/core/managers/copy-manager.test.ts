@@ -13,7 +13,7 @@ describe("CopyManager", () => {
     engine.addSheet({ workbookName, sheetName });
   });
 
-  describe("copyCells - basic functionality", () => {
+  describe("pasteCells - basic functionality", () => {
     test("copies literal values", () => {
       // Set up source cells
       engine.setCellContent(
@@ -36,7 +36,7 @@ describe("CopyManager", () => {
         rowIndex: 2,
       };
 
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "formula",
         target: "content",
@@ -86,7 +86,7 @@ describe("CopyManager", () => {
         rowIndex: 2,
       };
 
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "formula",
         target: "content",
@@ -117,7 +117,7 @@ describe("CopyManager", () => {
         rowIndex: 2,
       };
 
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "formula",
         target: "content",
@@ -156,7 +156,7 @@ describe("CopyManager", () => {
         rowIndex: 2,
       };
 
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "value",
         target: "content",
@@ -171,7 +171,7 @@ describe("CopyManager", () => {
     });
   });
 
-  describe("copyCells - cut behavior", () => {
+  describe("pasteCells - cut behavior", () => {
     test("clears source cells when cut is true", () => {
       // Set up source cells
       engine.setCellContent(
@@ -194,7 +194,7 @@ describe("CopyManager", () => {
         rowIndex: 2,
       };
 
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: true,
         type: "formula",
         target: "content",
@@ -236,7 +236,7 @@ describe("CopyManager", () => {
     });
   });
 
-  describe("copyCells - formatting", () => {
+  describe("pasteCells - formatting", () => {
     test("copies cell styles when target is 'all'", () => {
       // Add a cell style to source range
       engine.addCellStyle({
@@ -268,7 +268,7 @@ describe("CopyManager", () => {
         rowIndex: 5,
       };
 
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "formula",
         target: "all",
@@ -321,7 +321,7 @@ describe("CopyManager", () => {
         rowIndex: 10,
       };
 
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "formula",
         target: "all",
@@ -393,7 +393,7 @@ describe("CopyManager", () => {
         },
       }).length;
 
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "formula",
         target: "content",
@@ -415,7 +415,7 @@ describe("CopyManager", () => {
     });
   });
 
-  describe("copyCells - non-contiguous cells", () => {
+  describe("pasteCells - non-contiguous cells", () => {
     test("handles non-contiguous source cells", () => {
       // Set up non-contiguous source cells
       engine.setCellContent(
@@ -438,7 +438,7 @@ describe("CopyManager", () => {
         rowIndex: 5,
       };
 
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "formula",
         target: "content",
@@ -465,7 +465,7 @@ describe("CopyManager", () => {
     });
   });
 
-  describe("copyCells - edge cases", () => {
+  describe("pasteCells - edge cases", () => {
     test("handles empty source cells", () => {
       const source: CellAddress[] = [
         { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
@@ -478,7 +478,7 @@ describe("CopyManager", () => {
       };
 
       // Should not throw
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "formula",
         target: "content",
@@ -504,7 +504,7 @@ describe("CopyManager", () => {
       };
 
       // Should not throw
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "formula",
         target: "content",
@@ -528,7 +528,7 @@ describe("CopyManager", () => {
         rowIndex: 2,
       };
 
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "value",
         target: "content",
@@ -543,7 +543,7 @@ describe("CopyManager", () => {
     });
   });
 
-  describe("copyCells - cross-sheet", () => {
+  describe("pasteCells - cross-sheet", () => {
     test("copies cells to different sheet", () => {
       const targetSheetName = "Sheet2";
       engine.addSheet({ workbookName, sheetName: targetSheetName });
@@ -564,7 +564,7 @@ describe("CopyManager", () => {
         rowIndex: 0,
       };
 
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "formula",
         target: "content",
@@ -582,8 +582,8 @@ describe("CopyManager", () => {
     });
   });
 
-  describe("copyCells - combined operations", () => {
-    test("cut with all target copies styles and clears source", () => {
+  describe("pasteCells - combined operations", () => {
+    test("cut with all target pastes styles and clears source", () => {
       // Set up source cell with content and style
       engine.setCellContent(
         { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
@@ -617,7 +617,7 @@ describe("CopyManager", () => {
         rowIndex: 5,
       };
 
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: true,
         type: "formula",
         target: "all",
@@ -681,7 +681,7 @@ describe("CopyManager", () => {
         rowIndex: 1, // 2
       };
 
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "formula",
         target: "all",
@@ -746,7 +746,7 @@ describe("CopyManager", () => {
     });
   });
 
-  describe("copyCells - style target mode", () => {
+  describe("pasteCells - style target mode", () => {
     test("copies only styles when target is 'style'", () => {
       // Set up source cell with content and style
       engine.setCellContent(
@@ -782,7 +782,7 @@ describe("CopyManager", () => {
         rowIndex: 2,
       };
 
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "formula",
         target: "style",
@@ -844,7 +844,7 @@ describe("CopyManager", () => {
       };
 
       // Use type: "value" but target: "style" - type should be ignored
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "value",
         target: "style",
@@ -905,7 +905,7 @@ describe("CopyManager", () => {
         rowIndex: 3,
       };
 
-      engine.copyCells(source, target, {
+      engine.pasteCells(source, target, {
         cut: false,
         type: "formula",
         target: "style",
@@ -933,6 +933,826 @@ describe("CopyManager", () => {
         rowIndex: 3,
       });
       expect(targetValue).toBe("");
+    });
+  });
+
+  describe("fillAreas", () => {
+    test("fills single area with literal value", () => {
+      // Set up template cell
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        "Hello"
+      );
+
+      const seedRange = {
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number" as const, value: 0 },
+            row: { type: "number" as const, value: 0 },
+          },
+        },
+      };
+      const targetRanges = [
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number" as const, value: 7 },
+              row: { type: "number" as const, value: 7 },
+            },
+          },
+        },
+      ];
+
+      engine.fillAreas(seedRange, targetRanges, {
+        cut: false,
+        type: "formula",
+        target: "all",
+      });
+
+      // Check that all cells in the area have the value
+      for (let row = 5; row <= 7; row++) {
+        for (let col = 5; col <= 7; col++) {
+          const value = engine.getCellValue({
+            workbookName,
+            sheetName,
+            colIndex: col,
+            rowIndex: row,
+          });
+          expect(value).toBe("Hello");
+        }
+      }
+    });
+
+    test("fills multiple areas with literal value", () => {
+      // Set up template cell
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        42
+      );
+
+      const seedRange = {
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number" as const, value: 0 },
+            row: { type: "number" as const, value: 0 },
+          },
+        },
+      };
+      const targetRanges = [
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number" as const, value: 6 },
+              row: { type: "number" as const, value: 6 },
+            },
+          },
+        },
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 10, row: 10 },
+            end: {
+              col: { type: "number" as const, value: 11 },
+              row: { type: "number" as const, value: 11 },
+            },
+          },
+        },
+      ];
+
+      engine.fillAreas(seedRange, targetRanges, {
+        cut: false,
+        type: "formula",
+        target: "all",
+      });
+
+      // Check first area
+      for (let row = 5; row <= 6; row++) {
+        for (let col = 5; col <= 6; col++) {
+          const value = engine.getCellValue({
+            workbookName,
+            sheetName,
+            colIndex: col,
+            rowIndex: row,
+          });
+          expect(value).toBe(42);
+        }
+      }
+
+      // Check second area
+      for (let row = 10; row <= 11; row++) {
+        for (let col = 10; col <= 11; col++) {
+          const value = engine.getCellValue({
+            workbookName,
+            sheetName,
+            colIndex: col,
+            rowIndex: row,
+          });
+          expect(value).toBe(42);
+        }
+      }
+    });
+
+    test("fills with formulas and adjusts relative references", () => {
+      // Set up template cell with formula at A1
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        "=B1+C1"
+      );
+
+      const seedRange = {
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number" as const, value: 0 },
+            row: { type: "number" as const, value: 0 },
+          },
+        },
+      };
+      const targetRanges = [
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number" as const, value: 6 },
+              row: { type: "number" as const, value: 6 },
+            },
+          },
+        },
+      ];
+
+      engine.fillAreas(seedRange, targetRanges, {
+        cut: false,
+        type: "formula",
+        target: "content",
+      });
+
+      const sheetContent = engine.getSheetSerialized({ workbookName, sheetName });
+
+      // F6 (5,5) should be =G6+H6 (offset +5,+5 from A1)
+      expect(sheetContent.get("F6")).toBe("=G6+H6");
+      // G6 (6,5) should be =H6+I6 (offset +6,+5 from A1)
+      expect(sheetContent.get("G6")).toBe("=H6+I6");
+      // F7 (5,6) should be =G7+H7 (offset +5,+6 from A1)
+      expect(sheetContent.get("F7")).toBe("=G7+H7");
+      // G7 (6,6) should be =H7+I7 (offset +6,+6 from A1)
+      expect(sheetContent.get("G7")).toBe("=H7+I7");
+    });
+
+    test("fills with formulas and preserves absolute references", () => {
+      // Set up template cell with absolute formula
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        "=$B$1"
+      );
+
+      const seedRange = {
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number" as const, value: 0 },
+            row: { type: "number" as const, value: 0 },
+          },
+        },
+      };
+      const targetRanges = [
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number" as const, value: 6 },
+              row: { type: "number" as const, value: 6 },
+            },
+          },
+        },
+      ];
+
+      engine.fillAreas(seedRange, targetRanges, {
+        cut: false,
+        type: "formula",
+        target: "content",
+      });
+
+      const sheetContent = engine.getSheetSerialized({ workbookName, sheetName });
+
+      // All cells should have the same absolute reference
+      expect(sheetContent.get("F6")).toBe("=$B$1");
+      expect(sheetContent.get("G6")).toBe("=$B$1");
+      expect(sheetContent.get("F7")).toBe("=$B$1");
+      expect(sheetContent.get("G7")).toBe("=$B$1");
+    });
+
+    test("fills with mixed references", () => {
+      // Set up template cell with mixed references
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        "=$A1+B$1"
+      );
+
+      const seedRange = {
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number" as const, value: 0 },
+            row: { type: "number" as const, value: 0 },
+          },
+        },
+      };
+      const targetRanges = [
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number" as const, value: 5 },
+              row: { type: "number" as const, value: 6 },
+            },
+          },
+        },
+      ];
+
+      engine.fillAreas(seedRange, targetRanges, {
+        cut: false,
+        type: "formula",
+        target: "content",
+      });
+
+      const sheetContent = engine.getSheetSerialized({ workbookName, sheetName });
+
+      // F6 (5,5): =$A6+G$1 (col A stays, row adjusts; row 1 stays, col adjusts)
+      expect(sheetContent.get("F6")).toBe("=$A6+G$1");
+      // F7 (5,6): =$A7+G$1 
+      expect(sheetContent.get("F7")).toBe("=$A7+G$1");
+    });
+
+    test("fills only styles when target is 'style'", () => {
+      // Set up template cell with content and style
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        "Template"
+      );
+
+      engine.addCellStyle({
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 0 },
+              row: { type: "number", value: 0 },
+            },
+          },
+        },
+        style: {
+          backgroundColor: "#FF0000",
+        },
+      });
+
+      // Add existing content to target cells
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 5, rowIndex: 5 },
+        "Existing"
+      );
+
+      const seedRange = {
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number" as const, value: 0 },
+            row: { type: "number" as const, value: 0 },
+          },
+        },
+      };
+      const targetRanges = [
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number" as const, value: 6 },
+              row: { type: "number" as const, value: 6 },
+            },
+          },
+        },
+      ];
+
+      engine.fillAreas(seedRange, targetRanges, {
+        cut: false,
+        type: "formula",
+        target: "style",
+      });
+
+      // Check that styles were copied
+      const f6Style = engine.getCellStyle({
+        workbookName,
+        sheetName,
+        colIndex: 5,
+        rowIndex: 5,
+      });
+      expect(f6Style?.backgroundColor).toBe("#FF0000");
+
+      // Check that content was NOT changed
+      const f6Value = engine.getCellValue({
+        workbookName,
+        sheetName,
+        colIndex: 5,
+        rowIndex: 5,
+      });
+      expect(f6Value).toBe("Existing");
+
+      // Check that F7 has style but no content
+      const f7Style = engine.getCellStyle({
+        workbookName,
+        sheetName,
+        colIndex: 5,
+        rowIndex: 6,
+      });
+      expect(f7Style?.backgroundColor).toBe("#FF0000");
+
+      const f7Value = engine.getCellValue({
+        workbookName,
+        sheetName,
+        colIndex: 5,
+        rowIndex: 6,
+      });
+      expect(f7Value).toBe("");
+    });
+
+    test("fills only content when target is 'content'", () => {
+      // Set up template cell with content and style
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        "Content"
+      );
+
+      engine.addCellStyle({
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 0 },
+              row: { type: "number", value: 0 },
+            },
+          },
+        },
+        style: {
+          backgroundColor: "#00FF00",
+        },
+      });
+
+      const seedRange = {
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number" as const, value: 0 },
+            row: { type: "number" as const, value: 0 },
+          },
+        },
+      };
+      const targetRanges = [
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number" as const, value: 5 },
+              row: { type: "number" as const, value: 5 },
+            },
+          },
+        },
+      ];
+
+      engine.fillAreas(seedRange, targetRanges, {
+        cut: false,
+        type: "formula",
+        target: "content",
+      });
+
+      // Check that content was copied
+      const f6Value = engine.getCellValue({
+        workbookName,
+        sheetName,
+        colIndex: 5,
+        rowIndex: 5,
+      });
+      expect(f6Value).toBe("Content");
+
+      // Check that style was NOT copied
+      const f6Style = engine.getCellStyle({
+        workbookName,
+        sheetName,
+        colIndex: 5,
+        rowIndex: 5,
+      });
+      expect(f6Style).toBeUndefined();
+    });
+
+    test("clears seed range when cut is true", () => {
+      // Set up template cell
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        "Template"
+      );
+
+      const seedRange = {
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number" as const, value: 0 },
+            row: { type: "number" as const, value: 0 },
+          },
+        },
+      };
+      const targetRanges = [
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number" as const, value: 5 },
+              row: { type: "number" as const, value: 5 },
+            },
+          },
+        },
+      ];
+
+      engine.fillAreas(seedRange, targetRanges, {
+        cut: true,
+        type: "formula",
+        target: "all",
+      });
+
+      // Check that target was filled
+      const f6Value = engine.getCellValue({
+        workbookName,
+        sheetName,
+        colIndex: 5,
+        rowIndex: 5,
+      });
+      expect(f6Value).toBe("Template");
+
+      // Check that seed range was cleared
+      const a1Value = engine.getCellValue({
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 0,
+      });
+      expect(a1Value).toBe("");
+    });
+
+    test("fills empty seed range clears target areas", () => {
+      // Set up target cells with existing content
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 5, rowIndex: 5 },
+        "Old"
+      );
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 6, rowIndex: 5 },
+        "Data"
+      );
+
+      const seedRange = {
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number" as const, value: 0 },
+            row: { type: "number" as const, value: 0 },
+          },
+        },
+      }; // Empty cell
+      const targetRanges = [
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number" as const, value: 6 },
+              row: { type: "number" as const, value: 5 },
+            },
+          },
+        },
+      ];
+
+      engine.fillAreas(seedRange, targetRanges, {
+        cut: false,
+        type: "formula",
+        target: "content",
+      });
+
+      // Check that target cells were cleared
+      const f6Value = engine.getCellValue({
+        workbookName,
+        sheetName,
+        colIndex: 5,
+        rowIndex: 5,
+      });
+      expect(f6Value).toBe("");
+
+      const g6Value = engine.getCellValue({
+        workbookName,
+        sheetName,
+        colIndex: 6,
+        rowIndex: 5,
+      });
+      expect(g6Value).toBe("");
+    });
+
+    test("fills with type='value' to copy evaluated values", () => {
+      // Set up source cells for formula
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 1, rowIndex: 0 },
+        10
+      );
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 2, rowIndex: 0 },
+        20
+      );
+
+      // Template cell with formula
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        "=B1+C1"
+      );
+
+      const seedRange = {
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number" as const, value: 0 },
+            row: { type: "number" as const, value: 0 },
+          },
+        },
+      };
+      const targetRanges = [
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number" as const, value: 5 },
+              row: { type: "number" as const, value: 5 },
+            },
+          },
+        },
+      ];
+
+      engine.fillAreas(seedRange, targetRanges, {
+        cut: false,
+        type: "value",
+        target: "content",
+      });
+
+      // Check that the evaluated value was copied, not the formula
+      const sheetContent = engine.getSheetSerialized({ workbookName, sheetName });
+      expect(sheetContent.get("F6")).toBe(30); // Should be the value, not "=B1+C1"
+    });
+
+    test("fills with 2x2 seed pattern (column-first strategy)", () => {
+      // Set up 2x2 seed pattern
+      engine.setCellContent({ workbookName, sheetName, colIndex: 0, rowIndex: 0 }, 10); // A1
+      engine.setCellContent({ workbookName, sheetName, colIndex: 1, rowIndex: 0 }, 20); // B1
+      engine.setCellContent({ workbookName, sheetName, colIndex: 0, rowIndex: 1 }, 11); // A2
+      engine.setCellContent({ workbookName, sheetName, colIndex: 1, rowIndex: 1 }, 21); // B2
+
+      const seedRange = {
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number" as const, value: 1 },
+            row: { type: "number" as const, value: 1 },
+          },
+        },
+      };
+
+      // Fill into 5x5 target range
+      const targetRanges = [
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number" as const, value: 9 },
+              row: { type: "number" as const, value: 9 },
+            },
+          },
+        },
+      ];
+
+      engine.fillAreas(seedRange, targetRanges, {
+        cut: false,
+        type: "formula",
+        target: "content",
+      });
+
+      // Check the pattern fills correctly
+      // Column-first: first fill down to height 5, then replicate right
+      // F6,F7,F8,F9,F10 should be 10,11,10,11,10 (pattern repeats vertically)
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 5, rowIndex: 5 })).toBe(10); // F6
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 5, rowIndex: 6 })).toBe(11); // F7
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 5, rowIndex: 7 })).toBe(10); // F8
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 5, rowIndex: 8 })).toBe(11); // F9
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 5, rowIndex: 9 })).toBe(10); // F10
+
+      // G column should be 20,21,20,21,20
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 6, rowIndex: 5 })).toBe(20); // G6
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 6, rowIndex: 6 })).toBe(21); // G7
+
+      // H column should replicate F column (10,11,10,11,10)
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 7, rowIndex: 5 })).toBe(10); // H6
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 7, rowIndex: 6 })).toBe(11); // H7
+
+      // I column should replicate G column (20,21,20,21,20)
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 8, rowIndex: 5 })).toBe(20); // I6
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 8, rowIndex: 6 })).toBe(21); // I7
+
+      // J column should replicate F column again (partial - 1 col)
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 9, rowIndex: 5 })).toBe(10); // J6
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 9, rowIndex: 6 })).toBe(11); // J7
+    });
+
+    test("fills with 2x2 seed containing formulas", () => {
+      // Set up 2x2 seed with formulas
+      engine.setCellContent({ workbookName, sheetName, colIndex: 0, rowIndex: 0 }, "=ROW()"); // A1
+      engine.setCellContent({ workbookName, sheetName, colIndex: 1, rowIndex: 0 }, "=COLUMN()"); // B1
+      engine.setCellContent({ workbookName, sheetName, colIndex: 0, rowIndex: 1 }, "=ROW()+10"); // A2
+      engine.setCellContent({ workbookName, sheetName, colIndex: 1, rowIndex: 1 }, "=COLUMN()+10"); // B2
+
+      const seedRange = {
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number" as const, value: 1 },
+            row: { type: "number" as const, value: 1 },
+          },
+        },
+      };
+
+      const targetRanges = [
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number" as const, value: 7 },
+              row: { type: "number" as const, value: 7 },
+            },
+          },
+        },
+      ];
+
+      engine.fillAreas(seedRange, targetRanges, {
+        cut: false,
+        type: "formula",
+        target: "content",
+      });
+
+      // Check formulas are adjusted correctly
+      const sheetContent = engine.getSheetSerialized({ workbookName, sheetName });
+      
+      // F6 should have =ROW() (from A1, adjusted +5 rows, +5 cols)
+      expect(sheetContent.get("F6")).toBe("=ROW()");
+      // G6 should have =COLUMN() (from B1)
+      expect(sheetContent.get("G6")).toBe("=COLUMN()");
+      // F7 should have =ROW()+10 (from A2)
+      expect(sheetContent.get("F7")).toBe("=ROW()+10");
+      // G7 should have =COLUMN()+10 (from B2)
+      expect(sheetContent.get("G7")).toBe("=COLUMN()+10");
+
+      // Check pattern repeats
+      // F8 should be =ROW() again (pattern repeats)
+      expect(sheetContent.get("F8")).toBe("=ROW()");
+      
+      // H6 should replicate F6
+      expect(sheetContent.get("H6")).toBe("=ROW()");
+    });
+
+    test("fills with multi-cell seed and styles", () => {
+      // Set up 2x1 seed with different styles
+      engine.setCellContent({ workbookName, sheetName, colIndex: 0, rowIndex: 0 }, "A");
+      engine.setCellContent({ workbookName, sheetName, colIndex: 1, rowIndex: 0 }, "B");
+
+      engine.addCellStyle({
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } },
+          },
+        },
+        style: { backgroundColor: "#FF0000" },
+      });
+
+      engine.addCellStyle({
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 1, row: 0 },
+            end: { col: { type: "number", value: 1 }, row: { type: "number", value: 0 } },
+          },
+        },
+        style: { backgroundColor: "#00FF00" },
+      });
+
+      const seedRange = {
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number" as const, value: 1 },
+            row: { type: "number" as const, value: 0 },
+          },
+        },
+      };
+
+      const targetRanges = [
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 5, row: 5 },
+            end: {
+              col: { type: "number" as const, value: 8 },
+              row: { type: "number" as const, value: 7 },
+            },
+          },
+        },
+      ];
+
+      engine.fillAreas(seedRange, targetRanges, {
+        cut: false,
+        type: "formula",
+        target: "all",
+      });
+
+      // Check content
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 5, rowIndex: 5 })).toBe("A");
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 6, rowIndex: 5 })).toBe("B");
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 7, rowIndex: 5 })).toBe("A"); // Replicates
+      expect(engine.getCellValue({ workbookName, sheetName, colIndex: 8, rowIndex: 5 })).toBe("B");
+
+      // Check styles
+      const f6Style = engine.getCellStyle({ workbookName, sheetName, colIndex: 5, rowIndex: 5 });
+      expect(f6Style?.backgroundColor).toBe("#FF0000");
+
+      const g6Style = engine.getCellStyle({ workbookName, sheetName, colIndex: 6, rowIndex: 5 });
+      expect(g6Style?.backgroundColor).toBe("#00FF00");
+
+      const h6Style = engine.getCellStyle({ workbookName, sheetName, colIndex: 7, rowIndex: 5 });
+      expect(h6Style?.backgroundColor).toBe("#FF0000"); // Replicates F6's style
+
+      const i6Style = engine.getCellStyle({ workbookName, sheetName, colIndex: 8, rowIndex: 5 });
+      expect(i6Style?.backgroundColor).toBe("#00FF00"); // Replicates G6's style
     });
   });
 });

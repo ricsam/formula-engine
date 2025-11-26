@@ -96,7 +96,11 @@ export class FormulaEngine {
       this.styleManager
     );
 
-    this.autoFillManager = new AutoFill(this.workbookManager, this);
+    this.autoFillManager = new AutoFill(
+      this.workbookManager,
+      this.styleManager,
+      this
+    );
 
     this._workbookManager = this.workbookManager;
     this._namedExpressionManager = this.namedExpressionManager;
@@ -460,9 +464,9 @@ export class FormulaEngine {
 
   //#region Copy/Paste
   /**
-   * Copy cells from source to target
+   * Paste cells from source to target
    */
-  copyCells(
+  pasteCells(
     source: CellAddress[],
     target: CellAddress,
     options: CopyCellsOptions
@@ -470,6 +474,177 @@ export class FormulaEngine {
     this.copyManager.copyCells(source, target, options);
     this.reevaluate();
     this.eventManager.emitUpdate();
+  }
+
+  /**
+   * Fill one or more areas with a seed range's content/style
+   * Uses column-first strategy: fills down, then replicates right
+   * Formulas are adjusted based on each target cell's offset from the seed
+   * 
+   * @param seedRange - The range to use as a template/pattern
+   * @param targetRanges - One or more range addresses to fill
+   * @param options - Copy options (target: 'all'|'content'|'style', type: 'value'|'formula', cut: boolean)
+   * 
+   * @example
+   * // Fill F6:J10 with A1:B2 seed (2x2 pattern fills 5x5 area)
+   * engine.fillAreas(
+   *   {
+   *     workbookName,
+   *     sheetName,
+   *     range: {
+   *       start: { col: 0, row: 0 },
+   *       end: { col: { type: "number", value: 1 }, row: { type: "number", value: 1 } }
+   *     }
+   *   },
+   *   [{
+   *     workbookName,
+   *     sheetName,
+   *     range: {
+   *       start: { col: 5, row: 5 },
+   *       end: { col: { type: "number", value: 9 }, row: { type: "number", value: 9 } }
+   *     }
+   *   }],
+   *   { cut: false, type: "formula", target: "all" }
+   * );
+   */
+  fillAreas(
+    seedRange: RangeAddress,
+    targetRanges: RangeAddress[],
+    options: CopyCellsOptions
+  ): void {
+    this.copyManager.fillAreas(seedRange, targetRanges, options);
+    this.reevaluate();
+    this.eventManager.emitUpdate();
+  }
+
+  /**
+   * Smart paste that automatically determines whether to paste or fill
+   * Handles multiple selection areas - each area is independently pasted or filled
+   * - If area is larger than source, uses fillAreas() to fill the area
+   * - If area is same size or smaller, uses pasteCells() for normal paste
+   * 
+   * @param sourceCells - The copied cells
+   * @param pasteSelection - One or more selection areas where user is pasting
+   * @param options - Copy options
+   * 
+   * @example
+   * // Copy A1, paste into two areas B1:C2 and E5:F6 - both get filled
+   * engine.smartPaste(
+   *   [{ workbookName, sheetName, colIndex: 0, rowIndex: 0 }],
+   *   {
+   *     workbookName,
+   *     sheetName,
+   *     areas: [
+   *       { start: { col: 1, row: 0 }, end: { col: { type: "number", value: 2 }, row: { type: "number", value: 1 } } },
+   *       { start: { col: 4, row: 4 }, end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } } }
+   *     ]
+   *   },
+   *   { cut: false, type: "formula", target: "all" }
+   * );
+   */
+  smartPaste(
+    sourceCells: CellAddress[],
+    pasteSelection: {
+      workbookName: string;
+      sheetName: string;
+      areas: SpreadsheetRange[];
+    },
+    options: CopyCellsOptions
+  ): void {
+    if (sourceCells.length === 0) {
+      return;
+    }
+
+    // Calculate source bounds once
+    const sourceBounds = this.getBoundsFromCells(sourceCells);
+    const sourceWidth = sourceBounds.maxCol - sourceBounds.minCol + 1;
+    const sourceHeight = sourceBounds.maxRow - sourceBounds.minRow + 1;
+
+    // Create seed range for fill operations
+    const seedRange: RangeAddress = {
+      workbookName: sourceCells[0]!.workbookName,
+      sheetName: sourceCells[0]!.sheetName,
+      range: {
+        start: { col: sourceBounds.minCol, row: sourceBounds.minRow },
+        end: {
+          col: { type: "number", value: sourceBounds.maxCol },
+          row: { type: "number", value: sourceBounds.maxRow },
+        },
+      },
+    };
+
+    // Process each selected area independently
+    for (const area of pasteSelection.areas) {
+      const pasteStartCol = area.start.col;
+      const pasteStartRow = area.start.row;
+      const pasteEndCol = area.end.col.type === "number"
+        ? area.end.col.value
+        : pasteStartCol;
+      const pasteEndRow = area.end.row.type === "number"
+        ? area.end.row.value
+        : pasteStartRow;
+
+      const pasteWidth = pasteEndCol - pasteStartCol + 1;
+      const pasteHeight = pasteEndRow - pasteStartRow + 1;
+
+      // Decide per area: paste or fill?
+      const shouldFill = pasteWidth > sourceWidth || pasteHeight > sourceHeight;
+
+      if (shouldFill) {
+        // Use fillAreas for this area
+        const targetRange: RangeAddress = {
+          workbookName: pasteSelection.workbookName,
+          sheetName: pasteSelection.sheetName,
+          range: {
+            start: { col: pasteStartCol, row: pasteStartRow },
+            end: {
+              col: { type: "number", value: pasteEndCol },
+              row: { type: "number", value: pasteEndRow },
+            },
+          },
+        };
+
+        this.fillAreas(seedRange, [targetRange], options);
+      } else {
+        // Use pasteCells for this area
+        const target: CellAddress = {
+          workbookName: pasteSelection.workbookName,
+          sheetName: pasteSelection.sheetName,
+          colIndex: pasteStartCol,
+          rowIndex: pasteStartRow,
+        };
+
+        this.pasteCells(sourceCells, target, options);
+      }
+    }
+  }
+
+  /**
+   * Get bounds (min/max row/col) from an array of cell addresses
+   */
+  private getBoundsFromCells(cells: CellAddress[]): {
+    minCol: number;
+    minRow: number;
+    maxCol: number;
+    maxRow: number;
+  } {
+    if (cells.length === 0) {
+      throw new Error("Cannot get bounds from empty cell array");
+    }
+
+    let minCol = Infinity;
+    let minRow = Infinity;
+    let maxCol = -Infinity;
+    let maxRow = -Infinity;
+
+    for (const cell of cells) {
+      minCol = Math.min(minCol, cell.colIndex);
+      minRow = Math.min(minRow, cell.rowIndex);
+      maxCol = Math.max(maxCol, cell.colIndex);
+      maxRow = Math.max(maxRow, cell.rowIndex);
+    }
+
+    return { minCol, minRow, maxCol, maxRow };
   }
   //#endregion
 
@@ -737,7 +912,8 @@ export class FormulaEngine {
 
   //#region Auto-fill
   /**
-   * Auto-fills the fillRange based on the seedRange and the direction.
+   * Auto-fills one or more ranges based on the seedRange and the direction.
+   * Supports pattern detection and style copying.
    */
   autoFill(
     opts: { sheetName: string; workbookName: string },
@@ -746,15 +922,15 @@ export class FormulaEngine {
      */
     seedRange: SpreadsheetRange,
     /**
-     * the new cells populated by the drag, excluding the seed
+     * One or more ranges to fill (the new cells populated by the drag, excluding the seed)
      */
-    fillRange: SpreadsheetRange,
+    fillRanges: SpreadsheetRange[],
     /**
      * The direction of the fill.
      */
     direction: FillDirection
   ) {
-    this.autoFillManager.fill(opts, seedRange, fillRange, direction);
+    this.autoFillManager.fill(opts, seedRange, fillRanges, direction);
   }
 
   /**

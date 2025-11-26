@@ -8,6 +8,8 @@ import type {
   SpreadsheetRange,
   FiniteSpreadsheetRange,
   LocalCellAddress,
+  ConditionalStyle,
+  DirectCellStyle,
 } from "./types";
 import type { FillDirection } from "@ricsam/selection-manager";
 import { parseFormula } from "../parser/parser";
@@ -16,10 +18,13 @@ import { transformAST } from "./ast-traverser";
 import type { ReferenceNode, RangeNode } from "../parser/ast";
 import { getCellReference } from "./utils";
 import type { WorkbookManager } from "./managers/workbook-manager";
+import type { StyleManager } from "./managers/style-manager";
+import { intersectRanges } from "./utils/range-utils";
 
 export class AutoFill {
   constructor(
     private workbookManager: WorkbookManager,
+    private styleManager: StyleManager,
     private engine: {
       setCellContent: (
         address: CellAddress,
@@ -61,6 +66,21 @@ export class AutoFill {
   }
 
   fill(
+    opts: { sheetName: string; workbookName: string },
+    seedRange: SpreadsheetRange,
+    fillRanges: SpreadsheetRange[],
+    direction: FillDirection
+  ) {
+    // Process each fill range
+    for (const fillRange of fillRanges) {
+      this.fillSingleRange(opts, seedRange, fillRange, direction);
+    }
+  }
+
+  /**
+   * Fill a single range with seed data and styles
+   */
+  private fillSingleRange(
     opts: { sheetName: string; workbookName: string },
     seedRange: SpreadsheetRange,
     fillRange: SpreadsheetRange,
@@ -114,6 +134,9 @@ export class AutoFill {
 
     // Update sheet content in a single operation
     this.engine.setSheetContent(opts, newContent);
+
+    // Copy styles from seed to fill range
+    this.fillStyles(opts, finiteSeedRange, finiteFillRange, direction);
   }
 
   private getSeedCells(
@@ -498,6 +521,119 @@ export class AutoFill {
       // If parsing fails, return the original formula
       console.warn("Failed to adjust formula references:", error);
       return formula;
+    }
+  }
+
+  /**
+   * Fill styles from seed range to fill range based on direction
+   */
+  private fillStyles(
+    opts: { sheetName: string; workbookName: string },
+    seedRange: FiniteSpreadsheetRange,
+    fillRange: FiniteSpreadsheetRange,
+    direction: FillDirection
+  ): void {
+    const seedWidth = seedRange.end.col - seedRange.start.col + 1;
+    const seedHeight = seedRange.end.row - seedRange.start.row + 1;
+
+    // Get all styles intersecting with seed range
+    const seedSpreadsheetRange: SpreadsheetRange = {
+      start: { col: seedRange.start.col, row: seedRange.start.row },
+      end: {
+        col: { type: "number", value: seedRange.end.col },
+        row: { type: "number", value: seedRange.end.row },
+      },
+    };
+
+    const allConditionalStyles = this.styleManager.getAllConditionalStyles();
+    const allCellStyles = this.styleManager.getAllCellStyles();
+
+    // For each cell in fill range, determine corresponding seed cell and copy styles
+    for (let row = fillRange.start.row; row <= fillRange.end.row; row++) {
+      for (let col = fillRange.start.col; col <= fillRange.end.col; col++) {
+        // Determine which seed cell corresponds to this fill cell
+        let seedCol: number;
+        let seedRow: number;
+
+        if (direction === "down" || direction === "up") {
+          // Vertical fill: keep column aligned, pattern repeat on rows
+          seedCol = seedRange.start.col + (col - fillRange.start.col) % seedWidth;
+          seedRow = seedRange.start.row + (row - fillRange.start.row) % seedHeight;
+        } else {
+          // Horizontal fill: keep row aligned, pattern repeat on columns
+          seedRow = seedRange.start.row + (row - fillRange.start.row) % seedHeight;
+          seedCol = seedRange.start.col + (col - fillRange.start.col) % seedWidth;
+        }
+
+        const sourceCellRange: SpreadsheetRange = {
+          start: { col: seedCol, row: seedRow },
+          end: {
+            col: { type: "number", value: seedCol },
+            row: { type: "number", value: seedRow },
+          },
+        };
+
+        const targetCell: CellAddress = {
+          workbookName: opts.workbookName,
+          sheetName: opts.sheetName,
+          colIndex: col,
+          rowIndex: row,
+        };
+
+        // Copy conditional styles
+        for (const style of allConditionalStyles) {
+          if (
+            style.area.workbookName === opts.workbookName &&
+            style.area.sheetName === opts.sheetName
+          ) {
+            const intersection = intersectRanges(style.area.range, sourceCellRange);
+            if (intersection) {
+              const newStyle: ConditionalStyle = {
+                area: {
+                  workbookName: opts.workbookName,
+                  sheetName: opts.sheetName,
+                  range: {
+                    start: { col: targetCell.colIndex, row: targetCell.rowIndex },
+                    end: {
+                      col: { type: "number", value: targetCell.colIndex },
+                      row: { type: "number", value: targetCell.rowIndex },
+                    },
+                  },
+                },
+                condition: style.condition,
+              };
+              this.styleManager.addConditionalStyle(newStyle);
+            }
+          }
+        }
+
+        // Copy cell styles
+        for (const style of allCellStyles) {
+          if (
+            style.area.workbookName === opts.workbookName &&
+            style.area.sheetName === opts.sheetName
+          ) {
+            const intersection = intersectRanges(style.area.range, sourceCellRange);
+            if (intersection) {
+              const newStyle: DirectCellStyle = {
+                area: {
+                  workbookName: opts.workbookName,
+                  sheetName: opts.sheetName,
+                  range: {
+                    start: { col: targetCell.colIndex, row: targetCell.rowIndex },
+                    end: {
+                      col: { type: "number", value: targetCell.colIndex },
+                      row: { type: "number", value: targetCell.rowIndex },
+                    },
+                  },
+                },
+                style: style.style,
+              };
+              this.styleManager.addCellStyle(newStyle);
+            }
+          }
+        }
+      }
     }
   }
 }

@@ -137,7 +137,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         },
       };
 
-      engine.autoFill(sheetAddress, seedRange, fillRange, "right");
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "right");
 
       expect(cell("B1")).toBe(42);
       expect(cell("C1")).toBe(42);
@@ -163,7 +163,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         },
       };
 
-      engine.autoFill(sheetAddress, seedRange, fillRange, "down");
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "down");
 
       expect(cell("A2")).toBe("Apple");
       expect(cell("A3")).toBe("Apple");
@@ -195,7 +195,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         },
       };
 
-      engine.autoFill(sheetAddress, seedRange, fillRange, "right");
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "right");
 
       expect(cell("B1")).toBe("");
       expect(cell("C1")).toBe("");
@@ -220,7 +220,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         },
       };
 
-      engine.autoFill(sheetAddress, seedRange, fillRange, "right");
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "right");
 
       // Check raw formula content, not evaluated value
       const sheetContent = engine.getSheetSerialized(sheetAddress);
@@ -247,7 +247,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         },
       };
 
-      engine.autoFill(sheetAddress, seedRange, fillRange, "right");
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "right");
 
       // Check raw formula content, not evaluated value
       const sheetContent = engine.getSheetSerialized(sheetAddress);
@@ -273,7 +273,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         },
       };
 
-      engine.autoFill(sheetAddress, seedRange, fillRange, "down");
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "down");
 
       // Check raw formula content, not evaluated value
       const sheetContent = engine.getSheetSerialized(sheetAddress);
@@ -307,7 +307,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         },
       };
 
-      engine.autoFill(sheetAddress, seedRange, fillRange, "down");
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "down");
 
       expect(cell("A3")).toBe(6);
       expect(cell("A4")).toBe(8);
@@ -339,7 +339,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         },
       };
 
-      engine.autoFill(sheetAddress, seedRange, fillRange, "right");
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "right");
 
       expect(cell("C1")).toBe(5);
       expect(cell("D1")).toBe(7);
@@ -371,7 +371,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         },
       };
 
-      engine.autoFill(sheetAddress, seedRange, fillRange, "down");
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "down");
 
       expect(cell("A3")).toBe("20");
       expect(cell("A4")).toBe("25");
@@ -402,7 +402,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         },
       };
 
-      engine.autoFill(sheetAddress, seedRange, fillRange, "down");
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "down");
 
       expect(cell("A3")).toBe(4);
       expect(cell("A4")).toBe(1);
@@ -435,7 +435,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         },
       };
 
-      engine.autoFill(sheetAddress, seedRange, fillRange, "down");
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "down");
 
       expect(cell("A3")).toBe("A");
       expect(cell("A4")).toBe("B");
@@ -470,7 +470,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         },
       };
 
-      engine.autoFill(sheetAddress, seedRange, fillRange, "right");
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "right");
 
       expect(cell("C1")).toBe("A1");
       expect(cell("D1")).toBe("B1");
@@ -503,7 +503,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         },
       };
 
-      engine.autoFill(sheetAddress, seedRange, fillRange, "right");
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "right");
 
       // Check raw formula content, not evaluated value
       const sheetContent = engine.getSheetSerialized(sheetAddress);
@@ -531,7 +531,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
       };
 
       expect(() =>
-        engine.autoFill(sheetAddress, seedRange, infiniteFillRange, "right")
+        engine.autoFill(sheetAddress, seedRange, [infiniteFillRange], "right")
       ).toThrow("AutoFill with infinite ranges is not supported");
     });
 
@@ -556,7 +556,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         engine.autoFill(
           { workbookName, sheetName: "NonExistentSheet" },
           seedRange,
-          fillRange,
+          [fillRange],
           "right"
         )
       ).toThrow("Sheet not found");
@@ -589,7 +589,7 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         },
       };
 
-      engine.autoFill(sheetAddress, seedRange, fillRange, "up");
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "up");
 
       expect(cell("A2")).toBe(5);
       expect(cell("A1")).toBe(0);
@@ -620,10 +620,158 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
         },
       };
 
-      engine.autoFill(sheetAddress, seedRange, fillRange, "left");
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "left");
 
       expect(cell("B1")).toBe(15);
       expect(cell("A1")).toBe(10);
+    });
+  });
+
+  describe("autoFill - Style Copying", () => {
+    it("should copy cell styles when filling down", () => {
+      // Set up seed cell with content and style
+      setCellContent("A1", "Header");
+      
+      engine.addCellStyle({
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } },
+          },
+        },
+        style: { backgroundColor: "#FF0000", bold: true },
+      });
+
+      const seedRange: SpreadsheetRange = {
+        start: { col: 0, row: 0 },
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 0 },
+        },
+      };
+
+      const fillRange: SpreadsheetRange = {
+        start: { col: 0, row: 1 },
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 3 },
+        },
+      };
+
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "down");
+
+      // Check styles were copied
+      const a2Style = engine.getCellStyle({ workbookName, sheetName, colIndex: 0, rowIndex: 1 });
+      expect(a2Style?.backgroundColor).toBe("#FF0000");
+      expect(a2Style?.bold).toBe(true);
+
+      const a3Style = engine.getCellStyle({ workbookName, sheetName, colIndex: 0, rowIndex: 2 });
+      expect(a3Style?.backgroundColor).toBe("#FF0000");
+      expect(a3Style?.bold).toBe(true);
+    });
+
+    it("should copy conditional styles when filling right", () => {
+      // Set up seed cell with conditional style
+      setCellContent("A1", 10);
+      
+      engine.addConditionalStyle({
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } },
+          },
+        },
+        condition: {
+          type: "formula",
+          formula: "TRUE",
+          color: { l: 70, c: 80, h: 120 },
+        },
+      });
+
+      const seedRange: SpreadsheetRange = {
+        start: { col: 0, row: 0 },
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 0 },
+        },
+      };
+
+      const fillRange: SpreadsheetRange = {
+        start: { col: 1, row: 0 },
+        end: {
+          col: { type: "number", value: 2 },
+          row: { type: "number", value: 0 },
+        },
+      };
+
+      engine.autoFill(sheetAddress, seedRange, [fillRange], "right");
+
+      // Check conditional styles were copied to B1 and C1
+      const allStyles = engine.getConditionalStylesIntersectingWithRange({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 1, row: 0 },
+          end: { col: { type: "number", value: 2 }, row: { type: "number", value: 0 } },
+        },
+      });
+
+      expect(allStyles.length).toBeGreaterThan(0);
+    });
+
+    it("should fill multiple ranges with styles", () => {
+      // Set up seed with style
+      setCellContent("A1", "Test");
+      
+      engine.addCellStyle({
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } },
+          },
+        },
+        style: { backgroundColor: "#0000FF" },
+      });
+
+      const seedRange: SpreadsheetRange = {
+        start: { col: 0, row: 0 },
+        end: {
+          col: { type: "number", value: 0 },
+          row: { type: "number", value: 0 },
+        },
+      };
+
+      const fillRanges: SpreadsheetRange[] = [
+        {
+          start: { col: 1, row: 0 },
+          end: { col: { type: "number", value: 2 }, row: { type: "number", value: 0 } },
+        },
+        {
+          start: { col: 0, row: 5 },
+          end: { col: { type: "number", value: 0 }, row: { type: "number", value: 6 } },
+        },
+      ];
+
+      engine.autoFill(sheetAddress, seedRange, fillRanges, "right");
+
+      // Check content in both ranges
+      expect(cell("B1")).toBe("Test");
+      expect(cell("C1")).toBe("Test");
+      expect(cell("A6")).toBe("Test");
+      expect(cell("A7")).toBe("Test");
+
+      // Check styles in both ranges
+      const b1Style = engine.getCellStyle({ workbookName, sheetName, colIndex: 1, rowIndex: 0 });
+      expect(b1Style?.backgroundColor).toBe("#0000FF");
+
+      const a6Style = engine.getCellStyle({ workbookName, sheetName, colIndex: 0, rowIndex: 5 });
+      expect(a6Style?.backgroundColor).toBe("#0000FF");
     });
   });
 });

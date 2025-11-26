@@ -1,6 +1,10 @@
-import { SelectionManager } from "@ricsam/selection-manager";
+import { SelectionManager, type SMArea } from "@ricsam/selection-manager";
 import { FormulaEngine } from "../src/core/engine";
-import type { CellAddress, SerializedCellValue } from "../src/core/types";
+import type {
+  CellAddress,
+  SerializedCellValue,
+  SpreadsheetRange,
+} from "../src/core/types";
 import { parseCellReference } from "../src/core/utils";
 import { indexToColumn } from "../src/core/utils";
 import { getCellReference } from "../src/core/utils";
@@ -188,17 +192,40 @@ export class WorkbookClipboardManager extends ClipboardUtils {
     pasteType: "value" | "formula";
   }): void {
     if (context.rawString === this.signature) {
-      // the update coming from the os is the same which we have stored
-      // then we are doing an internal paste operation
-      const topLeftCell = context.selectionManager.getTopLeftCellInSelection();
-      if (!topLeftCell) return;
-      this.engine.copyCells(
+      // Internal paste operation - use smartPaste to handle both copy and fill
+      const selections = context.selectionManager.selections;
+      if (!selections || selections.length === 0) return;
+
+      // Convert each SMArea to SpreadsheetRange
+      const convertSMAreaToSpreadsheetRange = (
+        area: SMArea
+      ): SpreadsheetRange => {
+        return {
+          start: {
+            col: area.start.col,
+            row: area.start.row,
+          },
+          end: {
+            col:
+              area.end.col.type === "infinity"
+                ? { type: "infinity" as const, sign: "positive" as const }
+                : { type: "number" as const, value: area.end.col.value },
+            row:
+              area.end.row.type === "infinity"
+                ? { type: "infinity" as const, sign: "positive" as const }
+                : { type: "number" as const, value: area.end.row.value },
+          },
+        };
+      };
+
+      const areas = selections.map(convertSMAreaToSpreadsheetRange);
+
+      this.engine.smartPaste(
         this.copiedCells,
         {
           workbookName: context.workbookName,
           sheetName: context.sheetName,
-          colIndex: topLeftCell.col,
-          rowIndex: topLeftCell.row,
+          areas,
         },
         {
           cut: false,
@@ -207,12 +234,8 @@ export class WorkbookClipboardManager extends ClipboardUtils {
         }
       );
     } else {
-      // the update coming from the os is different from the one we have stored
-      // then we are doing an external paste operation
-      // the selection manager will trigger the listenToDataUpdate event
-      // causing the formula engine to update the cell values
+      // External paste operation
       context.selectionManager.saveCellValues(context.updates);
     }
-    // do nothing
   }
 }

@@ -259,7 +259,7 @@ export function SpreadsheetWithFormulaBar({
             engine.autoFill(
               { sheetName, workbookName },
               convertSmAreaToSpreadsheetRange(ev.seedRange),
-              convertSmAreaToSpreadsheetRange(ev.fillRange),
+              [convertSmAreaToSpreadsheetRange(ev.fillRange)],
               ev.direction
             );
           } else {
