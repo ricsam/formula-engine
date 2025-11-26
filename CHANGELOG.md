@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.13
+
+### Patch Changes
+
+- enable copy of value only or style only
+
 ## 0.0.12
 
 ### Patch Changes

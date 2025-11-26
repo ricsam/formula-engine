@@ -203,7 +203,7 @@ export class WorkbookClipboardManager extends ClipboardUtils {
         {
           cut: false,
           type: context.pasteType,
-          formatting: true,
+          target: "all",
         }
       );
     } else {

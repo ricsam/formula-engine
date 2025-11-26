@@ -39,7 +39,7 @@ describe("CopyManager", () => {
       engine.copyCells(source, target, {
         cut: false,
         type: "formula",
-        formatting: false,
+        target: "content",
       });
 
       // Check target cells
@@ -89,7 +89,7 @@ describe("CopyManager", () => {
       engine.copyCells(source, target, {
         cut: false,
         type: "formula",
-        formatting: false,
+        target: "content",
       });
 
       // Check that formula was adjusted (A1 -> A3, so B1+C1 -> B3+C3)
@@ -120,7 +120,7 @@ describe("CopyManager", () => {
       engine.copyCells(source, target, {
         cut: false,
         type: "formula",
-        formatting: false,
+        target: "content",
       });
 
       // Check that absolute reference is preserved, relative is adjusted
@@ -159,7 +159,7 @@ describe("CopyManager", () => {
       engine.copyCells(source, target, {
         cut: false,
         type: "value",
-        formatting: false,
+        target: "content",
       });
 
       // Check that target has the evaluated value, not the formula
@@ -197,7 +197,7 @@ describe("CopyManager", () => {
       engine.copyCells(source, target, {
         cut: true,
         type: "formula",
-        formatting: false,
+        target: "content",
       });
 
       // Check target cells
@@ -237,7 +237,7 @@ describe("CopyManager", () => {
   });
 
   describe("copyCells - formatting", () => {
-    test("copies cell styles when formatting is true", () => {
+    test("copies cell styles when target is 'all'", () => {
       // Add a cell style to source range
       engine.addCellStyle({
         area: {
@@ -271,7 +271,7 @@ describe("CopyManager", () => {
       engine.copyCells(source, target, {
         cut: false,
         type: "formula",
-        formatting: true,
+        target: "all",
       });
 
       // Check that styling was copied to target range
@@ -287,7 +287,7 @@ describe("CopyManager", () => {
       expect(targetStyle?.color).toBe("#FFFFFF");
     });
 
-    test("copies conditional styles when formatting is true", () => {
+    test("copies conditional styles when target is 'all'", () => {
       // Add a conditional style to source range
       engine.addConditionalStyle({
         area: {
@@ -324,7 +324,7 @@ describe("CopyManager", () => {
       engine.copyCells(source, target, {
         cut: false,
         type: "formula",
-        formatting: true,
+        target: "all",
       });
 
       // Check that conditional style was copied
@@ -352,7 +352,7 @@ describe("CopyManager", () => {
       expect(copiedStyle?.condition.type).toBe("formula");
     });
 
-    test("does not copy formatting when formatting is false", () => {
+    test("does not copy formatting when target is 'content'", () => {
       // Add a cell style to source range
       engine.addCellStyle({
         area: {
@@ -396,7 +396,7 @@ describe("CopyManager", () => {
       engine.copyCells(source, target, {
         cut: false,
         type: "formula",
-        formatting: false,
+        target: "content",
       });
 
       // Formatting should not be copied
@@ -441,7 +441,7 @@ describe("CopyManager", () => {
       engine.copyCells(source, target, {
         cut: false,
         type: "formula",
-        formatting: false,
+        target: "content",
       });
 
       // Top-left is A1 (0,0), so offsets are maintained
@@ -481,7 +481,7 @@ describe("CopyManager", () => {
       engine.copyCells(source, target, {
         cut: false,
         type: "formula",
-        formatting: false,
+        target: "content",
       });
 
       // Target should remain empty
@@ -507,7 +507,7 @@ describe("CopyManager", () => {
       engine.copyCells(source, target, {
         cut: false,
         type: "formula",
-        formatting: false,
+        target: "content",
       });
     });
 
@@ -531,7 +531,7 @@ describe("CopyManager", () => {
       engine.copyCells(source, target, {
         cut: false,
         type: "value",
-        formatting: false,
+        target: "content",
       });
 
       // Should copy the formula as-is since evaluation resulted in error
@@ -567,7 +567,7 @@ describe("CopyManager", () => {
       engine.copyCells(source, target, {
         cut: false,
         type: "formula",
-        formatting: false,
+        target: "content",
       });
 
       // Check target cell in different sheet
@@ -583,7 +583,7 @@ describe("CopyManager", () => {
   });
 
   describe("copyCells - combined operations", () => {
-    test("cut with formatting copies styles and clears source", () => {
+    test("cut with all target copies styles and clears source", () => {
       // Set up source cell with content and style
       engine.setCellContent(
         { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
@@ -620,7 +620,7 @@ describe("CopyManager", () => {
       engine.copyCells(source, target, {
         cut: true,
         type: "formula",
-        formatting: true,
+        target: "all",
       });
 
       // Target should have content and style
@@ -684,7 +684,7 @@ describe("CopyManager", () => {
       engine.copyCells(source, target, {
         cut: false,
         type: "formula",
-        formatting: true,
+        target: "all",
       });
 
       // Only B2 should be styled, not the entire B column
@@ -743,6 +743,196 @@ describe("CopyManager", () => {
         type: "number",
         value: 1,
       });
+    });
+  });
+
+  describe("copyCells - style target mode", () => {
+    test("copies only styles when target is 'style'", () => {
+      // Set up source cell with content and style
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        "Content"
+      );
+
+      engine.addCellStyle({
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 0 },
+              row: { type: "number", value: 0 },
+            },
+          },
+        },
+        style: {
+          backgroundColor: "#0000FF",
+          color: "#FFFFFF",
+        },
+      });
+
+      const source: CellAddress[] = [
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+      ];
+      const target: CellAddress = {
+        workbookName,
+        sheetName,
+        colIndex: 2,
+        rowIndex: 2,
+      };
+
+      engine.copyCells(source, target, {
+        cut: false,
+        type: "formula",
+        target: "style",
+      });
+
+      // Target should have the style
+      const targetStyle = engine.getCellStyle({
+        workbookName,
+        sheetName,
+        colIndex: 2,
+        rowIndex: 2,
+      });
+      expect(targetStyle).toBeDefined();
+      expect(targetStyle?.backgroundColor).toBe("#0000FF");
+      expect(targetStyle?.color).toBe("#FFFFFF");
+
+      // Target should NOT have the content
+      const targetValue = engine.getCellValue({
+        workbookName,
+        sheetName,
+        colIndex: 2,
+        rowIndex: 2,
+      });
+      expect(targetValue).toBe(""); // Should be empty
+    });
+
+    test("ignores type property when target is 'style'", () => {
+      // Set up source cell with formula
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        "=10+20"
+      );
+
+      engine.addCellStyle({
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 0 },
+              row: { type: "number", value: 0 },
+            },
+          },
+        },
+        style: {
+          bold: true,
+        },
+      });
+
+      const source: CellAddress[] = [
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+      ];
+      const target: CellAddress = {
+        workbookName,
+        sheetName,
+        colIndex: 5,
+        rowIndex: 5,
+      };
+
+      // Use type: "value" but target: "style" - type should be ignored
+      engine.copyCells(source, target, {
+        cut: false,
+        type: "value",
+        target: "style",
+      });
+
+      // Target should have the style
+      const targetStyle = engine.getCellStyle({
+        workbookName,
+        sheetName,
+        colIndex: 5,
+        rowIndex: 5,
+      });
+      expect(targetStyle?.bold).toBe(true);
+
+      // Target should NOT have any content (neither formula nor value)
+      const targetValue = engine.getCellValue({
+        workbookName,
+        sheetName,
+        colIndex: 5,
+        rowIndex: 5,
+      });
+      expect(targetValue).toBe("");
+    });
+
+    test("copies conditional styles when target is 'style'", () => {
+      // Set up source cell with content and conditional style
+      engine.setCellContent(
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+        "Data"
+      );
+
+      engine.addConditionalStyle({
+        area: {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 0 },
+              row: { type: "number", value: 0 },
+            },
+          },
+        },
+        condition: {
+          type: "formula",
+          formula: "TRUE",
+          color: { l: 60, c: 70, h: 120 },
+        },
+      });
+
+      const source: CellAddress[] = [
+        { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+      ];
+      const target: CellAddress = {
+        workbookName,
+        sheetName,
+        colIndex: 3,
+        rowIndex: 3,
+      };
+
+      engine.copyCells(source, target, {
+        cut: false,
+        type: "formula",
+        target: "style",
+      });
+
+      // Check that conditional style was copied
+      const styles = engine.getConditionalStylesIntersectingWithRange({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 3, row: 3 },
+          end: {
+            col: { type: "number", value: 3 },
+            row: { type: "number", value: 3 },
+          },
+        },
+      });
+      expect(styles.length).toBeGreaterThan(0);
+
+      // Target should NOT have the content
+      const targetValue = engine.getCellValue({
+        workbookName,
+        sheetName,
+        colIndex: 3,
+        rowIndex: 3,
+      });
+      expect(targetValue).toBe("");
     });
   });
 });

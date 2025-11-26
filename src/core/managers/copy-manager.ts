@@ -47,20 +47,22 @@ export class CopyManager {
     const rowOffset = target.rowIndex - topLeft.rowIndex;
     const colOffset = target.colIndex - topLeft.colIndex;
 
-    // Copy cell contents
-    for (const sourceCell of source) {
-      const targetCell: CellAddress = {
-        workbookName: target.workbookName,
-        sheetName: target.sheetName,
-        colIndex: sourceCell.colIndex + colOffset,
-        rowIndex: sourceCell.rowIndex + rowOffset,
-      };
+    // Copy cell contents (skip if only copying style)
+    if (options.target !== 'style') {
+      for (const sourceCell of source) {
+        const targetCell: CellAddress = {
+          workbookName: target.workbookName,
+          sheetName: target.sheetName,
+          colIndex: sourceCell.colIndex + colOffset,
+          rowIndex: sourceCell.rowIndex + rowOffset,
+        };
 
-      this.copyCellContent(sourceCell, targetCell, topLeft, options);
+        this.copyCellContent(sourceCell, targetCell, topLeft, options);
+      }
     }
 
     // Copy formatting if requested
-    if (options.formatting) {
+    if (options.target === 'all' || options.target === 'style') {
       this.copyFormatting(source, topLeft, target, rowOffset, colOffset);
     }
 

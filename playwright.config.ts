@@ -87,13 +87,11 @@ export default defineConfig({
     // },
   ],
 
-  /* Use existing dev server on port 3000 */
-  // Run `bun run demo:dev` manually to see console logs and debug output
-  // In CI, automatically start the server
-  webServer: process.env.CI ? {
+  /* Automatically start dev server for e2e tests */
+  webServer: {
     command: 'bun run demo:dev',
     url: 'http://localhost:3000',
-    reuseExistingServer: false,
+    reuseExistingServer: !process.env.CI, // Reuse in local dev, fresh in CI
     timeout: 120 * 1000,
-  } : undefined,
+  },
 });

@@ -375,6 +375,18 @@ export interface CellStyle {
 
 export interface CopyCellsOptions {
   cut: boolean;
+  /**
+   * all: Copy everything from the source to the target
+   * content: Copy only the content from the source to the target
+   * style: Copy only the style from the source to the target
+   */
+  target: 'all' | 'content' | 'style';
+  /**
+   * The type of the content to copy
+   * value: Copy the value from the source to the target,
+   * e.g. if the cell has the formula =123 + 123 then the value is 246
+   * formula: Copy the formula from the source to the target,
+   * e.g. if the cell has the formula =123 + 123 then the formula is =123 + 123 is copied
+   */
   type: "value" | "formula";
-  formatting: boolean;
 }
