@@ -10,6 +10,7 @@ import type {
   LocalCellAddress,
   ConditionalStyle,
   DirectCellStyle,
+  RangeAddress,
 } from "./types";
 import type { FillDirection } from "@ricsam/selection-manager";
 import { parseFormula } from "../parser/parser";
@@ -526,6 +527,7 @@ export class AutoFill {
 
   /**
    * Fill styles from seed range to fill range based on direction
+   * Clears existing cell styles in fill range first (Excel behavior)
    */
   private fillStyles(
     opts: { sheetName: string; workbookName: string },
@@ -533,10 +535,25 @@ export class AutoFill {
     fillRange: FiniteSpreadsheetRange,
     direction: FillDirection
   ): void {
+    // STEP 1: Clear existing cell styles in fill range (Excel-like replacement)
+    const fillRangeAddress: RangeAddress = {
+      workbookName: opts.workbookName,
+      sheetName: opts.sheetName,
+      range: {
+        start: { col: fillRange.start.col, row: fillRange.start.row },
+        end: {
+          col: { type: "number", value: fillRange.end.col },
+          row: { type: "number", value: fillRange.end.row },
+        },
+      },
+    };
+    
+    this.styleManager.clearCellStylesInRange(fillRangeAddress);
+
     const seedWidth = seedRange.end.col - seedRange.start.col + 1;
     const seedHeight = seedRange.end.row - seedRange.start.row + 1;
 
-    // Get all styles intersecting with seed range
+    // STEP 2: Get all styles intersecting with seed range
     const seedSpreadsheetRange: SpreadsheetRange = {
       start: { col: seedRange.start.col, row: seedRange.start.row },
       end: {
@@ -548,7 +565,7 @@ export class AutoFill {
     const allConditionalStyles = this.styleManager.getAllConditionalStyles();
     const allCellStyles = this.styleManager.getAllCellStyles();
 
-    // For each cell in fill range, determine corresponding seed cell and copy styles
+    // STEP 3: For each cell in fill range, determine corresponding seed cell and copy styles
     for (let row = fillRange.start.row; row <= fillRange.end.row; row++) {
       for (let col = fillRange.start.col; col <= fillRange.end.col; col++) {
         // Determine which seed cell corresponds to this fill cell

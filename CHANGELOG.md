@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.15
+
+### Patch Changes
+
+- improve color management
+
 ## 0.0.14
 
 ### Patch Changes

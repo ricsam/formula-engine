@@ -259,6 +259,7 @@ export class CopyManager {
 
   /**
    * Copy formatting (cellStyles and conditionalStyles) from source to target
+   * Clears existing cell styles in target range first (Excel behavior)
    */
   private copyFormatting(
     sourceCells: CellAddress[],
@@ -267,14 +268,21 @@ export class CopyManager {
     rowOffset: number,
     colOffset: number
   ): void {
+    // STEP 1: Clear existing cell styles in target range (Excel-like replacement)
+    const sourceRange = this.getBoundingBox(sourceCells);
+    const targetRange: RangeAddress = {
+      workbookName: target.workbookName,
+      sheetName: target.sheetName,
+      range: this.adjustRange(sourceRange, rowOffset, colOffset),
+    };
+    
+    this.styleManager.clearCellStylesInRange(targetRange);
+
     // Get all styles for the source workbook
     const allConditionalStyles = this.styleManager.getAllConditionalStyles();
     const allCellStyles = this.styleManager.getAllCellStyles();
 
-    // Find styles that intersect with source cells
-    const sourceRange = this.getBoundingBox(sourceCells);
-
-    // Copy conditional styles
+    // STEP 2: Copy conditional styles
     for (const style of allConditionalStyles) {
       if (
         style.area.workbookName === sourceTopLeft.workbookName &&
@@ -297,7 +305,7 @@ export class CopyManager {
       }
     }
 
-    // Copy cell styles
+    // STEP 3: Copy cell styles
     for (const style of allCellStyles) {
       if (
         style.area.workbookName === sourceTopLeft.workbookName &&
@@ -420,6 +428,7 @@ export class CopyManager {
 
   /**
    * Fill a target range with a seed range using column-first strategy
+   * Step 0: Clear existing cell styles in target (Excel behavior)
    * Step 1: Fill down - extend seed pattern vertically to match target height
    * Step 2: Replicate right - copy filled columns horizontally
    */
@@ -433,6 +442,11 @@ export class CopyManager {
       adjustFormulas: boolean;
     }
   ): void {
+    // Step 0: Clear existing cell styles in target range (Excel-like replacement)
+    if (options.copyStyles) {
+      this.styleManager.clearCellStylesInRange(targetRange);
+    }
+
     const seedCells = this.expandRangeToCells(seedRange);
     const seedWidth = this.getRangeWidth(seedRange);
     const seedHeight = this.getRangeHeight(seedRange);
@@ -754,11 +768,27 @@ export class CopyManager {
 
   /**
    * Copy formatting from one cell to another
+   * Clears existing cell styles at target (Excel behavior) before copying new ones
    */
   private copyCellFormatting(
     sourceCell: CellAddress,
     targetCell: CellAddress
   ): void {
+    // STEP 1: Clear existing cell styles at target cell (Excel-like replacement)
+    const targetCellRange: RangeAddress = {
+      workbookName: targetCell.workbookName,
+      sheetName: targetCell.sheetName,
+      range: {
+        start: { col: targetCell.colIndex, row: targetCell.rowIndex },
+        end: {
+          col: { type: "number", value: targetCell.colIndex },
+          row: { type: "number", value: targetCell.rowIndex },
+        },
+      },
+    };
+    
+    this.styleManager.clearCellStylesInRange(targetCellRange);
+
     // Get all styles that intersect with the source cell
     const allConditionalStyles = this.styleManager.getAllConditionalStyles();
     const allCellStyles = this.styleManager.getAllCellStyles();
@@ -771,7 +801,7 @@ export class CopyManager {
       },
     };
 
-    // Copy conditional styles that apply to source cell
+    // STEP 2: Copy conditional styles that apply to source cell
     for (const style of allConditionalStyles) {
       if (
         style.area.workbookName === sourceCell.workbookName &&
@@ -799,7 +829,7 @@ export class CopyManager {
       }
     }
 
-    // Copy cell styles that apply to source cell
+    // STEP 3: Copy cell styles that apply to source cell
     for (const style of allCellStyles) {
       if (
         style.area.workbookName === sourceCell.workbookName &&
