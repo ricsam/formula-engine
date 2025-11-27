@@ -367,6 +367,30 @@ export class WorkbookManager {
     });
   }
 
+  updateFormulasForWorkbook(
+    workbookName: string,
+    updateCallback: (formula: string) => string
+  ): void {
+    const workbook = this.workbooks.get(workbookName);
+    if (!workbook) {
+      throw new WorkbookNotFoundError(workbookName);
+    }
+
+    workbook.sheets.forEach((sheet) => {
+      sheet.content.forEach((cell, key) => {
+        if (typeof cell === "string" && cell.startsWith("=")) {
+          const formula = cell.slice(1);
+          const updatedFormula = updateCallback(formula);
+
+          // Only update if the formula actually changed
+          if (updatedFormula !== formula) {
+            sheet.content.set(key, `=${updatedFormula}`);
+          }
+        }
+      });
+    });
+  }
+
   getSheetSerialized({
     workbookName,
     sheetName,

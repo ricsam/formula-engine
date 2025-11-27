@@ -834,6 +834,45 @@ export class FormulaEngine {
       }
     }
 
+    // Clone conditional styles
+    const allConditionalStyles = this.styleManager.getAllConditionalStyles();
+    for (const style of allConditionalStyles) {
+      if (style.area.workbookName === fromWorkbookName) {
+        const newStyle: ConditionalStyle = {
+          ...style,
+          area: {
+            ...style.area,
+            workbookName: toWorkbookName,
+          },
+        };
+        this.styleManager.addConditionalStyle(newStyle);
+      }
+    }
+
+    // Clone cell styles
+    const allCellStyles = this.styleManager.getAllCellStyles();
+    for (const style of allCellStyles) {
+      if (style.area.workbookName === fromWorkbookName) {
+        const newStyle: DirectCellStyle = {
+          ...style,
+          area: {
+            ...style.area,
+            workbookName: toWorkbookName,
+          },
+        };
+        this.styleManager.addCellStyle(newStyle);
+      }
+    }
+
+    // Update formulas in cloned workbook that reference the source workbook
+    this.workbookManager.updateFormulasForWorkbook(toWorkbookName, (formula) =>
+      renameWorkbookInFormula({
+        formula,
+        oldWorkbookName: fromWorkbookName,
+        newWorkbookName: toWorkbookName,
+      })
+    );
+
     this.reevaluate();
     this.eventManager.emitUpdate();
   }

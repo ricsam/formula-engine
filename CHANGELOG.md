@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.16
+
+### Patch Changes
+
+- fix clone workbook
+
 ## 0.0.15
 
 ### Patch Changes
