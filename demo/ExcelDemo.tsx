@@ -1105,7 +1105,7 @@ export function ExcelDemo() {
         // Add the new style (it will be added at the end, so we need to handle ordering)
         // For simplicity, we'll just add it and the order might change slightly
         engine.addConditionalStyle({
-          area: {
+          areas: [{
             workbookName,
             sheetName,
             range: {
@@ -1121,14 +1121,14 @@ export function ExcelDemo() {
                     : { type: "number" as const, value: endRow },
               },
             },
-          },
+          }],
           condition,
         });
         setEditingStyle(null);
         resetStyleForm();
       } else {
         engine.addConditionalStyle({
-          area: {
+          areas: [{
             workbookName,
             sheetName,
             range: {
@@ -1144,7 +1144,7 @@ export function ExcelDemo() {
                     : { type: "number" as const, value: endRow },
               },
             },
-          },
+          }],
           condition,
         });
       }
@@ -1223,44 +1223,44 @@ export function ExcelDemo() {
         return result;
       };
 
-      const startCol = colToLetter(style.area.range.start.col);
-      const startRow = style.area.range.start.row + 1;
-      const isColInfinity = style.area.range.end.col.type === "infinity";
-      const isRowInfinity = style.area.range.end.row.type === "infinity";
+      const startCol = colToLetter(style.areas[0]!.range.start.col);
+      const startRow = style.areas[0]!.range.start.row + 1;
+      const isColInfinity = style.areas[0]!.range.end.col.type === "infinity";
+      const isRowInfinity = style.areas[0]!.range.end.row.type === "infinity";
 
       let cellRange: string;
       if (isColInfinity && isRowInfinity) {
         cellRange = `${startCol}${startRow}:INFINITY`;
       } else if (isColInfinity) {
         const endRow =
-          style.area.range.end.row.type === "number"
-            ? style.area.range.end.row.value + 1
+          style.areas[0]!.range.end.row.type === "number"
+            ? style.areas[0]!.range.end.row.value + 1
             : startRow;
         cellRange = `${startCol}${startRow}:${endRow}`;
       } else if (isRowInfinity) {
         const endCol =
-          style.area.range.end.col.type === "number"
-            ? colToLetter(style.area.range.end.col.value)
+          style.areas[0]!.range.end.col.type === "number"
+            ? colToLetter(style.areas[0]!.range.end.col.value)
             : startCol;
         cellRange = `${startCol}${startRow}:${endCol}`;
       } else {
         const endCol =
-          style.area.range.end.col.type === "number"
-            ? colToLetter(style.area.range.end.col.value)
+          style.areas[0]!.range.end.col.type === "number"
+            ? colToLetter(style.areas[0]!.range.end.col.value)
             : startCol;
         const endRow =
-          style.area.range.end.row.type === "number"
-            ? style.area.range.end.row.value + 1
+          style.areas[0]!.range.end.row.type === "number"
+            ? style.areas[0]!.range.end.row.value + 1
             : startRow;
         cellRange = `${startCol}${startRow}:${endCol}${endRow}`;
       }
 
       // Quote sheet name if needed
-      const needsQuotes = /[ '!]/.test(style.area.sheetName);
+      const needsQuotes = /[ '!]/.test(style.areas[0]!.sheetName);
       const sheetRef = needsQuotes
-        ? `'${style.area.sheetName.replace(/'/g, "''")}'`
-        : style.area.sheetName;
-      const rangeStr = `[${style.area.workbookName}]${sheetRef}!${cellRange}`;
+        ? `'${style.areas[0]!.sheetName.replace(/'/g, "''")}'`
+        : style.areas[0]!.sheetName;
+      const rangeStr = `[${style.areas[0]!.workbookName}]${sheetRef}!${cellRange}`;
 
       setNewStyleArea(rangeStr);
 
@@ -1405,7 +1405,7 @@ export function ExcelDemo() {
         );
         // Add the new style
         engine.addCellStyle({
-          area: {
+          areas: [{
             workbookName,
             sheetName,
             range: {
@@ -1421,7 +1421,7 @@ export function ExcelDemo() {
                     : { type: "number" as const, value: endRow },
               },
             },
-          },
+          }],
           style: {
             backgroundColor: newCellStyleBackgroundColor,
             color: newCellStyleColor,
@@ -1435,7 +1435,7 @@ export function ExcelDemo() {
         resetCellStyleForm();
       } else {
         engine.addCellStyle({
-          area: {
+          areas: [{
             workbookName,
             sheetName,
             range: {
@@ -1451,7 +1451,7 @@ export function ExcelDemo() {
                     : { type: "number" as const, value: endRow },
               },
             },
-          },
+          }],
           style: {
             backgroundColor: newCellStyleBackgroundColor,
             color: newCellStyleColor,
@@ -1535,44 +1535,44 @@ export function ExcelDemo() {
         return result;
       };
 
-      const startCol = colToLetter(style.area.range.start.col);
-      const startRow = style.area.range.start.row + 1;
-      const isColInfinity = style.area.range.end.col.type === "infinity";
-      const isRowInfinity = style.area.range.end.row.type === "infinity";
+      const startCol = colToLetter(style.areas[0]!.range.start.col);
+      const startRow = style.areas[0]!.range.start.row + 1;
+      const isColInfinity = style.areas[0]!.range.end.col.type === "infinity";
+      const isRowInfinity = style.areas[0]!.range.end.row.type === "infinity";
 
       let cellRange: string;
       if (isColInfinity && isRowInfinity) {
         cellRange = `${startCol}${startRow}:INFINITY`;
       } else if (isColInfinity) {
         const endRow =
-          style.area.range.end.row.type === "number"
-            ? style.area.range.end.row.value + 1
+          style.areas[0]!.range.end.row.type === "number"
+            ? style.areas[0]!.range.end.row.value + 1
             : startRow;
         cellRange = `${startCol}${startRow}:${endRow}`;
       } else if (isRowInfinity) {
         const endCol =
-          style.area.range.end.col.type === "number"
-            ? colToLetter(style.area.range.end.col.value)
+          style.areas[0]!.range.end.col.type === "number"
+            ? colToLetter(style.areas[0]!.range.end.col.value)
             : startCol;
         cellRange = `${startCol}${startRow}:${endCol}`;
       } else {
         const endCol =
-          style.area.range.end.col.type === "number"
-            ? colToLetter(style.area.range.end.col.value)
+          style.areas[0]!.range.end.col.type === "number"
+            ? colToLetter(style.areas[0]!.range.end.col.value)
             : startCol;
         const endRow =
-          style.area.range.end.row.type === "number"
-            ? style.area.range.end.row.value + 1
+          style.areas[0]!.range.end.row.type === "number"
+            ? style.areas[0]!.range.end.row.value + 1
             : startRow;
         cellRange = `${startCol}${startRow}:${endCol}${endRow}`;
       }
 
       // Quote sheet name if needed
-      const needsQuotes = /[ '!]/.test(style.area.sheetName);
+      const needsQuotes = /[ '!]/.test(style.areas[0]!.sheetName);
       const sheetRef = needsQuotes
-        ? `'${style.area.sheetName.replace(/'/g, "''")}'`
-        : style.area.sheetName;
-      const rangeStr = `[${style.area.workbookName}]${sheetRef}!${cellRange}`;
+        ? `'${style.areas[0]!.sheetName.replace(/'/g, "''")}'`
+        : style.areas[0]!.sheetName;
+      const rangeStr = `[${style.areas[0]!.workbookName}]${sheetRef}!${cellRange}`;
 
       setNewCellStyleArea(rangeStr);
       setNewCellStyleBackgroundColor(style.style.backgroundColor || "#FFFFFF");
@@ -2870,7 +2870,7 @@ export function ExcelDemo() {
                   >
                     {(engineState.conditionalStyles || []).map(
                       (style, index) => {
-                        const workbookName = style.area.workbookName;
+                        const workbookName = style.areas[0]!.workbookName;
                         const colToLetter = (col: number): string => {
                           let result = "";
                           let c = col;
@@ -2883,15 +2883,15 @@ export function ExcelDemo() {
                         };
 
                         const rangeStr = `${colToLetter(
-                          style.area.range.start.col
-                        )}${style.area.range.start.row + 1}:${
-                          style.area.range.end.col.type === "infinity"
+                          style.areas[0]!.range.start.col
+                        )}${style.areas[0]!.range.start.row + 1}:${
+                          style.areas[0]!.range.end.col.type === "infinity"
                             ? "∞"
-                            : colToLetter(style.area.range.end.col.value!)
+                            : colToLetter(style.areas[0]!.range.end.col.value!)
                         }${
-                          style.area.range.end.row.type === "infinity"
+                          style.areas[0]!.range.end.row.type === "infinity"
                             ? "∞"
-                            : style.area.range.end.row.value! + 1
+                            : style.areas[0]!.range.end.row.value! + 1
                         }`;
 
                         // Get color preview
@@ -2925,7 +2925,7 @@ export function ExcelDemo() {
                                 </span>
                                 {" → "}
                                 <span className="font-medium text-blue-600">
-                                  {style.area.sheetName}
+                                  {style.areas[0]!.sheetName}
                                 </span>
                                 {" • "}
                                 <span className="font-medium">{rangeStr}</span>
@@ -3229,7 +3229,7 @@ export function ExcelDemo() {
                     data-testid="cell-styles-list"
                   >
                     {(engineState.cellStyles || []).map((style, index) => {
-                      const workbookName = style.area.workbookName;
+                      const workbookName = style.areas[0]!.workbookName;
                       const colToLetter = (col: number): string => {
                         let result = "";
                         let c = col;
@@ -3241,15 +3241,15 @@ export function ExcelDemo() {
                       };
 
                       const rangeStr = `${colToLetter(
-                        style.area.range.start.col
-                      )}${style.area.range.start.row + 1}:${
-                        style.area.range.end.col.type === "infinity"
+                        style.areas[0]!.range.start.col
+                      )}${style.areas[0]!.range.start.row + 1}:${
+                        style.areas[0]!.range.end.col.type === "infinity"
                           ? "∞"
-                          : colToLetter(style.area.range.end.col.value!)
+                          : colToLetter(style.areas[0]!.range.end.col.value!)
                       }${
-                        style.area.range.end.row.type === "infinity"
+                        style.areas[0]!.range.end.row.type === "infinity"
                           ? "∞"
-                          : style.area.range.end.row.value! + 1
+                          : style.areas[0]!.range.end.row.value! + 1
                       }`;
 
                       return (
@@ -3277,7 +3277,7 @@ export function ExcelDemo() {
                               </span>
                               {" → "}
                               <span className="font-medium text-blue-600">
-                                {style.area.sheetName}
+                                {style.areas[0]!.sheetName}
                               </span>
                               {" • "}
                               <span className="font-medium">{rangeStr}</span>

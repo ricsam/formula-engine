@@ -19,8 +19,23 @@ import { parseFormula } from "../../parser/parser";
 import { astToString } from "../../parser/formatter";
 import { transformAST } from "../ast-traverser";
 import type { ReferenceNode, RangeNode } from "../../parser/ast";
-import { isCellInRange } from "../utils";
+import { getCellReference, isCellInRange } from "../utils";
 import { intersectRanges } from "../utils/range-utils";
+import {
+  updateReferencesForMovedCells,
+  type MovedCellsInfo,
+} from "../cell-mover";
+
+/**
+ * Snapshot of a cell's content, metadata, and styles
+ */
+interface CellSnapshot {
+  address: CellAddress;
+  content: SerializedCellValue | undefined;
+  metadata: unknown | undefined;
+  matchingCellStyles?: DirectCellStyle[];
+  matchingConditionalStyles?: ConditionalStyle[];
+}
 
 export class CopyManager {
   constructor(
@@ -30,9 +45,33 @@ export class CopyManager {
   ) {}
 
   /**
-   * Paste cells from source to target
+   * Normalize the include option to an array of parts to copy
    */
-  copyCells(
+  private normalizeInclude(
+    include: CopyCellsOptions["include"]
+  ): ("content" | "style" | "metadata")[] {
+    if (!include || include === "all") {
+      return ["content", "style", "metadata"];
+    }
+    return include;
+  }
+
+  /**
+   * Check if a specific part should be included in the copy operation
+   */
+  private shouldInclude(
+    options: CopyCellsOptions,
+    part: "content" | "style" | "metadata"
+  ): boolean {
+    const normalized = this.normalizeInclude(options.include);
+    return normalized.includes(part);
+  }
+
+  /**
+   * Paste cells from source to target
+   * Delegates to cutCells for move operations or copyOnlyCells for copy operations
+   */
+  pasteCells(
     source: CellAddress[],
     target: CellAddress,
     options: CopyCellsOptions
@@ -41,16 +80,147 @@ export class CopyManager {
       return;
     }
 
-    // Find top-left cell of source (minimum row/col indices)
-    const topLeft = this.findTopLeft(source);
+    if (options.cut === true) {
+      return this.cutCells(source, target, options);
+    } else {
+      return this.copyOnlyCells(source, target, options);
+    }
+  }
 
-    // Calculate offset from source top-left to target
+  /**
+   * Cut cells: Proper snapshot flow for move operations
+   * 1. Snapshot source cells (with styles)
+   * 2. Remove source cells and punch holes in style areas
+   * 3. Update references in OTHER cells (not in moved set)
+   * 4. Update formulas in snapshot and apply to target
+   */
+  private cutCells(
+    source: CellAddress[],
+    target: CellAddress,
+    options: CopyCellsOptions
+  ): void {
+    const topLeft = this.findTopLeft(source);
     const rowOffset = target.rowIndex - topLeft.rowIndex;
     const colOffset = target.colIndex - topLeft.colIndex;
 
-    // Copy cell contents (skip if only copying style)
-    if (options.target !== 'style') {
-      for (const sourceCell of source) {
+    // 1. Snapshot source cells (with styles)
+    const snapshot = this.snapshotCellsWithStyles(source);
+
+    // 2. Remove source cells (content) and punch holes in styles
+    this.clearSourceCells(source);
+
+    // Punch holes in style areas for each cut cell
+    if (this.shouldInclude(options, "style")) {
+      for (const cell of source) {
+        const cellRange: RangeAddress = {
+          workbookName: cell.workbookName,
+          sheetName: cell.sheetName,
+          range: {
+            start: { col: cell.colIndex, row: cell.rowIndex },
+            end: {
+              col: { type: "number", value: cell.colIndex },
+              row: { type: "number", value: cell.rowIndex },
+            },
+          },
+        };
+        this.styleManager.clearCellStylesInRange(cellRange);
+      }
+    }
+
+    // 3. Update references in OTHER cells (not in moved set)
+    const movedCellsSet = new Set(
+      source.map(
+        (c) => `${c.workbookName}:${c.sheetName}:${c.colIndex}:${c.rowIndex}`
+      )
+    );
+
+    const movedCellsInfo: MovedCellsInfo = {
+      cellsSet: movedCellsSet,
+      workbookName: topLeft.workbookName,
+      sheetName: topLeft.sheetName,
+      rowOffset,
+      colOffset,
+    };
+
+    this.workbookManager.updateFormulasExcluding(movedCellsSet, (formula) =>
+      updateReferencesForMovedCells(formula, movedCellsInfo)
+    );
+
+    // 4. Update formulas in snapshot and apply to target
+    for (let i = 0; i < snapshot.length; i++) {
+      const snap = snapshot[i]!;
+      const sourceCell = source[i]!;
+      const targetCell: CellAddress = {
+        workbookName: target.workbookName,
+        sheetName: target.sheetName,
+        colIndex: sourceCell.colIndex + colOffset,
+        rowIndex: sourceCell.rowIndex + rowOffset,
+      };
+
+      // Apply content (with formula adjustment)
+      if (this.shouldInclude(options, "content") && snap.content) {
+        let targetContent = snap.content;
+
+        if (typeof snap.content === "string" && snap.content.startsWith("=")) {
+          // Adjust formula references relative to new position
+          targetContent = this.adjustFormulaReferences(
+            snap.content,
+            {
+              colIndex: snap.address.colIndex,
+              rowIndex: snap.address.rowIndex,
+            },
+            {
+              colIndex: targetCell.colIndex,
+              rowIndex: targetCell.rowIndex,
+            }
+          );
+        }
+
+        console.log("targetContent", targetContent);
+
+        // Use setCellContent to ensure proper cache invalidation and dependency tracking
+        this.workbookManager.setCellContent(targetCell, targetContent);
+      }
+
+      // Apply metadata
+      if (this.shouldInclude(options, "metadata")) {
+        if (snap.metadata) {
+          this.workbookManager.setCellMetadata(targetCell, {
+            ...snap.metadata,
+          });
+        } else {
+          this.workbookManager.setCellMetadata(targetCell, undefined);
+        }
+      }
+
+      // Apply styles from snapshot to new location
+      if (this.shouldInclude(options, "style")) {
+        this.applyStylesFromSnapshot(snap, targetCell);
+      }
+    }
+  }
+
+  /**
+   * Copy cells: Standard copy operation (not cut/move)
+   * Snapshot → Copy with adjustment → Copy formatting
+   */
+  private copyOnlyCells(
+    source: CellAddress[],
+    target: CellAddress,
+    options: CopyCellsOptions
+  ): void {
+    const topLeft = this.findTopLeft(source);
+    const rowOffset = target.rowIndex - topLeft.rowIndex;
+    const colOffset = target.colIndex - topLeft.colIndex;
+
+    // SNAPSHOT source cells (handles overlapping ranges)
+    const snapshot = this.snapshotCells(source);
+
+    // Copy cell contents if requested (from snapshot, not live cells)
+    if (this.shouldInclude(options, "content")) {
+      for (let i = 0; i < source.length; i++) {
+        const sourceCell = source[i]!;
+        const cellSnapshot = snapshot[i]!;
         const targetCell: CellAddress = {
           workbookName: target.workbookName,
           sheetName: target.sheetName,
@@ -58,18 +228,18 @@ export class CopyManager {
           rowIndex: sourceCell.rowIndex + rowOffset,
         };
 
-        this.copyCellContent(sourceCell, targetCell, topLeft, options);
+        this.copyCellContentFromSnapshot(
+          cellSnapshot,
+          targetCell,
+          topLeft,
+          options
+        );
       }
     }
 
     // Copy formatting if requested
-    if (options.target === 'all' || options.target === 'style') {
+    if (this.shouldInclude(options, "style")) {
       this.copyFormatting(source, topLeft, target, rowOffset, colOffset);
-    }
-
-    // Clear source cells if cut
-    if (options.cut) {
-      this.clearSourceCells(source);
     }
   }
 
@@ -95,6 +265,227 @@ export class CopyManager {
     return topLeftCell;
   }
 
+  /**
+   * Create a snapshot of cells' content and metadata
+   * This prevents issues with overlapping ranges where source and target overlap
+   * Used for copy operations (not cut)
+   */
+  private snapshotCells(cells: CellAddress[]): CellSnapshot[] {
+    return cells.map((cell) => {
+      const sheet = this.workbookManager.getSheet({
+        workbookName: cell.workbookName,
+        sheetName: cell.sheetName,
+      });
+
+      const key = `${String.fromCharCode(65 + cell.colIndex)}${
+        cell.rowIndex + 1
+      }`;
+      const content = sheet?.content.get(key);
+      const metadata = this.workbookManager.getCellMetadata(cell);
+
+      return {
+        address: cell,
+        content,
+        metadata,
+      };
+    });
+  }
+
+  /**
+   * Create a snapshot of cells with content, metadata, AND styles
+   * Used for cut operations to preserve all cell information
+   */
+  private snapshotCellsWithStyles(cells: CellAddress[]): CellSnapshot[] {
+    const allCellStyles = this.styleManager.getAllCellStyles();
+    const allConditionalStyles = this.styleManager.getAllConditionalStyles();
+
+    return cells.map((cell) => {
+      const sheet = this.workbookManager.getSheet({
+        workbookName: cell.workbookName,
+        sheetName: cell.sheetName,
+      });
+
+      const key = getCellReference(cell);
+      const content = sheet?.content.get(key);
+      const metadata = this.workbookManager.getCellMetadata(cell);
+
+      // Find all styles that apply to this cell
+      const matchingCellStyles = allCellStyles.filter((style) =>
+        style.areas.some(
+          (area) =>
+            area.workbookName === cell.workbookName &&
+            area.sheetName === cell.sheetName &&
+            isCellInRange(cell, area.range)
+        )
+      );
+
+      const matchingConditionalStyles = allConditionalStyles.filter((style) =>
+        style.areas.some(
+          (area) =>
+            area.workbookName === cell.workbookName &&
+            area.sheetName === cell.sheetName &&
+            isCellInRange(cell, area.range)
+        )
+      );
+
+      return {
+        address: cell,
+        content,
+        metadata,
+        matchingCellStyles,
+        matchingConditionalStyles,
+      };
+    });
+  }
+
+  /**
+   * Apply styles from a snapshot to a target cell
+   * Creates new style areas at the target location
+   */
+  private applyStylesFromSnapshot(
+    snapshot: CellSnapshot,
+    targetCell: CellAddress
+  ): void {
+    // Apply cell styles
+    if (snapshot.matchingCellStyles) {
+      for (const style of snapshot.matchingCellStyles) {
+        const newStyle: DirectCellStyle = {
+          areas: [
+            {
+              workbookName: targetCell.workbookName,
+              sheetName: targetCell.sheetName,
+              range: {
+                start: { col: targetCell.colIndex, row: targetCell.rowIndex },
+                end: {
+                  col: { type: "number", value: targetCell.colIndex },
+                  row: { type: "number", value: targetCell.rowIndex },
+                },
+              },
+            },
+          ],
+          style: style.style,
+        };
+        this.styleManager.addCellStyle(newStyle);
+      }
+    }
+
+    // Apply conditional styles
+    if (snapshot.matchingConditionalStyles) {
+      for (const style of snapshot.matchingConditionalStyles) {
+        const newStyle: ConditionalStyle = {
+          areas: [
+            {
+              workbookName: targetCell.workbookName,
+              sheetName: targetCell.sheetName,
+              range: {
+                start: { col: targetCell.colIndex, row: targetCell.rowIndex },
+                end: {
+                  col: { type: "number", value: targetCell.colIndex },
+                  row: { type: "number", value: targetCell.rowIndex },
+                },
+              },
+            },
+          ],
+          condition: style.condition,
+        };
+        this.styleManager.addConditionalStyle(newStyle);
+      }
+    }
+  }
+
+  /**
+   * Copy content from a cell snapshot to a target cell
+   */
+  private copyCellContentFromSnapshot(
+    snapshot: CellSnapshot,
+    targetCell: CellAddress,
+    sourceTopLeft: CellAddress,
+    options: CopyCellsOptions
+  ): void {
+    if (!snapshot.content) {
+      // Source cell was empty
+      return;
+    }
+
+    let targetContent: SerializedCellValue;
+    const copyType = options.type ?? "formula";
+
+    if (copyType === "value") {
+      // Copy evaluated value
+      const evalResult = this.evaluationManager.getCellEvaluationResult(
+        snapshot.address
+      );
+
+      if (!evalResult || evalResult.type !== "value") {
+        // If evaluation failed or is not a value, copy as-is
+        targetContent = snapshot.content;
+      } else {
+        // Convert to literal value
+        const result = evalResult.result;
+        if (result.type === "number") {
+          targetContent = result.value;
+        } else if (result.type === "string") {
+          targetContent = result.value;
+        } else if (result.type === "boolean") {
+          targetContent = result.value;
+        } else {
+          // Error or other type, copy as-is
+          targetContent = snapshot.content;
+        }
+      }
+    } else {
+      // Copy formula
+      if (
+        typeof snapshot.content === "string" &&
+        snapshot.content.startsWith("=")
+      ) {
+        // Adjust formula references
+        targetContent = this.adjustFormulaReferences(
+          snapshot.content,
+          {
+            colIndex: snapshot.address.colIndex,
+            rowIndex: snapshot.address.rowIndex,
+          },
+          {
+            colIndex: targetCell.colIndex,
+            rowIndex: targetCell.rowIndex,
+          }
+        );
+      } else {
+        // Not a formula, copy as-is
+        targetContent = snapshot.content;
+      }
+    }
+
+    // Set target cell content
+    const targetSheet = this.workbookManager.getSheet({
+      workbookName: targetCell.workbookName,
+      sheetName: targetCell.sheetName,
+    });
+
+    if (targetSheet) {
+      const targetKey = `${String.fromCharCode(65 + targetCell.colIndex)}${
+        targetCell.rowIndex + 1
+      }`;
+      targetSheet.content.set(targetKey, targetContent);
+    }
+
+    // Copy metadata if requested
+    if (this.shouldInclude(options, "metadata")) {
+      if (snapshot.metadata) {
+        this.workbookManager.setCellMetadata(targetCell, {
+          ...snapshot.metadata,
+        });
+      } else {
+        // Clear target metadata if source has none
+        this.workbookManager.setCellMetadata(targetCell, undefined);
+      }
+    }
+  }
+
+  /**
+   * Update all formula references when cells are cut (moved)
+   */
   /**
    * Copy content from one cell to another
    */
@@ -124,11 +515,13 @@ export class CopyManager {
     }
 
     let targetContent: SerializedCellValue;
+    const copyType = options.type ?? "formula";
 
-    if (options.type === "value") {
+    if (copyType === "value") {
       // Copy evaluated value
-      const evalResult = this.evaluationManager.getCellEvaluationResult(sourceCell);
-      
+      const evalResult =
+        this.evaluationManager.getCellEvaluationResult(sourceCell);
+
       if (!evalResult || evalResult.type !== "value") {
         // If evaluation failed or is not a value, copy as-is
         targetContent = cellContent;
@@ -178,6 +571,17 @@ export class CopyManager {
         targetCell.rowIndex + 1
       }`;
       targetSheet.content.set(targetKey, targetContent);
+    }
+
+    // Copy metadata if requested
+    if (this.shouldInclude(options, "metadata")) {
+      const sourceMetadata = this.workbookManager.getCellMetadata(sourceCell);
+      if (sourceMetadata) {
+        this.workbookManager.setCellMetadata(targetCell, { ...sourceMetadata });
+      } else {
+        // Clear target metadata if source has none
+        this.workbookManager.setCellMetadata(targetCell, undefined);
+      }
     }
   }
 
@@ -275,7 +679,7 @@ export class CopyManager {
       sheetName: target.sheetName,
       range: this.adjustRange(sourceRange, rowOffset, colOffset),
     };
-    
+
     this.styleManager.clearCellStylesInRange(targetRange);
 
     // Get all styles for the source workbook
@@ -284,46 +688,54 @@ export class CopyManager {
 
     // STEP 2: Copy conditional styles
     for (const style of allConditionalStyles) {
-      if (
-        style.area.workbookName === sourceTopLeft.workbookName &&
-        style.area.sheetName === sourceTopLeft.sheetName
-      ) {
-        // Calculate intersection of style range with source bounding box
-        const intersection = intersectRanges(style.area.range, sourceRange);
-        if (intersection) {
-          // Copy only the intersection, offset to target
-          const newStyle: ConditionalStyle = {
-            area: {
-              workbookName: target.workbookName,
-              sheetName: target.sheetName,
-              range: this.adjustRange(intersection, rowOffset, colOffset),
-            },
-            condition: style.condition,
-          };
-          this.styleManager.addConditionalStyle(newStyle);
+      for (const area of style.areas) {
+        if (
+          area.workbookName === sourceTopLeft.workbookName &&
+          area.sheetName === sourceTopLeft.sheetName
+        ) {
+          // Calculate intersection of style range with source bounding box
+          const intersection = intersectRanges(area.range, sourceRange);
+          if (intersection) {
+            // Copy only the intersection, offset to target
+            const newStyle: ConditionalStyle = {
+              areas: [
+                {
+                  workbookName: target.workbookName,
+                  sheetName: target.sheetName,
+                  range: this.adjustRange(intersection, rowOffset, colOffset),
+                },
+              ],
+              condition: style.condition,
+            };
+            this.styleManager.addConditionalStyle(newStyle);
+          }
         }
       }
     }
 
     // STEP 3: Copy cell styles
     for (const style of allCellStyles) {
-      if (
-        style.area.workbookName === sourceTopLeft.workbookName &&
-        style.area.sheetName === sourceTopLeft.sheetName
-      ) {
-        // Calculate intersection of style range with source bounding box
-        const intersection = intersectRanges(style.area.range, sourceRange);
-        if (intersection) {
-          // Copy only the intersection, offset to target
-          const newStyle: DirectCellStyle = {
-            area: {
-              workbookName: target.workbookName,
-              sheetName: target.sheetName,
-              range: this.adjustRange(intersection, rowOffset, colOffset),
-            },
-            style: style.style,
-          };
-          this.styleManager.addCellStyle(newStyle);
+      for (const area of style.areas) {
+        if (
+          area.workbookName === sourceTopLeft.workbookName &&
+          area.sheetName === sourceTopLeft.sheetName
+        ) {
+          // Calculate intersection of style range with source bounding box
+          const intersection = intersectRanges(area.range, sourceRange);
+          if (intersection) {
+            // Copy only the intersection, offset to target
+            const newStyle: DirectCellStyle = {
+              areas: [
+                {
+                  workbookName: target.workbookName,
+                  sheetName: target.sheetName,
+                  range: this.adjustRange(intersection, rowOffset, colOffset),
+                },
+              ],
+              style: style.style,
+            };
+            this.styleManager.addCellStyle(newStyle);
+          }
         }
       }
     }
@@ -353,7 +765,6 @@ export class CopyManager {
       },
     };
   }
-
 
   /**
    * Adjust a range by row and column offsets
@@ -386,17 +797,9 @@ export class CopyManager {
    */
   private clearSourceCells(cells: CellAddress[]): void {
     for (const cell of cells) {
-      const sheet = this.workbookManager.getSheet({
-        workbookName: cell.workbookName,
-        sheetName: cell.sheetName,
-      });
-
-      if (sheet) {
-        const key = `${String.fromCharCode(65 + cell.colIndex)}${
-          cell.rowIndex + 1
-        }`;
-        sheet.content.delete(key);
-      }
+      // Use setCellContent with empty string to properly clear the cell
+      // This ensures indexes are updated and caches are properly managed
+      this.workbookManager.setCellContent(cell, "");
     }
   }
 
@@ -412,9 +815,9 @@ export class CopyManager {
   ): void {
     for (const targetRange of targetRanges) {
       this.fillRangeWithSeed(seedRange, targetRange, {
-        copyContent: options.target !== 'style',
-        copyStyles: options.target === 'all' || options.target === 'style',
-        contentType: options.type,
+        copyContent: this.shouldInclude(options, "content"),
+        copyStyles: this.shouldInclude(options, "style"),
+        contentType: options.type ?? "formula",
         adjustFormulas: true,
       });
     }
@@ -454,13 +857,16 @@ export class CopyManager {
     const targetHeight = this.getRangeHeight(targetRange);
 
     // Step 1: Fill down - replicate seed pattern vertically
-    const filledColumns: Map<string, { cell: CellAddress; content: SerializedCellValue }> = new Map();
-    
+    const filledColumns: Map<
+      string,
+      { cell: CellAddress; content: SerializedCellValue }
+    > = new Map();
+
     for (let col = 0; col < seedWidth; col++) {
       for (let row = 0; row < targetHeight; row++) {
         const seedRow = row % seedHeight;
         const seedCell = seedCells.find(
-          (c) => 
+          (c) =>
             c.colIndex === seedRange.range.start.col + col &&
             c.rowIndex === seedRange.range.start.row + seedRow
         );
@@ -477,11 +883,17 @@ export class CopyManager {
           const colDelta = targetCell.colIndex - seedCell.colIndex;
 
           if (options.copyContent) {
-            this.copyCellContentWithOffset(seedCell, targetCell, rowDelta, colDelta, {
-              type: options.contentType,
-              cut: false,
-              target: 'content',
-            });
+            this.copyCellContentWithOffset(
+              seedCell,
+              targetCell,
+              rowDelta,
+              colDelta,
+              {
+                type: options.contentType,
+                cut: false,
+                include: ["content"],
+              }
+            );
           }
 
           if (options.copyStyles) {
@@ -494,7 +906,9 @@ export class CopyManager {
             workbookName: targetCell.workbookName,
             sheetName: targetCell.sheetName,
           });
-          const cellKey = `${String.fromCharCode(65 + targetCell.colIndex)}${targetCell.rowIndex + 1}`;
+          const cellKey = `${String.fromCharCode(65 + targetCell.colIndex)}${
+            targetCell.rowIndex + 1
+          }`;
           const content = sheet?.content.get(cellKey) || "";
           filledColumns.set(key, { cell: targetCell, content });
         }
@@ -505,7 +919,7 @@ export class CopyManager {
     if (targetWidth > seedWidth) {
       for (let col = seedWidth; col < targetWidth; col++) {
         const sourceCol = col % seedWidth;
-        
+
         for (let row = 0; row < targetHeight; row++) {
           const sourceCell: CellAddress = {
             workbookName: targetRange.workbookName,
@@ -524,11 +938,17 @@ export class CopyManager {
           const colDelta = targetCell.colIndex - sourceCell.colIndex;
 
           if (options.copyContent) {
-            this.copyCellContentWithOffset(sourceCell, targetCell, 0, colDelta, {
-              type: options.contentType,
-              cut: false,
-              target: 'content',
-            });
+            this.copyCellContentWithOffset(
+              sourceCell,
+              targetCell,
+              0,
+              colDelta,
+              {
+                type: options.contentType,
+                cut: false,
+                include: ["content"],
+              }
+            );
           }
 
           if (options.copyStyles) {
@@ -563,7 +983,7 @@ export class CopyManager {
    * Expand a RangeAddress into an array of CellAddress
    * Handles finite ranges, row-bounded, and column-bounded ranges
    */
-  private expandRangeToCells(rangeAddress: RangeAddress): CellAddress[] {
+  public expandRangeToCells(rangeAddress: RangeAddress): CellAddress[] {
     const { workbookName, sheetName, range } = rangeAddress;
     const cells: CellAddress[] = [];
 
@@ -643,11 +1063,13 @@ export class CopyManager {
     }
 
     let targetContent: SerializedCellValue;
+    const copyType = options.type ?? "formula";
 
-    if (options.type === "value") {
+    if (copyType === "value") {
       // Copy evaluated value
-      const evalResult = this.evaluationManager.getCellEvaluationResult(sourceCell);
-      
+      const evalResult =
+        this.evaluationManager.getCellEvaluationResult(sourceCell);
+
       if (!evalResult || evalResult.type !== "value") {
         // If evaluation failed or is not a value, copy as-is
         targetContent = cellContent;
@@ -691,6 +1113,17 @@ export class CopyManager {
         targetCell.rowIndex + 1
       }`;
       targetSheet.content.set(targetKey, targetContent);
+    }
+
+    // Copy metadata if requested
+    if (this.shouldInclude(options, "metadata")) {
+      const sourceMetadata = this.workbookManager.getCellMetadata(sourceCell);
+      if (sourceMetadata) {
+        this.workbookManager.setCellMetadata(targetCell, { ...sourceMetadata });
+      } else {
+        // Clear target metadata if source has none
+        this.workbookManager.setCellMetadata(targetCell, undefined);
+      }
     }
   }
 
@@ -786,7 +1219,7 @@ export class CopyManager {
         },
       },
     };
-    
+
     this.styleManager.clearCellStylesInRange(targetCellRange);
 
     // Get all styles that intersect with the source cell
@@ -803,59 +1236,72 @@ export class CopyManager {
 
     // STEP 2: Copy conditional styles that apply to source cell
     for (const style of allConditionalStyles) {
-      if (
-        style.area.workbookName === sourceCell.workbookName &&
-        style.area.sheetName === sourceCell.sheetName
-      ) {
-        const intersection = intersectRanges(style.area.range, sourceCellRange);
-        if (intersection) {
-          // Apply style to target cell
-          const newStyle: ConditionalStyle = {
-            area: {
-              workbookName: targetCell.workbookName,
-              sheetName: targetCell.sheetName,
-              range: {
-                start: { col: targetCell.colIndex, row: targetCell.rowIndex },
-                end: {
-                  col: { type: "number", value: targetCell.colIndex },
-                  row: { type: "number", value: targetCell.rowIndex },
+      for (const area of style.areas) {
+        if (
+          area.workbookName === sourceCell.workbookName &&
+          area.sheetName === sourceCell.sheetName
+        ) {
+          const intersection = intersectRanges(area.range, sourceCellRange);
+          if (intersection) {
+            // Apply style to target cell
+            const newStyle: ConditionalStyle = {
+              areas: [
+                {
+                  workbookName: targetCell.workbookName,
+                  sheetName: targetCell.sheetName,
+                  range: {
+                    start: {
+                      col: targetCell.colIndex,
+                      row: targetCell.rowIndex,
+                    },
+                    end: {
+                      col: { type: "number", value: targetCell.colIndex },
+                      row: { type: "number", value: targetCell.rowIndex },
+                    },
+                  },
                 },
-              },
-            },
-            condition: style.condition,
-          };
-          this.styleManager.addConditionalStyle(newStyle);
+              ],
+              condition: style.condition,
+            };
+            this.styleManager.addConditionalStyle(newStyle);
+          }
         }
       }
     }
 
     // STEP 3: Copy cell styles that apply to source cell
     for (const style of allCellStyles) {
-      if (
-        style.area.workbookName === sourceCell.workbookName &&
-        style.area.sheetName === sourceCell.sheetName
-      ) {
-        const intersection = intersectRanges(style.area.range, sourceCellRange);
-        if (intersection) {
-          // Apply style to target cell
-          const newStyle: DirectCellStyle = {
-            area: {
-              workbookName: targetCell.workbookName,
-              sheetName: targetCell.sheetName,
-              range: {
-                start: { col: targetCell.colIndex, row: targetCell.rowIndex },
-                end: {
-                  col: { type: "number", value: targetCell.colIndex },
-                  row: { type: "number", value: targetCell.rowIndex },
+      for (const area of style.areas) {
+        if (
+          area.workbookName === sourceCell.workbookName &&
+          area.sheetName === sourceCell.sheetName
+        ) {
+          const intersection = intersectRanges(area.range, sourceCellRange);
+          if (intersection) {
+            // Apply style to target cell
+            const newStyle: DirectCellStyle = {
+              areas: [
+                {
+                  workbookName: targetCell.workbookName,
+                  sheetName: targetCell.sheetName,
+                  range: {
+                    start: {
+                      col: targetCell.colIndex,
+                      row: targetCell.rowIndex,
+                    },
+                    end: {
+                      col: { type: "number", value: targetCell.colIndex },
+                      row: { type: "number", value: targetCell.rowIndex },
+                    },
+                  },
                 },
-              },
-            },
-            style: style.style,
-          };
-          this.styleManager.addCellStyle(newStyle);
+              ],
+              style: style.style,
+            };
+            this.styleManager.addCellStyle(newStyle);
+          }
         }
       }
     }
   }
 }
-

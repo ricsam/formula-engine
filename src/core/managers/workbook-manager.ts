@@ -154,6 +154,7 @@ export class WorkbookManager {
     this.workbooks.set(workbookName, {
       name: workbookName,
       sheets: new Map(),
+      workbookMetadata: undefined,
     });
   }
 
@@ -264,6 +265,8 @@ export class WorkbookManager {
       name: sheetName,
       index: workbook.sheets.size,
       content: new Map(),
+      metadata: new Map(),
+      sheetMetadata: undefined,
     };
 
     if (workbook.sheets.has(sheet.name)) {
@@ -364,6 +367,35 @@ export class WorkbookManager {
 
     this.workbooks.forEach((workbook) => {
       update(workbook.sheets);
+    });
+  }
+
+  updateFormulasExcluding(
+    excludeCellsSet: Set<string>,
+    updateCallback: (formula: string) => string
+  ): void {
+    this.workbooks.forEach((workbook, workbookName) => {
+      workbook.sheets.forEach((sheet, sheetName) => {
+        sheet.content.forEach((cell, key) => {
+          if (typeof cell === "string" && cell.startsWith("=")) {
+            const { colIndex, rowIndex } = parseCellReference(key);
+            const cellKey = `${workbookName}:${sheetName}:${colIndex}:${rowIndex}`;
+            
+            // Skip if this cell is in the exclude set
+            if (excludeCellsSet.has(cellKey)) {
+              return;
+            }
+
+            const formula = cell.slice(1);
+            const updatedFormula = updateCallback(formula);
+
+            // Only update if the formula actually changed
+            if (updatedFormula !== formula) {
+              sheet.content.set(key, `=${updatedFormula}`);
+            }
+          }
+        });
+      });
     });
   }
 
@@ -566,6 +598,107 @@ export class WorkbookManager {
   }
 
   /**
+   * Set metadata for a cell
+   */
+  setCellMetadata<TMetadata = unknown>(address: CellAddress, metadata: TMetadata | undefined): void {
+    const sheet = this.getSheet({
+      workbookName: address.workbookName,
+      sheetName: address.sheetName,
+    });
+    if (!sheet) {
+      throw new SheetNotFoundError(address.sheetName);
+    }
+
+    const key = getCellReference(address);
+    if (metadata === undefined) {
+      sheet.metadata.delete(key);
+    } else {
+      sheet.metadata.set(key, metadata);
+    }
+  }
+
+  /**
+   * Get metadata for a cell
+   */
+  getCellMetadata<TMetadata = unknown>(address: CellAddress): TMetadata | undefined {
+    const sheet = this.getSheet({
+      workbookName: address.workbookName,
+      sheetName: address.sheetName,
+    });
+    if (!sheet) {
+      return undefined;
+    }
+
+    const key = getCellReference(address);
+    return sheet.metadata.get(key) as TMetadata | undefined;
+  }
+
+  /**
+   * Get all metadata for a sheet
+   */
+  getSheetMetadataSerialized<TMetadata = unknown>(opts: {
+    sheetName: string;
+    workbookName: string;
+  }): Map<string, TMetadata> {
+    const sheet = this.getSheet(opts);
+    return sheet?.metadata || new Map();
+  }
+
+  /**
+   * Set metadata for a sheet
+   */
+  setSheetMetadata<TSheetMetadata = unknown>(
+    opts: { workbookName: string; sheetName: string },
+    metadata: TSheetMetadata
+  ): void {
+    const sheet = this.getSheet(opts);
+    if (!sheet) {
+      throw new SheetNotFoundError(opts.sheetName);
+    }
+    sheet.sheetMetadata = metadata;
+  }
+
+  /**
+   * Get metadata for a sheet
+   */
+  getSheetMetadata<TSheetMetadata = unknown>(
+    opts: { workbookName: string; sheetName: string }
+  ): TSheetMetadata | undefined {
+    const sheet = this.getSheet(opts);
+    if (!sheet) {
+      return undefined;
+    }
+    return sheet.sheetMetadata as TSheetMetadata | undefined;
+  }
+
+  /**
+   * Set metadata for a workbook
+   */
+  setWorkbookMetadata<TWorkbookMetadata = unknown>(
+    workbookName: string,
+    metadata: TWorkbookMetadata
+  ): void {
+    const workbook = this.workbooks.get(workbookName);
+    if (!workbook) {
+      throw new Error(`Workbook "${workbookName}" not found`);
+    }
+    workbook.workbookMetadata = metadata;
+  }
+
+  /**
+   * Get metadata for a workbook
+   */
+  getWorkbookMetadata<TWorkbookMetadata = unknown>(
+    workbookName: string
+  ): TWorkbookMetadata | undefined {
+    const workbook = this.workbooks.get(workbookName);
+    if (!workbook) {
+      return undefined;
+    }
+    return workbook.workbookMetadata as TWorkbookMetadata | undefined;
+  }
+
+  /**
    * Replace all content for a sheet (safely, without breaking references)
    * This method clears the existing Map and repopulates it rather than replacing the Map reference
    */
@@ -617,18 +750,23 @@ export class WorkbookManager {
 
     // Get current sheet content and prepare new content with cleared cells
     const newContent = new Map(sheet.content);
+    const newMetadata = new Map(sheet.metadata);
 
     // Use iterateCellsInRange to only process cells that actually exist
     // This handles both finite and infinite ranges efficiently
     for (const cellAddress of this.iterateCellsInRange(address)) {
       const cellRef = getCellReference(cellAddress);
 
-      // Remove from content
+      // Remove from content and metadata
       newContent.delete(cellRef);
+      newMetadata.delete(cellRef);
     }
 
-    // setSheetContent will rebuild indexes from scratch, so no need to manually update them
+    // Update content
     this.setSheetContent(address, newContent);
+    
+    // Update metadata
+    sheet.metadata = newMetadata;
   }
 
   /**
@@ -725,7 +863,7 @@ export class WorkbookManager {
     return Array.from(this.iterateCellsInRange(address));
   }
 
-  private getCellContent(cellAddress: CellAddress): SerializedCellValue {
+  public getCellContent(cellAddress: CellAddress): SerializedCellValue {
     const sheet = this.getSheet(cellAddress);
     if (!sheet) {
       throw new SheetNotFoundError(cellAddress.sheetName);

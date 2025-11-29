@@ -102,6 +102,7 @@ export type CellValue = CellNumber | CellString | CellBoolean | CellInfinity;
  */
 export type SerializedCellValue = string | number | boolean | undefined;
 
+
 // Named expressions
 export interface NamedExpression {
   name: string;
@@ -134,15 +135,44 @@ export enum FormulaError {
 }
 
 // Sheet structure
-export interface Sheet {
+export interface Sheet<TCellMetadata = unknown, TSheetMetadata = unknown> {
   name: string;
   index: number; // 0-based index of the sheet
   content: Map<string, SerializedCellValue>;
+  /**
+   * Cell metadata - arbitrary consumer-defined data per cell
+   * Examples: rich text content, links, comments, custom app data
+   * The engine stores and copies this data but doesn't interpret it
+   * Keyed by cell reference (e.g., "A1")
+   */
+  metadata: Map<string, TCellMetadata>;
+  /**
+   * Sheet-level metadata - arbitrary consumer-defined data for the entire sheet
+   * Examples: text boxes, drawings, frozen panes, print settings
+   * The engine stores and copies this data but doesn't interpret it
+   */
+  sheetMetadata: TSheetMetadata;
 }
 
-export interface Workbook {
+export interface Workbook<TCellMetadata = unknown, TSheetMetadata = unknown, TWorkbookMetadata = unknown> {
   name: string;
-  sheets: Map<string, Sheet>;
+  sheets: Map<string, Sheet<TCellMetadata, TSheetMetadata>>;
+  /**
+   * Workbook-level metadata - arbitrary consumer-defined data for the entire workbook
+   * Examples: themes, custom ribbons, document properties, workbook settings
+   * The engine stores and copies this data but doesn't interpret it
+   */
+  workbookMetadata: TWorkbookMetadata;
+}
+
+/**
+ * Tracked reference - a stable reference to a range that updates automatically
+ * when workbooks/sheets are renamed and becomes invalid when they're deleted
+ */
+export interface TrackedReference {
+  id: string;              // UUID
+  address: RangeAddress;   // The range being tracked
+  isValid: boolean;        // False if sheet/workbook deleted
 }
 
 export type ValueEvaluationResult = {
@@ -355,12 +385,12 @@ export interface GradientStyleCondition {
 export type StyleCondition = FormulaStyleCondition | GradientStyleCondition;
 
 export interface ConditionalStyle {
-  area: RangeAddress;
+  areas: RangeAddress[];
   condition: StyleCondition;
 }
 
 export interface DirectCellStyle {
-  area: RangeAddress;
+  areas: RangeAddress[];
   style: CellStyle
 }
 
@@ -374,19 +404,32 @@ export interface CellStyle {
 }
 
 export interface CopyCellsOptions {
-  cut: boolean;
   /**
-   * all: Copy everything from the source to the target
-   * content: Copy only the content from the source to the target
-   * style: Copy only the style from the source to the target
+   * Whether this is a cut operation (clears source cells after copying)
+   * @default false
    */
-  target: 'all' | 'content' | 'style';
+  cut?: boolean;
+  /**
+   * What to include in the copy operation.
+   * - Use 'all' as shorthand for ['content', 'style', 'metadata']
+   * - Use array for fine-grained control over what to copy:
+   *   - ['content'] - copy only values/formulas
+   *   - ['style'] - copy only formatting
+   *   - ['metadata'] - copy only metadata (rich text, links, etc.)
+   *   - ['content', 'style'] - copy content and formatting
+   *   - ['content', 'metadata'] - copy content and metadata
+   *   - ['style', 'metadata'] - copy formatting and metadata
+   *   - ['content', 'style', 'metadata'] - same as 'all'
+   * @default 'all'
+   */
+  include?: 'all' | ('content' | 'style' | 'metadata')[];
   /**
    * The type of the content to copy
    * value: Copy the value from the source to the target,
    * e.g. if the cell has the formula =123 + 123 then the value is 246
    * formula: Copy the formula from the source to the target,
    * e.g. if the cell has the formula =123 + 123 then the formula is =123 + 123 is copied
+   * @default 'formula'
    */
-  type: "value" | "formula";
+  type?: "value" | "formula";
 }

@@ -22,7 +22,7 @@ describe("StyleManager", () => {
   describe("addConditionalStyle", () => {
     test("adds a formula-based style", () => {
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -32,7 +32,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 9 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "ROW() > 4",
@@ -58,7 +58,7 @@ describe("StyleManager", () => {
 
     test("adds a gradient-based style", () => {
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -68,7 +68,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         condition: {
           type: "gradient",
           min: { type: "lowest_value", color: { l: 90, c: 10, h: 120 } },
@@ -94,7 +94,7 @@ describe("StyleManager", () => {
 
     test("adds multiple styles in order", () => {
       const style1: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -104,7 +104,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -113,7 +113,7 @@ describe("StyleManager", () => {
       };
 
       const style2: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -123,7 +123,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "FALSE",
@@ -154,7 +154,7 @@ describe("StyleManager", () => {
   describe("removeConditionalStyle", () => {
     test("removes a style by index", () => {
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -164,7 +164,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -211,7 +211,7 @@ describe("StyleManager", () => {
 
     test("returns false for negative index", () => {
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -221,7 +221,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -246,7 +246,7 @@ describe("StyleManager", () => {
       };
 
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -256,7 +256,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 9 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "ROW() > 4",
@@ -281,7 +281,7 @@ describe("StyleManager", () => {
       };
 
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -291,7 +291,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 9 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "ROW() > 4",
@@ -322,7 +322,7 @@ describe("StyleManager", () => {
       };
 
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -332,7 +332,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 9 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "ROW() > 4",
@@ -367,7 +367,7 @@ describe("StyleManager", () => {
       );
 
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -377,7 +377,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 2 },
             },
           },
-        },
+        }],
         condition: {
           type: "gradient",
           min: { type: "lowest_value", color: { l: 90, c: 10, h: 120 } },
@@ -440,7 +440,7 @@ describe("StyleManager", () => {
       );
 
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -450,7 +450,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 2 },
             },
           },
-        },
+        }],
         condition: {
           type: "gradient",
           min: {
@@ -486,7 +486,7 @@ describe("StyleManager", () => {
       );
 
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -496,7 +496,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 0 },
             },
           },
-        },
+        }],
         condition: {
           type: "gradient",
           min: { type: "lowest_value", color: { l: 90, c: 10, h: 120 } },
@@ -543,7 +543,7 @@ describe("StyleManager", () => {
       const maxColor: LCHColor = { l: 30, c: 80, h: 0 };
 
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -553,7 +553,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 4 },
             },
           },
-        },
+        }],
         condition: {
           type: "gradient",
           min: {
@@ -656,7 +656,7 @@ describe("StyleManager", () => {
       const maxColor: LCHColor = { l: 30, c: 80, h: 0 };
 
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -666,7 +666,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 3 },
             },
           },
-        },
+        }],
         condition: {
           type: "gradient",
           min: {
@@ -735,7 +735,7 @@ describe("StyleManager", () => {
       const blueColor: LCHColor = { l: 50, c: 80, h: 270 };
 
       const style1: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -745,7 +745,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -754,7 +754,7 @@ describe("StyleManager", () => {
       };
 
       const style2: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -764,7 +764,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -787,7 +787,7 @@ describe("StyleManager", () => {
   describe("workbook/sheet lifecycle", () => {
     test("removes styles when workbook is removed", () => {
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -797,7 +797,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -841,7 +841,7 @@ describe("StyleManager", () => {
 
     test("updates workbook name in styles when workbook is renamed", () => {
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -851,7 +851,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -914,13 +914,13 @@ describe("StyleManager", () => {
               row: { type: "infinity", sign: "positive" },
             },
           },
-        })[0]!.area.workbookName
+        })[0]!.areas[0]!.workbookName
       ).toBe(newWorkbookName);
     });
 
     test("removes styles when sheet is removed", () => {
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -930,7 +930,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -971,7 +971,7 @@ describe("StyleManager", () => {
 
     test("updates sheet name in styles when sheet is renamed", () => {
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -981,7 +981,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -1006,14 +1006,14 @@ describe("StyleManager", () => {
         },
       });
       expect(styles).toHaveLength(1);
-      expect(styles[0]!.area.sheetName).toBe(newSheetName);
+      expect(styles[0]!.areas[0]!.sheetName).toBe(newSheetName);
     });
   });
 
   describe("serialization", () => {
     test("includes conditional styles in serialized state", () => {
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1023,7 +1023,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -1038,14 +1038,14 @@ describe("StyleManager", () => {
       expect(Array.isArray(state.conditionalStyles)).toBe(true);
       expect(
         state.conditionalStyles.filter(
-          (s) => s.area.workbookName === workbookName
+          (s) => s.areas.some(area => area.workbookName === workbookName)
         )
       ).toHaveLength(1);
     });
 
     test("restores conditional styles from serialized state", () => {
       const style: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1055,7 +1055,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -1088,7 +1088,7 @@ describe("StyleManager", () => {
   describe("cellStyles", () => {
     test("adds a direct cell style", () => {
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1098,7 +1098,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
           color: "#FFFFFF",
@@ -1123,7 +1123,7 @@ describe("StyleManager", () => {
 
     test("adds multiple cell styles", () => {
       const cellStyle1: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1133,7 +1133,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 2 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
           color: "#FFFFFF",
@@ -1141,7 +1141,7 @@ describe("StyleManager", () => {
       };
 
       const cellStyle2: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1151,7 +1151,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#0000FF",
           color: "#FFFF00",
@@ -1179,7 +1179,7 @@ describe("StyleManager", () => {
 
     test("removes a cell style by index", () => {
       const cellStyle1: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1189,14 +1189,14 @@ describe("StyleManager", () => {
               row: { type: "number", value: 2 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
         },
       };
 
       const cellStyle2: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1206,7 +1206,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#0000FF",
         },
@@ -1235,7 +1235,7 @@ describe("StyleManager", () => {
 
     test("returns false when removing invalid cell style index", () => {
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1245,7 +1245,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
         },
@@ -1272,7 +1272,7 @@ describe("StyleManager", () => {
 
     test("returns false when removing negative cell style index", () => {
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1282,7 +1282,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
         },
@@ -1309,7 +1309,7 @@ describe("StyleManager", () => {
 
     test("applies direct cell style to cells in range", () => {
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1319,7 +1319,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 2 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
           color: "#FFFFFF",
@@ -1343,7 +1343,7 @@ describe("StyleManager", () => {
 
     test("does not apply direct cell style to cells outside range", () => {
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1353,7 +1353,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 2 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
         },
@@ -1375,7 +1375,7 @@ describe("StyleManager", () => {
     test("direct cell styles take precedence over conditional styles", () => {
       // Add a conditional style
       const conditionalStyle: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1385,7 +1385,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -1395,7 +1395,7 @@ describe("StyleManager", () => {
 
       // Add a direct cell style for the same area
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1405,7 +1405,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#00FF00",
           color: "#000000",
@@ -1434,7 +1434,7 @@ describe("StyleManager", () => {
       engine.addSheet({ workbookName: otherWorkbookName, sheetName });
 
       const cellStyle1: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1444,14 +1444,14 @@ describe("StyleManager", () => {
               row: { type: "number", value: 2 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
         },
       };
 
       const cellStyle2: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName: otherWorkbookName,
           sheetName,
           range: {
@@ -1461,7 +1461,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 2 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#0000FF",
         },
@@ -1503,7 +1503,7 @@ describe("StyleManager", () => {
   describe("clearCellStyles", () => {
     test("removes cellStyle completely contained in clear range", () => {
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1513,7 +1513,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 4 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
         },
@@ -1565,7 +1565,7 @@ describe("StyleManager", () => {
     test("adjusts cellStyle when clear range overlaps edge", () => {
       // Style: A1:E5 (0,0 to 4,4)
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1575,7 +1575,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 4 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
         },
@@ -1609,8 +1609,8 @@ describe("StyleManager", () => {
       });
       expect(styles).toHaveLength(1);
       // Should have bottom portion: A3:E5 (0,2 to 4,4)
-      expect(styles[0]!.area.range.start).toEqual({ col: 0, row: 2 });
-      expect(styles[0]!.area.range.end).toEqual({
+      expect(styles[0]!.areas[0]!.range.start).toEqual({ col: 0, row: 2 });
+      expect(styles[0]!.areas[0]!.range.end).toEqual({
         col: { type: "number", value: 4 },
         row: { type: "number", value: 4 },
       });
@@ -1619,7 +1619,7 @@ describe("StyleManager", () => {
     test("splits cellStyle when clear range creates hole", () => {
       // Style: A1:E5 (0,0 to 4,4)
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1629,7 +1629,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 4 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
         },
@@ -1661,13 +1661,14 @@ describe("StyleManager", () => {
           },
         },
       });
-      // Should have 4 rectangles: top, bottom, left, right
-      expect(styles).toHaveLength(4);
+      // Should have 1 style with 4 areas (top, bottom, left, right)
+      expect(styles).toHaveLength(1);
+      expect(styles[0]!.areas).toHaveLength(4);
     });
 
     test("preserves cellStyle that doesn't intersect", () => {
       const cellStyle1: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1677,14 +1678,14 @@ describe("StyleManager", () => {
               row: { type: "number", value: 2 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
         },
       };
 
       const cellStyle2: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1694,7 +1695,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 12 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#00FF00",
         },
@@ -1729,12 +1730,12 @@ describe("StyleManager", () => {
       });
       // cellStyle1 removed, cellStyle2 preserved
       expect(styles).toHaveLength(1);
-      expect(styles[0]!.area.range.start).toEqual({ col: 10, row: 10 });
+      expect(styles[0]!.areas[0]!.range.start).toEqual({ col: 10, row: 10 });
     });
 
     test("clears conditional styles similarly to cellStyles", () => {
       const conditionalStyle: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1744,7 +1745,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 4 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -1793,12 +1794,12 @@ describe("StyleManager", () => {
       });
       expect(styles).toHaveLength(1);
       // Should have bottom portion
-      expect(styles[0]!.area.range.start).toEqual({ col: 0, row: 2 });
+      expect(styles[0]!.areas[0]!.range.start).toEqual({ col: 0, row: 2 });
     });
 
     test("clears both cellStyles and conditionalStyles in one call", () => {
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1808,14 +1809,14 @@ describe("StyleManager", () => {
               row: { type: "number", value: 2 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
         },
       };
 
       const conditionalStyle: ConditionalStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1825,7 +1826,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 2 },
             },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -1879,7 +1880,7 @@ describe("StyleManager", () => {
 
     test("preserves style properties when splitting", () => {
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1889,7 +1890,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 4 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
           color: "#FFFFFF",
@@ -1924,22 +1925,22 @@ describe("StyleManager", () => {
           },
         },
       });
-      expect(styles).toHaveLength(4);
+      // Should have 1 style with 4 areas
+      expect(styles).toHaveLength(1);
+      expect(styles[0]!.areas).toHaveLength(4);
 
-      // All resulting styles should preserve the original style properties
-      for (const style of styles) {
-        expect(style.style.backgroundColor).toBe("#FF0000");
-        expect(style.style.color).toBe("#FFFFFF");
-        expect(style.style.fontSize).toBe(14);
-        expect(style.style.bold).toBe(true);
-      }
+      // The style should preserve the original style properties
+      expect(styles[0]!.style.backgroundColor).toBe("#FF0000");
+      expect(styles[0]!.style.color).toBe("#FFFFFF");
+      expect(styles[0]!.style.fontSize).toBe(14);
+      expect(styles[0]!.style.bold).toBe(true);
     });
   });
 
   describe("getStyleForRange", () => {
     test("returns style when range is completely contained within a single style", () => {
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1949,7 +1950,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 5 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
           color: "#FFFFFF",
@@ -1981,7 +1982,7 @@ describe("StyleManager", () => {
 
     test("returns undefined when range spans multiple styles", () => {
       const cellStyle1: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -1991,14 +1992,14 @@ describe("StyleManager", () => {
               row: { type: "number", value: 2 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
         },
       };
 
       const cellStyle2: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -2008,7 +2009,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 2 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#0000FF",
         },
@@ -2034,7 +2035,7 @@ describe("StyleManager", () => {
 
     test("returns undefined when range is not completely contained", () => {
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -2044,7 +2045,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 3 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
         },
@@ -2069,7 +2070,7 @@ describe("StyleManager", () => {
 
     test("returns undefined when no styles intersect with range", () => {
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -2079,7 +2080,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 2 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
         },
@@ -2108,7 +2109,7 @@ describe("StyleManager", () => {
       engine.addSheet({ workbookName: otherWorkbookName, sheetName });
 
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -2118,7 +2119,7 @@ describe("StyleManager", () => {
               row: { type: "number", value: 3 },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
         },
@@ -2143,7 +2144,7 @@ describe("StyleManager", () => {
 
     test("works with infinite ranges", () => {
       const cellStyle: DirectCellStyle = {
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
@@ -2153,7 +2154,7 @@ describe("StyleManager", () => {
               row: { type: "infinity", sign: "positive" },
             },
           },
-        },
+        }],
         style: {
           backgroundColor: "#FF0000",
         },
@@ -2182,14 +2183,14 @@ describe("StyleManager", () => {
     test("completely removes style when cleared range contains entire style", () => {
       // Add style to A1:C3
       engine.addCellStyle({
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
             start: { col: 0, row: 0 },
             end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
           },
-        },
+        }],
         style: { backgroundColor: "#FF0000" },
       });
 
@@ -2211,14 +2212,14 @@ describe("StyleManager", () => {
     test("splits style when cleared range is in the middle", () => {
       // Add style to A1:E5
       engine.addCellStyle({
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
             start: { col: 0, row: 0 },
             end: { col: { type: "number", value: 4 }, row: { type: "number", value: 4 } },
           },
-        },
+        }],
         style: { backgroundColor: "#FF0000" },
       });
 
@@ -2253,14 +2254,14 @@ describe("StyleManager", () => {
     test("preserves styles in other sheets/workbooks", () => {
       // Add style to Sheet1
       engine.addCellStyle({
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
             start: { col: 0, row: 0 },
             end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
           },
-        },
+        }],
         style: { backgroundColor: "#FF0000" },
       });
 
@@ -2269,14 +2270,14 @@ describe("StyleManager", () => {
 
       // Add style to Sheet2
       engine.addCellStyle({
-        area: {
+        areas: [{
           workbookName,
           sheetName: "Sheet2",
           range: {
             start: { col: 0, row: 0 },
             end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
           },
-        },
+        }],
         style: { backgroundColor: "#00FF00" },
       });
 
@@ -2302,14 +2303,14 @@ describe("StyleManager", () => {
     test("handles no intersection gracefully", () => {
       // Add style to A1:C3
       engine.addCellStyle({
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
             start: { col: 0, row: 0 },
             end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
           },
-        },
+        }],
         style: { backgroundColor: "#FF0000" },
       });
 
@@ -2333,28 +2334,28 @@ describe("StyleManager", () => {
     test("pasting replaces existing cell styles", () => {
       // Add red background to A1
       engine.addCellStyle({
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
             start: { col: 0, row: 0 },
             end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } },
           },
-        },
+        }],
         style: { backgroundColor: "#FF0000", bold: true, fontSize: 16 },
       });
 
       // Set up source cell B1 with blue background
       engine.setCellContent({ workbookName, sheetName, colIndex: 1, rowIndex: 0 }, "Source");
       engine.addCellStyle({
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
             start: { col: 1, row: 0 },
             end: { col: { type: "number", value: 1 }, row: { type: "number", value: 0 } },
           },
-        },
+        }],
         style: { backgroundColor: "#0000FF", italic: true },
       });
 
@@ -2362,7 +2363,7 @@ describe("StyleManager", () => {
       engine.pasteCells(
         [{ workbookName, sheetName, colIndex: 1, rowIndex: 0 }],
         { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
-        { cut: false, type: "formula", target: "all" }
+        { cut: false, type: "formula", include: "all" }
       );
 
       // A1 should have ONLY blue background and italic (old style completely replaced)
@@ -2376,28 +2377,28 @@ describe("StyleManager", () => {
     test("pasting to large styled range preserves surrounding styles", () => {
       // Add red background to A1:E5
       engine.addCellStyle({
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
             start: { col: 0, row: 0 },
             end: { col: { type: "number", value: 4 }, row: { type: "number", value: 4 } },
           },
-        },
+        }],
         style: { backgroundColor: "#FF0000" },
       });
 
       // Set up source cell with blue background
       engine.setCellContent({ workbookName, sheetName, colIndex: 10, rowIndex: 10 }, "Blue");
       engine.addCellStyle({
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
             start: { col: 10, row: 10 },
             end: { col: { type: "number", value: 10 }, row: { type: "number", value: 10 } },
           },
-        },
+        }],
         style: { backgroundColor: "#0000FF" },
       });
 
@@ -2405,7 +2406,7 @@ describe("StyleManager", () => {
       engine.pasteCells(
         [{ workbookName, sheetName, colIndex: 10, rowIndex: 10 }],
         { workbookName, sheetName, colIndex: 2, rowIndex: 2 },
-        { cut: false, type: "formula", target: "all" }
+        { cut: false, type: "formula", include: "all" }
       );
 
       // C3 should be blue
@@ -2426,14 +2427,14 @@ describe("StyleManager", () => {
     test("conditional styles are preserved when pasting cell styles", () => {
       // Add conditional style to A1:C3
       engine.addConditionalStyle({
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
             start: { col: 0, row: 0 },
             end: { col: { type: "number", value: 2 }, row: { type: "number", value: 2 } },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -2444,14 +2445,14 @@ describe("StyleManager", () => {
       // Set up source with cell style
       engine.setCellContent({ workbookName, sheetName, colIndex: 5, rowIndex: 5 }, "Source");
       engine.addCellStyle({
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
             start: { col: 5, row: 5 },
             end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } },
           },
-        },
+        }],
         style: { backgroundColor: "#FF0000" },
       });
 
@@ -2459,7 +2460,7 @@ describe("StyleManager", () => {
       engine.pasteCells(
         [{ workbookName, sheetName, colIndex: 5, rowIndex: 5 }],
         { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
-        { cut: false, type: "formula", target: "all" }
+        { cut: false, type: "formula", include: "all" }
       );
 
       // A1 should have the pasted cell style (red background)

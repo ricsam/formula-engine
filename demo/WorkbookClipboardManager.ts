@@ -122,8 +122,12 @@ export class ClipboardUtils {
     return { width, height, cells };
   }
 
+  public getTsvString(grid: string[][]) {
+    return grid.map((row) => row.join("\t")).join("\n");
+  }
+
   public writeToOsClipboard(grid: string[][]) {
-    const tsvString = grid.map((row) => row.join("\t")).join("\n");
+    const tsvString = this.getTsvString(grid);
     navigator.clipboard.writeText(tsvString);
     return tsvString;
   }
@@ -141,12 +145,14 @@ export class WorkbookClipboardManager extends ClipboardUtils {
   }
   copiedCells: CellAddress[] = [];
   signature: string = "";
+  isCut: boolean = false;
 
   public triggerCopy(context: {
     workbookName: string;
     sheetName: string;
     selectionManager: SelectionManager;
     copyType: "value" | "formula";
+    cut?: boolean;
   }): void {
     const cellData = this.engine.getSheet({
       workbookName: context.workbookName,
@@ -159,9 +165,10 @@ export class WorkbookClipboardManager extends ClipboardUtils {
     );
     if (!extractedCells) return;
     const { width, height, cells } = extractedCells;
-    const exportGrid = this.createExportGrid(width, height);
+    const valueExportGrid = this.createExportGrid(width, height);
+    const formulaExportGrid = this.createExportGrid(width, height);
     this.copiedCells = [];
-    const updates: CellDataUpdate[] = [];
+    this.isCut = context.cut ?? false;
     cells.forEach(({ relative, absolute }) => {
       const cellAddress: CellAddress = {
         workbookName: context.workbookName,
@@ -170,18 +177,13 @@ export class WorkbookClipboardManager extends ClipboardUtils {
         rowIndex: absolute.rowIndex,
       };
       this.copiedCells.push(cellAddress);
-      const value =
-        context.copyType === "value"
-          ? this.engine.getCellValue(cellAddress, false)
-          : cellData.get(getCellReference(cellAddress));
-      exportGrid[relative.rowIndex]![relative.columnIndex] = value;
-      updates.push({
-        rowIndex: relative.rowIndex,
-        colIndex: relative.columnIndex,
-        value: value?.toString() ?? "",
-      });
+      const value = this.engine.getCellValue(cellAddress, false);
+      const formula = cellData.get(getCellReference(cellAddress));
+      valueExportGrid[relative.rowIndex]![relative.columnIndex] = value;
+      formulaExportGrid[relative.rowIndex]![relative.columnIndex] = formula;
     });
-    this.signature = this.writeToOsClipboard(exportGrid);
+    this.signature = this.getTsvString(valueExportGrid);
+    this.writeToOsClipboard(valueExportGrid);
   }
   public triggerPaste(context: {
     workbookName: string;
@@ -228,11 +230,14 @@ export class WorkbookClipboardManager extends ClipboardUtils {
           areas,
         },
         {
-          cut: false,
+          cut: this.isCut,
           type: context.pasteType,
-          target: "all",
+          include: "all",
         }
       );
+
+      // Reset isCut after paste
+      this.isCut = false;
     } else {
       // External paste operation
       context.selectionManager.saveCellValues(context.updates);

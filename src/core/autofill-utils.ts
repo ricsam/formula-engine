@@ -138,6 +138,9 @@ export class AutoFill {
 
     // Copy styles from seed to fill range
     this.fillStyles(opts, finiteSeedRange, finiteFillRange, direction);
+
+    // Copy metadata from seed to fill range
+    this.fillMetadata(opts, finiteSeedRange, finiteFillRange, direction);
   }
 
   private getSeedCells(
@@ -599,56 +602,112 @@ export class AutoFill {
 
         // Copy conditional styles
         for (const style of allConditionalStyles) {
-          if (
-            style.area.workbookName === opts.workbookName &&
-            style.area.sheetName === opts.sheetName
-          ) {
-            const intersection = intersectRanges(style.area.range, sourceCellRange);
-            if (intersection) {
-              const newStyle: ConditionalStyle = {
-                area: {
-                  workbookName: opts.workbookName,
-                  sheetName: opts.sheetName,
-                  range: {
-                    start: { col: targetCell.colIndex, row: targetCell.rowIndex },
-                    end: {
-                      col: { type: "number", value: targetCell.colIndex },
-                      row: { type: "number", value: targetCell.rowIndex },
+          for (const area of style.areas) {
+            if (
+              area.workbookName === opts.workbookName &&
+              area.sheetName === opts.sheetName
+            ) {
+              const intersection = intersectRanges(area.range, sourceCellRange);
+              if (intersection) {
+                const newStyle: ConditionalStyle = {
+                  areas: [{
+                    workbookName: opts.workbookName,
+                    sheetName: opts.sheetName,
+                    range: {
+                      start: { col: targetCell.colIndex, row: targetCell.rowIndex },
+                      end: {
+                        col: { type: "number", value: targetCell.colIndex },
+                        row: { type: "number", value: targetCell.rowIndex },
+                      },
                     },
-                  },
-                },
-                condition: style.condition,
-              };
-              this.styleManager.addConditionalStyle(newStyle);
+                  }],
+                  condition: style.condition,
+                };
+                this.styleManager.addConditionalStyle(newStyle);
+              }
             }
           }
         }
 
         // Copy cell styles
         for (const style of allCellStyles) {
-          if (
-            style.area.workbookName === opts.workbookName &&
-            style.area.sheetName === opts.sheetName
-          ) {
-            const intersection = intersectRanges(style.area.range, sourceCellRange);
-            if (intersection) {
-              const newStyle: DirectCellStyle = {
-                area: {
-                  workbookName: opts.workbookName,
-                  sheetName: opts.sheetName,
-                  range: {
-                    start: { col: targetCell.colIndex, row: targetCell.rowIndex },
-                    end: {
-                      col: { type: "number", value: targetCell.colIndex },
-                      row: { type: "number", value: targetCell.rowIndex },
+          for (const area of style.areas) {
+            if (
+              area.workbookName === opts.workbookName &&
+              area.sheetName === opts.sheetName
+            ) {
+              const intersection = intersectRanges(area.range, sourceCellRange);
+              if (intersection) {
+                const newStyle: DirectCellStyle = {
+                  areas: [{
+                    workbookName: opts.workbookName,
+                    sheetName: opts.sheetName,
+                    range: {
+                      start: { col: targetCell.colIndex, row: targetCell.rowIndex },
+                      end: {
+                        col: { type: "number", value: targetCell.colIndex },
+                        row: { type: "number", value: targetCell.rowIndex },
+                      },
                     },
-                  },
-                },
-                style: style.style,
-              };
-              this.styleManager.addCellStyle(newStyle);
+                  }],
+                  style: style.style,
+                };
+                this.styleManager.addCellStyle(newStyle);
+              }
             }
           }
+        }
+      }
+    }
+  }
+
+  /**
+   * Copy metadata from seed range to fill range with pattern repetition
+   */
+  private fillMetadata(
+    opts: { sheetName: string; workbookName: string },
+    seedRange: FiniteSpreadsheetRange,
+    fillRange: FiniteSpreadsheetRange,
+    direction: FillDirection
+  ): void {
+    const seedWidth = seedRange.end.col - seedRange.start.col + 1;
+    const seedHeight = seedRange.end.row - seedRange.start.row + 1;
+
+    // For each cell in fill range, copy metadata from corresponding seed cell
+    for (let row = fillRange.start.row; row <= fillRange.end.row; row++) {
+      for (let col = fillRange.start.col; col <= fillRange.end.col; col++) {
+        // Determine which seed cell corresponds to this fill cell
+        let seedCol: number;
+        let seedRow: number;
+
+        if (direction === "down" || direction === "up") {
+          // Vertical fill: keep column aligned, pattern repeat on rows
+          seedCol = seedRange.start.col + (col - fillRange.start.col) % seedWidth;
+          seedRow = seedRange.start.row + (row - fillRange.start.row) % seedHeight;
+        } else {
+          // Horizontal fill: keep row aligned, pattern repeat on columns
+          seedRow = seedRange.start.row + (row - fillRange.start.row) % seedHeight;
+          seedCol = seedRange.start.col + (col - fillRange.start.col) % seedWidth;
+        }
+
+        const sourceCellAddress: CellAddress = {
+          workbookName: opts.workbookName,
+          sheetName: opts.sheetName,
+          colIndex: seedCol,
+          rowIndex: seedRow,
+        };
+
+        const targetCellAddress: CellAddress = {
+          workbookName: opts.workbookName,
+          sheetName: opts.sheetName,
+          colIndex: col,
+          rowIndex: row,
+        };
+
+        // Copy metadata from source to target
+        const sourceMetadata = this.workbookManager.getCellMetadata(sourceCellAddress);
+        if (sourceMetadata) {
+          this.workbookManager.setCellMetadata(targetCellAddress, { ...sourceMetadata });
         }
       }
     }
