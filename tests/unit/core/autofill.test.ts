@@ -633,14 +633,14 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
       setCellContent("A1", "Header");
       
       engine.addCellStyle({
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
             start: { col: 0, row: 0 },
             end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } },
           },
-        },
+        }],
         style: { backgroundColor: "#FF0000", bold: true },
       });
 
@@ -677,14 +677,14 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
       setCellContent("A1", 10);
       
       engine.addConditionalStyle({
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
             start: { col: 0, row: 0 },
             end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } },
           },
-        },
+        }],
         condition: {
           type: "formula",
           formula: "TRUE",
@@ -728,14 +728,14 @@ describe("AutoFill and ClearSpreadsheetRange", () => {
       setCellContent("A1", "Test");
       
       engine.addCellStyle({
-        area: {
+        areas: [{
           workbookName,
           sheetName,
           range: {
             start: { col: 0, row: 0 },
             end: { col: { type: "number", value: 0 }, row: { type: "number", value: 0 } },
           },
-        },
+        }],
         style: { backgroundColor: "#0000FF" },
       });
 

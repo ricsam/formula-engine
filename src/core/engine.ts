@@ -36,11 +36,19 @@ import { EvaluationManager } from "./managers/evaluation-manager";
 import { DependencyManager } from "./managers/dependency-manager";
 import { StyleManager } from "./managers/style-manager";
 import { CopyManager } from "./managers/copy-manager";
+import { ReferenceManager } from "./managers/reference-manager";
 
 /**
  * Main FormulaEngine class
+ * @template TCellMetadata - Consumer-defined type for cell metadata (rich text, links, custom data, etc.)
+ * @template TSheetMetadata - Consumer-defined type for sheet metadata (text boxes, frozen panes, etc.)
+ * @template TWorkbookMetadata - Consumer-defined type for workbook metadata (themes, document properties, etc.)
  */
-export class FormulaEngine {
+export class FormulaEngine<
+  TCellMetadata = unknown,
+  TSheetMetadata = unknown,
+  TWorkbookMetadata = unknown
+> {
   private workbookManager: WorkbookManager;
   private namedExpressionManager: NamedExpressionManager;
   private tableManager: TableManager;
@@ -50,6 +58,7 @@ export class FormulaEngine {
   private dependencyManager: DependencyManager;
   private styleManager: StyleManager;
   private copyManager: CopyManager;
+  private referenceManager: ReferenceManager;
 
   /**
    * Public access to the store manager for testing
@@ -77,7 +86,7 @@ export class FormulaEngine {
     const formulaEvaluator = new FormulaEvaluator(
       this.tableManager,
       this.dependencyManager,
-      this.namedExpressionManager,
+      this.namedExpressionManager
     );
 
     this.evaluationManager = new EvaluationManager(
@@ -87,9 +96,7 @@ export class FormulaEngine {
       this.dependencyManager
     );
 
-    this.styleManager = new StyleManager(
-      this.evaluationManager
-    );
+    this.styleManager = new StyleManager(this.evaluationManager);
     this.copyManager = new CopyManager(
       this.workbookManager,
       this.evaluationManager,
@@ -101,6 +108,8 @@ export class FormulaEngine {
       this.styleManager,
       this
     );
+
+    this.referenceManager = new ReferenceManager();
 
     this._workbookManager = this.workbookManager;
     this._namedExpressionManager = this.namedExpressionManager;
@@ -114,9 +123,16 @@ export class FormulaEngine {
 
   /**
    * Static factory method to build an empty engine
+   * @template TC - Consumer-defined cell metadata type
+   * @template TS - Consumer-defined sheet metadata type
+   * @template TW - Consumer-defined workbook metadata type
    */
-  static buildEmpty(): FormulaEngine {
-    return new FormulaEngine();
+  static buildEmpty<TC = unknown, TS = unknown, TW = unknown>(): FormulaEngine<
+    TC,
+    TS,
+    TW
+  > {
+    return new FormulaEngine<TC, TS, TW>();
   }
 
   //#region Cell
@@ -139,11 +155,126 @@ export class FormulaEngine {
     );
   }
 
+  /**
+   * Set metadata for a cell
+   * Metadata can contain rich text, links, comments, or any consumer-defined data
+   */
+  setCellMetadata(
+    address: CellAddress,
+    metadata: TCellMetadata | undefined
+  ): void {
+    this.workbookManager.setCellMetadata(address, metadata);
+    this.eventManager.emitUpdate();
+  }
+
+  /**
+   * Get metadata for a cell
+   */
+  getCellMetadata(address: CellAddress): TCellMetadata | undefined {
+    return this.workbookManager.getCellMetadata(address) as
+      | TCellMetadata
+      | undefined;
+  }
+
+  /**
+   * Get all cell metadata for a sheet (serialized as Map)
+   */
+  getSheetMetadataSerialized(opts: {
+    sheetName: string;
+    workbookName: string;
+  }): Map<string, TCellMetadata> {
+    return this.workbookManager.getSheetMetadataSerialized(opts) as Map<
+      string,
+      TCellMetadata
+    >;
+  }
+
+  /**
+   * Set metadata for a sheet
+   * Sheet metadata can contain text boxes, frozen panes, print settings, or any consumer-defined data
+   */
+  setSheetMetadata(
+    opts: { workbookName: string; sheetName: string },
+    metadata: TSheetMetadata
+  ): void {
+    this.workbookManager.setSheetMetadata(opts, metadata);
+    this.eventManager.emitUpdate();
+  }
+
+  /**
+   * Get metadata for a sheet
+   */
+  getSheetMetadata(opts: {
+    workbookName: string;
+    sheetName: string;
+  }): TSheetMetadata | undefined {
+    return this.workbookManager.getSheetMetadata(opts) as
+      | TSheetMetadata
+      | undefined;
+  }
+
+  /**
+   * Set metadata for a workbook
+   * Workbook metadata can contain themes, document properties, settings, or any consumer-defined data
+   */
+  setWorkbookMetadata(workbookName: string, metadata: TWorkbookMetadata): void {
+    this.workbookManager.setWorkbookMetadata(workbookName, metadata);
+    this.eventManager.emitUpdate();
+  }
+
+  /**
+   * Get metadata for a workbook
+   */
+  getWorkbookMetadata(workbookName: string): TWorkbookMetadata | undefined {
+    return this.workbookManager.getWorkbookMetadata(workbookName) as
+      | TWorkbookMetadata
+      | undefined;
+  }
+
+  //#endregion
+
+  //#region Reference Tracking
+  /**
+   * Create a tracked reference to a range
+   * Returns a stable UUID that can be used to retrieve the address later
+   * The reference automatically updates when sheets/workbooks are renamed
+   */
+  createRef(address: RangeAddress): string {
+    return this.referenceManager.createRef(address);
+  }
+
+  /**
+   * Get the current address for a tracked reference
+   * Returns undefined if reference doesn't exist or has been invalidated
+   */
+  getRefAddress(refId: string): RangeAddress | undefined {
+    return this.referenceManager.getRefAddress(refId);
+  }
+
+  /**
+   * Delete a tracked reference
+   * Returns true if the reference was deleted, false if it didn't exist
+   */
+  deleteRef(refId: string): boolean {
+    return this.referenceManager.deleteRef(refId);
+  }
+
+  /**
+   * Get all invalid reference IDs
+   * Useful for cleanup after sheet/workbook deletions
+   */
+  getInvalidRefs(): string[] {
+    return this.referenceManager.getInvalidRefs();
+  }
+  //#endregion
+
   evaluateFormula(
     /**
      * formula without the leading = sign
      */
-    formula: string, cellAddress: CellAddress): SerializedCellValue {
+    formula: string,
+    cellAddress: CellAddress
+  ): SerializedCellValue {
     return this.evaluationManager.evaluateFormula(formula, cellAddress);
   }
 
@@ -395,7 +526,10 @@ export class FormulaEngine {
    * Remove a conditional style rule by index
    */
   removeConditionalStyle(workbookName: string, index: number): boolean {
-    const removed = this.styleManager.removeConditionalStyle(workbookName, index);
+    const removed = this.styleManager.removeConditionalStyle(
+      workbookName,
+      index
+    );
     if (removed) {
       this.eventManager.emitUpdate();
     }
@@ -405,7 +539,9 @@ export class FormulaEngine {
   /**
    * Get all conditional styles intersecting with a range
    */
-  getConditionalStylesIntersectingWithRange(range: RangeAddress): ConditionalStyle[] {
+  getConditionalStylesIntersectingWithRange(
+    range: RangeAddress
+  ): ConditionalStyle[] {
     return this.styleManager.getConditionalStylesIntersectingWithRange(range);
   }
 
@@ -414,6 +550,20 @@ export class FormulaEngine {
    */
   getCellStyle(cellAddress: CellAddress): CellStyle | undefined {
     return this.styleManager.getCellStyle(cellAddress);
+  }
+
+  /**
+   * Get all cell styles (for testing and serialization)
+   */
+  getAllCellStyles(): DirectCellStyle[] {
+    return this.styleManager.getAllCellStyles();
+  }
+
+  /**
+   * Get all conditional styles (for testing and serialization)
+   */
+  getAllConditionalStyles(): ConditionalStyle[] {
+    return this.styleManager.getAllConditionalStyles();
   }
 
   /**
@@ -471,7 +621,7 @@ export class FormulaEngine {
     target: CellAddress,
     options: CopyCellsOptions
   ): void {
-    this.copyManager.copyCells(source, target, options);
+    this.copyManager.pasteCells(source, target, options);
     this.reevaluate();
     this.eventManager.emitUpdate();
   }
@@ -480,11 +630,11 @@ export class FormulaEngine {
    * Fill one or more areas with a seed range's content/style
    * Uses column-first strategy: fills down, then replicates right
    * Formulas are adjusted based on each target cell's offset from the seed
-   * 
+   *
    * @param seedRange - The range to use as a template/pattern
    * @param targetRanges - One or more range addresses to fill
    * @param options - Copy options (target: 'all'|'content'|'style', type: 'value'|'formula', cut: boolean)
-   * 
+   *
    * @example
    * // Fill F6:J10 with A1:B2 seed (2x2 pattern fills 5x5 area)
    * engine.fillAreas(
@@ -522,11 +672,11 @@ export class FormulaEngine {
    * Handles multiple selection areas - each area is independently pasted or filled
    * - If area is larger than source, uses fillAreas() to fill the area
    * - If area is same size or smaller, uses pasteCells() for normal paste
-   * 
+   *
    * @param sourceCells - The copied cells
    * @param pasteSelection - One or more selection areas where user is pasting
    * @param options - Copy options
-   * 
+   *
    * @example
    * // Copy A1, paste into two areas B1:C2 and E5:F6 - both get filled
    * engine.smartPaste(
@@ -555,6 +705,22 @@ export class FormulaEngine {
       return;
     }
 
+    // If cut operation, always use pasteCells (never fillAreas)
+    // Cut should be a simple move operation, not a fill
+    if (options.cut === true) {
+      for (const area of pasteSelection.areas) {
+        const target: CellAddress = {
+          workbookName: pasteSelection.workbookName,
+          sheetName: pasteSelection.sheetName,
+          colIndex: area.start.col,
+          rowIndex: area.start.row,
+        };
+        this.pasteCells(sourceCells, target, options);
+      }
+      return;
+    }
+
+    // For copy operations (not cut), use smart paste/fill logic
     // Calculate source bounds once
     const sourceBounds = this.getBoundsFromCells(sourceCells);
     const sourceWidth = sourceBounds.maxCol - sourceBounds.minCol + 1;
@@ -577,12 +743,10 @@ export class FormulaEngine {
     for (const area of pasteSelection.areas) {
       const pasteStartCol = area.start.col;
       const pasteStartRow = area.start.row;
-      const pasteEndCol = area.end.col.type === "number"
-        ? area.end.col.value
-        : pasteStartCol;
-      const pasteEndRow = area.end.row.type === "number"
-        ? area.end.row.value
-        : pasteStartRow;
+      const pasteEndCol =
+        area.end.col.type === "number" ? area.end.col.value : pasteStartCol;
+      const pasteEndRow =
+        area.end.row.type === "number" ? area.end.row.value : pasteStartRow;
 
       const pasteWidth = pasteEndCol - pasteStartCol + 1;
       const pasteHeight = pasteEndRow - pasteStartRow + 1;
@@ -646,6 +810,62 @@ export class FormulaEngine {
 
     return { minCol, minRow, maxCol, maxRow };
   }
+
+  /**
+   * Move a single cell to a new location
+   * Updates all formula references that point to the moved cell
+   *
+   * @param source - The cell to move
+   * @param target - The destination cell address
+   *
+   * @example
+   * // Move A1 to D5. If B1 contains =A1, it will be updated to =D5
+   * engine.moveCell(
+   *   { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+   *   { workbookName, sheetName, colIndex: 3, rowIndex: 4 }
+   * );
+   */
+  moveCell(source: CellAddress, target: CellAddress): void {
+    this.pasteCells([source], target, {
+      cut: true,
+      type: "formula",
+      include: "all",
+    });
+    this.reevaluate();
+    this.eventManager.emitUpdate();
+  }
+
+  /**
+   * Move a range of cells to a new location
+   * Updates all formula references that point to the moved cells
+   *
+   * @param sourceRange - The range to move
+   * @param target - The top-left destination cell address
+   *
+   * @example
+   * // Move A1:D5 to F10. If E1 contains =SUM(A1:D5), it will be updated to =SUM(F10:I14)
+   * engine.moveRange(
+   *   {
+   *     workbookName,
+   *     sheetName,
+   *     range: {
+   *       start: { col: 0, row: 0 },
+   *       end: { col: { type: "number", value: 3 }, row: { type: "number", value: 4 } }
+   *     }
+   *   },
+   *   { workbookName, sheetName, colIndex: 5, rowIndex: 9 }
+   * );
+   */
+  moveRange(sourceRange: RangeAddress, target: CellAddress): void {
+    const cells = this.copyManager.expandRangeToCells(sourceRange);
+    this.pasteCells(cells, target, {
+      cut: true,
+      type: "formula",
+      include: "all",
+    });
+    this.reevaluate();
+    this.eventManager.emitUpdate();
+  }
   //#endregion
 
   //#region Sheets
@@ -664,6 +884,9 @@ export class FormulaEngine {
     this.namedExpressionManager.removeSheet(opts);
     this.tableManager.removeSheet(opts);
     this.styleManager.removeSheetStyles(opts.workbookName, opts.sheetName);
+
+    // Invalidate tracked references to this sheet
+    this.referenceManager.invalidateSheet(opts.workbookName, opts.sheetName);
 
     // Add engine-specific logic: re-evaluate since references might be affected
     this.reevaluate();
@@ -699,6 +922,13 @@ export class FormulaEngine {
         oldSheetName: opts.sheetName,
         newSheetName: opts.newSheetName,
       })
+    );
+
+    // Update tracked references to this sheet
+    this.referenceManager.updateSheetName(
+      opts.workbookName,
+      opts.sheetName,
+      opts.newSheetName
     );
 
     // Add engine-specific logic: re-evaluate since references might be affected
@@ -747,6 +977,9 @@ export class FormulaEngine {
     this.tableManager.removeWorkbook(workbookName);
     this.styleManager.removeWorkbookStyles(workbookName);
 
+    // Invalidate tracked references to this workbook
+    this.referenceManager.invalidateWorkbook(workbookName);
+
     this.reevaluate();
     this.eventManager.emitUpdate();
   }
@@ -783,6 +1016,30 @@ export class FormulaEngine {
           sheetName: sheetName,
         },
         new Map(sheet.content)
+      );
+
+      // Copy all cell metadata
+      const targetSheet = this.workbookManager.getSheet({
+        workbookName: toWorkbookName,
+        sheetName: sheetName,
+      });
+      if (targetSheet) {
+        targetSheet.metadata = new Map(sheet.metadata);
+
+        // Copy sheet metadata
+        if (sheet.sheetMetadata !== undefined) {
+          targetSheet.sheetMetadata = structuredClone(sheet.sheetMetadata);
+        }
+      }
+    }
+
+    // Copy workbook metadata
+    const targetWorkbook = this.workbookManager
+      .getWorkbooks()
+      .get(toWorkbookName);
+    if (targetWorkbook && sourceWorkbook.workbookMetadata !== undefined) {
+      targetWorkbook.workbookMetadata = structuredClone(
+        sourceWorkbook.workbookMetadata
       );
     }
 
@@ -837,13 +1094,14 @@ export class FormulaEngine {
     // Clone conditional styles
     const allConditionalStyles = this.styleManager.getAllConditionalStyles();
     for (const style of allConditionalStyles) {
-      if (style.area.workbookName === fromWorkbookName) {
+      if (style.areas.some((area) => area.workbookName === fromWorkbookName)) {
         const newStyle: ConditionalStyle = {
           ...style,
-          area: {
-            ...style.area,
-            workbookName: toWorkbookName,
-          },
+          areas: style.areas.map((area) =>
+            area.workbookName === fromWorkbookName
+              ? { ...area, workbookName: toWorkbookName }
+              : area
+          ),
         };
         this.styleManager.addConditionalStyle(newStyle);
       }
@@ -852,13 +1110,14 @@ export class FormulaEngine {
     // Clone cell styles
     const allCellStyles = this.styleManager.getAllCellStyles();
     for (const style of allCellStyles) {
-      if (style.area.workbookName === fromWorkbookName) {
+      if (style.areas.some((area) => area.workbookName === fromWorkbookName)) {
         const newStyle: DirectCellStyle = {
           ...style,
-          area: {
-            ...style.area,
-            workbookName: toWorkbookName,
-          },
+          areas: style.areas.map((area) =>
+            area.workbookName === fromWorkbookName
+              ? { ...area, workbookName: toWorkbookName }
+              : area
+          ),
         };
         this.styleManager.addCellStyle(newStyle);
       }
@@ -899,6 +1158,12 @@ export class FormulaEngine {
         oldWorkbookName: opts.workbookName,
         newWorkbookName: opts.newWorkbookName,
       })
+    );
+
+    // Update tracked references to this workbook
+    this.referenceManager.updateWorkbookName(
+      opts.workbookName,
+      opts.newWorkbookName
     );
 
     this.reevaluate();
@@ -992,6 +1257,7 @@ export class FormulaEngine {
       tables: this.tableManager.tables,
       conditionalStyles: this.styleManager.getAllConditionalStyles(),
       cellStyles: this.styleManager.getAllCellStyles(),
+      references: this.referenceManager.getAllReferences(),
     };
   }
 
@@ -1023,29 +1289,36 @@ export class FormulaEngine {
       deserialized.namedExpressions
     );
     this.tableManager.resetTables(deserialized.tables);
-    
+
     // Reset styles if present
     // Handle backward compatibility: if conditionalStyles is a Map, convert it
     let conditionalStylesArray: ConditionalStyle[] | undefined;
     let cellStylesArray: DirectCellStyle[] | undefined;
-    
+
     if (deserialized.conditionalStyles) {
       if (deserialized.conditionalStyles instanceof Map) {
         // Old format: Map<string, ConditionalStyle[]>
-        conditionalStylesArray = Array.from(deserialized.conditionalStyles.values()).flat();
+        conditionalStylesArray = Array.from(
+          deserialized.conditionalStyles.values()
+        ).flat();
       } else if (Array.isArray(deserialized.conditionalStyles)) {
         // New format: ConditionalStyle[]
         conditionalStylesArray = deserialized.conditionalStyles;
       }
     }
-    
+
     if (deserialized.cellStyles) {
       if (Array.isArray(deserialized.cellStyles)) {
         cellStylesArray = deserialized.cellStyles;
       }
     }
-    
+
     this.styleManager.resetStyles(conditionalStylesArray, cellStylesArray);
+
+    // Reset references if present
+    if (deserialized.references) {
+      this.referenceManager.resetReferences(deserialized.references);
+    }
 
     // Re-evaluate all sheets to ensure all dependencies are resolved correctly
     this.reevaluate();

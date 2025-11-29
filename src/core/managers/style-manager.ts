@@ -42,7 +42,7 @@ export class StyleManager {
    */
   removeConditionalStyle(workbookName: string, index: number): boolean {
     const workbookStyles = this.conditionalStyles.filter(
-      (style) => style.area.workbookName === workbookName
+      (style) => style.areas.some(area => area.workbookName === workbookName)
     );
     if (index < 0 || index >= workbookStyles.length) {
       return false;
@@ -51,7 +51,7 @@ export class StyleManager {
     let currentIndex = 0;
     for (let i = 0; i < this.conditionalStyles.length; i++) {
       const style = this.conditionalStyles[i];
-      if (style && style.area.workbookName === workbookName) {
+      if (style && style.areas.some(area => area.workbookName === workbookName)) {
         if (currentIndex === index) {
           this.conditionalStyles.splice(i, 1);
           return true;
@@ -70,9 +70,11 @@ export class StyleManager {
   ): ConditionalStyle[] {
     return this.conditionalStyles.filter(
       (style) =>
-        style.area.workbookName === range.workbookName &&
-        style.area.sheetName === range.sheetName &&
-        rangesIntersect(style.area.range, range.range)
+        style.areas.some(area =>
+          area.workbookName === range.workbookName &&
+          area.sheetName === range.sheetName &&
+          rangesIntersect(area.range, range.range)
+        )
     );
   }
 
@@ -88,7 +90,7 @@ export class StyleManager {
    */
   removeCellStyle(workbookName: string, index: number): boolean {
     const workbookStyles = this.cellStyles.filter(
-      (style) => style && style.area && style.area.workbookName === workbookName
+      (style) => style && style.areas && style.areas.some(area => area.workbookName === workbookName)
     );
     if (index < 0 || index >= workbookStyles.length) {
       return false;
@@ -97,7 +99,7 @@ export class StyleManager {
     let currentIndex = 0;
     for (let i = 0; i < this.cellStyles.length; i++) {
       const style = this.cellStyles[i];
-      if (style && style.area && style.area.workbookName === workbookName) {
+      if (style && style.areas && style.areas.some(area => area.workbookName === workbookName)) {
         if (currentIndex === index) {
           this.cellStyles.splice(i, 1);
           return true;
@@ -115,15 +117,17 @@ export class StyleManager {
     return this.cellStyles.filter(
       (style) =>
         style &&
-        style.area.sheetName === range.sheetName &&
-        style.area.workbookName === range.workbookName &&
-        rangesIntersect(style.area.range, range.range)
+        style.areas.some(area =>
+          area.sheetName === range.sheetName &&
+          area.workbookName === range.workbookName &&
+          rangesIntersect(area.range, range.range)
+        )
     );
   }
 
   /**
    * Get the style for a range if all cells in the range have the same style
-   * Returns the DirectCellStyle if the range is completely contained within a single style's area
+   * Returns the DirectCellStyle if the range is completely contained within a single style's areas
    * Returns undefined if multiple styles, partial coverage, or no styles apply
    */
   getStyleForRange(range: RangeAddress): DirectCellStyle | undefined {
@@ -139,9 +143,15 @@ export class StyleManager {
       return undefined;
     }
 
-    // Check if the range is completely contained within the single style's area
+    // Check if the range is completely contained within any of the single style's areas
     const style = intersectingStyles[0]!;
-    if (isRangeContained(range.range, style.area.range)) {
+    const isContained = style.areas.some(area =>
+      area.workbookName === range.workbookName &&
+      area.sheetName === range.sheetName &&
+      isRangeContained(range.range, area.range)
+    );
+    
+    if (isContained) {
       return style;
     }
 
@@ -179,10 +189,10 @@ export class StyleManager {
    */
   removeWorkbookStyles(workbookName: string): void {
     this.conditionalStyles = this.conditionalStyles.filter(
-      (style) => style.area.workbookName !== workbookName
+      (style) => !style.areas.some(area => area.workbookName === workbookName)
     );
     this.cellStyles = this.cellStyles.filter(
-      (style) => style.area.workbookName !== workbookName
+      (style) => !style.areas.some(area => area.workbookName === workbookName)
     );
   }
 
@@ -191,31 +201,23 @@ export class StyleManager {
    */
   updateWorkbookName(oldName: string, newName: string): void {
     // Update conditional styles
-    this.conditionalStyles = this.conditionalStyles.map((style) => {
-      if (style.area.workbookName === oldName) {
-        return {
-          ...style,
-          area: {
-            ...style.area,
-            workbookName: newName,
-          },
-        };
-      }
-      return style;
-    });
+    this.conditionalStyles = this.conditionalStyles.map((style) => ({
+      ...style,
+      areas: style.areas.map(area =>
+        area.workbookName === oldName
+          ? { ...area, workbookName: newName }
+          : area
+      )
+    }));
     // Update cell styles
-    this.cellStyles = this.cellStyles.map((style) => {
-      if (style.area.workbookName === oldName) {
-        return {
-          ...style,
-          area: {
-            ...style.area,
-            workbookName: newName,
-          },
-        };
-      }
-      return style;
-    });
+    this.cellStyles = this.cellStyles.map((style) => ({
+      ...style,
+      areas: style.areas.map(area =>
+        area.workbookName === oldName
+          ? { ...area, workbookName: newName }
+          : area
+      )
+    }));
   }
 
   /**
@@ -227,37 +229,23 @@ export class StyleManager {
     newSheetName: string
   ): void {
     // Update conditional styles
-    this.conditionalStyles = this.conditionalStyles.map((style) => {
-      if (
-        style.area.workbookName === workbookName &&
-        style.area.sheetName === oldSheetName
-      ) {
-        return {
-          ...style,
-          area: {
-            ...style.area,
-            sheetName: newSheetName,
-          },
-        };
-      }
-      return style;
-    });
+    this.conditionalStyles = this.conditionalStyles.map((style) => ({
+      ...style,
+      areas: style.areas.map(area =>
+        area.workbookName === workbookName && area.sheetName === oldSheetName
+          ? { ...area, sheetName: newSheetName }
+          : area
+      )
+    }));
     // Update cell styles
-    this.cellStyles = this.cellStyles.map((style) => {
-      if (
-        style.area.workbookName === workbookName &&
-        style.area.sheetName === oldSheetName
-      ) {
-        return {
-          ...style,
-          area: {
-            ...style.area,
-            sheetName: newSheetName,
-          },
-        };
-      }
-      return style;
-    });
+    this.cellStyles = this.cellStyles.map((style) => ({
+      ...style,
+      areas: style.areas.map(area =>
+        area.workbookName === workbookName && area.sheetName === oldSheetName
+          ? { ...area, sheetName: newSheetName }
+          : area
+      )
+    }));
   }
 
   /**
@@ -266,16 +254,16 @@ export class StyleManager {
   removeSheetStyles(workbookName: string, sheetName: string): void {
     this.conditionalStyles = this.conditionalStyles.filter(
       (style) =>
-        !(
-          style.area.workbookName === workbookName &&
-          style.area.sheetName === sheetName
+        !style.areas.some(area =>
+          area.workbookName === workbookName &&
+          area.sheetName === sheetName
         )
     );
     this.cellStyles = this.cellStyles.filter(
       (style) =>
-        !(
-          style.area.workbookName === workbookName &&
-          style.area.sheetName === sheetName
+        !style.areas.some(area =>
+          area.workbookName === workbookName &&
+          area.sheetName === sheetName
         )
     );
   }
@@ -288,42 +276,48 @@ export class StyleManager {
   getCellStyle(cellAddress: CellAddress): CellStyle | undefined {
     // First check conditional styles
     for (const style of this.conditionalStyles) {
-      if (!style || !style.area) {
+      if (!style || !style.areas) {
         continue;
       }
-      // Check if cell is in the style's area
-      if (
-        style.area.sheetName !== cellAddress.sheetName ||
-        style.area.workbookName !== cellAddress.workbookName
-      ) {
-        continue;
-      }
+      
+      // Check if cell is in any of the style's areas
+      for (const area of style.areas) {
+        if (
+          area.sheetName !== cellAddress.sheetName ||
+          area.workbookName !== cellAddress.workbookName
+        ) {
+          continue;
+        }
 
-      if (!isCellInRange(cellAddress, style.area.range)) {
-        continue;
-      }
+        if (!isCellInRange(cellAddress, area.range)) {
+          continue;
+        }
 
-      // Cell is in area, evaluate condition
-      if (style.condition.type === "formula") {
-        const result = this.evaluateFormulaCondition(cellAddress, style);
-        if (result) return result;
-      } else {
-        const result = this.evaluateGradientCondition(cellAddress, style);
-        if (result) return result;
+        // Cell is in area, evaluate condition
+        if (style.condition.type === "formula") {
+          const result = this.evaluateFormulaCondition(cellAddress, style, area);
+          if (result) return result;
+        } else {
+          const result = this.evaluateGradientCondition(cellAddress, style, area);
+          if (result) return result;
+        }
       }
     }
 
     // Then check direct cell styles
     for (const cellStyle of this.cellStyles) {
-      if (!cellStyle || !cellStyle.area) {
+      if (!cellStyle || !cellStyle.areas) {
         continue;
       }
-      if (
-        cellStyle.area.workbookName === cellAddress.workbookName &&
-        cellStyle.area.sheetName === cellAddress.sheetName &&
-        isCellInRange(cellAddress, cellStyle.area.range)
-      ) {
-        return cellStyle.style;
+      
+      for (const area of cellStyle.areas) {
+        if (
+          area.workbookName === cellAddress.workbookName &&
+          area.sheetName === cellAddress.sheetName &&
+          isCellInRange(cellAddress, area.range)
+        ) {
+          return cellStyle.style;
+        }
       }
     }
 
@@ -335,7 +329,8 @@ export class StyleManager {
    */
   private evaluateFormulaCondition(
     cellAddress: CellAddress,
-    style: ConditionalStyle
+    style: ConditionalStyle,
+    area: RangeAddress
   ): CellStyle | undefined {
     if (style.condition.type !== "formula") {
       return undefined;
@@ -377,7 +372,8 @@ export class StyleManager {
    */
   private evaluateGradientCondition(
     cellAddress: CellAddress,
-    style: ConditionalStyle
+    style: ConditionalStyle,
+    area: RangeAddress
   ): CellStyle | undefined {
     if (style.condition.type !== "gradient") {
       return undefined;
@@ -396,9 +392,10 @@ export class StyleManager {
       const cellValue = evalResult.result.value;
 
       // Calculate min and max values for the gradient
-      const { min: minValue, max: maxValue } = this.calculateGradientBounds(
+      const { min: minValue, max: maxValue} = this.calculateGradientBounds(
         style,
-        cellAddress
+        cellAddress,
+        area
       );
 
       if (minValue === null || maxValue === null) {
@@ -427,7 +424,8 @@ export class StyleManager {
    */
   private calculateGradientBounds(
     style: ConditionalStyle,
-    cellAddress: CellAddress
+    cellAddress: CellAddress,
+    area: RangeAddress
   ): { min: number | null; max: number | null } {
     if (style.condition.type !== "gradient") {
       return { min: null, max: null };
@@ -435,10 +433,10 @@ export class StyleManager {
 
     const { min: minConfig, max: maxConfig } = style.condition;
     const topLeftCell: CellAddress = {
-      workbookName: style.area.workbookName,
-      sheetName: style.area.sheetName,
-      colIndex: style.area.range.start.col,
-      rowIndex: style.area.range.start.row,
+      workbookName: area.workbookName,
+      sheetName: area.sheetName,
+      colIndex: area.range.start.col,
+      rowIndex: area.range.start.row,
     };
 
     // Calculate min value
@@ -446,7 +444,7 @@ export class StyleManager {
     if (minConfig.type === "lowest_value") {
       // Evaluate MIN(range) formula directly
       try {
-        const rangeRef = this.getRangeReference(style.area);
+        const rangeRef = this.getRangeReference(area);
         const result = this.evaluationManager.evaluateFormula(
           `=MIN(${rangeRef})`,
           topLeftCell
@@ -476,7 +474,7 @@ export class StyleManager {
     if (maxConfig.type === "highest_value") {
       // Evaluate MAX(range) formula directly
       try {
-        const rangeRef = this.getRangeReference(style.area);
+        const rangeRef = this.getRangeReference(area);
         const result = this.evaluationManager.evaluateFormula(
           `=MAX(${rangeRef})`,
           topLeftCell
@@ -580,128 +578,121 @@ export class StyleManager {
    * Adjusts existing style ranges rather than deleting them entirely
    */
   clearCellStyles(range: RangeAddress): void {
-    // Process cellStyles
-    const newCellStyles: DirectCellStyle[] = [];
-    for (const cellStyle of this.cellStyles) {
-      if (!cellStyle || !cellStyle.area) {
-        newCellStyles.push(cellStyle);
-        continue;
+    // Process cellStyles - punch holes in areas
+    this.cellStyles = this.cellStyles.map(cellStyle => {
+      if (!cellStyle || !cellStyle.areas) {
+        return cellStyle;
       }
 
-      // Check if this style intersects with the clear range
-      if (
-        cellStyle.area.workbookName === range.workbookName &&
-        cellStyle.area.sheetName === range.sheetName &&
-        rangesIntersect(cellStyle.area.range, range.range)
-      ) {
-        // Subtract the clear range from this style's range
-        const remainingRanges = subtractRange(
-          cellStyle.area.range,
-          range.range
-        );
+      const newAreas: RangeAddress[] = [];
+      
+      for (const area of cellStyle.areas) {
+        // Check if this area intersects with the clear range
+        if (
+          area.workbookName === range.workbookName &&
+          area.sheetName === range.sheetName &&
+          rangesIntersect(area.range, range.range)
+        ) {
+          // Subtract the clear range from this area
+          const remainingRanges = subtractRange(area.range, range.range);
 
-        // Add new styles for each remaining range
-        for (const remainingRange of remainingRanges) {
-          newCellStyles.push({
-            area: {
-              workbookName: cellStyle.area.workbookName,
-              sheetName: cellStyle.area.sheetName,
+          // Add all remaining ranges as new areas
+          for (const remainingRange of remainingRanges) {
+            newAreas.push({
+              workbookName: area.workbookName,
+              sheetName: area.sheetName,
               range: remainingRange,
-            },
-            style: cellStyle.style,
-          });
+            });
+          }
+        } else {
+          // No intersection, keep the area as-is
+          newAreas.push(area);
         }
-      } else {
-        // No intersection, keep the style as-is
-        newCellStyles.push(cellStyle);
       }
-    }
-    this.cellStyles = newCellStyles;
+      
+      return { ...cellStyle, areas: newAreas };
+    }).filter(style => style.areas.length > 0);
 
-    // Process conditionalStyles
-    const newConditionalStyles: ConditionalStyle[] = [];
-    for (const conditionalStyle of this.conditionalStyles) {
-      if (!conditionalStyle || !conditionalStyle.area) {
-        newConditionalStyles.push(conditionalStyle);
-        continue;
+    // Process conditionalStyles - punch holes in areas
+    this.conditionalStyles = this.conditionalStyles.map(conditionalStyle => {
+      if (!conditionalStyle || !conditionalStyle.areas) {
+        return conditionalStyle;
       }
 
-      // Check if this style intersects with the clear range
-      if (
-        conditionalStyle.area.workbookName === range.workbookName &&
-        conditionalStyle.area.sheetName === range.sheetName &&
-        rangesIntersect(conditionalStyle.area.range, range.range)
-      ) {
-        // Subtract the clear range from this style's range
-        const remainingRanges = subtractRange(
-          conditionalStyle.area.range,
-          range.range
-        );
+      const newAreas: RangeAddress[] = [];
+      
+      for (const area of conditionalStyle.areas) {
+        // Check if this area intersects with the clear range
+        if (
+          area.workbookName === range.workbookName &&
+          area.sheetName === range.sheetName &&
+          rangesIntersect(area.range, range.range)
+        ) {
+          // Subtract the clear range from this area
+          const remainingRanges = subtractRange(area.range, range.range);
 
-        // Add new styles for each remaining range
-        for (const remainingRange of remainingRanges) {
-          newConditionalStyles.push({
-            area: {
-              workbookName: conditionalStyle.area.workbookName,
-              sheetName: conditionalStyle.area.sheetName,
+          // Add all remaining ranges as new areas
+          for (const remainingRange of remainingRanges) {
+            newAreas.push({
+              workbookName: area.workbookName,
+              sheetName: area.sheetName,
               range: remainingRange,
-            },
-            condition: conditionalStyle.condition,
-          });
+            });
+          }
+        } else {
+          // No intersection, keep the area as-is
+          newAreas.push(area);
         }
-      } else {
-        // No intersection, keep the style as-is
-        newConditionalStyles.push(conditionalStyle);
       }
-    }
-    this.conditionalStyles = newConditionalStyles;
+      
+      return { ...conditionalStyle, areas: newAreas };
+    }).filter(style => style.areas.length > 0);
   }
 
   /**
    * Clear cell styles in a range using subtraction
-   * For each intersecting style, subtract the cleared range:
-   * - If style is completely contained: remove entire style
-   * - If style partially overlaps: split into remaining rectangles
-   * - If no intersection: keep unchanged
+   * For each intersecting style, subtract the cleared range from its areas:
+   * - If an area is completely contained: remove that area
+   * - If an area partially overlaps: split into remaining rectangles (hole punching)
+   * - If no intersection: keep area unchanged
    * 
-   * This matches Excel's behavior where pasting replaces formatting
+   * This matches Excel's behavior where cutting/pasting creates multi-area styles
    */
   clearCellStylesInRange(range: RangeAddress): void {
-    const newCellStyles: DirectCellStyle[] = [];
+    this.cellStyles = this.cellStyles.map(style => {
+      const newAreas: RangeAddress[] = [];
+      
+      for (const area of style.areas) {
+        // Skip areas from different sheets/workbooks
+        if (
+          area.workbookName !== range.workbookName ||
+          area.sheetName !== range.sheetName
+        ) {
+          newAreas.push(area);
+          continue;
+        }
 
-    for (const style of this.cellStyles) {
-      // Skip styles from different sheets/workbooks
-      if (
-        style.area.workbookName !== range.workbookName ||
-        style.area.sheetName !== range.sheetName
-      ) {
-        newCellStyles.push(style);
-        continue;
-      }
+        // Check if this area intersects with the range to clear
+        if (!rangesIntersect(area.range, range.range)) {
+          // No intersection, keep the area unchanged
+          newAreas.push(area);
+          continue;
+        }
 
-      // Check if this style intersects with the range to clear
-      if (!rangesIntersect(style.area.range, range.range)) {
-        // No intersection, keep the style unchanged
-        newCellStyles.push(style);
-        continue;
-      }
+        // Area intersects - subtract the cleared range (may produce multiple ranges)
+        const remainingRanges = subtractRange(area.range, range.range);
 
-      // Style intersects - subtract the cleared range
-      const remainingRanges = subtractRange(style.area.range, range.range);
-
-      // Create new style entries for each remaining range
-      for (const remainingRange of remainingRanges) {
-        newCellStyles.push({
-          area: {
-            workbookName: style.area.workbookName,
-            sheetName: style.area.sheetName,
+        // Add all remaining ranges as new areas for this style
+        for (const remainingRange of remainingRanges) {
+          newAreas.push({
+            workbookName: area.workbookName,
+            sheetName: area.sheetName,
             range: remainingRange,
-          },
-          style: style.style, // Keep same style properties
-        });
+          });
+        }
       }
-    }
-
-    this.cellStyles = newCellStyles;
+      
+      return { ...style, areas: newAreas };
+    }).filter(style => style.areas.length > 0); // Remove styles with no areas left
   }
 }

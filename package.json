@@ -1,6 +1,6 @@
 {
   "name": "@ricsam/formula-engine",
-  "version": "0.0.16",
+  "version": "0.0.17",
   "module": "index.ts",
   "type": "module",
   "scripts": {
@@ -23,12 +23,12 @@
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.4",
-    "@anocca-pub/components": "^0.0.33",
+    "@anocca-pub/components": "^0.0.52",
     "@playwright/test": "^1.55.0",
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-select": "^2.2.5",
     "@radix-ui/react-slot": "^1.2.3",
-    "@ricsam/selection-manager": "^0.0.23",
+    "@ricsam/selection-manager": "^0.0.25",
     "@tanstack/react-router": "^1.130.12",
     "@tanstack/react-router-devtools": "^1.130.13",
     "@tanstack/router-cli": "^1.130.15",

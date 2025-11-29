@@ -5,13 +5,13 @@
     "": {
       "name": "formula-engine",
       "devDependencies": {
-        "@anocca-pub/components": "^0.0.33",
+        "@anocca-pub/components": "^0.0.52",
         "@changesets/cli": "^2.29.4",
         "@playwright/test": "^1.55.0",
         "@radix-ui/react-label": "^2.1.7",
         "@radix-ui/react-select": "^2.2.5",
         "@radix-ui/react-slot": "^1.2.3",
-        "@ricsam/selection-manager": "^0.0.23",
+        "@ricsam/selection-manager": "^0.0.25",
         "@tanstack/react-router": "^1.130.12",
         "@tanstack/react-router-devtools": "^1.130.13",
         "@tanstack/router-cli": "^1.130.15",
@@ -42,7 +42,7 @@
   "packages": {
     "@ampproject/remapping": ["@ampproject/remapping@2.3.0", "", { "dependencies": { "@jridgewell/gen-mapping": "^0.3.5", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-30iZtAPgz+LTIYoeivqYo853f02jBYSd5uGnGpkFV0M3xOt9aN73erkgYAmZU43x4VfqcnLxW9Kpg3R5LC4YYw=="],
 
-    "@anocca-pub/components": ["@anocca-pub/components@0.0.33", "", {}, "sha512-/BiIjFS+48a4CYQg2i7fD49w+EHZ0Lwyd6a/Jx6I8NdepthRJzPoRQEbohOflrKJxqjZeh7dUi1m5B1oMT7Tbw=="],
+    "@anocca-pub/components": ["@anocca-pub/components@0.0.52", "", {}, "sha512-hFHolLL/ZuKoIdOQg8th/VeGgzNLLdWPqCG9R8iavoEgiOzILzFfquZmrfKp5qQ0vB8uf3ZRCXbWoTjdKNSh5A=="],
 
     "@babel/code-frame": ["@babel/code-frame@7.27.1", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.27.1", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-cjQ7ZlQ0Mv3b47hABuTevyTuYN4i+loJKGeV9flcCgIK37cCXRh+L1bd3iBHlynerhQ7BhCkn2BPbQUL+rGqFg=="],
 
@@ -318,7 +318,7 @@
 
     "@radix-ui/rect": ["@radix-ui/rect@1.1.1", "", {}, "sha512-HPwpGIzkl28mWyZqG52jiqDJ12waP11Pa1lGoiyUkIEuMLBP0oeK/C89esbXrxsky5we7dfd8U58nm0SgAWpVw=="],
 
-    "@ricsam/selection-manager": ["@ricsam/selection-manager@0.0.23", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-flq1ZzxoGIMqXIGIQvWQ+gS3GIT9iKYES59Z3NnAxvXb6BkoNzzCmaJD7fr4OZ4MZidwG1inwnQZKudE9Yb1pg=="],
+    "@ricsam/selection-manager": ["@ricsam/selection-manager@0.0.25", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-Oddw4g1oTJrbL8Of9vqTzKYCA20FqR9KQKCLF5pS5NOdgzIkU6tCmcJwEMbHZ6RKFVTMfw++Z6NX1b43H+5Crw=="],
 
     "@tanstack/history": ["@tanstack/history@1.130.12", "", {}, "sha512-2VO1nNFDWojgZ7Uqv/OJfH6LphZQ1kE6l8sI3YBgSPtj3qN6I/rsoTHW9rGjwiDO8sQoDRXod2hpH6HMs5NDsw=="],
 

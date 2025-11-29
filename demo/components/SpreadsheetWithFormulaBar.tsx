@@ -156,7 +156,6 @@ export function SpreadsheetWithFormulaBar({
   // Handle cell data changes from the spreadsheet
   const onCellDataChange = useCallback(
     (updatedSpreadsheet: Map<string, string | number>) => {
-      console.log("onCellDataChange", sheetName, updatedSpreadsheet);
       const data = new Map<string, SerializedCellValue>(updatedSpreadsheet);
       data.forEach((value, key) => {
         if (typeof value === "string") {
@@ -202,12 +201,13 @@ export function SpreadsheetWithFormulaBar({
   const selectionManagerEffects = useCallback(
     (selectionManager: SelectionManager) => {
       const cleanups = [
-        selectionManager.listenToCopy(() => {
+        selectionManager.listenToCopy((cut) => {
           clipboardManager.triggerCopy({
             workbookName,
             sheetName,
             selectionManager: selectionManager,
             copyType: "value",
+            cut,
           });
         }),
         selectionManager.listenToPaste(({ updates, rawString }) => {
@@ -573,6 +573,7 @@ export function SpreadsheetWithFormulaBar({
       {/* Main spreadsheet area */}
       <div className="flex-1 overflow-hidden">
         <Spreadsheet
+          disableClipboard
           style={{ height: "100%", width: "100%" }}
           cellData={sheet?.content as Map<string, string | number>}
           onCellDataChange={onCellDataChange}
