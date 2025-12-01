@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.18
+
+### Patch Changes
+
+- api support and new state management
+
 ## 0.0.17
 
 ### Patch Changes
