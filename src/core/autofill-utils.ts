@@ -25,17 +25,7 @@ import { intersectRanges } from "./utils/range-utils";
 export class AutoFill {
   constructor(
     private workbookManager: WorkbookManager,
-    private styleManager: StyleManager,
-    private engine: {
-      setCellContent: (
-        address: CellAddress,
-        content: SerializedCellValue
-      ) => void;
-      setSheetContent: (
-        opts: { sheetName: string; workbookName: string },
-        content: Map<string, SerializedCellValue>
-      ) => void;
-    }
+    private styleManager: StyleManager
   ) {}
 
   /**
@@ -133,8 +123,8 @@ export class AutoFill {
       }
     });
 
-    // Update sheet content in a single operation
-    this.engine.setSheetContent(opts, newContent);
+    // Update sheet content in a single operation (direct manager call, not through engine)
+    this.workbookManager.setSheetContent(opts, newContent);
 
     // Copy styles from seed to fill range
     this.fillStyles(opts, finiteSeedRange, finiteFillRange, direction);

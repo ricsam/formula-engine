@@ -686,18 +686,21 @@ describe("FormulaEngine", () => {
   });
 
   test.skip("with 3D sheet references", () => {
-    const sheet1Name = engine.addSheet({
+    const sheet1Name = "Sheet1";
+    engine.addSheet({
       workbookName,
-      sheetName: "Sheet1",
-    }).name;
-    const sheet2Name = engine.addSheet({
+      sheetName: sheet1Name,
+    });
+    const sheet2Name = "Sheet2";
+    engine.addSheet({
       workbookName,
-      sheetName: "Sheet2",
-    }).name;
-    const sheet3Name = engine.addSheet({
+      sheetName: sheet2Name,
+    });
+    const sheet3Name = "Sheet3";
+    engine.addSheet({
       workbookName,
-      sheetName: "Sheet3",
-    }).name;
+      sheetName: sheet3Name,
+    });
 
     // Set up same data on all sheets
     [sheet1Name, sheet2Name, sheet3Name].forEach((sheetName) => {
@@ -1281,7 +1284,9 @@ describe("FormulaEngine", () => {
 
       // Formula should now error
       const result = cell("C1", true);
-      expect(result).toMatchInlineSnapshot(`"#REF! in ast:Products[Price] Table Products not found"`);
+      expect(result).toMatchInlineSnapshot(
+        `"#REF! in ast:Products[Price] Table Products not found"`
+      );
 
       unsubscribe();
     });
@@ -1543,11 +1548,14 @@ describe("FormulaEngine", () => {
 
       // All three cells should show cycle error
       expect(cell("A1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1 -> cell-value:TestWorkbook:TestSheet:A1 -> ast:A1"`);
+        `"#CYCLE! cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1 -> cell-value:TestWorkbook:TestSheet:A1 -> ast:A1"`
+      );
       expect(cell("B1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! in cell-value:TestWorkbook:TestSheet:A1 cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1 -> cell-value:TestWorkbook:TestSheet:A1 -> ast:A1"`);
+        `"#CYCLE! in cell-value:TestWorkbook:TestSheet:A1 cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1 -> cell-value:TestWorkbook:TestSheet:A1 -> ast:A1"`
+      );
       expect(cell("C1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! in cell-value:TestWorkbook:TestSheet:A1 cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1 -> cell-value:TestWorkbook:TestSheet:A1 -> ast:A1"`);
+        `"#CYCLE! in cell-value:TestWorkbook:TestSheet:A1 cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1 -> cell-value:TestWorkbook:TestSheet:A1 -> ast:A1"`
+      );
     });
 
     test("should detect cycles with non-cycle dependencies", () => {
@@ -1559,17 +1567,21 @@ describe("FormulaEngine", () => {
 
       // Cycle participants should show cycle error
       expect(cell("B1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1"`);
+        `"#CYCLE! cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1"`
+      );
       expect(cell("C1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! in cell-value:TestWorkbook:TestSheet:B1 cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1"`);
+        `"#CYCLE! in cell-value:TestWorkbook:TestSheet:B1 cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1"`
+      );
 
       // A1 should also show cycle error since it depends on the cycle
       expect(cell("A1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! in cell-value:TestWorkbook:TestSheet:B1 cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1"`);
+        `"#CYCLE! in cell-value:TestWorkbook:TestSheet:B1 cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1"`
+      );
 
       // D1 should also show cycle error since it depends on A1 which has a cycle
       expect(cell("D1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! in cell-value:TestWorkbook:TestSheet:B1 cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1"`);
+        `"#CYCLE! in cell-value:TestWorkbook:TestSheet:B1 cell-value:TestWorkbook:TestSheet:C1 -> ast:C1 -> cell-value:TestWorkbook:TestSheet:B1 -> ast:B1"`
+      );
     });
 
     test("should handle self-referencing cell", () => {
@@ -1577,7 +1589,8 @@ describe("FormulaEngine", () => {
       setCellContent("A1", "=A1");
 
       expect(cell("A1", true)).toMatchInlineSnapshot(
-        `"#CYCLE! cell-value:TestWorkbook:TestSheet:A1 -> ast:A1"`);
+        `"#CYCLE! cell-value:TestWorkbook:TestSheet:A1 -> ast:A1"`
+      );
     });
   });
 
@@ -1602,13 +1615,15 @@ describe("FormulaEngine", () => {
         {
           workbookName,
           sheetName,
-          areas: [{
-            start: { col: 3, row: 4 },
-            end: {
-              col: { type: "number", value: 4 },
-              row: { type: "number", value: 5 },
+          areas: [
+            {
+              start: { col: 3, row: 4 },
+              end: {
+                col: { type: "number", value: 4 },
+                row: { type: "number", value: 5 },
+              },
             },
-          }],
+          ],
         },
         { cut: false, type: "formula", include: "all" }
       );
@@ -1634,13 +1649,15 @@ describe("FormulaEngine", () => {
         {
           workbookName,
           sheetName,
-          areas: [{
-            start: { col: 5, row: 5 },
-            end: {
-              col: { type: "number", value: 7 },
-              row: { type: "number", value: 7 },
+          areas: [
+            {
+              start: { col: 5, row: 5 },
+              end: {
+                col: { type: "number", value: 7 },
+                row: { type: "number", value: 7 },
+              },
             },
-          }],
+          ],
         },
         { cut: false, type: "formula", include: "all" }
       );
@@ -1673,19 +1690,24 @@ describe("FormulaEngine", () => {
         {
           workbookName,
           sheetName,
-          areas: [{
-            start: { col: 3, row: 4 },
-            end: {
-              col: { type: "number", value: 4 },
-              row: { type: "number", value: 5 },
+          areas: [
+            {
+              start: { col: 3, row: 4 },
+              end: {
+                col: { type: "number", value: 4 },
+                row: { type: "number", value: 5 },
+              },
             },
-          }],
+          ],
         },
         { cut: false, type: "formula", include: "all" }
       );
 
       // Check formulas were adjusted (column-first fill)
-      const sheetContent = engine.getSheetSerialized({ workbookName, sheetName });
+      const sheetContent = engine.getSheetSerialized({
+        workbookName,
+        sheetName,
+      });
       expect(sheetContent.get("D5")).toBe("=ROW()+COLUMN()");
       expect(sheetContent.get("D6")).toBe("=ROW()+COLUMN()");
       expect(sheetContent.get("E5")).toBe("=ROW()+COLUMN()");
@@ -1712,34 +1734,36 @@ describe("FormulaEngine", () => {
         {
           workbookName,
           sheetName,
-          areas: [{
-            start: { col: 5, row: 5 },
-            end: {
-              col: { type: "number", value: 9 },
-              row: { type: "number", value: 9 },
+          areas: [
+            {
+              start: { col: 5, row: 5 },
+              end: {
+                col: { type: "number", value: 9 },
+                row: { type: "number", value: 9 },
+              },
             },
-          }],
+          ],
         },
         { cut: false, type: "formula", include: "all" }
       );
 
       // Check column-first fill pattern
-      expect(cell("F6")).toBe(1);  // First column repeats: 1,3,1,3,1
+      expect(cell("F6")).toBe(1); // First column repeats: 1,3,1,3,1
       expect(cell("F7")).toBe(3);
       expect(cell("F8")).toBe(1);
       expect(cell("F9")).toBe(3);
       expect(cell("F10")).toBe(1);
 
-      expect(cell("G6")).toBe(2);  // Second column: 2,4,2,4,2
+      expect(cell("G6")).toBe(2); // Second column: 2,4,2,4,2
       expect(cell("G7")).toBe(4);
 
-      expect(cell("H6")).toBe(1);  // Replicates first column
+      expect(cell("H6")).toBe(1); // Replicates first column
       expect(cell("H7")).toBe(3);
 
-      expect(cell("I6")).toBe(2);  // Replicates second column
+      expect(cell("I6")).toBe(2); // Replicates second column
       expect(cell("I7")).toBe(4);
 
-      expect(cell("J6")).toBe(1);  // Partial replication
+      expect(cell("J6")).toBe(1); // Partial replication
     });
 
     test("should use pasteCells when paste area equals source size", () => {
@@ -1762,13 +1786,15 @@ describe("FormulaEngine", () => {
         {
           workbookName,
           sheetName,
-          areas: [{
-            start: { col: 5, row: 5 },
-            end: {
-              col: { type: "number", value: 6 },
-              row: { type: "number", value: 6 },
+          areas: [
+            {
+              start: { col: 5, row: 5 },
+              end: {
+                col: { type: "number", value: 6 },
+                row: { type: "number", value: 6 },
+              },
             },
-          }],
+          ],
         },
         { cut: false, type: "formula", include: "all" }
       );
@@ -1795,19 +1821,24 @@ describe("FormulaEngine", () => {
         {
           workbookName,
           sheetName,
-          areas: [{
-            start: { col: 5, row: 5 },
-            end: {
-              col: { type: "number", value: 6 },
-              row: { type: "number", value: 6 },
+          areas: [
+            {
+              start: { col: 5, row: 5 },
+              end: {
+                col: { type: "number", value: 6 },
+                row: { type: "number", value: 6 },
+              },
             },
-          }],
+          ],
         },
         { cut: false, type: "value", include: "all" }
       );
 
       // Should paste evaluated values, not formulas
-      const sheetContent = engine.getSheetSerialized({ workbookName, sheetName });
+      const sheetContent = engine.getSheetSerialized({
+        workbookName,
+        sheetName,
+      });
       expect(sheetContent.get("F6")).toBe(20); // Value, not formula
       expect(sheetContent.get("G6")).toBe(20);
     });
@@ -1921,26 +1952,32 @@ describe("FormulaEngine", () => {
 
   describe("evaluateFormula", () => {
     test("should evaluate simple arithmetic formulas", () => {
-      const result = engine.evaluateFormula(
-        "=1 + 2 + 3",
-        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
-      );
+      const result = engine.evaluateFormula("=1 + 2 + 3", {
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 0,
+      });
       expect(result).toBe(6);
     });
 
     test("should evaluate formulas with multiplication", () => {
-      const result = engine.evaluateFormula(
-        "=5 * 10",
-        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
-      );
+      const result = engine.evaluateFormula("=5 * 10", {
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 0,
+      });
       expect(result).toBe(50);
     });
 
     test("should evaluate formulas with division", () => {
-      const result = engine.evaluateFormula(
-        "=100 / 4",
-        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
-      );
+      const result = engine.evaluateFormula("=100 / 4", {
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 0,
+      });
       expect(result).toBe(25);
     });
 
@@ -1949,10 +1986,12 @@ describe("FormulaEngine", () => {
       setCellContent("A1", 10);
       setCellContent("B1", 20);
 
-      const result = engine.evaluateFormula(
-        "=A1 + B1",
-        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
-      );
+      const result = engine.evaluateFormula("=A1 + B1", {
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 0,
+      });
       expect(result).toBe(30);
     });
 
@@ -1961,10 +2000,12 @@ describe("FormulaEngine", () => {
       setCellContent("A2", 2);
       setCellContent("A3", 3);
 
-      const result = engine.evaluateFormula(
-        "=SUM(A1:A3)",
-        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
-      );
+      const result = engine.evaluateFormula("=SUM(A1:A3)", {
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 0,
+      });
       expect(result).toBe(6);
     });
 
@@ -1977,10 +2018,12 @@ describe("FormulaEngine", () => {
         new Map([["B1", 50]])
       );
 
-      const result = engine.evaluateFormula(
-        "=TestSheet!A1 + Sheet2!B1",
-        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
-      );
+      const result = engine.evaluateFormula("=TestSheet!A1 + Sheet2!B1", {
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 0,
+      });
       expect(result).toBe(150);
     });
 
@@ -1990,62 +2033,78 @@ describe("FormulaEngine", () => {
         expression: "5",
       });
 
-      const result = engine.evaluateFormula(
-        "=MULTIPLIER * 10",
-        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
-      );
+      const result = engine.evaluateFormula("=MULTIPLIER * 10", {
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 0,
+      });
       expect(result).toBe(50);
     });
 
     test("should handle formulas with text concatenation", () => {
-      const result = engine.evaluateFormula(
-        '="Hello" & " " & "World"',
-        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
-      );
+      const result = engine.evaluateFormula('="Hello" & " " & "World"', {
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 0,
+      });
       expect(result).toBe("Hello World");
     });
 
     test("should handle formulas with comparison operators", () => {
-      const result1 = engine.evaluateFormula(
-        "=5 > 3",
-        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
-      );
+      const result1 = engine.evaluateFormula("=5 > 3", {
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 0,
+      });
       expect(result1).toBe(true);
 
-      const result2 = engine.evaluateFormula(
-        "=5 = 3",
-        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
-      );
+      const result2 = engine.evaluateFormula("=5 = 3", {
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 0,
+      });
       expect(result2).toBe(false);
     });
 
     test("should handle division by zero", () => {
-      const result = engine.evaluateFormula(
-        "=1 / 0",
-        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
-      );
-      expect(result).toBe('INFINITY');
+      const result = engine.evaluateFormula("=1 / 0", {
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 0,
+      });
+      expect(result).toBe("INFINITY");
     });
 
     test("should handle invalid cell references", () => {
-      const result = engine.evaluateFormula(
-        "=Z999 + 1",
-        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
-      );
+      const result = engine.evaluateFormula("=Z999 + 1", {
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 0,
+      });
       // Empty cell should be treated as 0 in arithmetic
       expect(result).toBe(FormulaError.VALUE);
     });
     test("should handle context dependent formulas", () => {
-      const result = engine.evaluateFormula(
-        "=ROW()",
-        { workbookName, sheetName, colIndex: 0, rowIndex: 0 }
-      );
+      const result = engine.evaluateFormula("=ROW()", {
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 0,
+      });
       // Empty cell should be treated as 0 in arithmetic
       expect(result).toBe(1);
-      const result2 = engine.evaluateFormula(
-        "=ROW()",
-        { workbookName, sheetName, colIndex: 0, rowIndex: 1 }
-      );
+      const result2 = engine.evaluateFormula("=ROW()", {
+        workbookName,
+        sheetName,
+        colIndex: 0,
+        rowIndex: 1,
+      });
       // Empty cell should be treated as 0 in arithmetic
       expect(result2).toBe(2);
     });
@@ -2057,7 +2116,7 @@ describe("FormulaEngine", () => {
 
       engine.moveCell(
         { workbookName, sheetName, colIndex: 0, rowIndex: 0 }, // A1
-        { workbookName, sheetName, colIndex: 3, rowIndex: 4 }  // D5
+        { workbookName, sheetName, colIndex: 3, rowIndex: 4 } // D5
       );
 
       // Source should be empty
@@ -2078,7 +2137,7 @@ describe("FormulaEngine", () => {
       // Move A1 to D5
       engine.moveCell(
         { workbookName, sheetName, colIndex: 0, rowIndex: 0 }, // A1
-        { workbookName, sheetName, colIndex: 3, rowIndex: 4 }  // D5
+        { workbookName, sheetName, colIndex: 3, rowIndex: 4 } // D5
       );
 
       // References should be updated
@@ -2140,7 +2199,7 @@ describe("FormulaEngine", () => {
       // C1 is 2 cols to the right of A1, so D5 should reference 2 cols to left: B5
       // C1 is 1 col to the right of B1, so D5 should also reference 1 col to left: C5
       expect(cellContent("D5")).toBe("=B5+C5");
-      
+
       // B5 and C5 are empty, which results in #VALUE! error when adding
       expect(cell("D5")).toBe("#VALUE!");
     });
@@ -2159,8 +2218,11 @@ describe("FormulaEngine", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 1 }, row: { type: "number", value: 1 } }
-          }
+            end: {
+              col: { type: "number", value: 1 },
+              row: { type: "number", value: 1 },
+            },
+          },
         },
         { workbookName, sheetName, colIndex: 5, rowIndex: 5 } // F6
       );
@@ -2186,7 +2248,7 @@ describe("FormulaEngine", () => {
       setCellContent("B2", 40);
 
       // C1 references the range
-      setCellContent("C1", "=INDEX(A1:B2, 1, 1)");  // Using INDEX instead of SUM due to known issue
+      setCellContent("C1", "=INDEX(A1:B2, 1, 1)"); // Using INDEX instead of SUM due to known issue
       expect(cell("C1")).toBe(10);
 
       // Move A1:B2 to D5:E6
@@ -2196,8 +2258,11 @@ describe("FormulaEngine", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 1 }, row: { type: "number", value: 1 } }
-          }
+            end: {
+              col: { type: "number", value: 1 },
+              row: { type: "number", value: 1 },
+            },
+          },
         },
         { workbookName, sheetName, colIndex: 3, rowIndex: 4 }
       );
@@ -2209,8 +2274,8 @@ describe("FormulaEngine", () => {
       expect(cell("E6")).toBe(40);
 
       // Reference should be updated
-      expect(cellContent("C1")).toBe("=INDEX(D5:E6,1,1)");  // Spaces removed by parser
-      expect(cell("C1")).toBe(10);  // Should still return first cell of moved range
+      expect(cellContent("C1")).toBe("=INDEX(D5:E6,1,1)"); // Spaces removed by parser
+      expect(cell("C1")).toBe(10); // Should still return first cell of moved range
     });
 
     test("should NOT update range reference when only partial range is moved", () => {
@@ -2228,8 +2293,11 @@ describe("FormulaEngine", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 1 }, row: { type: "number", value: 1 } }
-          }
+            end: {
+              col: { type: "number", value: 1 },
+              row: { type: "number", value: 1 },
+            },
+          },
         },
         { workbookName, sheetName, colIndex: 5, rowIndex: 5 }
       );
@@ -2251,8 +2319,11 @@ describe("FormulaEngine", () => {
           sheetName,
           range: {
             start: { col: 0, row: 0 },
-            end: { col: { type: "number", value: 1 }, row: { type: "number", value: 0 } }
-          }
+            end: {
+              col: { type: "number", value: 1 },
+              row: { type: "number", value: 0 },
+            },
+          },
         },
         { workbookName, sheetName, colIndex: 4, rowIndex: 4 }
       );
@@ -2268,18 +2339,18 @@ describe("FormulaEngine", () => {
 
       // Set value in TestSheet (our default sheetName)
       setCellContent("A1", 123);
-      
+
       // Sheet2 references TestSheet!A1
       engine.setCellContent(
         { workbookName, sheetName: "Sheet2", colIndex: 0, rowIndex: 0 },
-        `=${sheetName}!A1`  // Use the sheetName variable which is "TestSheet"
+        `=${sheetName}!A1` // Use the sheetName variable which is "TestSheet"
       );
 
       const sheet2A1Value = engine.getCellValue({
         workbookName,
         sheetName: "Sheet2",
         colIndex: 0,
-        rowIndex: 0
+        rowIndex: 0,
       });
       expect(sheet2A1Value).toBe(123);
 
@@ -2290,14 +2361,17 @@ describe("FormulaEngine", () => {
       );
 
       // Sheet2!A1 should now reference TestSheet!D5
-      const sheet2Content = engine.getSheetSerialized({ workbookName, sheetName: "Sheet2" });
+      const sheet2Content = engine.getSheetSerialized({
+        workbookName,
+        sheetName: "Sheet2",
+      });
       expect(sheet2Content.get("A1")).toBe(`=${sheetName}!D5`);
 
       const sheet2A1NewValue = engine.getCellValue({
         workbookName,
         sheetName: "Sheet2",
         colIndex: 0,
-        rowIndex: 0
+        rowIndex: 0,
       });
       expect(sheet2A1NewValue).toBe(123);
     });
@@ -2321,13 +2395,15 @@ describe("FormulaEngine", () => {
         {
           workbookName,
           sheetName,
-          areas: [{
-            start: { col: 5, row: 5 },
-            end: {
-              col: { type: "number", value: 8 }, // 4 columns wide
-              row: { type: "number", value: 8 }  // 4 rows tall
-            }
-          }]
+          areas: [
+            {
+              start: { col: 5, row: 5 },
+              end: {
+                col: { type: "number", value: 8 }, // 4 columns wide
+                row: { type: "number", value: 8 }, // 4 rows tall
+              },
+            },
+          ],
         },
         { cut: true, type: "formula", include: "all" }
       );
@@ -2356,10 +2432,15 @@ describe("FormulaEngine", () => {
         {
           workbookName,
           sheetName,
-          areas: [{
-            start: { col: 5, row: 5 },
-            end: { col: { type: "number", value: 5 }, row: { type: "number", value: 5 } }
-          }]
+          areas: [
+            {
+              start: { col: 5, row: 5 },
+              end: {
+                col: { type: "number", value: 5 },
+                row: { type: "number", value: 5 },
+              },
+            },
+          ],
         },
         { cut: true, type: "formula", include: "all" }
       );

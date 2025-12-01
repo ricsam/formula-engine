@@ -40,6 +40,47 @@ import { ReferenceManager } from "./managers/reference-manager";
 import { ApiSchemaManager, SchemaValidationError } from "./managers/api-schema-manager";
 import type { Api, CreateApi, Declaration } from "./api/api";
 import { buildApiFromDeclaration } from "./api/api-builder";
+import {
+  CommandExecutor,
+  SchemaIntegrityError,
+  SetCellContentCommand,
+  SetSheetContentCommand,
+  ClearRangeCommand,
+  PasteCellsCommand,
+  FillAreasCommand,
+  MoveCellCommand,
+  MoveRangeCommand,
+  AutoFillCommand,
+  AddWorkbookCommand,
+  RemoveWorkbookCommand,
+  RenameWorkbookCommand,
+  CloneWorkbookCommand,
+  AddSheetCommand,
+  RemoveSheetCommand,
+  RenameSheetCommand,
+  AddTableCommand,
+  RemoveTableCommand,
+  RenameTableCommand,
+  UpdateTableCommand,
+  ResetTablesCommand,
+  AddNamedExpressionCommand,
+  RemoveNamedExpressionCommand,
+  UpdateNamedExpressionCommand,
+  RenameNamedExpressionCommand,
+  SetNamedExpressionsCommand,
+  SetCellMetadataCommand,
+  SetSheetMetadataCommand,
+  SetWorkbookMetadataCommand,
+  AddConditionalStyleCommand,
+  RemoveConditionalStyleCommand,
+  AddCellStyleCommand,
+  RemoveCellStyleCommand,
+  ClearCellStylesCommand,
+  type StructureCommandDeps,
+  type TableCommandDeps,
+  type NamedExpressionCommandDeps,
+  type EngineAction,
+} from "./commands";
 
 type Metadata = {
   cell?: unknown;
@@ -75,6 +116,7 @@ export class FormulaEngine<
   private copyManager: CopyManager;
   private referenceManager: ReferenceManager;
   private apiSchemaManager: ApiSchemaManager;
+  private commandExecutor: CommandExecutor;
 
   public api: TCreateApi extends CreateApi<
     MetadataType<TMetadata, "cell">,
@@ -132,12 +174,24 @@ export class FormulaEngine<
 
     this.autoFillManager = new AutoFill(
       this.workbookManager,
-      this.styleManager,
-      this
+      this.styleManager
     );
 
     this.referenceManager = new ReferenceManager();
     this.apiSchemaManager = new ApiSchemaManager(this.tableManager);
+
+    // Initialize command executor
+    this.commandExecutor = new CommandExecutor(
+      this.apiDeclaration,
+      this.evaluationManager,
+      this.eventManager,
+      () =>
+        this.apiSchemaManager.validateAllSchemaConstraints(
+          (cell) => this.getCellValue(cell),
+          (cell) => this.getCellMetadata(cell),
+          (table) => this.getTableDataCells(table)
+        )
+    );
 
     // Build the working API from declaration if provided
     if (this.apiDeclaration) {
@@ -203,8 +257,9 @@ export class FormulaEngine<
     address: CellAddress,
     metadata: MetadataType<TMetadata, "cell"> | undefined
   ): void {
-    this.workbookManager.setCellMetadata(address, metadata);
-    this.eventManager.emitUpdate();
+    this.commandExecutor.execute(
+      new SetCellMetadataCommand(this.workbookManager, address, metadata)
+    );
   }
 
   /**
@@ -238,8 +293,9 @@ export class FormulaEngine<
     opts: { workbookName: string; sheetName: string },
     metadata: MetadataType<TMetadata, "sheet">
   ): void {
-    this.workbookManager.setSheetMetadata(opts, metadata);
-    this.eventManager.emitUpdate();
+    this.commandExecutor.execute(
+      new SetSheetMetadataCommand(this.workbookManager, opts, metadata)
+    );
   }
 
   /**
@@ -262,8 +318,9 @@ export class FormulaEngine<
     workbookName: string,
     metadata: MetadataType<TMetadata, "workbook">
   ): void {
-    this.workbookManager.setWorkbookMetadata(workbookName, metadata);
-    this.eventManager.emitUpdate();
+    this.commandExecutor.execute(
+      new SetWorkbookMetadataCommand(this.workbookManager, workbookName, metadata)
+    );
   }
 
   /**
@@ -339,133 +396,86 @@ export class FormulaEngine<
   //#endregion
 
   //#region Named Expressions
-  addNamedExpression({
-    expression,
-    expressionName,
-    sheetName,
-    workbookName,
-  }: {
+  addNamedExpression(opts: {
     expression: string;
     expressionName: string;
     sheetName?: string;
     workbookName?: string;
   }) {
-    this.namedExpressionManager.addNamedExpression({
-      expression,
-      expressionName,
-      sheetName,
-      workbookName,
-    });
-
-    // Re-evaluate all sheets since named expressions can be referenced from anywhere
-    this.reevaluate();
-    this.eventManager.emitUpdate();
+    this.commandExecutor.execute(
+      new AddNamedExpressionCommand(this.getNamedExpressionCommandDeps(), opts),
+      { validate: !!this.apiDeclaration }
+    );
   }
 
-  removeNamedExpression({
-    expressionName,
-    sheetName,
-    workbookName,
-  }: {
+  removeNamedExpression(opts: {
     expressionName: string;
     sheetName?: string;
     workbookName?: string;
-  }) {
-    const found = this.namedExpressionManager.removeNamedExpression({
-      expressionName,
-      sheetName,
-      workbookName,
-    });
-
-    if (found) {
-      // Re-evaluate all sheets since named expressions can be referenced from anywhere
-      this.reevaluate();
-      this.eventManager.emitUpdate();
-    }
-
-    return found;
+  }): void {
+    this.commandExecutor.execute(
+      new RemoveNamedExpressionCommand(this.getNamedExpressionCommandDeps(), opts),
+      { validate: !!this.apiDeclaration }
+    );
   }
 
-  updateNamedExpression({
-    expression,
-    expressionName,
-    sheetName,
-    workbookName,
-  }: {
+  /**
+   * Check if a named expression exists
+   */
+  hasNamedExpression(opts: {
+    expressionName: string;
+    sheetName?: string;
+    workbookName?: string;
+  }): boolean {
+    const scope = opts.sheetName && opts.workbookName
+      ? { type: "sheet" as const, workbookName: opts.workbookName, sheetName: opts.sheetName }
+      : opts.workbookName
+        ? { type: "workbook" as const, workbookName: opts.workbookName }
+        : { type: "global" as const };
+    
+    return !!this.namedExpressionManager.getNamedExpression({
+      name: opts.expressionName,
+      scope,
+    });
+  }
+
+  updateNamedExpression(opts: {
     expression: string;
     expressionName: string;
     sheetName?: string;
     workbookName?: string;
-  }) {
-    this.namedExpressionManager.updateNamedExpression({
-      expression,
-      expressionName,
-      sheetName,
-      workbookName,
-    });
-
-    // Re-evaluate all sheets since named expressions can be referenced from anywhere
-    this.reevaluate();
-    this.eventManager.emitUpdate();
+  }): void {
+    this.commandExecutor.execute(
+      new UpdateNamedExpressionCommand(this.getNamedExpressionCommandDeps(), opts),
+      { validate: !!this.apiDeclaration }
+    );
   }
 
-  renameNamedExpression({
-    expressionName,
-    sheetName,
-    workbookName,
-    newName,
-  }: {
+  renameNamedExpression(opts: {
     expressionName: string;
     sheetName?: string;
     workbookName?: string;
     newName: string;
-  }) {
-    const result = this.namedExpressionManager.renameNamedExpression({
-      expressionName,
-      sheetName,
-      workbookName,
-      newName,
-    });
-
-    // Update all formulas that reference this named expression in sheet cells
-    this.workbookManager.updateAllFormulas((formula) =>
-      renameNamedExpressionInFormula(formula, expressionName, newName)
+  }): void {
+    this.commandExecutor.execute(
+      new RenameNamedExpressionCommand(this.getNamedExpressionCommandDeps(), opts),
+      { validate: !!this.apiDeclaration }
     );
-
-    // Update named expressions that reference this named expression
-    this.namedExpressionManager.updateAllNamedExpressions((formula) =>
-      renameNamedExpressionInFormula(formula, expressionName, newName)
-    );
-
-    // Re-evaluate all sheets since named expressions can be referenced from anywhere
-    this.reevaluate();
-    this.eventManager.emitUpdate();
-
-    return result;
   }
 
   setNamedExpressions(
     opts: (
-      | {
-          type: "global";
-        }
-      | {
-          type: "sheet";
-          sheetName: string;
-          workbookName: string;
-        }
-      | {
-          type: "workbook";
-          workbookName: string;
-        }
+      | { type: "global" }
+      | { type: "sheet"; sheetName: string; workbookName: string }
+      | { type: "workbook"; workbookName: string }
     ) & {
       expressions: Map<string, NamedExpression>;
     }
   ) {
-    this.namedExpressionManager.setNamedExpressions(opts);
-
-    this.reevaluate();
-    this.eventManager.emitUpdate();
+    this.commandExecutor.execute(
+      new SetNamedExpressionsCommand(this.getNamedExpressionCommandDeps(), opts),
+      { validate: !!this.apiDeclaration }
+    );
   }
   //#endregion
 
@@ -477,46 +487,26 @@ export class FormulaEngine<
     start: string;
     numRows: SpreadsheetRangeEnd;
     numCols: number;
-  }) {
-    const table = this.tableManager.addTable({
-      ...props,
-      getCellValue: (cellAddress: CellAddress) =>
-        this.getCellValue(cellAddress),
-    });
-
-    // Re-evaluate all sheets since structured references might depend on this table
-    this.reevaluate();
-    this.eventManager.emitUpdate();
-
-    return table;
+  }): void {
+    this.commandExecutor.execute(
+      new AddTableCommand(this.getTableCommandDeps(), props),
+      { validate: !!this.apiDeclaration }
+    );
   }
 
   renameTable(
     workbookName: string,
     names: { oldName: string; newName: string }
-  ) {
-    this.tableManager.renameTable(workbookName, names);
-
-    // Update all formulas that reference this table in sheet cells
-    this.workbookManager.updateAllFormulas((formula) =>
-      renameTableInFormula(formula, names.oldName, names.newName)
+  ): void {
+    this.commandExecutor.execute(
+      new RenameTableCommand(
+        this.getTableCommandDeps(),
+        workbookName,
+        names.oldName,
+        names.newName
+      ),
+      { validate: !!this.apiDeclaration }
     );
-
-    // Update named expressions that reference this table
-    this.namedExpressionManager.updateAllNamedExpressions((formula) =>
-      renameTableInFormula(formula, names.oldName, names.newName)
-    );
-
-    // Update API schemas that reference this table
-    this.apiSchemaManager.updateForTableRename(
-      workbookName,
-      names.oldName,
-      names.newName
-    );
-
-    // Re-evaluate all sheets since structured references might depend on this table
-    this.reevaluate();
-    this.eventManager.emitUpdate();
   }
 
   updateTable(opts: {
@@ -526,40 +516,45 @@ export class FormulaEngine<
     numRows?: SpreadsheetRangeEnd;
     numCols?: number;
     workbookName: string;
-  }) {
-    this.tableManager.updateTable({
-      ...opts,
-      getCellValue: (cellAddress: CellAddress) =>
-        this.getCellValue(cellAddress),
+  }): void {
+    this.commandExecutor.execute(
+      new UpdateTableCommand(this.getTableCommandDeps(), opts),
+      { validate: !!this.apiDeclaration }
+    );
+  }
+
+  removeTable(opts: { tableName: string; workbookName: string }): void {
+    this.commandExecutor.execute(
+      new RemoveTableCommand(this.getTableCommandDeps(), opts),
+      { validate: !!this.apiDeclaration }
+    );
+  }
+
+  /**
+   * Check if a table exists
+   */
+  hasTable(opts: { tableName: string; workbookName: string }): boolean {
+    return !!this.tableManager.getTable({
+      workbookName: opts.workbookName,
+      name: opts.tableName,
     });
-
-    // Re-evaluate all sheets since structured references might depend on this table
-    this.reevaluate();
-    this.eventManager.emitUpdate();
   }
 
-  removeTable(opts: { tableName: string; workbookName: string }) {
-    const found = this.tableManager.removeTable(opts);
-
-    if (found) {
-      // Invalidate API schemas that reference this table
-      this.apiSchemaManager.invalidateForTableDeletion(
-        opts.workbookName,
-        opts.tableName
-      );
-
-      // Re-evaluate all sheets since structured references might depend on this table
-      this.reevaluate();
-      this.eventManager.emitUpdate();
-    }
-
-    return found;
+  /**
+   * Get a table definition by name
+   */
+  getTable(opts: { tableName: string; workbookName: string }): TableDefinition | undefined {
+    return this.tableManager.getTable({
+      workbookName: opts.workbookName,
+      name: opts.tableName,
+    });
   }
 
-  resetTables(tables: Map<string, Map<string, TableDefinition>>) {
-    this.tableManager.resetTables(tables);
-    this.reevaluate();
-    this.eventManager.emitUpdate();
+  resetTables(tables: Map<string, Map<string, TableDefinition>>): void {
+    this.commandExecutor.execute(
+      new ResetTablesCommand(this.getTableCommandDeps(), tables),
+      { validate: !!this.apiDeclaration }
+    );
   }
 
   getTables(workbookName: string) {
@@ -570,6 +565,32 @@ export class FormulaEngine<
     return this.tableManager.isCellInTable(cellAddress);
   }
 
+  /**
+   * Get all data cells in a table (excluding header row).
+   * Uses workbook indexes to efficiently handle infinite tables.
+   */
+  private getTableDataCells(table: TableDefinition): CellAddress[] {
+    const { start, endRow, headers } = table;
+    const dataStartRow = start.rowIndex + 1;
+    const endColIndex = start.colIndex + headers.size - 1;
+
+    // Build a RangeAddress for the data area
+    const rangeAddress: RangeAddress = {
+      workbookName: table.workbookName,
+      sheetName: table.sheetName,
+      range: {
+        start: { col: start.colIndex, row: dataStartRow },
+        end: {
+          col: { type: "number", value: endColIndex },
+          row: endRow,
+        },
+      },
+    };
+
+    // Use the workbook manager's optimized iterator
+    return this.workbookManager.getCellsInRange(rangeAddress);
+  }
+
   //#endregion
 
   //#region Conditional Styling
@@ -577,22 +598,28 @@ export class FormulaEngine<
    * Add a conditional style rule
    */
   addConditionalStyle(style: ConditionalStyle): void {
-    this.styleManager.addConditionalStyle(style);
-    this.eventManager.emitUpdate();
+    this.commandExecutor.execute(
+      new AddConditionalStyleCommand(this.styleManager, style)
+    );
   }
 
   /**
    * Remove a conditional style rule by index
    */
-  removeConditionalStyle(workbookName: string, index: number): boolean {
-    const removed = this.styleManager.removeConditionalStyle(
-      workbookName,
-      index
+  removeConditionalStyle(workbookName: string, index: number): void {
+    this.commandExecutor.execute(
+      new RemoveConditionalStyleCommand(this.styleManager, workbookName, index)
     );
-    if (removed) {
-      this.eventManager.emitUpdate();
-    }
-    return removed;
+  }
+
+  /**
+   * Get the count of conditional styles for a workbook
+   */
+  getConditionalStyleCount(workbookName: string): number {
+    const allStyles = this.styleManager.getAllConditionalStyles();
+    return allStyles.filter((s) =>
+      s.areas.some((a) => a.workbookName === workbookName)
+    ).length;
   }
 
   /**
@@ -629,19 +656,28 @@ export class FormulaEngine<
    * Add a direct cell style rule
    */
   addCellStyle(style: DirectCellStyle): void {
-    this.styleManager.addCellStyle(style);
-    this.eventManager.emitUpdate();
+    this.commandExecutor.execute(
+      new AddCellStyleCommand(this.styleManager, style)
+    );
   }
 
   /**
    * Remove a direct cell style rule by index
    */
-  removeCellStyle(workbookName: string, index: number): boolean {
-    const removed = this.styleManager.removeCellStyle(workbookName, index);
-    if (removed) {
-      this.eventManager.emitUpdate();
-    }
-    return removed;
+  removeCellStyle(workbookName: string, index: number): void {
+    this.commandExecutor.execute(
+      new RemoveCellStyleCommand(this.styleManager, workbookName, index)
+    );
+  }
+
+  /**
+   * Get the count of direct cell styles for a workbook
+   */
+  getCellStyleCount(workbookName: string): number {
+    const allStyles = this.styleManager.getAllCellStyles();
+    return allStyles.filter((s) =>
+      s.areas.some((a) => a.workbookName === workbookName)
+    ).length;
   }
 
   /**
@@ -665,8 +701,9 @@ export class FormulaEngine<
    * Adjusts existing style ranges rather than deleting them entirely
    */
   clearCellStyles(range: RangeAddress): void {
-    this.styleManager.clearCellStyles(range);
-    this.eventManager.emitUpdate();
+    this.commandExecutor.execute(
+      new ClearCellStylesCommand(this.styleManager, range)
+    );
   }
 
   //#endregion
@@ -680,9 +717,16 @@ export class FormulaEngine<
     target: CellAddress,
     options: CopyCellsOptions
   ): void {
-    this.copyManager.pasteCells(source, target, options);
-    this.reevaluate();
-    this.eventManager.emitUpdate();
+    this.commandExecutor.execute(
+      new PasteCellsCommand(
+        this.workbookManager,
+        this.copyManager,
+        source,
+        target,
+        options
+      ),
+      { validate: !!this.apiDeclaration }
+    );
   }
 
   /**
@@ -721,9 +765,16 @@ export class FormulaEngine<
     targetRanges: RangeAddress[],
     options: CopyCellsOptions
   ): void {
-    this.copyManager.fillAreas(seedRange, targetRanges, options);
-    this.reevaluate();
-    this.eventManager.emitUpdate();
+    this.commandExecutor.execute(
+      new FillAreasCommand(
+        this.workbookManager,
+        this.copyManager,
+        seedRange,
+        targetRanges,
+        options
+      ),
+      { validate: !!this.apiDeclaration }
+    );
   }
 
   /**
@@ -885,13 +936,15 @@ export class FormulaEngine<
    * );
    */
   moveCell(source: CellAddress, target: CellAddress): void {
-    this.pasteCells([source], target, {
-      cut: true,
-      type: "formula",
-      include: "all",
-    });
-    this.reevaluate();
-    this.eventManager.emitUpdate();
+    this.commandExecutor.execute(
+      new MoveCellCommand(
+        this.workbookManager,
+        this.copyManager,
+        source,
+        target
+      ),
+      { validate: !!this.apiDeclaration }
+    );
   }
 
   /**
@@ -916,98 +969,49 @@ export class FormulaEngine<
    * );
    */
   moveRange(sourceRange: RangeAddress, target: CellAddress): void {
-    const cells = this.copyManager.expandRangeToCells(sourceRange);
-    this.pasteCells(cells, target, {
-      cut: true,
-      type: "formula",
-      include: "all",
-    });
-    this.reevaluate();
-    this.eventManager.emitUpdate();
+    this.commandExecutor.execute(
+      new MoveRangeCommand(
+        this.workbookManager,
+        this.copyManager,
+        sourceRange,
+        target
+      ),
+      { validate: !!this.apiDeclaration }
+    );
   }
   //#endregion
 
   //#region Sheets
-  addSheet(opts: { workbookName: string; sheetName: string }) {
-    const newSheet = this.workbookManager.addSheet(opts);
-    const wbLevel = this.namedExpressionManager.addSheet(opts);
-    this.reevaluate();
-    this.eventManager.emitUpdate();
-    return newSheet;
+  addSheet(opts: { workbookName: string; sheetName: string }): void {
+    this.commandExecutor.execute(
+      new AddSheetCommand(this.getStructureCommandDeps(), opts),
+      { validate: !!this.apiDeclaration }
+    );
   }
 
-  removeSheet(opts: { workbookName: string; sheetName: string }) {
-    const sheet = this.workbookManager.removeSheet(opts);
-
-    // Clean up related data
-    this.namedExpressionManager.removeSheet(opts);
-    this.tableManager.removeSheet(opts);
-    this.styleManager.removeSheetStyles(opts.workbookName, opts.sheetName);
-
-    // Invalidate tracked references to this sheet
-    this.referenceManager.invalidateSheet(opts.workbookName, opts.sheetName);
-
-    // Invalidate API schemas that reference this sheet
-    this.apiSchemaManager.invalidateForSheetDeletion(
-      opts.workbookName,
-      opts.sheetName
+  removeSheet(opts: { workbookName: string; sheetName: string }): void {
+    this.commandExecutor.execute(
+      new RemoveSheetCommand(this.getStructureCommandDeps(), opts),
+      { validate: !!this.apiDeclaration }
     );
-
-    // Add engine-specific logic: re-evaluate since references might be affected
-    this.reevaluate();
-    this.eventManager.emitUpdate();
-
-    return sheet;
   }
 
   renameSheet(opts: {
     sheetName: string;
     newSheetName: string;
     workbookName: string;
-  }) {
-    const sheet = this.workbookManager.renameSheet(opts);
-
-    // Update scoped named expressions
-    this.namedExpressionManager.renameSheet(opts);
-
-    // Update tables that belong to the renamed sheet
-    this.tableManager.updateTablesForSheetRename(opts);
-
-    // Update conditional styles that reference this sheet
-    this.styleManager.updateSheetName(
-      opts.workbookName,
-      opts.sheetName,
-      opts.newSheetName
+  }): void {
+    this.commandExecutor.execute(
+      new RenameSheetCommand(this.getStructureCommandDeps(), opts),
+      { validate: !!this.apiDeclaration }
     );
+  }
 
-    // Update all formulas that reference this sheet
-    this.workbookManager.updateAllFormulas((formula) =>
-      renameSheetInFormula({
-        formula,
-        oldSheetName: opts.sheetName,
-        newSheetName: opts.newSheetName,
-      })
-    );
-
-    // Update tracked references to this sheet
-    this.referenceManager.updateSheetName(
-      opts.workbookName,
-      opts.sheetName,
-      opts.newSheetName
-    );
-
-    // Update API schemas that reference this sheet
-    this.apiSchemaManager.updateForSheetRename(
-      opts.workbookName,
-      opts.sheetName,
-      opts.newSheetName
-    );
-
-    // Add engine-specific logic: re-evaluate since references might be affected
-    this.reevaluate();
-    this.eventManager.emitUpdate();
-
-    return sheet;
+  /**
+   * Check if a sheet exists
+   */
+  hasSheet(opts: { workbookName: string; sheetName: string }): boolean {
+    return !!this.workbookManager.getSheet(opts);
   }
 
   getSheets(workbookName: string) {
@@ -1034,221 +1038,47 @@ export class FormulaEngine<
   //#endregion
 
   //#region Workbook
-  addWorkbook(workbookName: string) {
-    this.workbookManager.addWorkbook(workbookName);
-    this.namedExpressionManager.addWorkbook(workbookName);
-    this.tableManager.addWorkbook(workbookName);
-
-    this.reevaluate();
-    this.eventManager.emitUpdate();
-  }
-
-  removeWorkbook(workbookName: string) {
-    this.workbookManager.removeWorkbook(workbookName);
-    this.namedExpressionManager.removeWorkbook(workbookName);
-    this.tableManager.removeWorkbook(workbookName);
-    this.styleManager.removeWorkbookStyles(workbookName);
-
-    // Invalidate tracked references to this workbook
-    this.referenceManager.invalidateWorkbook(workbookName);
-
-    // Invalidate API schemas that reference this workbook
-    this.apiSchemaManager.invalidateForWorkbookDeletion(workbookName);
-
-    this.reevaluate();
-    this.eventManager.emitUpdate();
-  }
-
-  cloneWorkbook(fromWorkbookName: string, toWorkbookName: string) {
-    // Check if source workbook exists
-    const sourceWorkbook = this.workbookManager
-      .getWorkbooks()
-      .get(fromWorkbookName);
-    if (!sourceWorkbook) {
-      throw new Error(`Source workbook "${fromWorkbookName}" not found`);
-    }
-
-    // Check if target workbook name already exists
-    if (this.workbookManager.getWorkbooks().has(toWorkbookName)) {
-      throw new Error(`Target workbook "${toWorkbookName}" already exists`);
-    }
-
-    // Create new workbook
-    this.addWorkbook(toWorkbookName);
-
-    // Clone all sheets from source workbook
-    for (const [sheetName, sheet] of sourceWorkbook.sheets) {
-      // Add sheet to target workbook
-      this.addSheet({
-        workbookName: toWorkbookName,
-        sheetName: sheetName,
-      });
-
-      // Copy all cell content using setSheetContent for efficiency
-      this.setSheetContent(
-        {
-          workbookName: toWorkbookName,
-          sheetName: sheetName,
-        },
-        new Map(sheet.content)
-      );
-
-      // Copy all cell metadata
-      const targetSheet = this.workbookManager.getSheet({
-        workbookName: toWorkbookName,
-        sheetName: sheetName,
-      });
-      if (targetSheet) {
-        targetSheet.metadata = new Map(sheet.metadata);
-
-        // Copy sheet metadata
-        if (sheet.sheetMetadata !== undefined) {
-          targetSheet.sheetMetadata = structuredClone(sheet.sheetMetadata);
-        }
-      }
-    }
-
-    // Copy workbook metadata
-    const targetWorkbook = this.workbookManager
-      .getWorkbooks()
-      .get(toWorkbookName);
-    if (targetWorkbook && sourceWorkbook.workbookMetadata !== undefined) {
-      targetWorkbook.workbookMetadata = structuredClone(
-        sourceWorkbook.workbookMetadata
-      );
-    }
-
-    // Clone workbook-scoped named expressions
-    const sourceWorkbookExpressions = this.namedExpressionManager
-      .getNamedExpressions()
-      .workbookExpressions.get(fromWorkbookName);
-    if (sourceWorkbookExpressions) {
-      for (const [name, expression] of sourceWorkbookExpressions) {
-        this.addNamedExpression({
-          expressionName: name,
-          expression: expression.expression,
-          workbookName: toWorkbookName,
-        });
-      }
-    }
-
-    // Clone sheet-scoped named expressions
-    const sourceSheetExpressions = this.namedExpressionManager
-      .getNamedExpressions()
-      .sheetExpressions.get(fromWorkbookName);
-    if (sourceSheetExpressions) {
-      for (const [sheetName, sheetExpressions] of sourceSheetExpressions) {
-        for (const [name, expression] of sheetExpressions) {
-          this.addNamedExpression({
-            expressionName: name,
-            expression: expression.expression,
-            workbookName: toWorkbookName,
-            sheetName: sheetName,
-          });
-        }
-      }
-    }
-
-    // Clone tables
-    const sourceTables = this.tableManager.tables.get(fromWorkbookName);
-    if (sourceTables) {
-      for (const [tableName, table] of sourceTables) {
-        this.tableManager.copyTable(
-          {
-            workbookName: fromWorkbookName,
-            tableName: tableName,
-          },
-          {
-            workbookName: toWorkbookName,
-            tableName: tableName,
-          }
-        );
-      }
-    }
-
-    // Clone conditional styles
-    const allConditionalStyles = this.styleManager.getAllConditionalStyles();
-    for (const style of allConditionalStyles) {
-      if (style.areas.some((area) => area.workbookName === fromWorkbookName)) {
-        const newStyle: ConditionalStyle = {
-          ...style,
-          areas: style.areas.map((area) =>
-            area.workbookName === fromWorkbookName
-              ? { ...area, workbookName: toWorkbookName }
-              : area
-          ),
-        };
-        this.styleManager.addConditionalStyle(newStyle);
-      }
-    }
-
-    // Clone cell styles
-    const allCellStyles = this.styleManager.getAllCellStyles();
-    for (const style of allCellStyles) {
-      if (style.areas.some((area) => area.workbookName === fromWorkbookName)) {
-        const newStyle: DirectCellStyle = {
-          ...style,
-          areas: style.areas.map((area) =>
-            area.workbookName === fromWorkbookName
-              ? { ...area, workbookName: toWorkbookName }
-              : area
-          ),
-        };
-        this.styleManager.addCellStyle(newStyle);
-      }
-    }
-
-    // Update formulas in cloned workbook that reference the source workbook
-    this.workbookManager.updateFormulasForWorkbook(toWorkbookName, (formula) =>
-      renameWorkbookInFormula({
-        formula,
-        oldWorkbookName: fromWorkbookName,
-        newWorkbookName: toWorkbookName,
-      })
+  addWorkbook(workbookName: string): void {
+    this.commandExecutor.execute(
+      new AddWorkbookCommand(this.getStructureCommandDeps(), workbookName),
+      { validate: !!this.apiDeclaration }
     );
+  }
 
-    this.reevaluate();
-    this.eventManager.emitUpdate();
+  removeWorkbook(workbookName: string): void {
+    this.commandExecutor.execute(
+      new RemoveWorkbookCommand(this.getStructureCommandDeps(), workbookName),
+      { validate: !!this.apiDeclaration }
+    );
+  }
+
+  /**
+   * Check if a workbook exists
+   */
+  hasWorkbook(workbookName: string): boolean {
+    return this.workbookManager.getWorkbooks().has(workbookName);
+  }
+
+  cloneWorkbook(fromWorkbookName: string, toWorkbookName: string): void {
+    this.commandExecutor.execute(
+      new CloneWorkbookCommand(
+        this.getStructureCommandDeps(),
+        fromWorkbookName,
+        toWorkbookName
+      ),
+      { validate: !!this.apiDeclaration }
+    );
   }
 
   renameWorkbook(opts: { workbookName: string; newWorkbookName: string }) {
-    this.workbookManager.renameWorkbook(opts);
-
-    // Update scoped named expressions
-    this.namedExpressionManager.renameWorkbook(opts);
-
-    // Update tables that belong to the renamed sheet
-    this.tableManager.updateTablesForWorkbookRename(opts);
-
-    // Update conditional styles that reference this workbook
-    this.styleManager.updateWorkbookName(
-      opts.workbookName,
-      opts.newWorkbookName
+    this.commandExecutor.execute(
+      new RenameWorkbookCommand(
+        this.getStructureCommandDeps(),
+        opts.workbookName,
+        opts.newWorkbookName
+      ),
+      { validate: !!this.apiDeclaration }
     );
-
-    // Update all formulas that reference this workbook
-    this.workbookManager.updateAllFormulas((formula) =>
-      renameWorkbookInFormula({
-        formula,
-        oldWorkbookName: opts.workbookName,
-        newWorkbookName: opts.newWorkbookName,
-      })
-    );
-
-    // Update tracked references to this workbook
-    this.referenceManager.updateWorkbookName(
-      opts.workbookName,
-      opts.newWorkbookName
-    );
-
-    // Update API schemas that reference this workbook
-    this.apiSchemaManager.updateForWorkbookRename(
-      opts.workbookName,
-      opts.newWorkbookName
-    );
-
-    this.reevaluate();
-    this.eventManager.emitUpdate();
   }
 
   getWorkbooks() {
@@ -1262,85 +1092,27 @@ export class FormulaEngine<
    * @param sheetName - The name of the sheet to set the content of
    * @param content - A map of cell addresses to their serialized values
    * @remarks This method is used to set the content of a sheet. It will re-evaluate all sheets to ensure all dependencies are resolved correctly.
-   * @throws SchemaValidationError if any cell value violates a schema constraint
+   * @throws SchemaIntegrityError if any evaluated cell value violates a schema constraint
    */
   setSheetContent(
     opts: { sheetName: string; workbookName: string },
     content: Map<string, SerializedCellValue>
   ) {
-    // Validate all cells against schema before writing
-    if (this.apiDeclaration) {
-      for (const [cellRef, value] of content) {
-        const { colIndex, rowIndex } = parseCellReference(cellRef);
-        const cellAddress: CellAddress = {
-          workbookName: opts.workbookName,
-          sheetName: opts.sheetName,
-          colIndex,
-          rowIndex,
-        };
-
-        const validation = this.apiSchemaManager.validateCellWrite(
-          cellAddress,
-          value,
-          this.getCellMetadata(cellAddress)
-        );
-
-        if (!validation.valid) {
-          throw new SchemaValidationError(
-            validation.error || "Schema validation failed",
-            cellAddress,
-            validation.originalError
-          );
-        }
-      }
-    }
-
-    this.workbookManager.setSheetContent(opts, content);
-
-    // Re-evaluate all sheets to ensure all dependencies are resolved correctly
-    this.reevaluate();
-    this.eventManager.emitUpdate();
+    this.commandExecutor.execute(
+      new SetSheetContentCommand(this.workbookManager, opts, content),
+      { validate: !!this.apiDeclaration }
+    );
   }
 
   /**
    * Set the content of a single cell.
-   * @throws SchemaValidationError if the value violates a schema constraint
+   * @throws SchemaIntegrityError if the evaluated value violates a schema constraint
    */
   setCellContent(address: CellAddress, content: SerializedCellValue) {
-    // Validate against schema before writing
-    if (this.apiDeclaration) {
-      const validation = this.apiSchemaManager.validateCellWrite(
-        address,
-        content,
-        this.getCellMetadata(address)
-      );
-
-      if (!validation.valid) {
-        throw new SchemaValidationError(
-          validation.error || "Schema validation failed",
-          address,
-          validation.originalError
-        );
-      }
-    }
-
-    this.workbookManager.setCellContent(address, content);
-
-    // Re-evaluate all sheets to ensure all dependencies are resolved correctly
-    this.reevaluate();
-    this.eventManager.emitUpdate();
-  }
-  //#endregion
-
-  //#region Evaluation
-
-  /**
-   * Re-evaluates all sheets to ensure all dependencies are resolved correctly
-   *
-   * but just clears the evaluation cache
-   */
-  reevaluate() {
-    this.evaluationManager.clearEvaluationCache();
+    this.commandExecutor.execute(
+      new SetCellContentCommand(this.workbookManager, address, content),
+      { validate: !!this.apiDeclaration }
+    );
   }
   //#endregion
 
@@ -1363,19 +1135,29 @@ export class FormulaEngine<
      * The direction of the fill.
      */
     direction: FillDirection
-  ) {
-    this.autoFillManager.fill(opts, seedRange, fillRanges, direction);
+  ): void {
+    this.commandExecutor.execute(
+      new AutoFillCommand(
+        this.workbookManager,
+        this.styleManager,
+        this.autoFillManager,
+        opts,
+        seedRange,
+        fillRanges,
+        direction
+      ),
+      { validate: !!this.apiDeclaration }
+    );
   }
 
   /**
    * Removes the content in the spreadsheet that is inside the range.
    */
   clearSpreadsheetRange(address: RangeAddress) {
-    this.workbookManager.clearSpreadsheetRange(address);
-
-    // Re-evaluate all sheets to ensure all dependencies are resolved correctly
-    this.reevaluate();
-    this.eventManager.emitUpdate();
+    this.commandExecutor.execute(
+      new ClearRangeCommand(this.workbookManager, address),
+      { validate: !!this.apiDeclaration }
+    );
   }
   //#endregion
 
@@ -1451,8 +1233,108 @@ export class FormulaEngine<
     }
 
     // Re-evaluate all sheets to ensure all dependencies are resolved correctly
-    this.reevaluate();
+    this.evaluationManager.clearEvaluationCache();
     this.eventManager.emitUpdate();
+  }
+  //#endregion
+
+  //#region Undo/Redo
+  /**
+   * Undo the last command.
+   * @returns true if undo was performed, false if nothing to undo
+   */
+  undo(): boolean {
+    return this.commandExecutor.undo();
+  }
+
+  /**
+   * Redo the last undone command.
+   * @returns true if redo was performed, false if nothing to redo
+   */
+  redo(): boolean {
+    return this.commandExecutor.redo();
+  }
+
+  /**
+   * Check if undo is available.
+   */
+  canUndo(): boolean {
+    return this.commandExecutor.canUndo();
+  }
+
+  /**
+   * Check if redo is available.
+   */
+  canRedo(): boolean {
+    return this.commandExecutor.canRedo();
+  }
+
+  /**
+   * Get the action log for persistence/collaboration.
+   * Actions can be serialized and replayed to reconstruct state.
+   */
+  getActionLog(): EngineAction[] {
+    return this.commandExecutor.getActionLog();
+  }
+
+  /**
+   * Clear the action log.
+   */
+  clearActionLog(): void {
+    this.commandExecutor.clearActionLog();
+  }
+
+  /**
+   * Clear undo/redo history.
+   */
+  clearHistory(): void {
+    this.commandExecutor.clearHistory();
+  }
+  //#endregion
+
+  //#region Command Dependencies (internal)
+  /**
+   * Get dependencies for structure commands.
+   * @internal
+   */
+  private getStructureCommandDeps(): StructureCommandDeps {
+    return {
+      workbookManager: this.workbookManager,
+      namedExpressionManager: this.namedExpressionManager,
+      tableManager: this.tableManager,
+      styleManager: this.styleManager,
+      referenceManager: this.referenceManager,
+      apiSchemaManager: this.apiSchemaManager,
+      renameSheetInFormula,
+      renameWorkbookInFormula,
+    };
+  }
+
+  /**
+   * Get dependencies for table commands.
+   * @internal
+   */
+  private getTableCommandDeps(): TableCommandDeps {
+    return {
+      tableManager: this.tableManager,
+      namedExpressionManager: this.namedExpressionManager,
+      workbookManager: this.workbookManager,
+      apiSchemaManager: this.apiSchemaManager,
+      getCellValue: (cell) => this.getCellValue(cell),
+      renameTableInFormula,
+    };
+  }
+
+  /**
+   * Get dependencies for named expression commands.
+   * @internal
+   */
+  private getNamedExpressionCommandDeps(): NamedExpressionCommandDeps {
+    return {
+      namedExpressionManager: this.namedExpressionManager,
+      workbookManager: this.workbookManager,
+      renameNamedExpressionInFormula,
+    };
   }
   //#endregion
 }

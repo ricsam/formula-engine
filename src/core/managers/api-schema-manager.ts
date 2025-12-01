@@ -33,7 +33,6 @@ export interface RegisteredTableSchema {
   workbookName: string;
   tableName: string;
   headers: TableSchemaHeaders;
-  isValid: boolean;
 }
 
 export interface RegisteredCellSchema {
@@ -41,7 +40,6 @@ export interface RegisteredCellSchema {
   namespace: string;
   cellAddress: CellAddress;
   parse: ParseFunction;
-  isValid: boolean;
 }
 
 export type RegisteredSchema = RegisteredTableSchema | RegisteredCellSchema;
@@ -83,7 +81,6 @@ export class ApiSchemaManager {
       workbookName,
       tableName,
       headers,
-      isValid: true,
     });
   }
 
@@ -100,7 +97,6 @@ export class ApiSchemaManager {
       namespace,
       cellAddress,
       parse,
-      isValid: true,
     });
   }
 
@@ -126,8 +122,6 @@ export class ApiSchemaManager {
     cell: CellAddress
   ): { schema: RegisteredSchema; columnName?: string } | null {
     for (const schema of this.schemas.values()) {
-      if (!schema.isValid) continue;
-
       if (schema.type === "cell") {
         if (
           schema.cellAddress.workbookName === cell.workbookName &&
@@ -243,7 +237,9 @@ export class ApiSchemaManager {
       const error = err instanceof Error ? err : new Error(String(err));
       return {
         valid: false,
-        error: `Schema validation failed for ${schema.namespace}${columnName ? `.${columnName}` : ""}: ${error.message}`,
+        error: `Schema validation failed for ${schema.namespace}${
+          columnName ? `.${columnName}` : ""
+        }: ${error.message}`,
         originalError: error,
       };
     }
@@ -289,7 +285,9 @@ export class ApiSchemaManager {
           if (!validation.valid) {
             return {
               valid: false,
-              error: `Spill blocked by schema at ${cellAddressToKey(cell)}: ${validation.error}`,
+              error: `Spill blocked by schema at ${cellAddressToKey(cell)}: ${
+                validation.error
+              }`,
               originalError: validation.originalError,
             };
           }
@@ -361,59 +359,166 @@ export class ApiSchemaManager {
   }
 
   /**
-   * Invalidate schemas when a sheet is deleted
-   */
-  invalidateForSheetDeletion(workbookName: string, sheetName: string): void {
-    for (const schema of this.schemas.values()) {
-      if (schema.type === "cell") {
-        if (
-          schema.cellAddress.workbookName === workbookName &&
-          schema.cellAddress.sheetName === sheetName
-        ) {
-          schema.isValid = false;
-        }
-      }
-      // Table schemas will be invalidated when the table itself is deleted
-    }
-  }
-
-  /**
-   * Invalidate schemas when a table is deleted
-   */
-  invalidateForTableDeletion(workbookName: string, tableName: string): void {
-    for (const schema of this.schemas.values()) {
-      if (
-        schema.type === "table" &&
-        schema.workbookName === workbookName &&
-        schema.tableName === tableName
-      ) {
-        schema.isValid = false;
-      }
-    }
-  }
-
-  /**
-   * Invalidate schemas when a workbook is deleted
-   */
-  invalidateForWorkbookDeletion(workbookName: string): void {
-    for (const schema of this.schemas.values()) {
-      if (schema.type === "cell") {
-        if (schema.cellAddress.workbookName === workbookName) {
-          schema.isValid = false;
-        }
-      } else if (schema.type === "table") {
-        if (schema.workbookName === workbookName) {
-          schema.isValid = false;
-        }
-      }
-    }
-  }
-
-  /**
    * Get all schemas (for debugging/testing)
    */
   getAllSchemas(): Map<string, RegisteredSchema> {
     return new Map(this.schemas);
   }
-}
 
+  /**
+   * Validate all schema constraints using evaluated cell values.
+   *
+   * This is the key method for schema validation with rollback:
+   * - It validates EVALUATED values, not raw content
+   * - A cell with "=123+123" validates as number (246), not string
+   * - Called after re-evaluation to check all schema-constrained cells
+   *
+   * @param getCellValue - Function to get the evaluated value of a cell
+   * @param getCellMetadata - Optional function to get cell metadata
+   * @returns Validation result with all errors found
+   */
+  validateAllSchemaConstraints(
+    getCellValue: (cell: CellAddress) => SerializedCellValue,
+    getCellMetadata?: (cell: CellAddress) => unknown,
+    getTableDataCells?: (table: TableDefinition) => CellAddress[]
+  ): {
+    valid: boolean;
+    errors: Array<{
+      message: string;
+      cellAddress?: CellAddress;
+      schemaNamespace?: string;
+      columnName?: string;
+      originalError?: Error;
+    }>;
+  } {
+    const errors: Array<{
+      message: string;
+      cellAddress?: CellAddress;
+      schemaNamespace?: string;
+      columnName?: string;
+      originalError?: Error;
+    }> = [];
+
+    for (const [namespace, schema] of this.schemas) {
+      if (schema.type === "cell") {
+        // Validate single cell using evaluated value
+        let value: SerializedCellValue;
+        try {
+          value = getCellValue(schema.cellAddress);
+        } catch {
+          // Sheet/cell doesn't exist yet, skip validation
+          continue;
+        }
+
+        const metadata = getCellMetadata
+          ? getCellMetadata(schema.cellAddress)
+          : undefined;
+
+        // Skip empty cells
+        if (value === undefined || value === "") {
+          continue;
+        }
+
+        try {
+          schema.parse(value, metadata);
+        } catch (err) {
+          const error = err instanceof Error ? err : new Error(String(err));
+          errors.push({
+            message: `Schema validation failed for ${namespace}: ${error.message}`,
+            cellAddress: schema.cellAddress,
+            schemaNamespace: namespace,
+            originalError: error,
+          });
+        }
+      } else if (schema.type === "table") {
+        // Get the table definition
+        const table = this.tableManager.getTable({
+          workbookName: schema.workbookName,
+          name: schema.tableName,
+        });
+
+        if (!table) continue;
+
+        const { start, headers } = table;
+
+        // Get cells to validate - use callback if provided (handles infinite ranges efficiently)
+        // Otherwise fall back to simple iteration for finite tables
+        let cellsToValidate: CellAddress[];
+        if (getTableDataCells) {
+          cellsToValidate = getTableDataCells(table);
+        } else {
+          // Fallback for finite tables when no callback provided
+          const { endRow } = table;
+          if (endRow.type === "infinity") {
+            // Skip validation for infinite tables without a cell iterator
+            continue;
+          }
+          cellsToValidate = [];
+          const dataStartRow = start.rowIndex + 1;
+          const endColIndex = start.colIndex + headers.size - 1;
+          for (let row = dataStartRow; row <= endRow.value; row++) {
+            for (let col = start.colIndex; col <= endColIndex; col++) {
+              cellsToValidate.push({
+                workbookName: table.workbookName,
+                sheetName: table.sheetName,
+                rowIndex: row,
+                colIndex: col,
+              });
+            }
+          }
+        }
+
+        for (const cell of cellsToValidate) {
+          // Skip header row
+          if (cell.rowIndex <= start.rowIndex) continue;
+
+          let value: SerializedCellValue;
+          try {
+            value = getCellValue(cell);
+          } catch {
+            // Sheet/cell doesn't exist yet, skip validation
+            continue;
+          }
+
+          // Skip empty cells
+          if (value === undefined || value === "") {
+            continue;
+          }
+
+          // Find the column name
+          const colOffset = cell.colIndex - start.colIndex;
+          const columnName = this.getColumnNameByIndex(
+            schema.headers,
+            colOffset
+          );
+
+          if (columnName && schema.headers[columnName]) {
+            const header = schema.headers[columnName];
+            const metadata = getCellMetadata
+              ? getCellMetadata(cell)
+              : undefined;
+
+            try {
+              header.parse(value, metadata);
+            } catch (err) {
+              const error =
+                err instanceof Error ? err : new Error(String(err));
+              errors.push({
+                message: `Schema validation failed for ${namespace}.${columnName}: ${error.message}`,
+                cellAddress: cell,
+                schemaNamespace: namespace,
+                columnName,
+                originalError: error,
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      valid: errors.length === 0,
+      errors,
+    };
+  }
+}

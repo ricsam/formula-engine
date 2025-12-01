@@ -187,8 +187,9 @@ describe("StyleManager", () => {
         })
       ).toHaveLength(1);
 
-      const removed = engine.removeConditionalStyle(workbookName, 0);
-      expect(removed).toBe(true);
+      expect(engine.getConditionalStyleCount(workbookName)).toBe(1);
+      engine.removeConditionalStyle(workbookName, 0);
+      expect(engine.getConditionalStyleCount(workbookName)).toBe(0);
       expect(
         engine.getConditionalStylesIntersectingWithRange({
           workbookName,
@@ -204,12 +205,14 @@ describe("StyleManager", () => {
       ).toHaveLength(0);
     });
 
-    test("returns false for invalid index", () => {
-      const removed = engine.removeConditionalStyle(workbookName, 0);
-      expect(removed).toBe(false);
+    test("removing invalid index has no effect", () => {
+      // No styles exist, removing should not throw
+      expect(engine.getConditionalStyleCount(workbookName)).toBe(0);
+      engine.removeConditionalStyle(workbookName, 0);
+      expect(engine.getConditionalStyleCount(workbookName)).toBe(0);
     });
 
-    test("returns false for negative index", () => {
+    test("removing negative index has no effect", () => {
       const style: ConditionalStyle = {
         areas: [{
           workbookName,
@@ -230,8 +233,10 @@ describe("StyleManager", () => {
       };
 
       engine.addConditionalStyle(style);
-      const removed = engine.removeConditionalStyle(workbookName, -1);
-      expect(removed).toBe(false);
+      expect(engine.getConditionalStyleCount(workbookName)).toBe(1);
+      engine.removeConditionalStyle(workbookName, -1);
+      // Style should still exist
+      expect(engine.getConditionalStyleCount(workbookName)).toBe(1);
     });
   });
 
@@ -1215,8 +1220,9 @@ describe("StyleManager", () => {
       engine.addCellStyle(cellStyle1);
       engine.addCellStyle(cellStyle2);
 
-      const removed = engine.removeCellStyle(workbookName, 0);
-      expect(removed).toBe(true);
+      expect(engine.getCellStyleCount(workbookName)).toBe(2);
+      engine.removeCellStyle(workbookName, 0);
+      expect(engine.getCellStyleCount(workbookName)).toBe(1);
 
       const styles = engine.getStylesIntersectingWithRange({
         workbookName,
@@ -1233,7 +1239,7 @@ describe("StyleManager", () => {
       expect(styles[0]).toEqual(cellStyle2);
     });
 
-    test("returns false when removing invalid cell style index", () => {
+    test("removing invalid cell style index has no effect", () => {
       const cellStyle: DirectCellStyle = {
         areas: [{
           workbookName,
@@ -1252,9 +1258,10 @@ describe("StyleManager", () => {
       };
 
       engine.addCellStyle(cellStyle);
+      expect(engine.getCellStyleCount(workbookName)).toBe(1);
 
-      const removed = engine.removeCellStyle(workbookName, 10);
-      expect(removed).toBe(false);
+      engine.removeCellStyle(workbookName, 10);
+      expect(engine.getCellStyleCount(workbookName)).toBe(1);
 
       const styles = engine.getStylesIntersectingWithRange({
         workbookName,
@@ -1270,7 +1277,7 @@ describe("StyleManager", () => {
       expect(styles).toHaveLength(1);
     });
 
-    test("returns false when removing negative cell style index", () => {
+    test("removing negative cell style index has no effect", () => {
       const cellStyle: DirectCellStyle = {
         areas: [{
           workbookName,
@@ -1289,9 +1296,10 @@ describe("StyleManager", () => {
       };
 
       engine.addCellStyle(cellStyle);
+      expect(engine.getCellStyleCount(workbookName)).toBe(1);
 
-      const removed = engine.removeCellStyle(workbookName, -1);
-      expect(removed).toBe(false);
+      engine.removeCellStyle(workbookName, -1);
+      expect(engine.getCellStyleCount(workbookName)).toBe(1);
 
       const styles = engine.getStylesIntersectingWithRange({
         workbookName,

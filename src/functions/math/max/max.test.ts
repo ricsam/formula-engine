@@ -128,8 +128,10 @@ describe("MAX function", () => {
   });
 
   test("with cross-sheet references", () => {
-    const sheet1Name = engine.addSheet({ workbookName, sheetName: "Sheet1" }).name;
-    const sheet2Name = engine.addSheet({ workbookName, sheetName: "Sheet2" }).name;
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    engine.addSheet({ workbookName, sheetName: "Sheet2" });
+    const sheet1Name = "Sheet1";
+    const sheet2Name = "Sheet2";
 
     // Set up data on Sheet1
     engine.setSheetContent(
@@ -163,9 +165,12 @@ describe("MAX function", () => {
   });
 
   test.skip("with 3D sheet references", () => {
-    const sheet1Name = engine.addSheet({ workbookName, sheetName: "Sheet1" }).name;
-    const sheet2Name = engine.addSheet({ workbookName, sheetName: "Sheet2" }).name;
-    const sheet3Name = engine.addSheet({ workbookName, sheetName: "Sheet3" }).name;
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    engine.addSheet({ workbookName, sheetName: "Sheet2" });
+    engine.addSheet({ workbookName, sheetName: "Sheet3" });
+    const sheet1Name = "Sheet1";
+    const sheet2Name = "Sheet2";
+    const sheet3Name = "Sheet3";
 
     // Set up same data on all sheets
     [sheet1Name, sheet2Name, sheet3Name].forEach((sheetName) => {
@@ -318,7 +323,8 @@ describe("MAX function", () => {
   test("MAX() with zero arguments", () => {
     const engine = FormulaEngine.buildEmpty();
     engine.addWorkbook(workbookName);
-    const sheetName = engine.addSheet({ workbookName, sheetName: "Sheet1" }).name;
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    const sheetName = "Sheet1";
 
     engine.setSheetContent(
       { workbookName, sheetName },

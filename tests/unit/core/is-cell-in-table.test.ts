@@ -10,13 +10,24 @@ describe("FormulaEngine - isCellInTable", () => {
   let engine: FormulaEngine;
 
   const cell = (ref: string) =>
-    engine.getCellValue({ sheetName, workbookName, ...parseCellReference(ref) });
+    engine.getCellValue({
+      sheetName,
+      workbookName,
+      ...parseCellReference(ref),
+    });
 
   const setCellContent = (ref: string, content: string) => {
-    engine.setCellContent({ sheetName, workbookName, ...parseCellReference(ref) }, content);
+    engine.setCellContent(
+      { sheetName, workbookName, ...parseCellReference(ref) },
+      content
+    );
   };
 
-  const address = (ref: string) => ({ sheetName, workbookName, ...parseCellReference(ref) });
+  const address = (ref: string) => ({
+    sheetName,
+    workbookName,
+    ...parseCellReference(ref),
+  });
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
@@ -37,7 +48,7 @@ describe("FormulaEngine - isCellInTable", () => {
     expect(engine.isCellInTable(address("A4"))).toBeDefined(); // data row
     expect(engine.isCellInTable(address("A5"))).toBeUndefined(); // after data row
   });
-  
+
   test("should return undefined when no tables exist", () => {
     const result = engine.isCellInTable({
       sheetName,
@@ -92,7 +103,7 @@ describe("FormulaEngine - isCellInTable", () => {
       ])
     );
 
-    const table = engine.addTable({
+    engine.addTable({
       tableName: "Table1",
       sheetName,
       workbookName,
@@ -102,8 +113,9 @@ describe("FormulaEngine - isCellInTable", () => {
     });
 
     const result = engine.isCellInTable(address("B1"));
+    const table = engine.getTable({ workbookName, tableName: "Table1" });
 
-    expect(result).toBe(table);
+    expect(result).toBe(table!);
     expect(result?.name).toBe("Table1");
   });
 
@@ -120,7 +132,7 @@ describe("FormulaEngine - isCellInTable", () => {
       ])
     );
 
-    const table = engine.addTable({
+    engine.addTable({
       tableName: "Table1",
       sheetName,
       workbookName,
@@ -131,8 +143,9 @@ describe("FormulaEngine - isCellInTable", () => {
 
     // Test data cell
     const result = engine.isCellInTable(address("B2"));
+    const table = engine.getTable({ workbookName, tableName: "Table1" });
 
-    expect(result).toBe(table);
+    expect(result).toBe(table!);
     expect(result?.name).toBe("Table1");
   });
 
@@ -147,7 +160,7 @@ describe("FormulaEngine - isCellInTable", () => {
       ])
     );
 
-    const table = engine.addTable({
+    engine.addTable({
       tableName: "Table1",
       sheetName,
       workbookName,
@@ -155,6 +168,7 @@ describe("FormulaEngine - isCellInTable", () => {
       numRows: { type: "number", value: 2 }, // 2 rows including header, one data row
       numCols: 2,
     });
+    const table = engine.getTable({ workbookName, tableName: "Table1" });
 
     // Test cells around the table
     expect(
@@ -167,15 +181,15 @@ describe("FormulaEngine - isCellInTable", () => {
 
     expect(
       engine.isCellInTable(address("B2")) // B2 (start, header)
-    ).toBe(table);
+    ).toBe(table!);
 
     expect(
       engine.isCellInTable(address("B3")) // B3 // first row
-    ).toBe(table);
+    ).toBe(table!);
 
     expect(
       engine.isCellInTable(address("B4")) // B4 // last row
-    ).toBe(table);
+    ).toBe(table!);
 
     expect(
       engine.isCellInTable(address("B5")) // B5 // after last row
@@ -183,13 +197,11 @@ describe("FormulaEngine - isCellInTable", () => {
 
     expect(
       engine.isCellInTable(address("C3")) // C3 (end)
-    ).toBe(table);
+    ).toBe(table!);
 
     expect(
       engine.isCellInTable(address("D2")) // D2
     ).toBeUndefined();
-
-
   });
 
   test("should handle infinite table rows", () => {
@@ -201,7 +213,7 @@ describe("FormulaEngine - isCellInTable", () => {
       ])
     );
 
-    const table = engine.addTable({
+    engine.addTable({
       tableName: "Table1",
       sheetName,
       workbookName,
@@ -209,15 +221,16 @@ describe("FormulaEngine - isCellInTable", () => {
       numRows: { type: "infinity", sign: "positive" },
       numCols: 2,
     });
+    const table = engine.getTable({ workbookName, tableName: "Table1" });
 
     // Test that cells far down are still in the table
     expect(
       engine.isCellInTable(address("A1")) // A1
-    ).toBe(table);
+    ).toBe(table!);
 
     expect(
       engine.isCellInTable(address("B1001")) // B1001
-    ).toBe(table);
+    ).toBe(table!);
 
     // But outside column range should not be in table
     expect(
@@ -242,7 +255,7 @@ describe("FormulaEngine - isCellInTable", () => {
       ])
     );
 
-    const table1 = engine.addTable({
+    engine.addTable({
       tableName: "Table1",
       sheetName,
       workbookName,
@@ -251,7 +264,7 @@ describe("FormulaEngine - isCellInTable", () => {
       numCols: 2,
     });
 
-    const table2 = engine.addTable({
+    engine.addTable({
       tableName: "Table2",
       sheetName,
       workbookName,
@@ -260,23 +273,26 @@ describe("FormulaEngine - isCellInTable", () => {
       numCols: 2,
     });
 
+    const table1 = engine.getTable({ workbookName, tableName: "Table1" });
+    const table2 = engine.getTable({ workbookName, tableName: "Table2" });
+
     // Test cells in first table
     expect(
       engine.isCellInTable(address("A1")) // A1
-    ).toBe(table1);
+    ).toBe(table1!);
 
     expect(
       engine.isCellInTable(address("B2")) // B2
-    ).toBe(table1);
+    ).toBe(table1!);
 
     // Test cells in second table
     expect(
       engine.isCellInTable(address("D1")) // D1
-    ).toBe(table2);
+    ).toBe(table2!);
 
     expect(
       engine.isCellInTable(address("E2")) // E2
-    ).toBe(table2);
+    ).toBe(table2!);
 
     // Test cell between tables
     expect(
@@ -285,8 +301,10 @@ describe("FormulaEngine - isCellInTable", () => {
   });
 
   test("should handle different sheet correctly", () => {
-    const sheet1Name = engine.addSheet({ workbookName, sheetName: "Sheet1" }).name;
-    const sheet2Name = engine.addSheet({ workbookName, sheetName: "Sheet2" }).name;
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    engine.addSheet({ workbookName, sheetName: "Sheet2" });
+    const sheet1Name = "Sheet1";
+    const sheet2Name = "Sheet2";
 
     engine.setSheetContent(
       { workbookName, sheetName: sheet1Name },
@@ -296,7 +314,7 @@ describe("FormulaEngine - isCellInTable", () => {
       ])
     );
 
-    const table = engine.addTable({
+    engine.addTable({
       tableName: "Table1",
       sheetName: sheet1Name,
       workbookName,
@@ -304,6 +322,7 @@ describe("FormulaEngine - isCellInTable", () => {
       numRows: { type: "number", value: 2 },
       numCols: 1,
     });
+    const table = engine.getTable({ workbookName, tableName: "Table1" });
 
     // Cell A1 in Sheet1 should be in table
     expect(
@@ -313,7 +332,7 @@ describe("FormulaEngine - isCellInTable", () => {
         colIndex: 0,
         rowIndex: 0,
       })
-    ).toBe(table);
+    ).toBe(table!);
 
     // Cell A1 in Sheet2 should not be in table
     expect(

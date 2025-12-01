@@ -525,7 +525,7 @@ describe('Reference Tracking', () => {
         textBoxes?: Array<{ id: string; anchorRef: string; content: string }>;
       }
 
-      const typedEngine = FormulaEngine.buildEmpty<unknown, SheetMeta, unknown>();
+      const typedEngine = FormulaEngine.buildEmpty<{ sheet: SheetMeta }>();
       typedEngine.addWorkbook('wb1');
       typedEngine.addSheet({ workbookName: 'wb1', sheetName: 'Sheet1' });
 
@@ -565,7 +565,7 @@ describe('Reference Tracking', () => {
         anchors?: string[];
       }
 
-      const typedEngine = FormulaEngine.buildEmpty<unknown, SheetMeta, unknown>();
+      const typedEngine = FormulaEngine.buildEmpty<{ sheet: SheetMeta }>();
       typedEngine.addWorkbook('wb1');
       typedEngine.addSheet({ workbookName: 'wb1', sheetName: 'Sheet1' });
 

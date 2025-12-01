@@ -10,7 +10,9 @@ const createEngineWithExampleData = () => {
   const engine = FormulaEngine.buildEmpty();
   const workbookName = "Workbook1";
   engine.addWorkbook(workbookName);
-  const sheetName = engine.addSheet({ workbookName, sheetName: "Sheet1" }).name;
+  const sheetNameToAdd = "Sheet1";
+  engine.addSheet({ workbookName, sheetName: sheetNameToAdd });
+  const sheetName = sheetNameToAdd;
 
   // Rich example data with various formulas and data types
   const exampleData = new Map<string, any>([

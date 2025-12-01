@@ -33,15 +33,17 @@ describe("Sheets", () => {
 
   test("should add new sheets", () => {
     // Add first sheet
-    const sheet1 = engine.addSheet({ workbookName, sheetName: "Sheet1" });
-    expect(sheet1.name).toBe("Sheet1");
-    expect(sheet1.index).toBe(0);
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    const sheet1 = engine.getSheet({ workbookName, sheetName: "Sheet1" });
+    expect(sheet1?.name).toBe("Sheet1");
+    expect(sheet1?.index).toBe(0);
     expect(engine.getSheets(workbookName).size).toBe(1);
 
     // Add second sheet
-    const sheet2 = engine.addSheet({ workbookName, sheetName: "Sheet2" });
-    expect(sheet2.name).toBe("Sheet2");
-    expect(sheet2.index).toBe(1);
+    engine.addSheet({ workbookName, sheetName: "Sheet2" });
+    const sheet2 = engine.getSheet({ workbookName, sheetName: "Sheet2" });
+    expect(sheet2?.name).toBe("Sheet2");
+    expect(sheet2?.index).toBe(1);
     expect(engine.getSheets(workbookName).size).toBe(2);
 
     // Verify sheets exist
@@ -374,7 +376,7 @@ describe("Sheets", () => {
     expect(cell("Sheet1", "B1")).toBe(40); // 20 * 2
 
     // Re-evaluate all sheets
-    engine.reevaluate();
+    engine._evaluationManager.clearEvaluationCache();
     expect(cell("Sheet2", "A1")).toBe(120); // 40 * 3
   });
 
@@ -508,19 +510,24 @@ describe("Sheets", () => {
 
   test("should preserve sheet indices when adding and removing sheets", () => {
     // Add multiple sheets
-    const sheet1 = engine.addSheet({ workbookName, sheetName: "First" });
-    const sheet2 = engine.addSheet({ workbookName, sheetName: "Second" });
-    const sheet3 = engine.addSheet({ workbookName, sheetName: "Third" });
+    engine.addSheet({ workbookName, sheetName: "First" });
+    engine.addSheet({ workbookName, sheetName: "Second" });
+    engine.addSheet({ workbookName, sheetName: "Third" });
 
-    expect(sheet1.index).toBe(0);
-    expect(sheet2.index).toBe(1);
-    expect(sheet3.index).toBe(2);
+    const sheet1 = engine.getSheet({ workbookName, sheetName: "First" });
+    const sheet2 = engine.getSheet({ workbookName, sheetName: "Second" });
+    const sheet3 = engine.getSheet({ workbookName, sheetName: "Third" });
+
+    expect(sheet1?.index).toBe(0);
+    expect(sheet2?.index).toBe(1);
+    expect(sheet3?.index).toBe(2);
 
     // Remove middle sheet
     engine.removeSheet({ workbookName, sheetName: "Second" });
 
     // Add new sheet - should get next available index
-    const sheet4 = engine.addSheet({ workbookName, sheetName: "Fourth" });
-    expect(sheet4.index).toBe(2); // Should reuse the index from removed sheet
+    engine.addSheet({ workbookName, sheetName: "Fourth" });
+    const sheet4 = engine.getSheet({ workbookName, sheetName: "Fourth" });
+    expect(sheet4?.index).toBe(2); // Should reuse the index from removed sheet
   });
 });

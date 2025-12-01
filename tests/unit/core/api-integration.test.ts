@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { FormulaEngine } from "../../../src/core/engine";
 import { defineApi } from "../../../src/core/api/api";
-import { SchemaValidationError } from "../../../src/core/managers/api-schema-manager";
+import { SchemaIntegrityError } from "../../../src/core/commands";
 
 describe("API Integration", () => {
   const workbookName = "TestWorkbook";
@@ -256,7 +256,7 @@ describe("API Integration", () => {
     });
 
     describe("Schema validation", () => {
-      test("setCellContent throws SchemaValidationError for invalid data in table range", () => {
+      test("setCellContent throws SchemaIntegrityError for invalid data in table range", () => {
         // First add a valid user to establish the table has data
         engine.api.users.create({ name: "Alice", email: "alice@example.com", age: 25 });
 
@@ -266,17 +266,17 @@ describe("API Integration", () => {
             { workbookName, sheetName, colIndex: 3, rowIndex: 1 },
             "not-a-number"
           );
-        }).toThrow(SchemaValidationError);
+        }).toThrow(SchemaIntegrityError);
       });
 
-      test("setCellContent throws SchemaValidationError for invalid data in cell schema", () => {
+      test("setCellContent throws SchemaIntegrityError for invalid data in cell schema", () => {
         // Try to write a number where string expected
         expect(() => {
           engine.setCellContent(
             { workbookName, sheetName, colIndex: 5, rowIndex: 0 },
             123
           );
-        }).toThrow(SchemaValidationError);
+        }).toThrow(SchemaIntegrityError);
       });
 
       test("setCellContent allows valid data", () => {

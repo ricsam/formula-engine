@@ -10,3 +10,7 @@ export { TableOrm } from "./core/api/table-orm";
 export { CellOrm } from "./core/api/cell-orm";
 export { SchemaValidationError } from "./core/managers/api-schema-manager";
 export type { ValidationResult } from "./core/managers/api-schema-manager";
+
+// Command Pattern exports
+export { SchemaIntegrityError } from "./core/commands";
+export type { EngineAction, EngineCommand } from "./core/commands";
