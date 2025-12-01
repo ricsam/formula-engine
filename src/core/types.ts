@@ -102,7 +102,6 @@ export type CellValue = CellNumber | CellString | CellBoolean | CellInfinity;
  */
 export type SerializedCellValue = string | number | boolean | undefined;
 
-
 // Named expressions
 export interface NamedExpression {
   name: string;
@@ -154,7 +153,11 @@ export interface Sheet<TCellMetadata = unknown, TSheetMetadata = unknown> {
   sheetMetadata: TSheetMetadata;
 }
 
-export interface Workbook<TCellMetadata = unknown, TSheetMetadata = unknown, TWorkbookMetadata = unknown> {
+export interface Workbook<
+  TCellMetadata = unknown,
+  TSheetMetadata = unknown,
+  TWorkbookMetadata = unknown
+> {
   name: string;
   sheets: Map<string, Sheet<TCellMetadata, TSheetMetadata>>;
   /**
@@ -170,9 +173,9 @@ export interface Workbook<TCellMetadata = unknown, TSheetMetadata = unknown, TWo
  * when workbooks/sheets are renamed and becomes invalid when they're deleted
  */
 export interface TrackedReference {
-  id: string;              // UUID
-  address: RangeAddress;   // The range being tracked
-  isValid: boolean;        // False if sheet/workbook deleted
+  id: string; // UUID
+  address: RangeAddress; // The range being tracked
+  isValid: boolean; // False if sheet/workbook deleted
 }
 
 export type ValueEvaluationResult = {
@@ -391,7 +394,7 @@ export interface ConditionalStyle {
 
 export interface DirectCellStyle {
   areas: RangeAddress[];
-  style: CellStyle
+  style: CellStyle;
 }
 
 export interface CellStyle {
@@ -422,7 +425,7 @@ export interface CopyCellsOptions {
    *   - ['content', 'style', 'metadata'] - same as 'all'
    * @default 'all'
    */
-  include?: 'all' | ('content' | 'style' | 'metadata')[];
+  include?: "all" | ("content" | "style" | "metadata")[];
   /**
    * The type of the content to copy
    * value: Copy the value from the source to the target,

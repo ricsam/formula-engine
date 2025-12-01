@@ -27,7 +27,7 @@ import { renameNamedExpressionInFormula } from "./named-expression-renamer";
 import { renameSheetInFormula } from "./sheet-renamer";
 import { renameTableInFormula } from "./table-renamer";
 import { renameWorkbookInFormula } from "./workbook-renamer";
-import { cellAddressToKey, keyToCellAddress } from "./utils";
+import { cellAddressToKey, keyToCellAddress, parseCellReference } from "./utils";
 import { CacheManager } from "./managers/cache-manager";
 import { NamedExpressionManager } from "./managers/named-expression-manager";
 import { TableManager } from "./managers/table-manager";
@@ -37,6 +37,20 @@ import { DependencyManager } from "./managers/dependency-manager";
 import { StyleManager } from "./managers/style-manager";
 import { CopyManager } from "./managers/copy-manager";
 import { ReferenceManager } from "./managers/reference-manager";
+import { ApiSchemaManager, SchemaValidationError } from "./managers/api-schema-manager";
+import type { Api, CreateApi, Declaration } from "./api/api";
+import { buildApiFromDeclaration } from "./api/api-builder";
+
+type Metadata = {
+  cell?: unknown;
+  sheet?: unknown;
+  workbook?: unknown;
+};
+
+type MetadataType<
+  TMetadata extends Metadata,
+  TKey extends keyof Metadata
+> = TMetadata[TKey];
 
 /**
  * Main FormulaEngine class
@@ -45,9 +59,10 @@ import { ReferenceManager } from "./managers/reference-manager";
  * @template TWorkbookMetadata - Consumer-defined type for workbook metadata (themes, document properties, etc.)
  */
 export class FormulaEngine<
-  TCellMetadata = unknown,
-  TSheetMetadata = unknown,
-  TWorkbookMetadata = unknown
+  TMetadata extends Metadata = Metadata,
+  TCreateApi extends
+    | CreateApi<MetadataType<TMetadata, "cell">, Api, Declaration>
+    | undefined = undefined
 > {
   private workbookManager: WorkbookManager;
   private namedExpressionManager: NamedExpressionManager;
@@ -59,6 +74,17 @@ export class FormulaEngine<
   private styleManager: StyleManager;
   private copyManager: CopyManager;
   private referenceManager: ReferenceManager;
+  private apiSchemaManager: ApiSchemaManager;
+
+  public api: TCreateApi extends CreateApi<
+    MetadataType<TMetadata, "cell">,
+    Api,
+    Declaration
+  >
+    ? TCreateApi["api"]
+    : undefined;
+
+  private apiDeclaration: Declaration | undefined;
 
   /**
    * Public access to the store manager for testing
@@ -72,7 +98,8 @@ export class FormulaEngine<
   public _dependencyManager: DependencyManager;
   public _styleManager: StyleManager;
 
-  constructor() {
+  constructor(api?: TCreateApi) {
+    this.apiDeclaration = (api as any)?.declaration;
     this.eventManager = new EventManager();
     this.workbookManager = new WorkbookManager();
     this.namedExpressionManager = new NamedExpressionManager();
@@ -110,6 +137,18 @@ export class FormulaEngine<
     );
 
     this.referenceManager = new ReferenceManager();
+    this.apiSchemaManager = new ApiSchemaManager(this.tableManager);
+
+    // Build the working API from declaration if provided
+    if (this.apiDeclaration) {
+      this.api = buildApiFromDeclaration(
+        this,
+        this.apiDeclaration,
+        this.apiSchemaManager
+      ) as any;
+    } else {
+      this.api = undefined as any;
+    }
 
     this._workbookManager = this.workbookManager;
     this._namedExpressionManager = this.namedExpressionManager;
@@ -127,12 +166,13 @@ export class FormulaEngine<
    * @template TS - Consumer-defined sheet metadata type
    * @template TW - Consumer-defined workbook metadata type
    */
-  static buildEmpty<TC = unknown, TS = unknown, TW = unknown>(): FormulaEngine<
-    TC,
-    TS,
-    TW
-  > {
-    return new FormulaEngine<TC, TS, TW>();
+  static buildEmpty<
+    TMetadata extends Metadata = Metadata,
+    TApiDeclaration extends
+      | CreateApi<MetadataType<TMetadata, "cell">, any, any>
+      | undefined = undefined
+  >(api?: TApiDeclaration) {
+    return new FormulaEngine<TMetadata, TApiDeclaration>(api);
   }
 
   //#region Cell
@@ -161,7 +201,7 @@ export class FormulaEngine<
    */
   setCellMetadata(
     address: CellAddress,
-    metadata: TCellMetadata | undefined
+    metadata: MetadataType<TMetadata, "cell"> | undefined
   ): void {
     this.workbookManager.setCellMetadata(address, metadata);
     this.eventManager.emitUpdate();
@@ -170,10 +210,11 @@ export class FormulaEngine<
   /**
    * Get metadata for a cell
    */
-  getCellMetadata(address: CellAddress): TCellMetadata | undefined {
-    return this.workbookManager.getCellMetadata(address) as
-      | TCellMetadata
-      | undefined;
+  getCellMetadata(
+    address: CellAddress
+  ): MetadataType<TMetadata, "cell"> | undefined {
+    const metadata = this.workbookManager.getCellMetadata(address);
+    return metadata as MetadataType<TMetadata, "cell"> | undefined;
   }
 
   /**
@@ -182,10 +223,10 @@ export class FormulaEngine<
   getSheetMetadataSerialized(opts: {
     sheetName: string;
     workbookName: string;
-  }): Map<string, TCellMetadata> {
+  }): Map<string, MetadataType<TMetadata, "sheet">> {
     return this.workbookManager.getSheetMetadataSerialized(opts) as Map<
       string,
-      TCellMetadata
+      MetadataType<TMetadata, "sheet">
     >;
   }
 
@@ -195,7 +236,7 @@ export class FormulaEngine<
    */
   setSheetMetadata(
     opts: { workbookName: string; sheetName: string },
-    metadata: TSheetMetadata
+    metadata: MetadataType<TMetadata, "sheet">
   ): void {
     this.workbookManager.setSheetMetadata(opts, metadata);
     this.eventManager.emitUpdate();
@@ -207,9 +248,9 @@ export class FormulaEngine<
   getSheetMetadata(opts: {
     workbookName: string;
     sheetName: string;
-  }): TSheetMetadata | undefined {
+  }): MetadataType<TMetadata, "sheet"> | undefined {
     return this.workbookManager.getSheetMetadata(opts) as
-      | TSheetMetadata
+      | MetadataType<TMetadata, "sheet">
       | undefined;
   }
 
@@ -217,7 +258,10 @@ export class FormulaEngine<
    * Set metadata for a workbook
    * Workbook metadata can contain themes, document properties, settings, or any consumer-defined data
    */
-  setWorkbookMetadata(workbookName: string, metadata: TWorkbookMetadata): void {
+  setWorkbookMetadata(
+    workbookName: string,
+    metadata: MetadataType<TMetadata, "workbook">
+  ): void {
     this.workbookManager.setWorkbookMetadata(workbookName, metadata);
     this.eventManager.emitUpdate();
   }
@@ -225,9 +269,11 @@ export class FormulaEngine<
   /**
    * Get metadata for a workbook
    */
-  getWorkbookMetadata(workbookName: string): TWorkbookMetadata | undefined {
+  getWorkbookMetadata(
+    workbookName: string
+  ): MetadataType<TMetadata, "workbook"> | undefined {
     return this.workbookManager.getWorkbookMetadata(workbookName) as
-      | TWorkbookMetadata
+      | MetadataType<TMetadata, "workbook">
       | undefined;
   }
 
@@ -461,6 +507,13 @@ export class FormulaEngine<
       renameTableInFormula(formula, names.oldName, names.newName)
     );
 
+    // Update API schemas that reference this table
+    this.apiSchemaManager.updateForTableRename(
+      workbookName,
+      names.oldName,
+      names.newName
+    );
+
     // Re-evaluate all sheets since structured references might depend on this table
     this.reevaluate();
     this.eventManager.emitUpdate();
@@ -489,6 +542,12 @@ export class FormulaEngine<
     const found = this.tableManager.removeTable(opts);
 
     if (found) {
+      // Invalidate API schemas that reference this table
+      this.apiSchemaManager.invalidateForTableDeletion(
+        opts.workbookName,
+        opts.tableName
+      );
+
       // Re-evaluate all sheets since structured references might depend on this table
       this.reevaluate();
       this.eventManager.emitUpdate();
@@ -888,6 +947,12 @@ export class FormulaEngine<
     // Invalidate tracked references to this sheet
     this.referenceManager.invalidateSheet(opts.workbookName, opts.sheetName);
 
+    // Invalidate API schemas that reference this sheet
+    this.apiSchemaManager.invalidateForSheetDeletion(
+      opts.workbookName,
+      opts.sheetName
+    );
+
     // Add engine-specific logic: re-evaluate since references might be affected
     this.reevaluate();
     this.eventManager.emitUpdate();
@@ -926,6 +991,13 @@ export class FormulaEngine<
 
     // Update tracked references to this sheet
     this.referenceManager.updateSheetName(
+      opts.workbookName,
+      opts.sheetName,
+      opts.newSheetName
+    );
+
+    // Update API schemas that reference this sheet
+    this.apiSchemaManager.updateForSheetRename(
       opts.workbookName,
       opts.sheetName,
       opts.newSheetName
@@ -979,6 +1051,9 @@ export class FormulaEngine<
 
     // Invalidate tracked references to this workbook
     this.referenceManager.invalidateWorkbook(workbookName);
+
+    // Invalidate API schemas that reference this workbook
+    this.apiSchemaManager.invalidateForWorkbookDeletion(workbookName);
 
     this.reevaluate();
     this.eventManager.emitUpdate();
@@ -1166,6 +1241,12 @@ export class FormulaEngine<
       opts.newWorkbookName
     );
 
+    // Update API schemas that reference this workbook
+    this.apiSchemaManager.updateForWorkbookRename(
+      opts.workbookName,
+      opts.newWorkbookName
+    );
+
     this.reevaluate();
     this.eventManager.emitUpdate();
   }
@@ -1181,11 +1262,39 @@ export class FormulaEngine<
    * @param sheetName - The name of the sheet to set the content of
    * @param content - A map of cell addresses to their serialized values
    * @remarks This method is used to set the content of a sheet. It will re-evaluate all sheets to ensure all dependencies are resolved correctly.
+   * @throws SchemaValidationError if any cell value violates a schema constraint
    */
   setSheetContent(
     opts: { sheetName: string; workbookName: string },
     content: Map<string, SerializedCellValue>
   ) {
+    // Validate all cells against schema before writing
+    if (this.apiDeclaration) {
+      for (const [cellRef, value] of content) {
+        const { colIndex, rowIndex } = parseCellReference(cellRef);
+        const cellAddress: CellAddress = {
+          workbookName: opts.workbookName,
+          sheetName: opts.sheetName,
+          colIndex,
+          rowIndex,
+        };
+
+        const validation = this.apiSchemaManager.validateCellWrite(
+          cellAddress,
+          value,
+          this.getCellMetadata(cellAddress)
+        );
+
+        if (!validation.valid) {
+          throw new SchemaValidationError(
+            validation.error || "Schema validation failed",
+            cellAddress,
+            validation.originalError
+          );
+        }
+      }
+    }
+
     this.workbookManager.setSheetContent(opts, content);
 
     // Re-evaluate all sheets to ensure all dependencies are resolved correctly
@@ -1193,7 +1302,28 @@ export class FormulaEngine<
     this.eventManager.emitUpdate();
   }
 
+  /**
+   * Set the content of a single cell.
+   * @throws SchemaValidationError if the value violates a schema constraint
+   */
   setCellContent(address: CellAddress, content: SerializedCellValue) {
+    // Validate against schema before writing
+    if (this.apiDeclaration) {
+      const validation = this.apiSchemaManager.validateCellWrite(
+        address,
+        content,
+        this.getCellMetadata(address)
+      );
+
+      if (!validation.valid) {
+        throw new SchemaValidationError(
+          validation.error || "Schema validation failed",
+          address,
+          validation.originalError
+        );
+      }
+    }
+
     this.workbookManager.setCellContent(address, content);
 
     // Re-evaluate all sheets to ensure all dependencies are resolved correctly

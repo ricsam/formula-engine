@@ -176,8 +176,6 @@ export class CopyManager {
           );
         }
 
-        console.log("targetContent", targetContent);
-
         // Use setCellContent to ensure proper cache invalidation and dependency tracking
         this.workbookManager.setCellContent(targetCell, targetContent);
       }
