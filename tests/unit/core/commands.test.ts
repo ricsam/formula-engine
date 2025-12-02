@@ -34,12 +34,7 @@ describe("Command Pattern", () => {
       const api = defineApi().addCellApi(
         "numericCell",
         { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
-        parseNumber,
-        {
-          get() {
-            return this.read();
-          },
-        }
+        parseNumber
       );
 
       const engine = new FormulaEngine(api);
@@ -70,12 +65,7 @@ describe("Command Pattern", () => {
       const api = defineApi().addCellApi(
         "numericCell",
         { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
-        parseNumber,
-        {
-          get() {
-            return this.read();
-          },
-        }
+        parseNumber
       );
 
       const engine = new FormulaEngine(api);
@@ -96,12 +86,7 @@ describe("Command Pattern", () => {
       const api = defineApi().addCellApi(
         "numericCell",
         { workbookName, sheetName, colIndex: 1, rowIndex: 0 }, // B1
-        parseNumber,
-        {
-          get() {
-            return this.read();
-          },
-        }
+        parseNumber
       );
 
       const engine = new FormulaEngine(api);
@@ -145,12 +130,7 @@ describe("Command Pattern", () => {
       const api = defineApi().addCellApi(
         "numericCell",
         { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
-        parseNumber,
-        {
-          get() {
-            return this.read();
-          },
-        }
+        parseNumber
       );
 
       const engine = new FormulaEngine(api);
@@ -186,12 +166,7 @@ describe("Command Pattern", () => {
       const api = defineApi().addCellApi(
         "numericCell",
         { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
-        parseNumber,
-        {
-          get() {
-            return this.read();
-          },
-        }
+        parseNumber
       );
 
       const engine = new FormulaEngine(api);
@@ -545,8 +520,7 @@ describe("Command Pattern", () => {
         { workbookName, tableName: "Numbers" },
         {
           value: { parse: parseNumber, index: 0 },
-        },
-        {}
+        }
       );
 
       const engine = new FormulaEngine(api);

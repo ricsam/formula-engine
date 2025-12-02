@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.21
+
+### Patch Changes
+
+- Remove custom methods layer from API. The `methods` parameter has been removed from `addTableApi` and `addCellApi`. ORM methods (`findWhere`, `findAllWhere`, `append`, `updateWhere`, `removeWhere`, `count` for tables and `read`, `write`, `getAddress` for cells) are now exposed directly on the API namespace.
+
 ## 0.0.20
 
 ### Patch Changes

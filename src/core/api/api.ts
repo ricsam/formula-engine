@@ -1,6 +1,4 @@
 import type { CellAddress } from "../types";
-import type { CellOrm } from "./cell-orm";
-import type { TableOrm } from "./table-orm";
 
 /**
  * Define an API schema for the FormulaEngine.
@@ -15,20 +13,18 @@ import type { TableOrm } from "./table-orm";
  * @example
  * ```typescript
  * const myApi = defineApi<CellMetadata>()
- *   .addTableApi("users", { workbookName: "wb1", tableName: "users" }, headers, methods)
- *   .addCellApi("config", cellAddress, parse, methods);
+ *   .addTableApi("users", { workbookName: "wb1", tableName: "users" }, headers)
+ *   .addCellApi("config", cellAddress, parse);
  *
  * const engine = new FormulaEngine(myApi);
- * engine.api.users.get(1); // Works!
- * myApi.api.users.get(1);  // Error: api is undefined at runtime
+ * engine.api.users.findWhere({ id: 1 }); // Works!
+ * engine.api.config.read(); // Works!
+ * myApi.api.users.findWhere({ id: 1 });  // Error: api is undefined at runtime
  * ```
  */
 export function defineApi<
   TCellMetadata = unknown,
-  TCurrentApi extends Record<
-    string,
-    Record<string, (...args: any[]) => any>
-  > = Record<string, Record<string, (...args: any[]) => any>>,
+  TCurrentApi extends Record<string, object> = Record<string, object>,
   TCurrentDeclaration extends Record<string, TableApi | CellApi> = Record<
     string,
     TableApi | CellApi
@@ -37,23 +33,21 @@ export function defineApi<
   const declaration: Record<string, TableApi | CellApi> = {};
 
   const builder: CreateApi<TCellMetadata, TCurrentApi, TCurrentDeclaration> = {
-    addTableApi(namespace, address, headers, methods) {
+    addTableApi(namespace, address, headers) {
       declaration[namespace] = {
         type: "table",
         tableName: address.tableName,
         workbookName: address.workbookName,
         headers: headers as any,
-        methods: methods as any,
       };
       return builder as any;
     },
 
-    addCellApi(namespace, cellAddress, parse, methods) {
+    addCellApi(namespace, cellAddress, parse) {
       declaration[namespace] = {
         type: "cell",
         cellAddress,
         parse: parse as any,
-        methods: methods as any,
       };
       return builder as any;
     },
@@ -81,14 +75,12 @@ export interface TableApi {
   headers: Headers<unknown>;
   tableName: string;
   workbookName: string;
-  methods: TableMethods<Record<string, unknown>>;
 }
 
 export interface CellApi {
   type: "cell";
   cellAddress: CellAddress;
   parse: (value: unknown, metadata: unknown) => unknown;
-  methods: CellMethods<unknown>;
 }
 
 type Headers<TCellMetadata> = Record<
@@ -99,43 +91,45 @@ type Headers<TCellMetadata> = Record<
   }
 >;
 
-type TableMethods<TItem extends Record<string, unknown>> = Record<
-  string,
-  (this: TableOrm<TItem>, ...args: any[]) => any
->;
+/**
+ * Type representing the TableOrm methods exposed on the API
+ */
+export type TableOrmApi<TItem extends Record<string, unknown>> = {
+  findWhere(filter: Partial<TItem>): TItem | undefined;
+  findAllWhere(filter: Partial<TItem>): TItem[];
+  append(item: TItem): TItem;
+  updateWhere(filter: Partial<TItem>, update: Partial<TItem>): number;
+  removeWhere(filter: Partial<TItem>): number;
+  count(): number;
+};
 
-type CellMethods<TValue> = Record<
-  string,
-  (this: CellOrm<TValue>, ...args: any[]) => any
->;
+/**
+ * Type representing the CellOrm methods exposed on the API
+ */
+export type CellOrmApi<TValue> = {
+  read(): TValue;
+  write(value: TValue): void;
+  getAddress(): CellAddress;
+};
 
 export type Declaration = Record<string, TableApi | CellApi>;
-export type Api = Record<string, Record<string, (...args: any[]) => any>>;
+export type Api = Record<string, object>;
 
 export type CreateApi<
   TCellMetadata,
   TCurrentApi extends Api,
   TCurrentDeclaration extends Declaration
 > = {
-  addTableApi<
-    T extends string,
-    THeaders extends Headers<TCellMetadata>,
-    TMethods extends TableMethods<{
-      [K in keyof THeaders]: ReturnType<THeaders[K]["parse"]>;
-    }>
-  >(
+  addTableApi<T extends string, THeaders extends Headers<TCellMetadata>>(
     namespace: T,
     address: { workbookName: string; tableName: string },
-    headers: THeaders,
-    methods: TMethods
+    headers: THeaders
   ): CreateApi<
     TCellMetadata,
     TCurrentApi & {
-      [K in T]: {
-        [M in keyof TMethods]: (
-          ...args: Parameters<TMethods[M]>
-        ) => ReturnType<TMethods[M]>;
-      };
+      [K in T]: TableOrmApi<{
+        [H in keyof THeaders]: ReturnType<THeaders[H]["parse"]>;
+      }>;
     },
     TCurrentDeclaration & {
       [K in T]: {
@@ -143,30 +137,23 @@ export type CreateApi<
         tableName: string;
         workbookName: string;
         headers: THeaders;
-        methods: TMethods;
       };
     }
   >;
-  addCellApi<T extends string, TValue, TMethods extends CellMethods<TValue>>(
+  addCellApi<T extends string, TValue>(
     namespace: T,
     cellAddress: CellAddress,
-    parse: (value: unknown, metadata: TCellMetadata) => TValue,
-    methods: TMethods
+    parse: (value: unknown, metadata: TCellMetadata) => TValue
   ): CreateApi<
     TCellMetadata,
     TCurrentApi & {
-      [K in T]: {
-        [M in keyof TMethods]: (
-          ...args: Parameters<TMethods[M]>
-        ) => ReturnType<TMethods[M]>;
-      };
+      [K in T]: CellOrmApi<TValue>;
     },
     TCurrentDeclaration & {
       [K in T]: {
         type: "cell";
         cellAddress: CellAddress;
         parse: (value: unknown, metadata: unknown) => unknown;
-        methods: TMethods;
       };
     }
   >;

@@ -49,28 +49,6 @@ const myApi = defineApi<CellMetadata>()
         },
         index: 3,
       },
-    },
-    {
-      get(id: number) {
-        return this.findWhere({ id });
-      },
-      create(newUser: { name: string; email: string; age: number }) {
-        return this.append({
-          id: this.count() + 1,
-          ...newUser,
-        });
-      },
-      update(update: {
-        id: number;
-        name?: string;
-        email?: string;
-        age?: number;
-      }) {
-        this.updateWhere({ id: update.id }, update);
-      },
-      delete(id: number) {
-        this.removeWhere({ id });
-      },
     }
   )
   .addCellApi(
@@ -86,11 +64,6 @@ const myApi = defineApi<CellMetadata>()
         value: parseString(value),
         linkTo: metadata.linkTo,
       };
-    },
-    {
-      getCellValue() {
-        return this.read();
-      },
     }
   );
 
@@ -98,10 +71,10 @@ const api = myApi.api;
 const declaration = myApi.declaration;
 declaration.users.headers.email;
 
-api.project.getCellValue().linkTo;
+api.project.read().linkTo;
 
-api.project.getCellValue();
-api.users.get(1);
+api.project.read();
+api.users.findWhere({ id: 1 });
 
 type Assert<T, U extends T> = U;
 
@@ -110,7 +83,7 @@ type test1 = Assert<
     value: string;
     linkTo: string | undefined;
   },
-  ReturnType<typeof api.project.getCellValue>
+  ReturnType<typeof api.project.read>
 >;
 
 type test2 = Assert<
@@ -120,7 +93,7 @@ type test2 = Assert<
     email: string;
     age: number;
   },
-  NonNullable<ReturnType<typeof api.users.get>>
+  NonNullable<ReturnType<typeof api.users.findWhere>>
 >;
 
 const engine = new FormulaEngine<
@@ -132,10 +105,10 @@ const engine = new FormulaEngine<
 
 type test3 = Assert<
   string,
-  NonNullable<ReturnType<typeof engine.api.project.getCellValue>["linkTo"]>
+  NonNullable<ReturnType<typeof engine.api.project.read>["linkTo"]>
 >;
 
-engine.api.project.getCellValue().linkTo;
+engine.api.project.read().linkTo;
 
 const engineWithUndefinedApi = new FormulaEngine();
 type test4 = Assert<undefined, typeof engineWithUndefinedApi.api>;

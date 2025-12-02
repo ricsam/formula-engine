@@ -47,32 +47,6 @@ describe("API Integration", () => {
           parse: (value) => parseNumber(value),
           index: 3,
         },
-      },
-      {
-        get(id: number) {
-          return this.findWhere({ id });
-        },
-        getAll() {
-          return this.findAllWhere({});
-        },
-        create(newUser: { name: string; email: string; age: number }) {
-          return this.append({
-            id: this.count() + 1,
-            ...newUser,
-          });
-        },
-        update(
-          id: number,
-          update: { name?: string; email?: string; age?: number }
-        ) {
-          return this.updateWhere({ id }, update);
-        },
-        delete(id: number) {
-          return this.removeWhere({ id });
-        },
-        count() {
-          return this.count();
-        },
       }
     )
     .addCellApi(
@@ -85,14 +59,6 @@ describe("API Integration", () => {
       },
       (value) => {
         return parseString(value);
-      },
-      {
-        get() {
-          return this.read();
-        },
-        set(value: string) {
-          this.write(value);
-        },
       }
     );
 
@@ -154,7 +120,8 @@ describe("API Integration", () => {
 
     describe("TableOrm operations", () => {
       test("append adds a new row", () => {
-        const user = engine.api.users.create({
+        const user = engine.api.users.append({
+          id: 1,
           name: "John Doe",
           email: "john@example.com",
           age: 30,
@@ -204,18 +171,20 @@ describe("API Integration", () => {
 
       test("findWhere finds a row by filter", () => {
         // Add some users
-        engine.api.users.create({
+        engine.api.users.append({
+          id: 1,
           name: "Alice",
           email: "alice@example.com",
           age: 25,
         });
-        engine.api.users.create({
+        engine.api.users.append({
+          id: 2,
           name: "Bob",
           email: "bob@example.com",
           age: 35,
         });
 
-        const user = engine.api.users.get(2);
+        const user = engine.api.users.findWhere({ id: 2 });
         expect(user).toEqual({
           id: 2,
           name: "Bob",
@@ -225,75 +194,83 @@ describe("API Integration", () => {
       });
 
       test("findWhere returns undefined when not found", () => {
-        const user = engine.api.users.get(999);
+        const user = engine.api.users.findWhere({ id: 999 });
         expect(user).toBeUndefined();
       });
 
       test("findAllWhere returns all matching rows", () => {
-        engine.api.users.create({
+        engine.api.users.append({
+          id: 1,
           name: "Alice",
           email: "alice@example.com",
           age: 25,
         });
-        engine.api.users.create({
+        engine.api.users.append({
+          id: 2,
           name: "Bob",
           email: "bob@example.com",
           age: 25,
         });
-        engine.api.users.create({
+        engine.api.users.append({
+          id: 3,
           name: "Charlie",
           email: "charlie@example.com",
           age: 30,
         });
 
-        const users = engine.api.users.getAll();
+        const users = engine.api.users.findAllWhere({});
         expect(users).toHaveLength(3);
       });
 
       test("updateWhere updates matching rows", () => {
-        engine.api.users.create({
+        engine.api.users.append({
+          id: 1,
           name: "Alice",
           email: "alice@example.com",
           age: 25,
         });
 
-        const updated = engine.api.users.update(1, { age: 26 });
+        const updated = engine.api.users.updateWhere({ id: 1 }, { age: 26 });
         expect(updated).toBe(1);
 
-        const user = engine.api.users.get(1);
+        const user = engine.api.users.findWhere({ id: 1 });
         expect(user?.age).toBe(26);
       });
 
       test("removeWhere deletes matching rows", () => {
-        engine.api.users.create({
+        engine.api.users.append({
+          id: 1,
           name: "Alice",
           email: "alice@example.com",
           age: 25,
         });
-        engine.api.users.create({
+        engine.api.users.append({
+          id: 2,
           name: "Bob",
           email: "bob@example.com",
           age: 35,
         });
 
-        const removed = engine.api.users.delete(1);
+        const removed = engine.api.users.removeWhere({ id: 1 });
         expect(removed).toBe(1);
 
-        const user = engine.api.users.get(1);
+        const user = engine.api.users.findWhere({ id: 1 });
         expect(user).toBeUndefined();
       });
 
       test("count returns the number of rows", () => {
         expect(engine.api.users.count()).toBe(0);
 
-        engine.api.users.create({
+        engine.api.users.append({
+          id: 1,
           name: "Alice",
           email: "alice@example.com",
           age: 25,
         });
         expect(engine.api.users.count()).toBe(1);
 
-        engine.api.users.create({
+        engine.api.users.append({
+          id: 2,
           name: "Bob",
           email: "bob@example.com",
           age: 35,
@@ -309,12 +286,12 @@ describe("API Integration", () => {
           "test-config"
         );
 
-        const value = engine.api.config.get();
+        const value = engine.api.config.read();
         expect(value).toBe("test-config");
       });
 
       test("write sets the cell value", () => {
-        engine.api.config.set("new-config");
+        engine.api.config.write("new-config");
 
         const value = engine.getCellValue({
           workbookName,
@@ -329,7 +306,8 @@ describe("API Integration", () => {
     describe("Schema validation", () => {
       test("setCellContent throws SchemaIntegrityError for invalid data in table range", () => {
         // First add a valid user to establish the table has data
-        engine.api.users.create({
+        engine.api.users.append({
+          id: 1,
           name: "Alice",
           email: "alice@example.com",
           age: 25,
@@ -375,7 +353,8 @@ describe("API Integration", () => {
 
     describe("Schema lifecycle", () => {
       test("schema is invalidated when table is deleted", () => {
-        engine.api.users.create({
+        engine.api.users.append({
+          id: 1,
           name: "Alice",
           email: "alice@example.com",
           age: 25,
@@ -410,8 +389,7 @@ describe("API Integration", () => {
               throw new Error("Expected a number value");
             }
             return value;
-          },
-          {}
+          }
         );
 
         const engineWithCellSchema = new FormulaEngine(cellApi);

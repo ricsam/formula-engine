@@ -15,7 +15,7 @@ import type { ApiSchemaManager } from "../managers/api-schema-manager";
  * Build the working API surface from declarations
  *
  * This creates TableOrm and CellOrm instances for each declared schema
- * and binds the custom methods to them.
+ * and returns them directly.
  */
 export function buildApiFromDeclaration(
   engine: FormulaEngine<any, any>,
@@ -36,14 +36,14 @@ export function buildApiFromDeclaration(
 }
 
 /**
- * Build API methods for a table schema
+ * Build API for a table schema - returns TableOrm instance directly
  */
 function buildTableApi(
   engine: FormulaEngine<any, any>,
   namespace: string,
   def: TableApi,
   schemaManager: ApiSchemaManager
-): Record<string, (...args: any[]) => any> {
+): TableOrm<any> {
   // Register the schema with the schema manager
   schemaManager.registerTableSchema(
     namespace,
@@ -52,47 +52,28 @@ function buildTableApi(
     def.headers
   );
 
-  // Create the ORM instance
-  const orm = new TableOrm(
+  // Create and return the ORM instance directly
+  return new TableOrm(
     engine,
     def.workbookName,
     def.tableName,
     def.headers,
     namespace
   );
-
-  // Bind all custom methods to the ORM instance
-  const boundMethods: Record<string, (...args: any[]) => any> = {};
-
-  for (const [methodName, methodFn] of Object.entries(def.methods)) {
-    boundMethods[methodName] = methodFn.bind(orm);
-  }
-
-  return boundMethods;
 }
 
 /**
- * Build API methods for a cell schema
+ * Build API for a cell schema - returns CellOrm instance directly
  */
 function buildCellApi(
   engine: FormulaEngine<any, any>,
   namespace: string,
   def: CellApi,
   schemaManager: ApiSchemaManager
-): Record<string, (...args: any[]) => any> {
+): CellOrm<any> {
   // Register the schema with the schema manager
   schemaManager.registerCellSchema(namespace, def.cellAddress, def.parse);
 
-  // Create the ORM instance
-  const orm = new CellOrm(engine, def.cellAddress, def.parse, namespace);
-
-  // Bind all custom methods to the ORM instance
-  const boundMethods: Record<string, (...args: any[]) => any> = {};
-
-  for (const [methodName, methodFn] of Object.entries(def.methods)) {
-    boundMethods[methodName] = methodFn.bind(orm);
-  }
-
-  return boundMethods;
+  // Create and return the ORM instance directly
+  return new CellOrm(engine, def.cellAddress, def.parse, namespace);
 }
-
