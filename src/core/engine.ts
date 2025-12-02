@@ -43,11 +43,14 @@ import { StyleManager } from "./managers/style-manager";
 import { CopyManager } from "./managers/copy-manager";
 import { ReferenceManager } from "./managers/reference-manager";
 import {
-  ApiSchemaManager,
+  SchemaManager,
   SchemaValidationError,
-} from "./managers/api-schema-manager";
-import type { Api, CreateApi, Declaration } from "./api/api";
-import { buildApiFromDeclaration } from "./api/api-builder";
+} from "./managers/schema-manager";
+import type { Schema, CreateSchema, SchemaDeclaration, TableSchemaDefinition, CellSchemaDefinition } from "./schema/schema";
+import { buildSchemaFromDeclaration } from "./schema/schema-builder";
+import { TableOrm } from "./schema/table-orm";
+import { CellOrm } from "./schema/cell-orm";
+import type { TableSchemaHeaders } from "./managers/schema-manager";
 import {
   CommandExecutor,
   SchemaIntegrityError,
@@ -121,8 +124,8 @@ type MetadataType<
  */
 export class FormulaEngine<
   TMetadata extends Metadata = Metadata,
-  TCreateApi extends
-    | CreateApi<MetadataType<TMetadata, "cell">, Api, Declaration>
+  TCreateSchema extends
+    | CreateSchema<MetadataType<TMetadata, "cell">, Schema, SchemaDeclaration>
     | undefined = undefined
 > {
   private workbookManager: WorkbookManager;
@@ -135,18 +138,18 @@ export class FormulaEngine<
   private styleManager: StyleManager;
   private copyManager: CopyManager;
   private referenceManager: ReferenceManager;
-  private apiSchemaManager: ApiSchemaManager;
+  private schemaManager: SchemaManager;
   private commandExecutor: CommandExecutor;
 
-  public api: TCreateApi extends CreateApi<
+  public schema: TCreateSchema extends CreateSchema<
     MetadataType<TMetadata, "cell">,
-    Api,
-    Declaration
+    Schema,
+    SchemaDeclaration
   >
-    ? TCreateApi["api"]
+    ? TCreateSchema["schema"]
     : undefined;
 
-  private apiDeclaration: Declaration | undefined;
+  private schemaDeclaration: SchemaDeclaration | undefined;
 
   /**
    * Public access to the store manager for testing
@@ -160,8 +163,8 @@ export class FormulaEngine<
   public _dependencyManager: DependencyManager;
   public _styleManager: StyleManager;
 
-  constructor(api?: TCreateApi) {
-    this.apiDeclaration = (api as any)?.declaration;
+  constructor(schema?: TCreateSchema) {
+    this.schemaDeclaration = (schema as any)?.declaration;
     this.eventManager = new EventManager();
     this.workbookManager = new WorkbookManager();
     this.namedExpressionManager = new NamedExpressionManager();
@@ -198,30 +201,29 @@ export class FormulaEngine<
     );
 
     this.referenceManager = new ReferenceManager();
-    this.apiSchemaManager = new ApiSchemaManager(this.tableManager);
+    this.schemaManager = new SchemaManager(this.tableManager);
 
     // Initialize command executor
     this.commandExecutor = new CommandExecutor(
-      this.apiDeclaration,
       this.evaluationManager,
       this.eventManager,
       () =>
-        this.apiSchemaManager.validateAllSchemaConstraints(
+        this.schemaManager.validateAllSchemaConstraints(
           (cell) => this.getCellValue(cell),
           (cell) => this.getCellMetadata(cell),
           (table) => this.getTableDataCells(table)
         )
     );
 
-    // Build the working API from declaration if provided
-    if (this.apiDeclaration) {
-      this.api = buildApiFromDeclaration(
+    // Build the working schema from declaration if provided
+    if (this.schemaDeclaration) {
+      this.schema = buildSchemaFromDeclaration(
         this,
-        this.apiDeclaration,
-        this.apiSchemaManager
+        this.schemaDeclaration,
+        this.schemaManager
       ) as any;
     } else {
-      this.api = undefined as any;
+      this.schema = {} as any;
     }
 
     this._workbookManager = this.workbookManager;
@@ -242,11 +244,74 @@ export class FormulaEngine<
    */
   static buildEmpty<
     TMetadata extends Metadata = Metadata,
-    TApiDeclaration extends
-      | CreateApi<MetadataType<TMetadata, "cell">, any, any>
+    TSchemaDeclaration extends
+      | CreateSchema<MetadataType<TMetadata, "cell">, any, any>
       | undefined = undefined
-  >(api?: TApiDeclaration) {
-    return new FormulaEngine<TMetadata, TApiDeclaration>(api);
+  >(schema?: TSchemaDeclaration) {
+    return new FormulaEngine<TMetadata, TSchemaDeclaration>(schema);
+  }
+
+  /**
+   * Add a table schema at runtime
+   * @param namespace - Unique namespace for the schema
+   * @param address - Table address (workbookName and tableName)
+   * @param headers - Table headers with parse functions
+   * @returns The TableOrm instance for immediate use
+   */
+  addTableSchema<THeaders extends TableSchemaHeaders<MetadataType<TMetadata, "cell">>>(
+    namespace: string,
+    address: { workbookName: string; tableName: string },
+    headers: THeaders
+  ): TableOrm<{
+    [K in keyof THeaders]: ReturnType<THeaders[K]["parse"]>;
+  }> {
+    // Register the schema with the schema manager
+    this.schemaManager.registerTableSchema(
+      namespace,
+      address.workbookName,
+      address.tableName,
+      headers
+    );
+
+    // Create the ORM instance
+    const orm = new TableOrm<{
+      [K in keyof THeaders]: ReturnType<THeaders[K]["parse"]>;
+    }>(
+      this,
+      address.workbookName,
+      address.tableName,
+      headers,
+      namespace
+    );
+
+    // Add to schema object for runtime access
+    (this.schema as Record<string, object>)[namespace] = orm;
+
+    return orm;
+  }
+
+  /**
+   * Add a cell schema at runtime
+   * @param namespace - Unique namespace for the schema
+   * @param cellAddress - Address of the cell
+   * @param parse - Parse function for the cell value
+   * @returns The CellOrm instance for immediate use
+   */
+  addCellSchema<TValue>(
+    namespace: string,
+    cellAddress: CellAddress,
+    parse: (value: unknown, metadata: MetadataType<TMetadata, "cell">) => TValue
+  ): CellOrm<TValue> {
+    // Register the schema with the schema manager
+    this.schemaManager.registerCellSchema(namespace, cellAddress, parse);
+
+    // Create the ORM instance
+    const orm = new CellOrm(this, cellAddress, parse, namespace);
+
+    // Add to schema object for runtime access
+    (this.schema as Record<string, object>)[namespace] = orm;
+
+    return orm;
   }
 
   //#region Cell
@@ -428,7 +493,7 @@ export class FormulaEngine<
   }) {
     this.commandExecutor.execute(
       new AddNamedExpressionCommand(this.getNamedExpressionCommandDeps(), opts),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -442,7 +507,7 @@ export class FormulaEngine<
         this.getNamedExpressionCommandDeps(),
         opts
       ),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -482,7 +547,7 @@ export class FormulaEngine<
         this.getNamedExpressionCommandDeps(),
         opts
       ),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -497,7 +562,7 @@ export class FormulaEngine<
         this.getNamedExpressionCommandDeps(),
         opts
       ),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -515,7 +580,7 @@ export class FormulaEngine<
         this.getNamedExpressionCommandDeps(),
         opts
       ),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
   //#endregion
@@ -531,7 +596,7 @@ export class FormulaEngine<
   }): void {
     this.commandExecutor.execute(
       new AddTableCommand(this.getTableCommandDeps(), props),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -546,7 +611,7 @@ export class FormulaEngine<
         names.oldName,
         names.newName
       ),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -560,14 +625,14 @@ export class FormulaEngine<
   }): void {
     this.commandExecutor.execute(
       new UpdateTableCommand(this.getTableCommandDeps(), opts),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
   removeTable(opts: { tableName: string; workbookName: string }): void {
     this.commandExecutor.execute(
       new RemoveTableCommand(this.getTableCommandDeps(), opts),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -597,7 +662,7 @@ export class FormulaEngine<
   resetTables(tables: Map<string, Map<string, TableDefinition>>): void {
     this.commandExecutor.execute(
       new ResetTablesCommand(this.getTableCommandDeps(), tables),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -770,7 +835,7 @@ export class FormulaEngine<
         target,
         options
       ),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -818,7 +883,7 @@ export class FormulaEngine<
         targetRanges,
         options
       ),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -988,7 +1053,7 @@ export class FormulaEngine<
         source,
         target
       ),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -1021,7 +1086,7 @@ export class FormulaEngine<
         sourceRange,
         target
       ),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
   //#endregion
@@ -1030,14 +1095,14 @@ export class FormulaEngine<
   addSheet(opts: { workbookName: string; sheetName: string }): void {
     this.commandExecutor.execute(
       new AddSheetCommand(this.getStructureCommandDeps(), opts),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
   removeSheet(opts: { workbookName: string; sheetName: string }): void {
     this.commandExecutor.execute(
       new RemoveSheetCommand(this.getStructureCommandDeps(), opts),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -1048,7 +1113,7 @@ export class FormulaEngine<
   }): void {
     this.commandExecutor.execute(
       new RenameSheetCommand(this.getStructureCommandDeps(), opts),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -1086,14 +1151,14 @@ export class FormulaEngine<
   addWorkbook(workbookName: string): void {
     this.commandExecutor.execute(
       new AddWorkbookCommand(this.getStructureCommandDeps(), workbookName),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
   removeWorkbook(workbookName: string): void {
     this.commandExecutor.execute(
       new RemoveWorkbookCommand(this.getStructureCommandDeps(), workbookName),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -1111,7 +1176,7 @@ export class FormulaEngine<
         fromWorkbookName,
         toWorkbookName
       ),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -1122,7 +1187,7 @@ export class FormulaEngine<
         opts.workbookName,
         opts.newWorkbookName
       ),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -1145,7 +1210,7 @@ export class FormulaEngine<
   ) {
     this.commandExecutor.execute(
       new SetSheetContentCommand(this.workbookManager, opts, content),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -1156,7 +1221,7 @@ export class FormulaEngine<
   setCellContent(address: CellAddress, content: SerializedCellValue) {
     this.commandExecutor.execute(
       new SetCellContentCommand(this.workbookManager, address, content),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
   //#endregion
@@ -1191,7 +1256,7 @@ export class FormulaEngine<
         fillRanges,
         direction
       ),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
 
@@ -1201,7 +1266,7 @@ export class FormulaEngine<
   clearSpreadsheetRange(address: RangeAddress) {
     this.commandExecutor.execute(
       new ClearRangeCommand(this.workbookManager, address),
-      { validate: !!this.apiDeclaration }
+      { validate: this.schemaManager.hasSchemas() }
     );
   }
   //#endregion
@@ -1349,7 +1414,7 @@ export class FormulaEngine<
       tableManager: this.tableManager,
       styleManager: this.styleManager,
       referenceManager: this.referenceManager,
-      apiSchemaManager: this.apiSchemaManager,
+      apiSchemaManager: this.schemaManager,
       renameSheetInFormula,
       renameWorkbookInFormula,
     };
@@ -1364,7 +1429,7 @@ export class FormulaEngine<
       tableManager: this.tableManager,
       namedExpressionManager: this.namedExpressionManager,
       workbookManager: this.workbookManager,
-      apiSchemaManager: this.apiSchemaManager,
+      apiSchemaManager: this.schemaManager,
       getCellValue: (cell) => this.getCellValue(cell),
       renameTableInFormula,
     };

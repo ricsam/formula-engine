@@ -1,5 +1,5 @@
 /**
- * API Helper utilities for row/object conversion and filtering
+ * Schema Helper utilities for row/object conversion and filtering
  */
 
 import type { CellAddress, SerializedCellValue, TableDefinition } from "../types";

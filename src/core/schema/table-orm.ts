@@ -15,7 +15,7 @@ import {
   getNextEmptyRow,
   iterateTableRows,
   type TableSchemaHeaders,
-} from "./api-helpers";
+} from "./schema-helpers";
 
 export class TableOrm<TItem extends Record<string, unknown>> {
   constructor(

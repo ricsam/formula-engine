@@ -3,13 +3,13 @@ export * from "./core/types";
 export * from "./core/utils";
 export * from "./core/utils/color-utils";
 
-// API Schema exports
-export { defineApi, createApi } from "./core/api/api";
-export type { CreateApi, Declaration, Api, TableApi, CellApi } from "./core/api/api";
-export { TableOrm } from "./core/api/table-orm";
-export { CellOrm } from "./core/api/cell-orm";
-export { SchemaValidationError } from "./core/managers/api-schema-manager";
-export type { ValidationResult } from "./core/managers/api-schema-manager";
+// Schema exports
+export { defineSchema } from "./core/schema/schema";
+export type { CreateSchema, SchemaDeclaration, Schema, TableSchemaDefinition, CellSchemaDefinition, TableOrmSchema, CellOrmSchema } from "./core/schema/schema";
+export { TableOrm } from "./core/schema/table-orm";
+export { CellOrm } from "./core/schema/cell-orm";
+export { SchemaValidationError } from "./core/managers/schema-manager";
+export type { ValidationResult } from "./core/managers/schema-manager";
 
 // Command Pattern exports
 export { SchemaIntegrityError } from "./core/commands/command-executor";

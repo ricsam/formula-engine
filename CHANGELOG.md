@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.22
+
+### Patch Changes
+
+- Rename API to Schema throughout the codebase. All API-related types, functions, and properties have been renamed to use "schema" terminology. `defineApi` is now `defineSchema`, `engine.api` is now `engine.schema`, and all related types have been updated. The `createApi` alias has been removed. Added runtime schema methods `addTableSchema` and `addCellSchema` to FormulaEngine for dynamically registering schemas after engine creation. Schema validation now works correctly for both initial and runtime-added schemas.
+
 ## 0.0.21
 
 ### Patch Changes

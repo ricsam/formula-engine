@@ -1,48 +1,48 @@
 /**
- * API Builder - Constructs the working API from declarations
+ * Schema Builder - Constructs the working schema from declarations
  *
- * This module is responsible for creating the actual working API
+ * This module is responsible for creating the actual working schema
  * from the schema declarations when attached to a FormulaEngine.
  */
 
 import type { FormulaEngine } from "../engine";
-import type { Declaration, TableApi, CellApi, Api } from "./api";
+import type { SchemaDeclaration, TableSchemaDefinition, CellSchemaDefinition, Schema } from "./schema";
 import { TableOrm } from "./table-orm";
 import { CellOrm } from "./cell-orm";
-import type { ApiSchemaManager } from "../managers/api-schema-manager";
+import type { SchemaManager } from "../managers/schema-manager";
 
 /**
- * Build the working API surface from declarations
+ * Build the working schema surface from declarations
  *
  * This creates TableOrm and CellOrm instances for each declared schema
  * and returns them directly.
  */
-export function buildApiFromDeclaration(
+export function buildSchemaFromDeclaration(
   engine: FormulaEngine<any, any>,
-  declaration: Declaration,
-  schemaManager: ApiSchemaManager
-): Api {
-  const api: Api = {};
+  declaration: SchemaDeclaration,
+  schemaManager: SchemaManager
+): Schema {
+  const schema: Schema = {};
 
   for (const [namespace, def] of Object.entries(declaration)) {
     if (def.type === "table") {
-      api[namespace] = buildTableApi(engine, namespace, def, schemaManager);
+      schema[namespace] = buildTableSchema(engine, namespace, def, schemaManager);
     } else if (def.type === "cell") {
-      api[namespace] = buildCellApi(engine, namespace, def, schemaManager);
+      schema[namespace] = buildCellSchema(engine, namespace, def, schemaManager);
     }
   }
 
-  return api;
+  return schema;
 }
 
 /**
- * Build API for a table schema - returns TableOrm instance directly
+ * Build schema for a table schema - returns TableOrm instance directly
  */
-function buildTableApi(
+function buildTableSchema(
   engine: FormulaEngine<any, any>,
   namespace: string,
-  def: TableApi,
-  schemaManager: ApiSchemaManager
+  def: TableSchemaDefinition,
+  schemaManager: SchemaManager
 ): TableOrm<any> {
   // Register the schema with the schema manager
   schemaManager.registerTableSchema(
@@ -63,13 +63,13 @@ function buildTableApi(
 }
 
 /**
- * Build API for a cell schema - returns CellOrm instance directly
+ * Build schema for a cell schema - returns CellOrm instance directly
  */
-function buildCellApi(
+function buildCellSchema(
   engine: FormulaEngine<any, any>,
   namespace: string,
-  def: CellApi,
-  schemaManager: ApiSchemaManager
+  def: CellSchemaDefinition,
+  schemaManager: SchemaManager
 ): CellOrm<any> {
   // Register the schema with the schema manager
   schemaManager.registerCellSchema(namespace, def.cellAddress, def.parse);

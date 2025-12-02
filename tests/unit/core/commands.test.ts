@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { FormulaEngine } from "../../../src/core/engine";
-import { defineApi } from "../../../src/core/api/api";
+import { defineSchema } from "../../../src/core/schema/schema";
 import { SchemaIntegrityError } from "../../../src/core/commands/command-executor";
 import {
   FormulaError,
@@ -31,13 +31,13 @@ describe("Command Pattern", () => {
   describe("Schema Validation with Evaluated Values", () => {
     test("validates evaluated formula result, not raw content", () => {
       // Create API with number schema
-      const api = defineApi().addCellApi(
+      const schema = defineSchema().addCellSchema(
         "numericCell",
         { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
         parseNumber
       );
 
-      const engine = new FormulaEngine(api);
+      const engine = new FormulaEngine(schema);
       engine.addWorkbook(workbookName);
       engine.addSheet({ workbookName, sheetName });
 
@@ -62,13 +62,13 @@ describe("Command Pattern", () => {
 
     test("throws SchemaIntegrityError when formula evaluates to wrong type", () => {
       // Create API with number schema
-      const api = defineApi().addCellApi(
+      const schema = defineSchema().addCellSchema(
         "numericCell",
         { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
         parseNumber
       );
 
-      const engine = new FormulaEngine(api);
+      const engine = new FormulaEngine(schema);
       engine.addWorkbook(workbookName);
       engine.addSheet({ workbookName, sheetName });
 
@@ -83,13 +83,13 @@ describe("Command Pattern", () => {
 
     test("validates dependent cells when dependency changes", () => {
       // Create API with number schema on B1, which references A1
-      const api = defineApi().addCellApi(
+      const schema = defineSchema().addCellSchema(
         "numericCell",
         { workbookName, sheetName, colIndex: 1, rowIndex: 0 }, // B1
         parseNumber
       );
 
-      const engine = new FormulaEngine(api);
+      const engine = new FormulaEngine(schema);
       engine.addWorkbook(workbookName);
       engine.addSheet({ workbookName, sheetName });
 
@@ -127,13 +127,13 @@ describe("Command Pattern", () => {
 
   describe("Rollback on Validation Failure", () => {
     test("rolls back cell content when validation fails", () => {
-      const api = defineApi().addCellApi(
+      const schema = defineSchema().addCellSchema(
         "numericCell",
         { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
         parseNumber
       );
 
-      const engine = new FormulaEngine(api);
+      const engine = new FormulaEngine(schema);
       engine.addWorkbook(workbookName);
       engine.addSheet({ workbookName, sheetName });
 
@@ -163,13 +163,13 @@ describe("Command Pattern", () => {
     });
 
     test("rolls back sheet content when validation fails", () => {
-      const api = defineApi().addCellApi(
+      const schema = defineSchema().addCellSchema(
         "numericCell",
         { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
         parseNumber
       );
 
-      const engine = new FormulaEngine(api);
+      const engine = new FormulaEngine(schema);
       engine.addWorkbook(workbookName);
       engine.addSheet({ workbookName, sheetName });
 
@@ -515,7 +515,7 @@ describe("Command Pattern", () => {
   describe("Spill into Schema-Protected Area", () => {
     test("SEQUENCE spilling into table schema validates each cell", () => {
       // Create API with table schema
-      const api = defineApi().addTableApi(
+      const schema = defineSchema().addTableSchema(
         "numbers",
         { workbookName, tableName: "Numbers" },
         {
@@ -523,7 +523,7 @@ describe("Command Pattern", () => {
         }
       );
 
-      const engine = new FormulaEngine(api);
+      const engine = new FormulaEngine(schema);
       engine.addWorkbook(workbookName);
       engine.addSheet({ workbookName, sheetName });
 

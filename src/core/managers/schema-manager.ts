@@ -1,5 +1,5 @@
 /**
- * ApiSchemaManager - Manages API schema definitions and validation
+ * SchemaManager - Manages schema definitions and validation
  *
  * Tracks registered schemas and provides validation for cell writes,
  * spill operations, and copy/paste operations.
@@ -61,7 +61,7 @@ export class SchemaValidationError extends Error {
   }
 }
 
-export class ApiSchemaManager {
+export class SchemaManager {
   private schemas: Map<string, RegisteredSchema> = new Map();
 
   constructor(private tableManager: TableManager) {}
@@ -112,6 +112,13 @@ export class ApiSchemaManager {
    */
   removeSchema(namespace: string): boolean {
     return this.schemas.delete(namespace);
+  }
+
+  /**
+   * Check if any schemas are registered
+   */
+  hasSchemas(): boolean {
+    return this.schemas.size > 0;
   }
 
   /**

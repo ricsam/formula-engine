@@ -1,5 +1,5 @@
 import { FormulaEngine } from "../engine";
-import { defineApi } from "./api";
+import { defineSchema } from "./schema";
 
 type CellMetadata = { linkTo?: string };
 
@@ -17,8 +17,8 @@ const parseString = (value: unknown) => {
   return value;
 };
 
-const myApi = defineApi<CellMetadata>()
-  .addTableApi(
+const mySchema = defineSchema<CellMetadata>()
+  .addTableSchema(
     "users",
     {
       workbookName: "wb1",
@@ -51,7 +51,7 @@ const myApi = defineApi<CellMetadata>()
       },
     }
   )
-  .addCellApi(
+  .addCellSchema(
     "project",
     {
       workbookName: "wb1",
@@ -67,14 +67,14 @@ const myApi = defineApi<CellMetadata>()
     }
   );
 
-const api = myApi.api;
-const declaration = myApi.declaration;
+const schema = mySchema.schema;
+const declaration = mySchema.declaration;
 declaration.users.headers.email;
 
-api.project.read().linkTo;
+schema.project.read().linkTo;
 
-api.project.read();
-api.users.findWhere({ id: 1 });
+schema.project.read();
+schema.users.findWhere({ id: 1 });
 
 type Assert<T, U extends T> = U;
 
@@ -83,7 +83,7 @@ type test1 = Assert<
     value: string;
     linkTo: string | undefined;
   },
-  ReturnType<typeof api.project.read>
+  ReturnType<typeof schema.project.read>
 >;
 
 type test2 = Assert<
@@ -93,22 +93,22 @@ type test2 = Assert<
     email: string;
     age: number;
   },
-  NonNullable<ReturnType<typeof api.users.findWhere>>
+  NonNullable<ReturnType<typeof schema.users.findWhere>>
 >;
 
 const engine = new FormulaEngine<
   {
     cell: CellMetadata;
   },
-  typeof myApi
->(myApi);
+  typeof mySchema
+>(mySchema);
 
 type test3 = Assert<
   string,
-  NonNullable<ReturnType<typeof engine.api.project.read>["linkTo"]>
+  NonNullable<ReturnType<typeof engine.schema.project.read>["linkTo"]>
 >;
 
-engine.api.project.read().linkTo;
+engine.schema.project.read().linkTo;
 
-const engineWithUndefinedApi = new FormulaEngine();
-type test4 = Assert<undefined, typeof engineWithUndefinedApi.api>;
+const engineWithUndefinedSchema = new FormulaEngine();
+type test4 = Assert<Record<string, object> | undefined, typeof engineWithUndefinedSchema.schema>;

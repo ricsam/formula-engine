@@ -9,7 +9,7 @@
  * - Action serialization for persistence
  */
 
-import type { Declaration } from "../api/api";
+import type { SchemaDeclaration } from "../schema/schema";
 import type { FormulaEngine } from "../engine";
 import type { EvaluationManager } from "../managers/evaluation-manager";
 import type { EventManager } from "../managers/event-manager";
@@ -43,7 +43,6 @@ export class CommandExecutor {
   private actionLog: EngineAction[] = [];
 
   constructor(
-    private apiDeclaration: Declaration | undefined,
     private evaluationManager: EvaluationManager,
     private eventManager: EventManager,
     private validateAllSchemas: () => SchemaValidationResult
@@ -70,8 +69,8 @@ export class CommandExecutor {
     if (command.requiresReevaluation) {
       this.evaluationManager.clearEvaluationCache();
 
-      // Validate schemas if requested and API is defined
-      if (validate && this.apiDeclaration) {
+      // Validate schemas if requested
+      if (validate) {
         const validation = this.validateAllSchemas();
 
         if (!validation.valid) {

@@ -1,9 +1,9 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { FormulaEngine } from "../../../src/core/engine";
-import { defineApi } from "../../../src/core/api/api";
+import { defineSchema } from "../../../src/core/schema/schema";
 import { SchemaIntegrityError } from "../../../src/core/commands/command-executor";
 
-describe("API Integration", () => {
+describe("Schema Integration", () => {
   const workbookName = "TestWorkbook";
   const sheetName = "Sheet1";
 
@@ -22,9 +22,9 @@ describe("API Integration", () => {
     return value;
   };
 
-  // Define the API schema
-  const userApi = defineApi()
-    .addTableApi(
+  // Define the schema
+  const userSchema = defineSchema()
+    .addTableSchema(
       "users",
       {
         workbookName,
@@ -49,7 +49,7 @@ describe("API Integration", () => {
         },
       }
     )
-    .addCellApi(
+    .addCellSchema(
       "config",
       {
         workbookName,
@@ -62,24 +62,24 @@ describe("API Integration", () => {
       }
     );
 
-  describe("defineApi", () => {
-    test("api property is undefined at runtime", () => {
-      expect(userApi.api).toBeUndefined();
+  describe("defineSchema", () => {
+    test("schema property is undefined at runtime", () => {
+      expect(userSchema.schema).toBeUndefined();
     });
 
     test("declaration contains the schema definitions", () => {
-      expect(userApi.declaration.users).toBeDefined();
-      expect(userApi.declaration.users.type).toBe("table");
-      expect(userApi.declaration.config).toBeDefined();
-      expect(userApi.declaration.config.type).toBe("cell");
+      expect(userSchema.declaration.users).toBeDefined();
+      expect(userSchema.declaration.users.type).toBe("table");
+      expect(userSchema.declaration.config).toBeDefined();
+      expect(userSchema.declaration.config.type).toBe("cell");
     });
   });
 
-  describe("Engine with API", () => {
-    let engine: FormulaEngine<any, typeof userApi>;
+  describe("Engine with Schema", () => {
+    let engine: FormulaEngine<any, typeof userSchema>;
 
     beforeEach(() => {
-      engine = new FormulaEngine(userApi);
+      engine = new FormulaEngine(userSchema);
 
       // Set up workbook and sheet
       engine.addWorkbook(workbookName);
@@ -107,20 +107,20 @@ describe("API Integration", () => {
       });
     });
 
-    test("engine.api is defined when API is provided", () => {
-      expect(engine.api).toBeDefined();
-      expect(engine.api.users).toBeDefined();
-      expect(engine.api.config).toBeDefined();
+    test("engine.schema is defined when schema is provided", () => {
+      expect(engine.schema).toBeDefined();
+      expect(engine.schema.users).toBeDefined();
+      expect(engine.schema.config).toBeDefined();
     });
 
-    test("engine.api is undefined when no API is provided", () => {
-      const engineWithoutApi = new FormulaEngine();
-      expect(engineWithoutApi.api).toBeUndefined();
+    test("engine.schema is defined when no schema is provided", () => {
+      const engineWithoutSchema = new FormulaEngine();
+      expect(engineWithoutSchema.schema).toBeDefined();
     });
 
     describe("TableOrm operations", () => {
       test("append adds a new row", () => {
-        const user = engine.api.users.append({
+        const user = engine.schema.users.append({
           id: 1,
           name: "John Doe",
           email: "john@example.com",
@@ -171,20 +171,20 @@ describe("API Integration", () => {
 
       test("findWhere finds a row by filter", () => {
         // Add some users
-        engine.api.users.append({
+        engine.schema.users.append({
           id: 1,
           name: "Alice",
           email: "alice@example.com",
           age: 25,
         });
-        engine.api.users.append({
+        engine.schema.users.append({
           id: 2,
           name: "Bob",
           email: "bob@example.com",
           age: 35,
         });
 
-        const user = engine.api.users.findWhere({ id: 2 });
+        const user = engine.schema.users.findWhere({ id: 2 });
         expect(user).toEqual({
           id: 2,
           name: "Bob",
@@ -194,88 +194,88 @@ describe("API Integration", () => {
       });
 
       test("findWhere returns undefined when not found", () => {
-        const user = engine.api.users.findWhere({ id: 999 });
+        const user = engine.schema.users.findWhere({ id: 999 });
         expect(user).toBeUndefined();
       });
 
       test("findAllWhere returns all matching rows", () => {
-        engine.api.users.append({
+        engine.schema.users.append({
           id: 1,
           name: "Alice",
           email: "alice@example.com",
           age: 25,
         });
-        engine.api.users.append({
+        engine.schema.users.append({
           id: 2,
           name: "Bob",
           email: "bob@example.com",
           age: 25,
         });
-        engine.api.users.append({
+        engine.schema.users.append({
           id: 3,
           name: "Charlie",
           email: "charlie@example.com",
           age: 30,
         });
 
-        const users = engine.api.users.findAllWhere({});
+        const users = engine.schema.users.findAllWhere({});
         expect(users).toHaveLength(3);
       });
 
       test("updateWhere updates matching rows", () => {
-        engine.api.users.append({
+        engine.schema.users.append({
           id: 1,
           name: "Alice",
           email: "alice@example.com",
           age: 25,
         });
 
-        const updated = engine.api.users.updateWhere({ id: 1 }, { age: 26 });
+        const updated = engine.schema.users.updateWhere({ id: 1 }, { age: 26 });
         expect(updated).toBe(1);
 
-        const user = engine.api.users.findWhere({ id: 1 });
+        const user = engine.schema.users.findWhere({ id: 1 });
         expect(user?.age).toBe(26);
       });
 
       test("removeWhere deletes matching rows", () => {
-        engine.api.users.append({
+        engine.schema.users.append({
           id: 1,
           name: "Alice",
           email: "alice@example.com",
           age: 25,
         });
-        engine.api.users.append({
+        engine.schema.users.append({
           id: 2,
           name: "Bob",
           email: "bob@example.com",
           age: 35,
         });
 
-        const removed = engine.api.users.removeWhere({ id: 1 });
+        const removed = engine.schema.users.removeWhere({ id: 1 });
         expect(removed).toBe(1);
 
-        const user = engine.api.users.findWhere({ id: 1 });
+        const user = engine.schema.users.findWhere({ id: 1 });
         expect(user).toBeUndefined();
       });
 
       test("count returns the number of rows", () => {
-        expect(engine.api.users.count()).toBe(0);
+        expect(engine.schema.users.count()).toBe(0);
 
-        engine.api.users.append({
+        engine.schema.users.append({
           id: 1,
           name: "Alice",
           email: "alice@example.com",
           age: 25,
         });
-        expect(engine.api.users.count()).toBe(1);
+        expect(engine.schema.users.count()).toBe(1);
 
-        engine.api.users.append({
+        engine.schema.users.append({
           id: 2,
           name: "Bob",
           email: "bob@example.com",
           age: 35,
         });
-        expect(engine.api.users.count()).toBe(2);
+        expect(engine.schema.users.count()).toBe(2);
       });
     });
 
@@ -286,12 +286,12 @@ describe("API Integration", () => {
           "test-config"
         );
 
-        const value = engine.api.config.read();
+        const value = engine.schema.config.read();
         expect(value).toBe("test-config");
       });
 
       test("write sets the cell value", () => {
-        engine.api.config.write("new-config");
+        engine.schema.config.write("new-config");
 
         const value = engine.getCellValue({
           workbookName,
@@ -306,7 +306,7 @@ describe("API Integration", () => {
     describe("Schema validation", () => {
       test("setCellContent throws SchemaIntegrityError for invalid data in table range", () => {
         // First add a valid user to establish the table has data
-        engine.api.users.append({
+        engine.schema.users.append({
           id: 1,
           name: "Alice",
           email: "alice@example.com",
@@ -353,7 +353,7 @@ describe("API Integration", () => {
 
     describe("Schema lifecycle", () => {
       test("schema is invalidated when table is deleted", () => {
-        engine.api.users.append({
+        engine.schema.users.append({
           id: 1,
           name: "Alice",
           email: "alice@example.com",
@@ -376,7 +376,7 @@ describe("API Integration", () => {
     describe("Spill validation into schema-protected cells", () => {
       test("spilling formula into cell with number schema constraint throws error when invalid", () => {
         // Create a cell API schema that requires a number at B2 (colIndex 1, rowIndex 1)
-        const cellApi = defineApi().addCellApi(
+        const cellSchema = defineSchema().addCellSchema(
           "numberCell",
           {
             workbookName,
@@ -392,7 +392,7 @@ describe("API Integration", () => {
           }
         );
 
-        const engineWithCellSchema = new FormulaEngine(cellApi);
+        const engineWithCellSchema = new FormulaEngine(cellSchema);
         engineWithCellSchema.addWorkbook(workbookName);
         engineWithCellSchema.addSheet({ workbookName, sheetName });
 

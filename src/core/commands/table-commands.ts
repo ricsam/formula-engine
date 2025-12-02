@@ -7,7 +7,7 @@
 import type { TableManager } from "../managers/table-manager";
 import type { NamedExpressionManager } from "../managers/named-expression-manager";
 import type { WorkbookManager } from "../managers/workbook-manager";
-import type { ApiSchemaManager } from "../managers/api-schema-manager";
+import type { SchemaManager } from "../managers/schema-manager";
 import type {
   CellAddress,
   SerializedCellValue,
@@ -24,7 +24,7 @@ export interface TableCommandDeps {
   tableManager: TableManager;
   namedExpressionManager: NamedExpressionManager;
   workbookManager: WorkbookManager;
-  apiSchemaManager: ApiSchemaManager;
+  apiSchemaManager: SchemaManager;
   getCellValue: (cellAddress: CellAddress) => SerializedCellValue;
   renameTableInFormula: (
     formula: string,

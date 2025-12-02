@@ -4,7 +4,7 @@
  * These commands all require re-evaluation after execution.
  */
 
-import type { ApiSchemaManager } from "../managers/api-schema-manager";
+import type { SchemaManager } from "../managers/schema-manager";
 import type { NamedExpressionManager } from "../managers/named-expression-manager";
 import type { ReferenceManager } from "../managers/reference-manager";
 import type { StyleManager } from "../managers/style-manager";
@@ -30,7 +30,7 @@ export interface StructureCommandDeps {
   tableManager: TableManager;
   styleManager: StyleManager;
   referenceManager: ReferenceManager;
-  apiSchemaManager: ApiSchemaManager;
+  apiSchemaManager: SchemaManager;
   renameSheetInFormula: (opts: {
     formula: string;
     oldSheetName: string;
