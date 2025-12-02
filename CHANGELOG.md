@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.20
+
+### Patch Changes
+
+- Implement Excel-like table spill restrictions: spilling formulas inside tables and formulas that would spill into table areas now return #SPILL! error instead of succeeding.
+
 ## 0.0.19
 
 ### Patch Changes

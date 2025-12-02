@@ -1,10 +1,11 @@
 import type {
   CellAddress,
   SerializedCellValue,
+  SpreadsheetRange,
   SpreadsheetRangeEnd,
   TableDefinition,
 } from "../types";
-import { getCellReference, parseCellReference } from "../utils";
+import { checkRangeIntersection, getCellReference, parseCellReference } from "../utils";
 import type { WorkbookManager } from "./workbook-manager";
 
 export class TableManager {
@@ -340,5 +341,39 @@ export class TableManager {
     }
 
     return undefined;
+  }
+
+  /**
+   * Check if a range intersects with any table in the given workbook/sheet.
+   * Used to prevent spilling into tables (Excel behavior).
+   */
+  doesRangeIntersectTable(
+    workbookName: string,
+    sheetName: string,
+    range: SpreadsheetRange
+  ): boolean {
+    for (const table of this.getTables(workbookName).values()) {
+      if (table.sheetName !== sheetName) {
+        continue;
+      }
+
+      // Build the table's range
+      const { start, endRow, headers } = table;
+      const endColIndex = start.colIndex + headers.size - 1;
+
+      const tableRange: SpreadsheetRange = {
+        start: { col: start.colIndex, row: start.rowIndex },
+        end: {
+          col: { type: "number", value: endColIndex },
+          row: endRow,
+        },
+      };
+
+      if (checkRangeIntersection(range, tableRange)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }

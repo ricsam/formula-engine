@@ -581,6 +581,22 @@ export class EvaluationManager {
 
   // todo optimize using workbook manager
   canSpill(spillCandidate: CellAddress, spillArea: SpreadsheetRange): boolean {
+    // Check if the spill origin cell is inside a table - spilling formulas cannot exist in tables
+    if (this.tableManager.isCellInTable(spillCandidate)) {
+      return false;
+    }
+
+    // Check if the spill area would intersect with any table - formulas cannot spill into tables
+    if (
+      this.tableManager.doesRangeIntersectTable(
+        spillCandidate.workbookName,
+        spillCandidate.sheetName,
+        spillArea
+      )
+    ) {
+      return false;
+    }
+
     const sheet = this.workbookManager.getSheet(spillCandidate);
     if (!sheet) {
       throw new SheetNotFoundError(spillCandidate.sheetName);

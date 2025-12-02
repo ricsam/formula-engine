@@ -29,6 +29,7 @@ import { renameTableInFormula } from "./table-renamer";
 import { renameWorkbookInFormula } from "./workbook-renamer";
 import {
   cellAddressToKey,
+  getCellReference,
   keyToCellAddress,
   parseCellReference,
 } from "./utils";
@@ -610,7 +611,8 @@ export class FormulaEngine<
 
   /**
    * Get all data cells in a table (excluding header row).
-   * Uses workbook indexes to efficiently handle infinite tables.
+   * Since spills cannot enter tables (they get #SPILL! error), this only
+   * needs to return cells with direct content.
    */
   private getTableDataCells(table: TableDefinition): CellAddress[] {
     const { start, endRow, headers } = table;
@@ -630,7 +632,7 @@ export class FormulaEngine<
       },
     };
 
-    // Use the workbook manager's optimized iterator
+    // Return cells with direct content - spills cannot enter tables
     return this.workbookManager.getCellsInRange(rangeAddress);
   }
 

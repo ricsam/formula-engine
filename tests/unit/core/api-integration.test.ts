@@ -61,7 +61,10 @@ describe("API Integration", () => {
             ...newUser,
           });
         },
-        update(id: number, update: { name?: string; email?: string; age?: number }) {
+        update(
+          id: number,
+          update: { name?: string; email?: string; age?: number }
+        ) {
           return this.updateWhere({ id }, update);
         },
         delete(id: number) {
@@ -165,16 +168,52 @@ describe("API Integration", () => {
         });
 
         // Verify data was written to cells
-        expect(engine.getCellValue({ workbookName, sheetName, colIndex: 0, rowIndex: 1 })).toBe(1);
-        expect(engine.getCellValue({ workbookName, sheetName, colIndex: 1, rowIndex: 1 })).toBe("John Doe");
-        expect(engine.getCellValue({ workbookName, sheetName, colIndex: 2, rowIndex: 1 })).toBe("john@example.com");
-        expect(engine.getCellValue({ workbookName, sheetName, colIndex: 3, rowIndex: 1 })).toBe(30);
+        expect(
+          engine.getCellValue({
+            workbookName,
+            sheetName,
+            colIndex: 0,
+            rowIndex: 1,
+          })
+        ).toBe(1);
+        expect(
+          engine.getCellValue({
+            workbookName,
+            sheetName,
+            colIndex: 1,
+            rowIndex: 1,
+          })
+        ).toBe("John Doe");
+        expect(
+          engine.getCellValue({
+            workbookName,
+            sheetName,
+            colIndex: 2,
+            rowIndex: 1,
+          })
+        ).toBe("john@example.com");
+        expect(
+          engine.getCellValue({
+            workbookName,
+            sheetName,
+            colIndex: 3,
+            rowIndex: 1,
+          })
+        ).toBe(30);
       });
 
       test("findWhere finds a row by filter", () => {
         // Add some users
-        engine.api.users.create({ name: "Alice", email: "alice@example.com", age: 25 });
-        engine.api.users.create({ name: "Bob", email: "bob@example.com", age: 35 });
+        engine.api.users.create({
+          name: "Alice",
+          email: "alice@example.com",
+          age: 25,
+        });
+        engine.api.users.create({
+          name: "Bob",
+          email: "bob@example.com",
+          age: 35,
+        });
 
         const user = engine.api.users.get(2);
         expect(user).toEqual({
@@ -191,16 +230,32 @@ describe("API Integration", () => {
       });
 
       test("findAllWhere returns all matching rows", () => {
-        engine.api.users.create({ name: "Alice", email: "alice@example.com", age: 25 });
-        engine.api.users.create({ name: "Bob", email: "bob@example.com", age: 25 });
-        engine.api.users.create({ name: "Charlie", email: "charlie@example.com", age: 30 });
+        engine.api.users.create({
+          name: "Alice",
+          email: "alice@example.com",
+          age: 25,
+        });
+        engine.api.users.create({
+          name: "Bob",
+          email: "bob@example.com",
+          age: 25,
+        });
+        engine.api.users.create({
+          name: "Charlie",
+          email: "charlie@example.com",
+          age: 30,
+        });
 
         const users = engine.api.users.getAll();
         expect(users).toHaveLength(3);
       });
 
       test("updateWhere updates matching rows", () => {
-        engine.api.users.create({ name: "Alice", email: "alice@example.com", age: 25 });
+        engine.api.users.create({
+          name: "Alice",
+          email: "alice@example.com",
+          age: 25,
+        });
 
         const updated = engine.api.users.update(1, { age: 26 });
         expect(updated).toBe(1);
@@ -210,8 +265,16 @@ describe("API Integration", () => {
       });
 
       test("removeWhere deletes matching rows", () => {
-        engine.api.users.create({ name: "Alice", email: "alice@example.com", age: 25 });
-        engine.api.users.create({ name: "Bob", email: "bob@example.com", age: 35 });
+        engine.api.users.create({
+          name: "Alice",
+          email: "alice@example.com",
+          age: 25,
+        });
+        engine.api.users.create({
+          name: "Bob",
+          email: "bob@example.com",
+          age: 35,
+        });
 
         const removed = engine.api.users.delete(1);
         expect(removed).toBe(1);
@@ -223,10 +286,18 @@ describe("API Integration", () => {
       test("count returns the number of rows", () => {
         expect(engine.api.users.count()).toBe(0);
 
-        engine.api.users.create({ name: "Alice", email: "alice@example.com", age: 25 });
+        engine.api.users.create({
+          name: "Alice",
+          email: "alice@example.com",
+          age: 25,
+        });
         expect(engine.api.users.count()).toBe(1);
 
-        engine.api.users.create({ name: "Bob", email: "bob@example.com", age: 35 });
+        engine.api.users.create({
+          name: "Bob",
+          email: "bob@example.com",
+          age: 35,
+        });
         expect(engine.api.users.count()).toBe(2);
       });
     });
@@ -258,7 +329,11 @@ describe("API Integration", () => {
     describe("Schema validation", () => {
       test("setCellContent throws SchemaIntegrityError for invalid data in table range", () => {
         // First add a valid user to establish the table has data
-        engine.api.users.create({ name: "Alice", email: "alice@example.com", age: 25 });
+        engine.api.users.create({
+          name: "Alice",
+          email: "alice@example.com",
+          age: 25,
+        });
 
         // Try to write invalid data (string where number expected) to the age column
         expect(() => {
@@ -300,7 +375,11 @@ describe("API Integration", () => {
 
     describe("Schema lifecycle", () => {
       test("schema is invalidated when table is deleted", () => {
-        engine.api.users.create({ name: "Alice", email: "alice@example.com", age: 25 });
+        engine.api.users.create({
+          name: "Alice",
+          email: "alice@example.com",
+          age: 25,
+        });
 
         // Delete the table
         engine.removeTable({ workbookName, tableName: "Users" });
@@ -314,6 +393,175 @@ describe("API Integration", () => {
         }).not.toThrow();
       });
     });
+
+    describe("Spill validation into schema-protected cells", () => {
+      test("spilling formula into cell with number schema constraint throws error when invalid", () => {
+        // Create a cell API schema that requires a number at B2 (colIndex 1, rowIndex 1)
+        const cellApi = defineApi().addCellApi(
+          "numberCell",
+          {
+            workbookName,
+            sheetName,
+            colIndex: 1, // B2
+            rowIndex: 1,
+          },
+          (value) => {
+            if (typeof value !== "number") {
+              throw new Error("Expected a number value");
+            }
+            return value;
+          },
+          {}
+        );
+
+        const engineWithCellSchema = new FormulaEngine(cellApi);
+        engineWithCellSchema.addWorkbook(workbookName);
+        engineWithCellSchema.addSheet({ workbookName, sheetName });
+
+        engineWithCellSchema.setCellContent(
+          { workbookName, sheetName, colIndex: 0, rowIndex: 1 }, // A2
+          "=E1:H1"
+        );
+
+        expect(() => {
+          engineWithCellSchema.setCellContent(
+            { workbookName, sheetName, colIndex: 5, rowIndex: 0 }, // F1
+            "string"
+          );
+        }).toThrow(SchemaIntegrityError);
+        expect(() => {
+          engineWithCellSchema.setCellContent(
+            { workbookName, sheetName, colIndex: 5, rowIndex: 0 }, // F1
+            123
+          );
+        }).not.toThrow(SchemaIntegrityError);
+      });
+
+      test("spilling formula into table area returns #SPILL! error on origin cell", () => {
+        // Excel behavior: formulas cannot spill into tables - they get #SPILL! error
+        const engine = new FormulaEngine();
+        engine.addWorkbook(workbookName);
+        engine.addSheet({ workbookName, sheetName });
+
+        // Set up table headers at B2
+        engine.setCellContent(
+          { workbookName, sheetName, colIndex: 1, rowIndex: 1 },
+          "value"
+        );
+
+        // Create table starting at B2 with infinite rows
+        engine.addTable({
+          workbookName,
+          sheetName,
+          tableName: "Numbers",
+          start: "B2",
+          numRows: { type: "infinity", sign: "positive" },
+          numCols: 1,
+        });
+
+        // Fill E1:H1 with values so the spill has something to reference
+        engine.setCellContent(
+          { workbookName, sheetName, colIndex: 4, rowIndex: 0 },
+          1
+        ); // E1
+        engine.setCellContent(
+          { workbookName, sheetName, colIndex: 5, rowIndex: 0 },
+          2
+        ); // F1
+        engine.setCellContent(
+          { workbookName, sheetName, colIndex: 6, rowIndex: 0 },
+          3
+        ); // G1
+        engine.setCellContent(
+          { workbookName, sheetName, colIndex: 7, rowIndex: 0 },
+          4
+        ); // H1
+
+        // Add spilling formula at A5 that references E1:H1
+        // This would spill into B5 which is in the table - should get #SPILL! error
+        engine.setCellContent(
+          { workbookName, sheetName, colIndex: 0, rowIndex: 4 }, // A5
+          "=E1:H1"
+        );
+
+        // The origin cell (A5) should show #SPILL! error
+        const originValue = engine.getCellValue({
+          workbookName,
+          sheetName,
+          colIndex: 0,
+          rowIndex: 4,
+        });
+        expect(originValue).toBe("#SPILL!");
+
+        // The table cell (B5) should be empty (no spill occurred)
+        const tableCell = engine.getCellValue({
+          workbookName,
+          sheetName,
+          colIndex: 1,
+          rowIndex: 4,
+        });
+        expect(tableCell).toBe("");
+      });
+
+      test("spilling formula inside a table returns #SPILL! error", () => {
+        // Excel behavior: spilling formulas cannot exist inside tables
+        const engine = new FormulaEngine();
+        engine.addWorkbook(workbookName);
+        engine.addSheet({ workbookName, sheetName });
+
+        // Set up table headers at A1
+        engine.setCellContent(
+          { workbookName, sheetName, colIndex: 0, rowIndex: 0 },
+          "formula"
+        );
+        engine.setCellContent(
+          { workbookName, sheetName, colIndex: 1, rowIndex: 0 },
+          "col2"
+        );
+
+        // Create table starting at A1 with 2 columns
+        engine.addTable({
+          workbookName,
+          sheetName,
+          tableName: "TestTable",
+          start: "A1",
+          numRows: { type: "infinity", sign: "positive" },
+          numCols: 2,
+        });
+
+        // Fill some source data outside the table (E1:H1)
+        engine.setCellContent(
+          { workbookName, sheetName, colIndex: 4, rowIndex: 0 },
+          1
+        );
+        engine.setCellContent(
+          { workbookName, sheetName, colIndex: 5, rowIndex: 0 },
+          2
+        );
+        engine.setCellContent(
+          { workbookName, sheetName, colIndex: 6, rowIndex: 0 },
+          3
+        );
+        engine.setCellContent(
+          { workbookName, sheetName, colIndex: 7, rowIndex: 0 },
+          4
+        );
+
+        // Add a spilling formula inside the table (A2 is in the table data area)
+        engine.setCellContent(
+          { workbookName, sheetName, colIndex: 0, rowIndex: 1 }, // A2
+          "=E1:H1"
+        );
+
+        // The formula cell inside the table should show #SPILL! error
+        const cellValue = engine.getCellValue({
+          workbookName,
+          sheetName,
+          colIndex: 0,
+          rowIndex: 1,
+        });
+        expect(cellValue).toBe("#SPILL!");
+      });
+    });
   });
 });
-
