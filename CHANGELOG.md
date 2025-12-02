@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.0.19
+
+### Patch Changes
+
+- fix exported lib
+
 ## 0.0.18
 
 ### Patch Changes

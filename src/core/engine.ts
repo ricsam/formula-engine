@@ -27,7 +27,11 @@ import { renameNamedExpressionInFormula } from "./named-expression-renamer";
 import { renameSheetInFormula } from "./sheet-renamer";
 import { renameTableInFormula } from "./table-renamer";
 import { renameWorkbookInFormula } from "./workbook-renamer";
-import { cellAddressToKey, keyToCellAddress, parseCellReference } from "./utils";
+import {
+  cellAddressToKey,
+  keyToCellAddress,
+  parseCellReference,
+} from "./utils";
 import { CacheManager } from "./managers/cache-manager";
 import { NamedExpressionManager } from "./managers/named-expression-manager";
 import { TableManager } from "./managers/table-manager";
@@ -37,12 +41,18 @@ import { DependencyManager } from "./managers/dependency-manager";
 import { StyleManager } from "./managers/style-manager";
 import { CopyManager } from "./managers/copy-manager";
 import { ReferenceManager } from "./managers/reference-manager";
-import { ApiSchemaManager, SchemaValidationError } from "./managers/api-schema-manager";
+import {
+  ApiSchemaManager,
+  SchemaValidationError,
+} from "./managers/api-schema-manager";
 import type { Api, CreateApi, Declaration } from "./api/api";
 import { buildApiFromDeclaration } from "./api/api-builder";
 import {
   CommandExecutor,
   SchemaIntegrityError,
+} from "./commands/command-executor";
+import { type EngineAction } from "./commands/types";
+import {
   SetCellContentCommand,
   SetSheetContentCommand,
   ClearRangeCommand,
@@ -51,6 +61,8 @@ import {
   MoveCellCommand,
   MoveRangeCommand,
   AutoFillCommand,
+} from "./commands/content-commands";
+import {
   AddWorkbookCommand,
   RemoveWorkbookCommand,
   RenameWorkbookCommand,
@@ -58,29 +70,36 @@ import {
   AddSheetCommand,
   RemoveSheetCommand,
   RenameSheetCommand,
+  type StructureCommandDeps,
+} from "./commands/structure-commands";
+import {
   AddTableCommand,
   RemoveTableCommand,
   RenameTableCommand,
   UpdateTableCommand,
   ResetTablesCommand,
+  type TableCommandDeps,
+} from "./commands/table-commands";
+import {
   AddNamedExpressionCommand,
   RemoveNamedExpressionCommand,
   UpdateNamedExpressionCommand,
   RenameNamedExpressionCommand,
   SetNamedExpressionsCommand,
+  type NamedExpressionCommandDeps,
+} from "./commands/named-expression-commands";
+import {
   SetCellMetadataCommand,
   SetSheetMetadataCommand,
   SetWorkbookMetadataCommand,
+} from "./commands/metadata-commands";
+import {
   AddConditionalStyleCommand,
   RemoveConditionalStyleCommand,
   AddCellStyleCommand,
   RemoveCellStyleCommand,
   ClearCellStylesCommand,
-  type StructureCommandDeps,
-  type TableCommandDeps,
-  type NamedExpressionCommandDeps,
-  type EngineAction,
-} from "./commands";
+} from "./commands/style-commands";
 
 type Metadata = {
   cell?: unknown;
@@ -319,7 +338,11 @@ export class FormulaEngine<
     metadata: MetadataType<TMetadata, "workbook">
   ): void {
     this.commandExecutor.execute(
-      new SetWorkbookMetadataCommand(this.workbookManager, workbookName, metadata)
+      new SetWorkbookMetadataCommand(
+        this.workbookManager,
+        workbookName,
+        metadata
+      )
     );
   }
 
@@ -414,7 +437,10 @@ export class FormulaEngine<
     workbookName?: string;
   }): void {
     this.commandExecutor.execute(
-      new RemoveNamedExpressionCommand(this.getNamedExpressionCommandDeps(), opts),
+      new RemoveNamedExpressionCommand(
+        this.getNamedExpressionCommandDeps(),
+        opts
+      ),
       { validate: !!this.apiDeclaration }
     );
   }
@@ -427,12 +453,17 @@ export class FormulaEngine<
     sheetName?: string;
     workbookName?: string;
   }): boolean {
-    const scope = opts.sheetName && opts.workbookName
-      ? { type: "sheet" as const, workbookName: opts.workbookName, sheetName: opts.sheetName }
-      : opts.workbookName
+    const scope =
+      opts.sheetName && opts.workbookName
+        ? {
+            type: "sheet" as const,
+            workbookName: opts.workbookName,
+            sheetName: opts.sheetName,
+          }
+        : opts.workbookName
         ? { type: "workbook" as const, workbookName: opts.workbookName }
         : { type: "global" as const };
-    
+
     return !!this.namedExpressionManager.getNamedExpression({
       name: opts.expressionName,
       scope,
@@ -446,7 +477,10 @@ export class FormulaEngine<
     workbookName?: string;
   }): void {
     this.commandExecutor.execute(
-      new UpdateNamedExpressionCommand(this.getNamedExpressionCommandDeps(), opts),
+      new UpdateNamedExpressionCommand(
+        this.getNamedExpressionCommandDeps(),
+        opts
+      ),
       { validate: !!this.apiDeclaration }
     );
   }
@@ -458,7 +492,10 @@ export class FormulaEngine<
     newName: string;
   }): void {
     this.commandExecutor.execute(
-      new RenameNamedExpressionCommand(this.getNamedExpressionCommandDeps(), opts),
+      new RenameNamedExpressionCommand(
+        this.getNamedExpressionCommandDeps(),
+        opts
+      ),
       { validate: !!this.apiDeclaration }
     );
   }
@@ -473,7 +510,10 @@ export class FormulaEngine<
     }
   ) {
     this.commandExecutor.execute(
-      new SetNamedExpressionsCommand(this.getNamedExpressionCommandDeps(), opts),
+      new SetNamedExpressionsCommand(
+        this.getNamedExpressionCommandDeps(),
+        opts
+      ),
       { validate: !!this.apiDeclaration }
     );
   }
@@ -543,7 +583,10 @@ export class FormulaEngine<
   /**
    * Get a table definition by name
    */
-  getTable(opts: { tableName: string; workbookName: string }): TableDefinition | undefined {
+  getTable(opts: {
+    tableName: string;
+    workbookName: string;
+  }): TableDefinition | undefined {
     return this.tableManager.getTable({
       workbookName: opts.workbookName,
       name: opts.tableName,

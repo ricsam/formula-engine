@@ -12,5 +12,5 @@ export { SchemaValidationError } from "./core/managers/api-schema-manager";
 export type { ValidationResult } from "./core/managers/api-schema-manager";
 
 // Command Pattern exports
-export { SchemaIntegrityError } from "./core/commands";
-export type { EngineAction, EngineCommand } from "./core/commands";
+export { SchemaIntegrityError } from "./core/commands/command-executor";
+export type { EngineAction, EngineCommand } from "./core/commands/types";

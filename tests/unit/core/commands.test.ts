@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { FormulaEngine } from "../../../src/core/engine";
 import { defineApi } from "../../../src/core/api/api";
-import { SchemaIntegrityError } from "../../../src/core/commands";
+import { SchemaIntegrityError } from "../../../src/core/commands/command-executor";
 import {
   FormulaError,
   type SerializedCellValue,
