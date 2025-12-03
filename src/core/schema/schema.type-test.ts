@@ -302,3 +302,17 @@ productSchema.schema.products.append({
   price: 9.99,
   code: "WGT-001",
 });
+
+
+engine.addTableSchema(
+  "users",
+  {
+    tableName: "users",
+    workbookName: "users",
+  },
+  {
+    id: defineHeader(0, (v) => parseNumber(v)),
+    name: defineHeader(1, (v) => parseString(v)),
+    email: defineHeader(2, (v) => parseString(v)),
+  }
+);

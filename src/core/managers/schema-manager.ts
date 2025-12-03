@@ -20,7 +20,7 @@ export type ParseFunction<TCellMetadata = unknown> = (
   metadata: TCellMetadata
 ) => unknown;
 
-export type WriteFunction<TCellMetadata = unknown> = (value: unknown) => {
+export type WriteFunction<TCellMetadata = unknown> = (value: any) => {
   value: SerializedCellValue;
   metadata?: TCellMetadata;
 };
@@ -58,7 +58,10 @@ export interface RegisteredGridSchema {
   parse: ParseFunction;
 }
 
-export type RegisteredSchema = RegisteredTableSchema | RegisteredCellSchema | RegisteredGridSchema;
+export type RegisteredSchema =
+  | RegisteredTableSchema
+  | RegisteredCellSchema
+  | RegisteredGridSchema;
 
 export interface ValidationResult {
   valid: boolean;
@@ -569,8 +572,7 @@ export class SchemaManager {
             try {
               header.parse(value, metadata);
             } catch (err) {
-              const error =
-                err instanceof Error ? err : new Error(String(err));
+              const error = err instanceof Error ? err : new Error(String(err));
               errors.push({
                 message: `Schema validation failed for ${namespace}.${columnName}: ${error.message}`,
                 cellAddress: cell,
@@ -607,7 +609,9 @@ export class SchemaManager {
               continue;
             }
 
-            const metadata = getCellMetadata ? getCellMetadata(cell) : undefined;
+            const metadata = getCellMetadata
+              ? getCellMetadata(cell)
+              : undefined;
 
             try {
               schema.parse(value, metadata);
