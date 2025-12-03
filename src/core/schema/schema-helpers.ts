@@ -6,14 +6,20 @@ import type { CellAddress, SerializedCellValue, TableDefinition } from "../types
 import type { FormulaEngine } from "../engine";
 
 export type ParseFunction<TCellMetadata = unknown> = (
-  value: unknown,
+  value: SerializedCellValue,
   metadata: TCellMetadata
 ) => unknown;
+
+export type WriteFunction<TCellMetadata = unknown> = (value: unknown) => {
+  value: SerializedCellValue;
+  metadata?: TCellMetadata;
+};
 
 export type TableSchemaHeaders<TCellMetadata = unknown> = Record<
   string,
   {
     parse: ParseFunction<TCellMetadata>;
+    write: WriteFunction<TCellMetadata>;
     index: number;
   }
 >;
@@ -49,34 +55,35 @@ export function rowToObject<TItem extends Record<string, unknown>>(
 }
 
 /**
- * Convert a typed object to cell values based on headers
+ * Result from objectToRowValues including both values and optional metadata
  */
-export function objectToRowValues<TItem extends Record<string, unknown>>(
+export type RowValuesResult<TCellMetadata = unknown> = {
+  values: Map<number, SerializedCellValue>;
+  metadata: Map<number, TCellMetadata>;
+};
+
+/**
+ * Convert a typed object to cell values based on headers using write functions
+ */
+export function objectToRowValues<TItem extends Record<string, unknown>, TCellMetadata = unknown>(
   obj: TItem,
-  headers: TableSchemaHeaders
-): Map<number, SerializedCellValue> {
+  headers: TableSchemaHeaders<TCellMetadata>
+): RowValuesResult<TCellMetadata> {
   const values = new Map<number, SerializedCellValue>();
+  const metadata = new Map<number, TCellMetadata>();
 
   for (const [columnName, header] of Object.entries(headers)) {
     if (columnName in obj) {
-      const value = obj[columnName];
-      // Convert to serializable value
-      if (
-        typeof value === "string" ||
-        typeof value === "number" ||
-        typeof value === "boolean"
-      ) {
-        values.set(header.index, value);
-      } else if (value === null || value === undefined) {
-        values.set(header.index, undefined);
-      } else {
-        // For complex types, convert to string
-        values.set(header.index, String(value));
+      const columnValue = obj[columnName];
+      const { value, metadata: cellMetadata } = header.write(columnValue);
+      values.set(header.index, value);
+      if (cellMetadata !== undefined) {
+        metadata.set(header.index, cellMetadata);
       }
     }
   }
 
-  return values;
+  return { values, metadata };
 }
 
 /**

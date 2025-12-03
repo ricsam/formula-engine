@@ -1,4 +1,8 @@
-import type { CellAddress } from "../types";
+import type {
+  CellAddress,
+  FiniteSpreadsheetRange,
+  SerializedCellValue,
+} from "../types";
 
 /**
  * Define a schema for the FormulaEngine.
@@ -25,14 +29,24 @@ import type { CellAddress } from "../types";
 export function defineSchema<
   TCellMetadata = unknown,
   TCurrentSchema extends Record<string, object> = Record<string, object>,
-  TCurrentDeclaration extends Record<string, TableSchemaDefinition | CellSchemaDefinition> = Record<
+  TCurrentDeclaration extends Record<
     string,
-    TableSchemaDefinition | CellSchemaDefinition
+    TableSchemaDefinition | CellSchemaDefinition | GridSchemaDefinition
+  > = Record<
+    string,
+    TableSchemaDefinition | CellSchemaDefinition | GridSchemaDefinition
   >
 >(): CreateSchema<TCellMetadata, TCurrentSchema, TCurrentDeclaration> {
-  const declaration: Record<string, TableSchemaDefinition | CellSchemaDefinition> = {};
+  const declaration: Record<
+    string,
+    TableSchemaDefinition | CellSchemaDefinition | GridSchemaDefinition
+  > = {};
 
-  const builder: CreateSchema<TCellMetadata, TCurrentSchema, TCurrentDeclaration> = {
+  const builder: CreateSchema<
+    TCellMetadata,
+    TCurrentSchema,
+    TCurrentDeclaration
+  > = {
     addTableSchema(namespace, address, headers) {
       declaration[namespace] = {
         type: "table",
@@ -43,11 +57,35 @@ export function defineSchema<
       return builder as any;
     },
 
-    addCellSchema(namespace, cellAddress, parse) {
+    addCellSchema(
+      namespace: string,
+      cellAddress: CellAddress,
+      parse: any,
+      write?: any
+    ) {
       declaration[namespace] = {
         type: "cell",
         cellAddress,
-        parse: parse as any,
+        parse,
+        write: write ?? ((value: unknown) => ({ value: value as SerializedCellValue })),
+      };
+      return builder as any;
+    },
+
+    addGridSchema(
+      namespace: string,
+      address: { workbookName: string; sheetName: string },
+      range: FiniteSpreadsheetRange,
+      parse: any,
+      write?: any
+    ) {
+      declaration[namespace] = {
+        type: "grid",
+        workbookName: address.workbookName,
+        sheetName: address.sheetName,
+        range,
+        parse,
+        write: write ?? ((value: unknown) => ({ value: value as SerializedCellValue })),
       };
       return builder as any;
     },
@@ -62,11 +100,6 @@ export function defineSchema<
   return builder;
 }
 
-type ParseFunction<TCellMetadata> = (
-  value: unknown,
-  metadata: TCellMetadata
-) => unknown;
-
 export interface TableSchemaDefinition {
   type: "table";
   headers: Headers<unknown>;
@@ -78,12 +111,32 @@ export interface CellSchemaDefinition {
   type: "cell";
   cellAddress: CellAddress;
   parse: (value: unknown, metadata: unknown) => unknown;
+  write: (value: unknown) => {
+    value: SerializedCellValue;
+    metadata?: unknown;
+  };
+}
+
+export interface GridSchemaDefinition {
+  type: "grid";
+  workbookName: string;
+  sheetName: string;
+  range: FiniteSpreadsheetRange;
+  parse: (value: unknown, metadata: unknown) => unknown;
+  write: (value: unknown) => {
+    value: SerializedCellValue;
+    metadata?: unknown;
+  };
 }
 
 type Headers<TCellMetadata> = Record<
   string,
   {
-    parse: ParseFunction<TCellMetadata>;
+    parse: (value: SerializedCellValue, metadata: TCellMetadata) => unknown;
+    write: (value: any) => {
+      value: SerializedCellValue;
+      metadata?: TCellMetadata;
+    };
     index: number;
   }
 >;
@@ -109,8 +162,74 @@ export type CellOrmSchema<TValue> = {
   getAddress(): CellAddress;
 };
 
-export type SchemaDeclaration = Record<string, TableSchemaDefinition | CellSchemaDefinition>;
+/**
+ * Type representing the GridOrm methods exposed on the schema
+ */
+export type GridOrmSchema<TValue> = {
+  columns: readonly TValue[][];
+  rows: readonly TValue[][];
+  setValue(value: TValue, position: { col: number; row: number }): void;
+  getValue(position: { col: number; row: number }): TValue;
+};
+
+export type SchemaDeclaration = Record<
+  string,
+  TableSchemaDefinition | CellSchemaDefinition | GridSchemaDefinition
+>;
 export type Schema = Record<string, object>;
+
+/**
+ * Write function type for converting parsed values back to serializable form
+ */
+type WriteFunction<TValue, TCellMetadata> = (value: TValue) => {
+  value: SerializedCellValue;
+  metadata?: TCellMetadata;
+};
+
+/**
+ * Helper type to create the return type for addCellSchema/addGridSchema
+ */
+type AddCellSchemaResult<
+  TCellMetadata,
+  TCurrentSchema extends Schema,
+  TCurrentDeclaration extends SchemaDeclaration,
+  T extends string,
+  TValue
+> = CreateSchema<
+  TCellMetadata,
+  TCurrentSchema & {
+    [K in T]: CellOrmSchema<TValue>;
+  },
+  TCurrentDeclaration & {
+    [K in T]: {
+      type: "cell";
+      cellAddress: CellAddress;
+      parse: (value: unknown, metadata: unknown) => unknown;
+    };
+  }
+>;
+
+type AddGridSchemaResult<
+  TCellMetadata,
+  TCurrentSchema extends Schema,
+  TCurrentDeclaration extends SchemaDeclaration,
+  T extends string,
+  TValue
+> = CreateSchema<
+  TCellMetadata,
+  TCurrentSchema & {
+    [K in T]: GridOrmSchema<TValue>;
+  },
+  TCurrentDeclaration & {
+    [K in T]: {
+      type: "grid";
+      workbookName: string;
+      sheetName: string;
+      range: FiniteSpreadsheetRange;
+      parse: (value: unknown, metadata: unknown) => unknown;
+    };
+  }
+>;
 
 export type CreateSchema<
   TCellMetadata,
@@ -137,23 +256,56 @@ export type CreateSchema<
       };
     }
   >;
+
+  // Overload 1: TValue is any type - write is required
   addCellSchema<T extends string, TValue>(
     namespace: T,
     cellAddress: CellAddress,
-    parse: (value: unknown, metadata: TCellMetadata) => TValue
-  ): CreateSchema<
-    TCellMetadata,
-    TCurrentSchema & {
-      [K in T]: CellOrmSchema<TValue>;
-    },
-    TCurrentDeclaration & {
-      [K in T]: {
-        type: "cell";
-        cellAddress: CellAddress;
-        parse: (value: unknown, metadata: unknown) => unknown;
-      };
-    }
-  >;
+    parse: (value: unknown, metadata: TCellMetadata) => TValue,
+    write: WriteFunction<TValue, TCellMetadata>
+  ): AddCellSchemaResult<TCellMetadata, TCurrentSchema, TCurrentDeclaration, T, TValue>;
+
+  // Overload 2: TValue extends SerializedCellValue - write is optional
+  addCellSchema<T extends string, TValue extends SerializedCellValue>(
+    namespace: T,
+    cellAddress: CellAddress,
+    parse: (value: unknown, metadata: TCellMetadata) => TValue,
+    write?: WriteFunction<TValue, TCellMetadata>
+  ): AddCellSchemaResult<TCellMetadata, TCurrentSchema, TCurrentDeclaration, T, TValue>;
+
+  // Overload 1: TValue is any type - write is required
+  addGridSchema<T extends string, TValue>(
+    namespace: T,
+    address: { workbookName: string; sheetName: string },
+    range: FiniteSpreadsheetRange,
+    parse: (value: unknown, metadata: TCellMetadata) => TValue,
+    write: WriteFunction<TValue, TCellMetadata>
+  ): AddGridSchemaResult<TCellMetadata, TCurrentSchema, TCurrentDeclaration, T, TValue>;
+
+  // Overload 2: TValue extends SerializedCellValue - write is optional
+  addGridSchema<T extends string, TValue extends SerializedCellValue>(
+    namespace: T,
+    address: { workbookName: string; sheetName: string },
+    range: FiniteSpreadsheetRange,
+    parse: (value: unknown, metadata: TCellMetadata) => TValue,
+    write?: WriteFunction<TValue, TCellMetadata>
+  ): AddGridSchemaResult<TCellMetadata, TCurrentSchema, TCurrentDeclaration, T, TValue>;
+
   schema: TCurrentSchema;
   declaration: TCurrentDeclaration;
+};
+
+export const createHeader = <TValue, TMetadata>(
+  index: number,
+  parse: (value: SerializedCellValue, metadata: TMetadata) => TValue,
+  write?: (value: TValue) => {
+    value: SerializedCellValue;
+    metadata?: TMetadata;
+  }
+) => {
+  return {
+    parse,
+    write: write ?? ((value) => ({ value })),
+    index,
+  };
 };

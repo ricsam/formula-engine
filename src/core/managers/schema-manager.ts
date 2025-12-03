@@ -7,6 +7,7 @@
 
 import type {
   CellAddress,
+  FiniteSpreadsheetRange,
   SerializedCellValue,
   SpreadsheetRange,
   TableDefinition,
@@ -15,14 +16,20 @@ import { cellAddressToKey, isCellInRange } from "../utils";
 import type { TableManager } from "./table-manager";
 
 export type ParseFunction<TCellMetadata = unknown> = (
-  value: unknown,
+  value: SerializedCellValue,
   metadata: TCellMetadata
 ) => unknown;
+
+export type WriteFunction<TCellMetadata = unknown> = (value: unknown) => {
+  value: SerializedCellValue;
+  metadata?: TCellMetadata;
+};
 
 export type TableSchemaHeaders<TCellMetadata = unknown> = Record<
   string,
   {
     parse: ParseFunction<TCellMetadata>;
+    write: WriteFunction<TCellMetadata>;
     index: number;
   }
 >;
@@ -42,7 +49,16 @@ export interface RegisteredCellSchema {
   parse: ParseFunction;
 }
 
-export type RegisteredSchema = RegisteredTableSchema | RegisteredCellSchema;
+export interface RegisteredGridSchema {
+  type: "grid";
+  namespace: string;
+  workbookName: string;
+  sheetName: string;
+  range: FiniteSpreadsheetRange;
+  parse: ParseFunction;
+}
+
+export type RegisteredSchema = RegisteredTableSchema | RegisteredCellSchema | RegisteredGridSchema;
 
 export interface ValidationResult {
   valid: boolean;
@@ -96,6 +112,26 @@ export class SchemaManager {
       type: "cell",
       namespace,
       cellAddress,
+      parse,
+    });
+  }
+
+  /**
+   * Register a grid schema
+   */
+  registerGridSchema(
+    namespace: string,
+    workbookName: string,
+    sheetName: string,
+    range: FiniteSpreadsheetRange,
+    parse: ParseFunction
+  ): void {
+    this.schemas.set(namespace, {
+      type: "grid",
+      namespace,
+      workbookName,
+      sheetName,
+      range,
       parse,
     });
   }
@@ -161,6 +197,18 @@ export class SchemaManager {
             );
             return { schema, columnName };
           }
+        }
+      } else if (schema.type === "grid") {
+        // Check if cell is within the grid range
+        if (
+          cell.workbookName === schema.workbookName &&
+          cell.sheetName === schema.sheetName &&
+          cell.colIndex >= schema.range.start.col &&
+          cell.colIndex <= schema.range.end.col &&
+          cell.rowIndex >= schema.range.start.row &&
+          cell.rowIndex <= schema.range.end.row
+        ) {
+          return { schema };
         }
       }
     }
@@ -238,6 +286,8 @@ export class SchemaManager {
         if (header) {
           header.parse(value, metadata);
         }
+      } else if (schema.type === "grid") {
+        schema.parse(value, metadata);
       }
       return { valid: true };
     } catch (err) {
@@ -340,6 +390,13 @@ export class SchemaManager {
         ) {
           schema.cellAddress.sheetName = newSheetName;
         }
+      } else if (schema.type === "grid") {
+        if (
+          schema.workbookName === workbookName &&
+          schema.sheetName === oldSheetName
+        ) {
+          schema.sheetName = newSheetName;
+        }
       }
       // Table schemas don't store sheetName directly - they get it from TableManager
     }
@@ -358,6 +415,10 @@ export class SchemaManager {
           schema.cellAddress.workbookName = newWorkbookName;
         }
       } else if (schema.type === "table") {
+        if (schema.workbookName === oldWorkbookName) {
+          schema.workbookName = newWorkbookName;
+        }
+      } else if (schema.type === "grid") {
         if (schema.workbookName === oldWorkbookName) {
           schema.workbookName = newWorkbookName;
         }
@@ -515,6 +576,47 @@ export class SchemaManager {
                 cellAddress: cell,
                 schemaNamespace: namespace,
                 columnName,
+                originalError: error,
+              });
+            }
+          }
+        }
+      } else if (schema.type === "grid") {
+        // Validate all cells in the grid range
+        const { range } = schema;
+
+        for (let row = range.start.row; row <= range.end.row; row++) {
+          for (let col = range.start.col; col <= range.end.col; col++) {
+            const cell: CellAddress = {
+              workbookName: schema.workbookName,
+              sheetName: schema.sheetName,
+              rowIndex: row,
+              colIndex: col,
+            };
+
+            let value: SerializedCellValue;
+            try {
+              value = getCellValue(cell);
+            } catch {
+              // Sheet/cell doesn't exist yet, skip validation
+              continue;
+            }
+
+            // Skip empty cells
+            if (value === undefined || value === "") {
+              continue;
+            }
+
+            const metadata = getCellMetadata ? getCellMetadata(cell) : undefined;
+
+            try {
+              schema.parse(value, metadata);
+            } catch (err) {
+              const error = err instanceof Error ? err : new Error(String(err));
+              errors.push({
+                message: `Schema validation failed for ${namespace}: ${error.message}`,
+                cellAddress: cell,
+                schemaNamespace: namespace,
                 originalError: error,
               });
             }

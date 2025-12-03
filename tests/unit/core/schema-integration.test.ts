@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { FormulaEngine } from "../../../src/core/engine";
-import { defineSchema } from "../../../src/core/schema/schema";
+import { createHeader, defineSchema } from "../../../src/core/schema/schema";
 import { SchemaIntegrityError } from "../../../src/core/commands/command-executor";
 
 describe("Schema Integration", () => {
@@ -31,22 +31,10 @@ describe("Schema Integration", () => {
         tableName: "Users",
       },
       {
-        id: {
-          parse: (value) => parseNumber(value),
-          index: 0,
-        },
-        name: {
-          parse: (value) => parseString(value),
-          index: 1,
-        },
-        email: {
-          parse: (value) => parseString(value),
-          index: 2,
-        },
-        age: {
-          parse: (value) => parseNumber(value),
-          index: 3,
-        },
+        id: createHeader(0, parseNumber),
+        name: createHeader(1, parseString),
+        email: createHeader(2, parseString),
+        age: createHeader(3, parseNumber),
       }
     )
     .addCellSchema(
@@ -60,6 +48,14 @@ describe("Schema Integration", () => {
       (value) => {
         return parseString(value);
       }
+    )
+    .addGridSchema(
+      "plate",
+      { workbookName, sheetName: "GridSheet" },
+      { start: { col: 0, row: 0 }, end: { col: 2, row: 2 } }, // 3x3 grid (A1:C3)
+      (value) => {
+        return parseNumber(value);
+      }
     );
 
   describe("defineSchema", () => {
@@ -72,6 +68,8 @@ describe("Schema Integration", () => {
       expect(userSchema.declaration.users.type).toBe("table");
       expect(userSchema.declaration.config).toBeDefined();
       expect(userSchema.declaration.config.type).toBe("cell");
+      expect(userSchema.declaration.plate).toBeDefined();
+      expect(userSchema.declaration.plate.type).toBe("grid");
     });
   });
 
@@ -111,6 +109,7 @@ describe("Schema Integration", () => {
       expect(engine.schema).toBeDefined();
       expect(engine.schema.users).toBeDefined();
       expect(engine.schema.config).toBeDefined();
+      expect(engine.schema.plate).toBeDefined();
     });
 
     test("engine.schema is defined when no schema is provided", () => {
@@ -303,6 +302,98 @@ describe("Schema Integration", () => {
       });
     });
 
+    describe("GridOrm operations", () => {
+      const gridSheetName = "GridSheet";
+
+      beforeEach(() => {
+        // Add the grid sheet
+        engine.addSheet({ workbookName, sheetName: gridSheetName });
+      });
+
+      test("columns getter returns column-major 2D array", () => {
+        // Set up a 3x3 grid of values (A1:C3)
+        // Column 0: 1, 4, 7
+        // Column 1: 2, 5, 8
+        // Column 2: 3, 6, 9
+        engine.setSheetContent(
+          { workbookName, sheetName: gridSheetName },
+          new Map([
+            ["A1", 1], ["B1", 2], ["C1", 3],
+            ["A2", 4], ["B2", 5], ["C2", 6],
+            ["A3", 7], ["B3", 8], ["C3", 9],
+          ])
+        );
+
+        const columns = engine.schema.plate.columns;
+
+        // columns[colIndex][rowIndex]
+        expect(columns).toEqual([
+          [1, 4, 7], // Column A
+          [2, 5, 8], // Column B
+          [3, 6, 9], // Column C
+        ]);
+      });
+
+      test("rows getter returns row-major 2D array", () => {
+        // Set up a 3x3 grid of values (A1:C3)
+        engine.setSheetContent(
+          { workbookName, sheetName: gridSheetName },
+          new Map([
+            ["A1", 1], ["B1", 2], ["C1", 3],
+            ["A2", 4], ["B2", 5], ["C2", 6],
+            ["A3", 7], ["B3", 8], ["C3", 9],
+          ])
+        );
+
+        const rows = engine.schema.plate.rows;
+
+        // rows[rowIndex][colIndex]
+        expect(rows).toEqual([
+          [1, 2, 3], // Row 1
+          [4, 5, 6], // Row 2
+          [7, 8, 9], // Row 3
+        ]);
+      });
+
+      test("setValue writes a value at the specified position", () => {
+        engine.schema.plate.setValue(42, { col: 1, row: 1 });
+
+        // Verify the cell was written
+        expect(engine.getCellValue({ workbookName, sheetName: gridSheetName, colIndex: 1, rowIndex: 1 })).toBe(42);
+      });
+
+      test("getValue reads a value at the specified position", () => {
+        // Set up a value
+        engine.setCellContent(
+          { workbookName, sheetName: gridSheetName, colIndex: 2, rowIndex: 0 },
+          99
+        );
+
+        const value = engine.schema.plate.getValue({ col: 2, row: 0 });
+        expect(value).toBe(99);
+      });
+
+      test("setValue throws error for out of bounds position", () => {
+        expect(() => {
+          engine.schema.plate.setValue(1, { col: 5, row: 0 }); // col 5 is out of bounds (grid is 3x3)
+        }).toThrow('out of bounds');
+
+        expect(() => {
+          engine.schema.plate.setValue(1, { col: 0, row: 10 }); // row 10 is out of bounds
+        }).toThrow('out of bounds');
+
+        expect(() => {
+          engine.schema.plate.setValue(1, { col: -1, row: 0 }); // negative col
+        }).toThrow('out of bounds');
+      });
+
+      test("getValue throws error for out of bounds position", () => {
+        expect(() => {
+          engine.schema.plate.getValue({ col: 5, row: 0 });
+        }).toThrow('out of bounds');
+      });
+    });
+
     describe("Schema validation", () => {
       test("setCellContent throws SchemaIntegrityError for invalid data in table range", () => {
         // First add a valid user to establish the table has data
@@ -346,6 +437,32 @@ describe("Schema Integration", () => {
           engine.setCellContent(
             { workbookName, sheetName, colIndex: 5, rowIndex: 0 },
             "valid-string"
+          );
+        }).not.toThrow();
+      });
+
+      test("setCellContent throws SchemaIntegrityError for invalid data in grid range", () => {
+        // Add the grid sheet
+        engine.addSheet({ workbookName, sheetName: "GridSheet" });
+
+        // Try to write invalid data (string where number expected) to grid cell
+        expect(() => {
+          engine.setCellContent(
+            { workbookName, sheetName: "GridSheet", colIndex: 1, rowIndex: 1 },
+            "not-a-number"
+          );
+        }).toThrow(SchemaIntegrityError);
+      });
+
+      test("setCellContent allows valid data in grid range", () => {
+        // Add the grid sheet
+        engine.addSheet({ workbookName, sheetName: "GridSheet" });
+
+        // Write valid number to grid cell
+        expect(() => {
+          engine.setCellContent(
+            { workbookName, sheetName: "GridSheet", colIndex: 1, rowIndex: 1 },
+            42
           );
         }).not.toThrow();
       });

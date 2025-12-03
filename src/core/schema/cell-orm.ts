@@ -13,11 +13,17 @@ export type CellParseFunction<TCellMetadata, TValue> = (
   metadata: TCellMetadata
 ) => TValue;
 
+export type CellWriteFunction<TCellMetadata, TValue> = (value: TValue) => {
+  value: SerializedCellValue;
+  metadata?: TCellMetadata;
+};
+
 export class CellOrm<TValue, TCellMetadata = unknown> {
   constructor(
     private engine: FormulaEngine<any, any>,
     private cellAddress: CellAddress,
     private parser: CellParseFunction<TCellMetadata, TValue>,
+    private writer: CellWriteFunction<TCellMetadata, TValue>,
     private namespace: string
   ) {}
 
@@ -26,50 +32,21 @@ export class CellOrm<TValue, TCellMetadata = unknown> {
    */
   read(): TValue {
     const value = this.engine.getCellValue(this.cellAddress);
-    const metadata = this.engine.getCellMetadata(this.cellAddress) as TCellMetadata;
+    const metadata = this.engine.getCellMetadata(
+      this.cellAddress
+    ) as TCellMetadata;
     return this.parser(value, metadata);
   }
 
   /**
-   * Write a value to the cell
-   * The value should be the parsed type - it will be converted to a serializable value
+   * Write a value to the cell using the schema's write function
    */
   write(value: TValue): void {
-    // Convert TValue to SerializedCellValue
-    let serializedValue: SerializedCellValue;
-
-    if (
-      typeof value === "string" ||
-      typeof value === "number" ||
-      typeof value === "boolean"
-    ) {
-      serializedValue = value;
-    } else if (value === null || value === undefined) {
-      serializedValue = undefined;
-    } else if (typeof value === "object") {
-      // For objects, we need to extract the actual cell value
-      // This assumes the parsed type might be an object with a 'value' property
-      const obj = value as Record<string, unknown>;
-      if ("value" in obj) {
-        const innerValue = obj.value;
-        if (
-          typeof innerValue === "string" ||
-          typeof innerValue === "number" ||
-          typeof innerValue === "boolean"
-        ) {
-          serializedValue = innerValue;
-        } else {
-          serializedValue = String(innerValue);
-        }
-      } else {
-        // Fallback: convert to string
-        serializedValue = JSON.stringify(value);
-      }
-    } else {
-      serializedValue = String(value);
-    }
-
+    const { value: serializedValue, metadata } = this.writer(value);
     this.engine.setCellContent(this.cellAddress, serializedValue);
+    if (metadata !== undefined) {
+      this.engine.setCellMetadata(this.cellAddress, metadata);
+    }
   }
 
   /**

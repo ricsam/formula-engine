@@ -300,13 +300,14 @@ export class FormulaEngine<
   addCellSchema<TValue>(
     namespace: string,
     cellAddress: CellAddress,
-    parse: (value: unknown, metadata: MetadataType<TMetadata, "cell">) => TValue
+    parse: (value: unknown, metadata: MetadataType<TMetadata, "cell">) => TValue,
+    write: (value: TValue) => { value: SerializedCellValue; metadata?: MetadataType<TMetadata, "cell"> } = (value) => ({ value: value as unknown as SerializedCellValue })
   ): CellOrm<TValue> {
     // Register the schema with the schema manager
     this.schemaManager.registerCellSchema(namespace, cellAddress, parse);
 
     // Create the ORM instance
-    const orm = new CellOrm(this, cellAddress, parse, namespace);
+    const orm = new CellOrm(this, cellAddress, parse, write, namespace);
 
     // Add to schema object for runtime access
     (this.schema as Record<string, object>)[namespace] = orm;

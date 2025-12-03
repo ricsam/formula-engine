@@ -111,9 +111,9 @@ export class TableOrm<TItem extends Record<string, unknown>> {
   append(item: TItem): TItem {
     const table = this.getTable();
     const nextRow = getNextEmptyRow(this.engine, table);
-    const values = objectToRowValues(item, this.headers);
+    const { values, metadata } = objectToRowValues(item, this.headers);
 
-    // Write each cell value
+    // Write each cell value and metadata
     for (const [colOffset, value] of values) {
       const cellAddress: CellAddress = {
         workbookName: table.workbookName,
@@ -123,6 +123,10 @@ export class TableOrm<TItem extends Record<string, unknown>> {
       };
 
       this.engine.setCellContent(cellAddress, value);
+      const cellMetadata = metadata.get(colOffset);
+      if (cellMetadata !== undefined) {
+        this.engine.setCellMetadata(cellAddress, cellMetadata);
+      }
     }
 
     return item;
@@ -150,7 +154,7 @@ export class TableOrm<TItem extends Record<string, unknown>> {
 
         if (matchesFilter(item, filter)) {
           // Apply updates
-          const values = objectToRowValues(update as TItem, this.headers);
+          const { values, metadata } = objectToRowValues(update as TItem, this.headers);
 
           for (const [colOffset, value] of values) {
             const cellAddress: CellAddress = {
@@ -161,6 +165,10 @@ export class TableOrm<TItem extends Record<string, unknown>> {
             };
 
             this.engine.setCellContent(cellAddress, value);
+            const cellMetadata = metadata.get(colOffset);
+            if (cellMetadata !== undefined) {
+              this.engine.setCellMetadata(cellAddress, cellMetadata);
+            }
           }
 
           updatedCount++;
