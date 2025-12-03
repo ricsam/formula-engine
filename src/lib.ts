@@ -4,7 +4,7 @@ export * from "./core/utils";
 export * from "./core/utils/color-utils";
 
 // Schema exports
-export { defineSchema } from "./core/schema/schema";
+export { defineSchema, defineHeader } from "./core/schema/schema";
 export type { CreateSchema, SchemaDeclaration, Schema, TableSchemaDefinition, CellSchemaDefinition, TableOrmSchema, CellOrmSchema } from "./core/schema/schema";
 export { TableOrm } from "./core/schema/table-orm";
 export { CellOrm } from "./core/schema/cell-orm";

@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { FormulaEngine } from "../../../src/core/engine";
-import { createHeader, defineSchema } from "../../../src/core/schema/schema";
+import { defineHeader, defineSchema } from "../../../src/core/schema/schema";
 import { SchemaIntegrityError } from "../../../src/core/commands/command-executor";
 import {
   FormulaError,
@@ -519,7 +519,7 @@ describe("Command Pattern", () => {
         "numbers",
         { workbookName, tableName: "Numbers" },
         {
-          value: createHeader(0, parseNumber),
+          value: defineHeader(0, parseNumber),
         }
       );
 

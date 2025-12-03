@@ -619,7 +619,6 @@ describe("OpenRangeEvaluator", () => {
       // Plus B15 = 1000
       // Total = 1060
       expect(cell("A10", "Sheet2")).toBe(10);
-      console.log("Now");
       expect(cell("B10", "Sheet2")).toBe(20);
       expect(cell("A11", "Sheet2")).toBe(30);
       expect(cell("B11", "Sheet2")).toBe(40);

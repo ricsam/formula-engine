@@ -959,8 +959,6 @@ describe("Tables", () => {
     //   emptyCellChar: "",
     // });
 
-    console.log("@actualGrid\n" + actualGrid);
-
     // Verify source data is NOT cropped - all original cells should still have their values
     expect(cell("A2")).toBe("A2_data");
     expect(cell("B2")).toBe("B2_data");

@@ -1,5 +1,73 @@
 # @ricsam/formula-engine
 
+## 0.2.0
+
+### Minor Changes
+
+- ### Added
+
+  - **Grid Schema Support**: Added `addGridSchema()` method to define schemas for 2D ranges of cells. Grid schemas provide readonly `columns` and `rows` getters for column-major and row-major array access, plus `setValue()` and `getValue()` methods for individual cell access.
+
+  ### Changed
+
+  - **Explicit Write Functions**: Schema definitions now use explicit `write` functions instead of guessing how to serialize parsed values. This provides better type safety and control over serialization.
+  - **Optional Write for Primitive Types**: The `write` function is now optional when `parse` returns a `SerializedCellValue` (number, string, or boolean). For complex types (objects), `write` is required and TypeScript will error if omitted.
+  - **GridOrm API**: Removed `columns` and `rows` setters from GridOrm. Use `setValue(value, position)` instead. The getters now return readonly arrays.
+  - **Table Headers**: Updated `defineHeader()` helper to support optional `write` functions. Headers now use explicit write functions for serialization.
+
+  ### Migration Guide
+
+  **Grid Schemas:**
+
+  ```typescript
+  // Before: No grid schema support
+  // After:
+  .addGridSchema(
+    "matrix",
+    { workbookName: "wb", sheetName: "s" },
+    { start: { col: 0, row: 0 }, end: { col: 9, row: 9 } },
+    (value) => parseNumber(value)
+    // write optional for primitive types
+  )
+
+  // Access grid data
+  schema.matrix.columns  // readonly number[][]
+  schema.matrix.rows     // readonly number[][]
+  schema.matrix.setValue(42, { col: 0, row: 0 })
+  schema.matrix.getValue({ col: 0, row: 0 })
+  ```
+
+  **Cell Schemas with Complex Types:**
+
+  ```typescript
+  // Before: Guessing serialization
+  .addCellSchema("item", addr, (v) => ({ value: v, meta: true }))
+
+  // After: Explicit write function required
+  .addCellSchema(
+    "item",
+    addr,
+    (v) => ({ value: v, meta: true }),
+    (item) => ({ value: item.value })  // REQUIRED for object types
+  )
+  ```
+
+  **Table Headers:**
+
+  ```typescript
+  // Before: Simple header definition
+  { value: { parse: parseNumber, index: 0 } }
+
+  // After: Use defineHeader helper
+  { value: defineHeader(0, parseNumber) }
+  // Or with custom write:
+  { value: defineHeader(0, parseNumber, (v) => ({ value: v })) }
+  ```
+
+### Patch Changes
+
+- export defineHeader
+
 ## 0.1.0
 
 ### Minor Changes

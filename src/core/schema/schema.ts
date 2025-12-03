@@ -295,7 +295,7 @@ export type CreateSchema<
   declaration: TCurrentDeclaration;
 };
 
-export const createHeader = <TValue, TMetadata>(
+export const defineHeader = <TValue, TMetadata>(
   index: number,
   parse: (value: SerializedCellValue, metadata: TMetadata) => TValue,
   write?: (value: TValue) => {

@@ -1,6 +1,6 @@
 import { FormulaEngine } from "../engine";
 import type { SerializedCellValue } from "../types";
-import { createHeader, defineSchema } from "./schema";
+import { defineHeader, defineSchema } from "./schema";
 
 type CellMetadata = { linkTo?: string };
 
@@ -26,8 +26,8 @@ const mySchema = defineSchema<CellMetadata>()
       tableName: "users",
     },
     {
-      id: createHeader(0, parseNumber),
-      name: createHeader(
+      id: defineHeader(0, parseNumber),
+      name: defineHeader(
         1,
         (value, metadata) => {
           if (typeof metadata.linkTo === "string") {
@@ -40,8 +40,8 @@ const mySchema = defineSchema<CellMetadata>()
             ? { value, metadata: { linkTo: value } }
             : { value }
       ),
-      email: createHeader(2, parseString),
-      age: createHeader(3, parseNumber),
+      email: defineHeader(2, parseString),
+      age: defineHeader(3, parseNumber),
     }
   )
   .addCellSchema(
@@ -257,7 +257,7 @@ const _errorSchema2 = defineSchema().addGridSchema(
 */
 
 // ----------------------------------------------------------------------------
-// Example 4: Table with headers - using createHeader helper
+// Example 4: Table with headers - using defineHeader helper
 // ----------------------------------------------------------------------------
 
 type ProductMetadata = { sku?: string };
@@ -268,12 +268,12 @@ const productSchema = defineSchema<ProductMetadata>()
     { workbookName: "inventory", tableName: "Products" },
     {
       // Simple columns - write is optional (returns SerializedCellValue)
-      id: createHeader(0, parseNumber),
-      name: createHeader(1, parseString),
-      price: createHeader(2, parseNumber),
+      id: defineHeader(0, parseNumber),
+      name: defineHeader(1, parseString),
+      price: defineHeader(2, parseNumber),
 
       // Column with custom write - stores metadata
-      code: createHeader(
+      code: defineHeader(
         3,
         // Parse reads the cell value and metadata
         (value, metadata) => parseString(value),

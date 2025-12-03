@@ -1,6 +1,6 @@
 import { describe, test, expect, beforeEach } from "bun:test";
 import { FormulaEngine } from "../../../src/core/engine";
-import { createHeader, defineSchema } from "../../../src/core/schema/schema";
+import { defineHeader, defineSchema } from "../../../src/core/schema/schema";
 import { SchemaIntegrityError } from "../../../src/core/commands/command-executor";
 
 describe("Schema Integration", () => {
@@ -31,10 +31,10 @@ describe("Schema Integration", () => {
         tableName: "Users",
       },
       {
-        id: createHeader(0, parseNumber),
-        name: createHeader(1, parseString),
-        email: createHeader(2, parseString),
-        age: createHeader(3, parseNumber),
+        id: defineHeader(0, parseNumber),
+        name: defineHeader(1, parseString),
+        email: defineHeader(2, parseString),
+        age: defineHeader(3, parseNumber),
       }
     )
     .addCellSchema(
