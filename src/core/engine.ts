@@ -9,6 +9,7 @@ import {
   type ConditionalStyle,
   type CopyCellsOptions,
   type DirectCellStyle,
+  type FiniteSpreadsheetRange,
   type NamedExpression,
   type RangeAddress,
   type SerializedCellValue,
@@ -50,6 +51,7 @@ import type { Schema, CreateSchema, SchemaDeclaration, TableSchemaDefinition, Ce
 import { buildSchemaFromDeclaration } from "./schema/schema-builder";
 import { TableOrm } from "./schema/table-orm";
 import { CellOrm } from "./schema/cell-orm";
+import { GridOrm } from "./schema/grid-orm";
 import type { TableSchemaHeaders } from "./managers/schema-manager";
 import {
   CommandExecutor,
@@ -289,6 +291,7 @@ export class FormulaEngine<
 
     return orm;
   }
+  
 
   /**
    * Add a cell schema at runtime
@@ -308,6 +311,48 @@ export class FormulaEngine<
 
     // Create the ORM instance
     const orm = new CellOrm(this, cellAddress, parse, write, namespace);
+
+    // Add to schema object for runtime access
+    (this.schema as Record<string, object>)[namespace] = orm;
+
+    return orm;
+  }
+
+  /**
+   * Add a grid schema at runtime
+   * @param namespace - Unique namespace for the schema
+   * @param address - Grid address (workbookName and sheetName)
+   * @param range - Finite range of cells for the grid
+   * @param parse - Parse function for the cell values
+   * @param write - Write function for serializing values (optional for primitive types)
+   * @returns The GridOrm instance for immediate use
+   */
+  addGridSchema<TValue>(
+    namespace: string,
+    address: { workbookName: string; sheetName: string },
+    range: FiniteSpreadsheetRange,
+    parse: (value: unknown, metadata: MetadataType<TMetadata, "cell">) => TValue,
+    write: (value: TValue) => { value: SerializedCellValue; metadata?: MetadataType<TMetadata, "cell"> } = (value) => ({ value: value as unknown as SerializedCellValue })
+  ): GridOrm<TValue, MetadataType<TMetadata, "cell">> {
+    // Register the schema with the schema manager
+    this.schemaManager.registerGridSchema(
+      namespace,
+      address.workbookName,
+      address.sheetName,
+      range,
+      parse
+    );
+
+    // Create the ORM instance
+    const orm = new GridOrm<TValue, MetadataType<TMetadata, "cell">>(
+      this,
+      address.workbookName,
+      address.sheetName,
+      range,
+      parse,
+      write,
+      namespace
+    );
 
     // Add to schema object for runtime access
     (this.schema as Record<string, object>)[namespace] = orm;

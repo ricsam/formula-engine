@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.2.2
+
+### Patch Changes
+
+- add addGridSchema method to the engine class
+
 ## 0.2.1
 
 ### Patch Changes
