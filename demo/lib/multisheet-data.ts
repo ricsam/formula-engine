@@ -2,7 +2,7 @@ import { FormulaEngine } from "../../src/core/engine";
 
 export const createEngineWithMultiSheetData = () => {
   const engine = FormulaEngine.buildEmpty();
-  const workbookName = "Workbook1";
+  const workbookName = "MultiSheetDemo";
   engine.addWorkbook(workbookName);
 
   // Create three sheets

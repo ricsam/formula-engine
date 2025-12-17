@@ -51,7 +51,7 @@ const DependencyEdge: FC<EdgeProps<Edge<DependencyEdgeData>>> = ({
         >
           <button
             onClick={() => setShowDetails(!showDetails)}
-            className="bg-blue-100 hover:bg-blue-200 text-blue-800 text-xs px-2 py-1 rounded border border-blue-300 transition-colors cursor-pointer"
+            className="bg-blue-100 dark:bg-blue-900 hover:bg-blue-200 dark:hover:bg-blue-800 text-blue-800 dark:text-blue-200 text-xs px-2 py-1 rounded border border-blue-300 dark:border-blue-700 transition-colors cursor-pointer"
           >
             {data?.cellCount || 0} formulas
           </button>
@@ -68,7 +68,7 @@ const DependencyEdge: FC<EdgeProps<Edge<DependencyEdgeData>>> = ({
                 maxWidth: "1200px",
               }}
             >
-              <Card className="p-2 w-full shadow-lg bg-white border">
+              <Card className="p-2 w-full shadow-lg bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
                 <div
                   className="space-y-1 text-[8px] font-mono max-h-[70vh] overflow-y-auto pr-2"
                   style={{ scrollbarWidth: "thin" }}
@@ -76,11 +76,11 @@ const DependencyEdge: FC<EdgeProps<Edge<DependencyEdgeData>>> = ({
                   {data.formulas.map((formulaData, idx) => (
                     <div
                       key={`${formulaData.cellAddress}-${idx}`}
-                      className="bg-gray-50 p-1.5 rounded break-all hover:bg-gray-100 transition-colors"
+                      className="bg-gray-50 dark:bg-gray-900 p-1.5 rounded break-all hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                     >
                       <div className="flex justify-start gap-2">
-                        <span className="text-gray-500">{formulaData.cellAddress}</span>
-                        <div className="text-gray-900 flex-1 whitespace-pre-wrap">
+                        <span className="text-gray-500 dark:text-gray-400">{formulaData.cellAddress}</span>
+                        <div className="text-gray-900 dark:text-gray-100 flex-1 whitespace-pre-wrap">
                           {enhancedFormulaForDisplay(
                             formulaData.formula,
                             formulaData.cellAddress

@@ -40,13 +40,13 @@ const SheetNode = ({ data }: { data: any }) => {
   };
 
   return (
-    <div className="px-6 py-4 shadow-lg rounded-lg bg-white border-2 border-gray-200 hover:border-blue-300 transition-colors relative">
+    <div className="px-6 py-4 shadow-lg rounded-lg bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-500 transition-colors relative">
       {/* Input handle (top) - for edges coming to this node */}
       <Handle
         type="target"
         position={Position.Top}
         id="top"
-        className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white"
+        className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white dark:!border-gray-800"
       />
       
       {/* Output handle (bottom) - for edges going from this node */}
@@ -54,13 +54,13 @@ const SheetNode = ({ data }: { data: any }) => {
         type="source"
         position={Position.Bottom}
         id="bottom"
-        className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white"
+        className="!w-3 !h-3 !bg-blue-500 !border-2 !border-white dark:!border-gray-800"
       />
       
       <div className="flex flex-col items-center space-y-3">
         <div className="text-2xl">{data.emoji}</div>
-        <div className="font-bold text-lg text-gray-800">{data.name}</div>
-        <div className="text-xs text-gray-500">Sheet</div>
+        <div className="font-bold text-lg text-gray-800 dark:text-gray-100">{data.name}</div>
+        <div className="text-xs text-gray-500 dark:text-gray-400">Sheet</div>
         
         {/* Action buttons based on dependency relationships */}
         <div className="flex flex-col gap-1 w-full">
@@ -69,7 +69,7 @@ const SheetNode = ({ data }: { data: any }) => {
               onClick={handleDownloadCSV}
               size="sm"
               variant="outline"
-              className="text-xs h-6 px-2"
+              className="text-xs h-6 px-2 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700 dark:hover:text-gray-100"
             >
               📥 Download CSV
             </Button>
@@ -79,7 +79,7 @@ const SheetNode = ({ data }: { data: any }) => {
               onClick={handleUploadCSV}
               size="sm"
               variant="outline"
-              className="text-xs h-6 px-2"
+              className="text-xs h-6 px-2 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700 dark:hover:text-gray-100"
             >
               📤 Upload CSV
             </Button>
@@ -126,6 +126,35 @@ export function DependencyFlowDemo() {
   const { engine, sheets } = useMemo(createEngineWithMultiSheetData, []);
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
   const [showDependencies, setShowDependencies] = useState(true);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  // Detect dark mode preference
+  useEffect(() => {
+    const checkDarkMode = () => {
+      const isDark = document.documentElement.classList.contains("dark") ||
+        window.matchMedia("(prefers-color-scheme: dark)").matches;
+      setIsDarkMode(isDark);
+    };
+
+    checkDarkMode();
+
+    // Watch for changes in system preference
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = () => checkDarkMode();
+    mediaQuery.addEventListener("change", handleChange);
+
+    // Watch for class changes on document element
+    const observer = new MutationObserver(checkDarkMode);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+
+    return () => {
+      mediaQuery.removeEventListener("change", handleChange);
+      observer.disconnect();
+    };
+  }, []);
 
   const dependencyGraph = useMemo(() => {
     const graph = analyzeDependencies(engine, sheets);
@@ -173,12 +202,12 @@ export function DependencyFlowDemo() {
         type: "dependency",
         animated: true,
         style: {
-          stroke: "#3b82f6",
+          stroke: isDarkMode ? "#60a5fa" : "#3b82f6",
           strokeWidth: 3,
         },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: "#3b82f6",
+          color: isDarkMode ? "#60a5fa" : "#3b82f6",
         },
         data: {
           formulas: edge.formulas,
@@ -188,7 +217,7 @@ export function DependencyFlowDemo() {
 
       setEdges(dependencyEdges);
     }
-  }, [dependencyGraph.edges, setEdges]);
+  }, [dependencyGraph.edges, setEdges, isDarkMode]);
 
   const toggleDependencies = useCallback(() => {
     if (!showDependencies) {
@@ -202,12 +231,12 @@ export function DependencyFlowDemo() {
         type: "dependency",
         animated: true,
         style: {
-          stroke: "#3b82f6",
+          stroke: isDarkMode ? "#60a5fa" : "#3b82f6",
           strokeWidth: 3,
         },
         markerEnd: {
           type: MarkerType.ArrowClosed,
-          color: "#3b82f6",
+          color: isDarkMode ? "#60a5fa" : "#3b82f6",
         },
         data: {
           formulas: edge.formulas,
@@ -222,7 +251,7 @@ export function DependencyFlowDemo() {
       setEdges([]);
       setShowDependencies(false);
     }
-  }, [showDependencies, dependencyGraph.edges, setEdges]);
+  }, [showDependencies, dependencyGraph.edges, setEdges, isDarkMode]);
 
   const layoutNodes = useCallback(() => {
     // Simple circular layout for the three sheets
@@ -247,10 +276,10 @@ export function DependencyFlowDemo() {
   return (
     <div className="w-full h-full flex flex-col">
       {/* Header */}
-      <div className="bg-white border-b p-4 flex items-center justify-between">
+      <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 p-4 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Sheet Dependency Graph</h1>
-          <p className="text-gray-600 text-sm">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Sheet Dependency Graph</h1>
+          <p className="text-gray-600 dark:text-gray-400 text-sm">
             Visualize cross-sheet formula dependencies in your spreadsheet
           </p>
         </div>
@@ -269,8 +298,12 @@ export function DependencyFlowDemo() {
       </div>
 
       {/* React Flow */}
-      <div className="flex-1 bg-gray-50">
+      <div className="flex-1 bg-gray-50 dark:bg-gray-950">
         <ReactFlow
+          proOptions={{
+            'hideAttribution': true
+          }}
+          colorMode={isDarkMode ? "dark" : "light"}
           nodes={nodes}
           edges={edges}
           onNodesChange={onNodesChange}
@@ -283,7 +316,7 @@ export function DependencyFlowDemo() {
           fitViewOptions={{ padding: 0.2 }}
         >
           <Controls />
-          <MiniMap
+          {/* <MiniMap
             nodeColor={(node) => {
               switch (node.id) {
                 case "Products":
@@ -296,30 +329,30 @@ export function DependencyFlowDemo() {
                   return "#6b7280";
               }
             }}
-          />
+          /> */}
           <Background variant={BackgroundVariant.Dots} gap={12} size={1} />
 
           <Panel
             position="bottom-left"
-            className="bg-white p-3 rounded shadow-lg border"
+            className="bg-white dark:bg-gray-800 p-3 rounded shadow-lg border border-gray-200 dark:border-gray-700"
           >
             <div className="text-sm space-y-1">
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded bg-green-500"></div>
-                <span className="text-xs">📦 Products (Source Data)</span>
+                <span className="text-xs text-gray-900 dark:text-gray-100">📦 Products (Source Data)</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded bg-amber-500"></div>
-                <span className="text-xs">💰 Sales (Transactions)</span>
+                <span className="text-xs text-gray-900 dark:text-gray-100">💰 Sales (Transactions)</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded bg-blue-500"></div>
-                <span className="text-xs">📊 Dashboard (Analytics)</span>
+                <span className="text-xs text-gray-900 dark:text-gray-100">📊 Dashboard (Analytics)</span>
               </div>
               {showDependencies && (
-                <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+                <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
                   <div className="w-3 h-0.5 bg-blue-500"></div>
-                  <span className="text-xs">Data Flow Direction</span>
+                  <span className="text-xs text-gray-900 dark:text-gray-100">Data Flow Direction</span>
                 </div>
               )}
             </div>
