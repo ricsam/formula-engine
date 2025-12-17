@@ -24,11 +24,13 @@ jobs:
       - run: bun install
       - run: bun test
       - run: NODE_ENV=production bun run build-lib
-      - run: |
-          echo '@ricsam:registry=https://registry.npmjs.org' >> .npmrc
-          echo '//registry.npmjs.org/:_authToken=${NPM_TOKEN}' >> .npmrc
-          echo '//registry.npmjs.org/:always-auth=true' >> .npmrc
-      - run: bunx --bun changeset publish --access=public --registry=https://registry.npmjs.org/
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Update npm
+        run: npm install -g npm@latest
+      - run: npm -v
+      - run: npx changeset publish --access=public --registry=https://registry.npmjs.org/
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
