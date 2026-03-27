@@ -55,13 +55,16 @@ function matchOperation(
   for (const value of lookupArray.values) {
     if (value.result.type === "value") {
       if (matchType === 0) {
-        // Exact match
+        // Exact match (case-insensitive for strings, matching Excel behavior)
         const arrayValue = value.result.result;
 
-        if (
+        const isMatch =
           arrayValue.type === lookupValue.type &&
-          arrayValue.value === lookupValue.value
-        ) {
+          (arrayValue.type === "string" && lookupValue.type === "string"
+            ? arrayValue.value.toLowerCase() === lookupValue.value.toLowerCase()
+            : arrayValue.value === lookupValue.value);
+
+        if (isMatch) {
           // For horizontal arrays (single row), use x position (column index)
           // For vertical arrays (single/multiple columns), use y position (row index)
           const position = isHorizontal

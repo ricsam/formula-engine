@@ -174,13 +174,13 @@ describe("MATCH function", () => {
       expect(cell("B1")).toBe(FormulaError.NA);
     });
 
-    test("should be case-sensitive", () => {
+    test("should be case-insensitive (matching Excel behavior)", () => {
       setCellContent("A1", "apple");
       setCellContent("A2", "Banana");
       setCellContent("A3", "Cherry");
       setCellContent("B1", '=MATCH("Apple", A1:A3, 0)');
 
-      expect(cell("B1")).toBe(FormulaError.NA);
+      expect(cell("B1")).toBe(1);
     });
   });
 
