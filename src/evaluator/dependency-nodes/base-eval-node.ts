@@ -71,6 +71,16 @@ export class BaseEvalNode<T> {
     return this._dependencies;
   }
 
+  public restoreResolvedSnapshot(options: {
+    dependencies: Set<DependencyNode>;
+    evaluationResult: T;
+  }) {
+    this._dependencies = new Set(options.dependencies);
+    this._lastDependencies = new Set(options.dependencies);
+    this._evaluationResult = options.evaluationResult;
+    this._resolved = true;
+  }
+
   /**
    * Just to mirror the method in RangeEvaluationNode
    */

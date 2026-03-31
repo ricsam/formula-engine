@@ -64,6 +64,8 @@ function coerceToString(
     case "boolean":
       // Convert boolean to string
       return result.result.value ? "TRUE" : "FALSE";
+    case "infinity":
+      return result.result.sign === "positive" ? "INFINITY" : "-INFINITY";
     default:
       return {
         type: "error",

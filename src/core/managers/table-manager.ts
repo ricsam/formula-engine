@@ -5,6 +5,7 @@ import type {
   SpreadsheetRangeEnd,
   TableDefinition,
 } from "../types";
+import type { TableManagerSnapshot } from "../engine-snapshot";
 import { checkRangeIntersection, getCellReference, parseCellReference } from "../utils";
 import type { WorkbookManager } from "./workbook-manager";
 
@@ -279,6 +280,14 @@ export class TableManager {
         wb.set(tableName, table);
       });
     });
+  }
+
+  toSnapshot(): TableManagerSnapshot {
+    return this.tables;
+  }
+
+  restoreFromSnapshot(snapshot: TableManagerSnapshot): void {
+    this.resetTables(snapshot);
   }
 
   /**

@@ -16,7 +16,8 @@ export class EmptyCellEvaluationNode extends FrontierDependencyManager {
   constructor(
     public emptyCellKey: string,
     evaluationManager: DependencyManager,
-    workbookManager: WorkbookManager
+    workbookManager: WorkbookManager,
+    options?: { skipInitialBuild?: boolean }
   ) {
     const cellAddress = keyToCellAddress(emptyCellKey);
     const emptyCellRange: RangeAddress = {
@@ -34,7 +35,7 @@ export class EmptyCellEvaluationNode extends FrontierDependencyManager {
       workbookName: cellAddress.workbookName,
     };
 
-    super(emptyCellRange, workbookManager, evaluationManager);
+    super(emptyCellRange, workbookManager, evaluationManager, options);
 
     this.cellAddress = cellAddress;
     this.key = emptyCellKey.replace(/^cell:/, "empty:");
@@ -63,6 +64,16 @@ export class EmptyCellEvaluationNode extends FrontierDependencyManager {
     return (
       super.canResolve() && this.evaluationResult.type !== "awaiting-evaluation"
     );
+  }
+
+  public override restoreResolvedSnapshot(options: {
+    dependencies: Set<import("../../core/managers/dependency-node").DependencyNode>;
+    evaluationResult: SingleEvaluationResult;
+  }) {
+    super.restoreResolvedSnapshot({
+      dependencies: options.dependencies,
+    });
+    this._evaluationResult = options.evaluationResult;
   }
 
   toJSON(visitor: Set<string> = new Set()): any {

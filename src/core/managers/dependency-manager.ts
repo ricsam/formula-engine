@@ -1,4 +1,16 @@
 import {
+  getAstNodeSnapshotId,
+  type CacheManagerSnapshot,
+  type DependencyManagerSnapshot,
+  type NodeSnapshotId,
+  type SerializedAstNodeSnapshot,
+  type SerializedDependencyNodeSnapshot,
+  type SerializedEmptyCellNodeSnapshot,
+  type SerializedRangeNodeSnapshot,
+  type SerializedSpillMetaNodeSnapshot,
+  type SerializedCellValueNodeSnapshot,
+} from "../engine-snapshot";
+import {
   eligibleKeysForContext,
   getContextDependencyKey,
   type ContextDependency,
@@ -7,6 +19,7 @@ import {
   type CellAddress,
   type EvaluationOrder,
   type SerializedCellValue,
+  type SingleEvaluationResult,
   type SpilledValue,
 } from "../types";
 import { cellAddressToKey, isCellInRange, keyToCellAddress } from "../utils";
@@ -30,6 +43,7 @@ import type {
 import { WorkbookManager } from "./workbook-manager";
 import { VirtualCellValueNode } from "../../evaluator/dependency-nodes/virtual-cell-value-node";
 import { parseFormula } from "../../parser/parser";
+import type { EvaluationManager } from "./evaluation-manager";
 
 export interface DependencyTreeNode {
   type: "cell" | "range" | "empty";
@@ -175,6 +189,391 @@ export class DependencyManager {
     this.spillMetaNodes.clear();
     this.ranges.clear();
     this._spilledValues.clear();
+  }
+
+  toSnapshot(evaluationManager: EvaluationManager): {
+    dependency: DependencyManagerSnapshot;
+    cache: CacheManagerSnapshot;
+  } {
+    const isNodeSnapshotEligible = (
+      node:
+        | CellValueNode
+        | SpillMetaNode
+        | EmptyCellEvaluationNode
+        | RangeEvaluationNode
+        | AstEvaluationNode
+    ) => {
+      if (node instanceof RangeEvaluationNode) {
+        return node.result.type !== "awaiting-evaluation";
+      }
+      return node.evaluationResult.type !== "awaiting-evaluation";
+    };
+
+    const astNodes = new Set<AstEvaluationNode>();
+    for (const astEntries of this.asts.values()) {
+      for (const { evalNode } of astEntries.entries.values()) {
+        if (isNodeSnapshotEligible(evalNode)) {
+          astNodes.add(evalNode);
+        }
+      }
+    }
+
+    const resolvedNodes: Array<
+      CellValueNode | SpillMetaNode | EmptyCellEvaluationNode | RangeEvaluationNode | AstEvaluationNode
+    > = [
+      ...Array.from(this.cellNodes.values()).filter(isNodeSnapshotEligible),
+      ...Array.from(this.spillMetaNodes.values()).filter(isNodeSnapshotEligible),
+      ...Array.from(this.emptyCells.values()).filter(isNodeSnapshotEligible),
+      ...Array.from(this.ranges.values()).filter(isNodeSnapshotEligible),
+      ...Array.from(astNodes.values()),
+    ];
+
+    const allNodeSnapshotIds = new Map<DependencyNode, NodeSnapshotId>();
+    for (const node of resolvedNodes) {
+      if (node instanceof AstEvaluationNode) {
+        allNodeSnapshotIds.set(node, getAstNodeSnapshotId(node));
+      } else {
+        allNodeSnapshotIds.set(node, node.key);
+      }
+    }
+
+    const getAllNodeSnapshotId = (node: DependencyNode): NodeSnapshotId => {
+      const snapshotId = allNodeSnapshotIds.get(node);
+      if (!snapshotId) {
+        throw new Error(`Missing snapshot id for dependency node ${node.key}`);
+      }
+      return snapshotId;
+    };
+
+    const nodeSnapshots: SerializedDependencyNodeSnapshot[] = [];
+    const includedSnapshotIds = new Set<NodeSnapshotId>();
+
+    for (const node of resolvedNodes) {
+      const snapshot = this.serializeNodeSnapshot(
+        node,
+        evaluationManager,
+        getAllNodeSnapshotId,
+        allNodeSnapshotIds
+      );
+      if (!snapshot) {
+        continue;
+      }
+      includedSnapshotIds.add(snapshot.snapshotId);
+      nodeSnapshots.push(snapshot);
+    }
+
+    const filteredNodeSnapshots = nodeSnapshots.map((snapshot) => {
+      const dependencies = snapshot.dependencies.filter((dependency) =>
+        includedSnapshotIds.has(dependency)
+      );
+
+      if (snapshot.kind === "cell-value") {
+        return {
+          ...snapshot,
+          dependencies,
+          spillMetaSnapshotId:
+            snapshot.spillMetaSnapshotId &&
+            includedSnapshotIds.has(snapshot.spillMetaSnapshotId)
+              ? snapshot.spillMetaSnapshotId
+              : undefined,
+        };
+      }
+
+      return {
+        ...snapshot,
+        dependencies,
+      };
+    });
+
+    const dependency: DependencyManagerSnapshot = {
+      nodes: filteredNodeSnapshots,
+      spilledValues: Array.from(this._spilledValues.entries()),
+    };
+
+    const cache = this.cacheManager.toSnapshot((node) => {
+      const snapshotId = allNodeSnapshotIds.get(node);
+      if (!snapshotId || !includedSnapshotIds.has(snapshotId)) {
+        return undefined;
+      }
+      return snapshotId;
+    });
+
+    return { dependency, cache };
+  }
+
+  restoreFromSnapshot(
+    snapshots: {
+      dependency: DependencyManagerSnapshot;
+      cache: CacheManagerSnapshot;
+    },
+    evaluationManager: EvaluationManager
+  ) {
+    this.clearEvaluationCache();
+
+    const nodesBySnapshotId = new Map<NodeSnapshotId, DependencyNode>();
+
+    for (const snapshot of snapshots.dependency.nodes) {
+      const node = this.createNodeFromSnapshot(snapshot);
+      nodesBySnapshotId.set(snapshot.snapshotId, node);
+    }
+
+    const resolveNodeSnapshotId = (snapshotId: NodeSnapshotId) =>
+      nodesBySnapshotId.get(snapshotId);
+    const resolveRequiredNodeSnapshotId = (
+      snapshotId: NodeSnapshotId
+    ): DependencyNode => {
+      const node = resolveNodeSnapshotId(snapshotId);
+      if (!node) {
+        throw new Error(`Unknown node snapshot id: ${snapshotId}`);
+      }
+      return node;
+    };
+
+    for (const snapshot of snapshots.dependency.nodes) {
+      const dependencies = new Set(
+        snapshot.dependencies
+          .map(resolveNodeSnapshotId)
+          .filter((node): node is DependencyNode => node !== undefined)
+      );
+
+      if (snapshot.kind === "cell-value") {
+        const node = nodesBySnapshotId.get(snapshot.snapshotId) as CellValueNode;
+        node.restoreResolvedSnapshot({
+          dependencies,
+          evaluationResult:
+            evaluationManager.deserializeSingleEvaluationResultSnapshot(
+              snapshot.evaluationResult,
+              resolveRequiredNodeSnapshotId
+            ),
+        });
+        if (snapshot.spillMetaSnapshotId) {
+          const spillMetaNode = resolveNodeSnapshotId(
+            snapshot.spillMetaSnapshotId
+          );
+          if (spillMetaNode instanceof SpillMetaNode) {
+            node.setSpillMetaNode(spillMetaNode);
+          }
+        }
+        continue;
+      }
+
+      if (snapshot.kind === "spill-meta") {
+        const node = nodesBySnapshotId.get(snapshot.snapshotId) as SpillMetaNode;
+        node.restoreResolvedSnapshot({
+          dependencies,
+          evaluationResult:
+            evaluationManager.deserializeSpillMetaEvaluationResultSnapshot(
+              snapshot.evaluationResult,
+              resolveRequiredNodeSnapshotId
+            ),
+        });
+        continue;
+      }
+
+      if (snapshot.kind === "empty") {
+        const node = nodesBySnapshotId.get(
+          snapshot.snapshotId
+        ) as EmptyCellEvaluationNode;
+        node.restoreResolvedSnapshot({
+          dependencies,
+          evaluationResult:
+            evaluationManager.deserializeSingleEvaluationResultSnapshot(
+              snapshot.evaluationResult,
+              resolveRequiredNodeSnapshotId
+            ),
+        });
+        continue;
+      }
+
+      if (snapshot.kind === "range") {
+        const node = nodesBySnapshotId.get(
+          snapshot.snapshotId
+        ) as RangeEvaluationNode;
+        node.restoreResolvedSnapshot({
+          dependencies,
+          result: evaluationManager.deserializeEvaluateAllCellsResultSnapshot(
+            snapshot.result,
+            resolveRequiredNodeSnapshotId
+          ),
+        });
+        continue;
+      }
+
+      const node = nodesBySnapshotId.get(snapshot.snapshotId) as AstEvaluationNode;
+      node.restoreResolvedSnapshot({
+        dependencies,
+        evaluationResult:
+          evaluationManager.deserializeFunctionEvaluationResultSnapshot(
+            snapshot.evaluationResult,
+            resolveRequiredNodeSnapshotId
+          ),
+      });
+      this.saveAstNode(node, snapshot.contextDependency);
+    }
+
+    this._spilledValues = new Map(snapshots.dependency.spilledValues);
+    this.cacheManager.restoreFromSnapshot(
+      snapshots.cache,
+      resolveNodeSnapshotId
+    );
+  }
+
+  private serializeNodeSnapshot(
+    node:
+      | CellValueNode
+      | SpillMetaNode
+      | EmptyCellEvaluationNode
+      | RangeEvaluationNode
+      | AstEvaluationNode,
+    evaluationManager: EvaluationManager,
+    getNodeSnapshotId: (node: DependencyNode) => NodeSnapshotId,
+    allNodeSnapshotIds: Map<DependencyNode, NodeSnapshotId>
+  ): SerializedDependencyNodeSnapshot | undefined {
+    const snapshotId = getNodeSnapshotId(node);
+    const dependencies = Array.from(node.getDependencies())
+      .map((dependency) => allNodeSnapshotIds.get(dependency))
+      .filter((dependency): dependency is NodeSnapshotId => dependency !== undefined);
+
+    if (node instanceof CellValueNode) {
+      const evaluationResult =
+        evaluationManager.serializeSingleEvaluationResultSnapshot(
+          node.evaluationResult,
+          getNodeSnapshotId
+        );
+      if (!evaluationResult) {
+        return undefined;
+      }
+      return {
+        kind: "cell-value",
+        snapshotId,
+        key: node.key,
+        dependencies,
+        evaluationResult,
+        spillMetaSnapshotId: node.spillMeta
+          ? allNodeSnapshotIds.get(node.spillMeta)
+          : undefined,
+      };
+    }
+
+    if (node instanceof SpillMetaNode) {
+      const evaluationResult =
+        evaluationManager.serializeSpillMetaEvaluationResultSnapshot(
+          node.evaluationResult,
+          {
+            sourceNode: node,
+            getNodeSnapshotId,
+          }
+        );
+      if (!evaluationResult) {
+        return undefined;
+      }
+      return {
+        kind: "spill-meta",
+        snapshotId,
+        key: node.key,
+        dependencies,
+        evaluationResult,
+      };
+    }
+
+    if (node instanceof EmptyCellEvaluationNode) {
+      const evaluationResult =
+        evaluationManager.serializeSingleEvaluationResultSnapshot(
+          node.evaluationResult,
+          getNodeSnapshotId
+        );
+      if (!evaluationResult) {
+        return undefined;
+      }
+      return {
+        kind: "empty",
+        snapshotId,
+        key: node.key,
+        dependencies,
+        evaluationResult,
+      };
+    }
+
+    if (node instanceof RangeEvaluationNode) {
+      const result = evaluationManager.serializeEvaluateAllCellsResultSnapshot(
+        node.result,
+        getNodeSnapshotId
+      );
+      if (!result) {
+        return undefined;
+      }
+      return {
+        kind: "range",
+        snapshotId,
+        key: node.key,
+        dependencies,
+        result,
+      };
+    }
+
+    const evaluationResult =
+      evaluationManager.serializeFunctionEvaluationResultSnapshot(
+        node.evaluationResult,
+        {
+          sourceNode: node,
+          getNodeSnapshotId,
+        }
+      );
+    if (!evaluationResult) {
+      return undefined;
+    }
+    return {
+      kind: "ast",
+      snapshotId,
+      key: node.key,
+      dependencies,
+      contextDependency: node.getContextDependency(),
+      evaluationResult,
+    };
+  }
+
+  private createNodeFromSnapshot(
+    snapshot: SerializedDependencyNodeSnapshot
+  ): DependencyNode {
+    if (snapshot.kind === "cell-value") {
+      const node = new CellValueNode(snapshot.key);
+      this.cellNodes.set(snapshot.key, node);
+      return node;
+    }
+
+    if (snapshot.kind === "spill-meta") {
+      const node = new SpillMetaNode(snapshot.key);
+      this.spillMetaNodes.set(snapshot.key, node);
+      return node;
+    }
+
+    if (snapshot.kind === "empty") {
+      const node = new EmptyCellEvaluationNode(
+        snapshot.key,
+        this,
+        this.workbookManager,
+        { skipInitialBuild: true }
+      );
+      this.emptyCells.set(snapshot.key, node);
+      return node;
+    }
+
+    if (snapshot.kind === "range") {
+      const node = new RangeEvaluationNode(
+        snapshot.key,
+        this,
+        this.workbookManager,
+        { skipInitialBuild: true }
+      );
+      this.ranges.set(snapshot.key, node);
+      return node;
+    }
+
+    const node = new AstEvaluationNode(
+      parseFormula(snapshot.key.slice(4)),
+      snapshot.contextDependency
+    );
+    return node;
   }
 
   setSpilledValue(nodeKey: string, spilledValue: SpilledValue): void {
@@ -1011,4 +1410,5 @@ export class DependencyManager {
       }
     }
   }
+
 }

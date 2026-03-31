@@ -21,27 +21,37 @@ import {
   type SerializedCellValue,
   type SingleEvaluationResult,
   type SpreadsheetRange,
-  type TableDefinition,
   type ValueEvaluationResult,
 } from "../types";
 import {
   captureEvaluationErrors,
+  getAbsoluteRange,
   cellAddressToKey,
   checkRangeIntersection,
   getCellReference,
+  getRangeIntersection,
+  getRelativeRange,
   isCellInRange,
-  isRangeOneCell,
-  keyToCellAddress,
   parseCellReference,
+  rangeAddressToKey,
 } from "../utils";
 import type { DependencyManager } from "./dependency-manager";
 import type { WorkbookManager } from "./workbook-manager";
 import { SpillMetaNode } from "../../evaluator/dependency-nodes/spill-meta-node";
 import { EmptyCellEvaluationNode } from "../../evaluator/dependency-nodes/empty-cell-evaluation-node";
 import type { TableManager } from "./table-manager";
-import { parseFormula } from "../../parser/parser";
 import type { DependencyNode } from "./dependency-node";
 import { VirtualCellValueNode } from "../../evaluator/dependency-nodes/virtual-cell-value-node";
+import type {
+  NodeSnapshotId,
+  SerializedCellInRangeResultSnapshot,
+  SerializedErrorEvaluationResultSnapshot,
+  SerializedEvaluateAllCellsResultSnapshot,
+  SerializedFunctionEvaluationResultSnapshot,
+  SerializedSingleEvaluationResultSnapshot,
+  SerializedSpillMetaEvaluationResultSnapshot,
+  SerializedSpilledValuesEvaluationResultSnapshot,
+} from "../engine-snapshot";
 
 export class EvaluationManager {
   private isEvaluating = false;
@@ -98,6 +108,374 @@ export class EvaluationManager {
     }
 
     return evaluation.err;
+  }
+
+  private buildSnapshotOrigin(
+    node: CellValueNode | SpillMetaNode | AstEvaluationNode
+  ): CellAddress {
+    if ("cellAddress" in node) {
+      return node.cellAddress;
+    }
+
+    const contextDependency = node.getContextDependency();
+    return {
+      workbookName: contextDependency.workbookName ?? "__snapshot__",
+      sheetName: contextDependency.sheetName ?? "__snapshot__",
+      colIndex: contextDependency.colIndex ?? 0,
+      rowIndex: contextDependency.rowIndex ?? 0,
+    };
+  }
+
+  private serializeErrorEvaluationResultSnapshot(
+    evaluation: Exclude<ErrorEvaluationResult, { type: "awaiting-evaluation" }>,
+    getNodeSnapshotId: (node: DependencyNode) => NodeSnapshotId
+  ): SerializedErrorEvaluationResultSnapshot {
+    return {
+      type: "error",
+      err: evaluation.err,
+      message: evaluation.message,
+      errAddressId: getNodeSnapshotId(evaluation.errAddress),
+      sourceCell: evaluation.sourceCell,
+    };
+  }
+
+  serializeSingleEvaluationResultSnapshot(
+    evaluation: SingleEvaluationResult,
+    getNodeSnapshotId: (node: DependencyNode) => NodeSnapshotId
+  ): SerializedSingleEvaluationResultSnapshot | undefined {
+    if (evaluation.type === "awaiting-evaluation") {
+      return undefined;
+    }
+
+    if (evaluation.type === "error") {
+      return this.serializeErrorEvaluationResultSnapshot(
+        evaluation,
+        getNodeSnapshotId
+      );
+    }
+
+    return {
+      type: "value",
+      result: evaluation.result,
+      sourceCell: evaluation.sourceCell,
+    };
+  }
+
+  deserializeSingleEvaluationResultSnapshot(
+    evaluation: SerializedSingleEvaluationResultSnapshot,
+    resolveNodeSnapshotId: (nodeId: NodeSnapshotId) => DependencyNode
+  ): SingleEvaluationResult {
+    if (evaluation.type === "error") {
+      return {
+        type: "error",
+        err: evaluation.err,
+        message: evaluation.message,
+        errAddress: resolveNodeSnapshotId(evaluation.errAddressId),
+        sourceCell: evaluation.sourceCell,
+      };
+    }
+
+    return {
+      type: "value",
+      result: evaluation.result,
+      sourceCell: evaluation.sourceCell,
+    };
+  }
+
+  serializeEvaluateAllCellsResultSnapshot(
+    evaluation: EvaluateAllCellsResult,
+    getNodeSnapshotId: (node: DependencyNode) => NodeSnapshotId
+  ): SerializedEvaluateAllCellsResultSnapshot | undefined {
+    if (evaluation.type === "awaiting-evaluation") {
+      return undefined;
+    }
+
+    if (evaluation.type === "error") {
+      return this.serializeErrorEvaluationResultSnapshot(
+        evaluation,
+        getNodeSnapshotId
+      );
+    }
+
+    const values: SerializedCellInRangeResultSnapshot[] = [];
+    for (const value of evaluation.values) {
+      const serialized = this.serializeSingleEvaluationResultSnapshot(
+        value.result,
+        getNodeSnapshotId
+      );
+      if (!serialized) {
+        return undefined;
+      }
+      values.push({
+        relativePos: value.relativePos,
+        result: serialized,
+      });
+    }
+
+    return {
+      type: "values",
+      values,
+    };
+  }
+
+  deserializeEvaluateAllCellsResultSnapshot(
+    evaluation: SerializedEvaluateAllCellsResultSnapshot,
+    resolveNodeSnapshotId: (nodeId: NodeSnapshotId) => DependencyNode
+  ): EvaluateAllCellsResult {
+    if (evaluation.type === "error") {
+      return this.deserializeSingleEvaluationResultSnapshot(
+        evaluation,
+        resolveNodeSnapshotId
+      ) as ErrorEvaluationResult;
+    }
+
+    return {
+      type: "values",
+      values: evaluation.values.map((value) => ({
+        relativePos: value.relativePos,
+        result: this.deserializeSingleEvaluationResultSnapshot(
+          value.result,
+          resolveNodeSnapshotId
+        ),
+      })),
+    };
+  }
+
+  serializeFunctionEvaluationResultSnapshot(
+    evaluation: FunctionEvaluationResult,
+    options: {
+      sourceNode: CellValueNode | SpillMetaNode | AstEvaluationNode;
+      getNodeSnapshotId: (node: DependencyNode) => NodeSnapshotId;
+    }
+  ): SerializedFunctionEvaluationResultSnapshot | undefined {
+    if (evaluation.type !== "spilled-values") {
+      return this.serializeSingleEvaluationResultSnapshot(
+        evaluation,
+        options.getNodeSnapshotId
+      );
+    }
+
+    const origin = this.buildSnapshotOrigin(options.sourceNode);
+    const spillArea = evaluation.spillArea(origin);
+    const relativeSpillArea = getRelativeRange(spillArea, {
+      colIndex: origin.colIndex,
+      rowIndex: origin.rowIndex,
+    });
+
+    if (evaluation.sourceRange) {
+      return {
+        type: "spilled-values",
+        spill: {
+          kind: "source-range",
+          relativeSpillArea,
+          source: evaluation.source,
+          sourceCell: evaluation.sourceCell,
+          sourceRange: evaluation.sourceRange,
+        },
+      };
+    }
+
+    if (
+      relativeSpillArea.width.type !== "number" ||
+      relativeSpillArea.height.type !== "number"
+    ) {
+      return undefined;
+    }
+
+    const context = new EvaluationContext(
+      this.tableManager,
+      options.sourceNode,
+      origin
+    );
+    const values: SerializedCellInRangeResultSnapshot[] = [];
+
+    for (let y = 0; y < relativeSpillArea.height.value; y++) {
+      for (let x = 0; x < relativeSpillArea.width.value; x++) {
+        const result = captureEvaluationErrors(options.sourceNode, () =>
+          evaluation.evaluate({ x, y }, context)
+        );
+        const serialized = this.serializeSingleEvaluationResultSnapshot(
+          result,
+          options.getNodeSnapshotId
+        );
+        if (!serialized) {
+          return undefined;
+        }
+        values.push({
+          relativePos: { x, y },
+          result: serialized,
+        });
+      }
+    }
+
+    return {
+      type: "spilled-values",
+      spill: {
+        kind: "materialized",
+        relativeSpillArea,
+        source: evaluation.source,
+        sourceCell: evaluation.sourceCell,
+        sourceRange: evaluation.sourceRange,
+        values,
+      },
+    };
+  }
+
+  deserializeFunctionEvaluationResultSnapshot(
+    evaluation: SerializedFunctionEvaluationResultSnapshot,
+    resolveNodeSnapshotId: (nodeId: NodeSnapshotId) => DependencyNode
+  ): FunctionEvaluationResult {
+    if (evaluation.type !== "spilled-values") {
+      return this.deserializeSingleEvaluationResultSnapshot(
+        evaluation,
+        resolveNodeSnapshotId
+      );
+    }
+
+    const spillSnapshot = evaluation.spill;
+    if (spillSnapshot.kind === "materialized") {
+      const values = new Map(
+        spillSnapshot.values.map((value) => [
+          `${value.relativePos.x},${value.relativePos.y}`,
+          this.deserializeSingleEvaluationResultSnapshot(
+            value.result,
+            resolveNodeSnapshotId
+          ),
+        ])
+      );
+
+      return {
+        type: "spilled-values",
+        source: spillSnapshot.source,
+        sourceCell: spillSnapshot.sourceCell,
+        sourceRange: spillSnapshot.sourceRange,
+        spillArea: (origin) =>
+          getAbsoluteRange(spillSnapshot.relativeSpillArea, {
+            colIndex: origin.colIndex,
+            rowIndex: origin.rowIndex,
+          }),
+        evaluate: (spillOffset) =>
+          values.get(`${spillOffset.x},${spillOffset.y}`) ?? {
+            type: "value",
+            result: this.convertScalarValueToCellValue(""),
+          },
+        evaluateAllCells: () => ({
+          type: "values",
+          values: spillSnapshot.values.map((value) => ({
+            relativePos: value.relativePos,
+            result: this.deserializeSingleEvaluationResultSnapshot(
+              value.result,
+              resolveNodeSnapshotId
+            ),
+          })),
+        }),
+      };
+    }
+
+    return {
+      type: "spilled-values",
+      source: spillSnapshot.source,
+      sourceCell: spillSnapshot.sourceCell,
+      sourceRange: spillSnapshot.sourceRange,
+      spillArea: (origin) =>
+        getAbsoluteRange(spillSnapshot.relativeSpillArea, {
+          colIndex: origin.colIndex,
+          rowIndex: origin.rowIndex,
+        }),
+      evaluate: (spillOffset, context) => {
+        const cellAddress: CellAddress = {
+          workbookName: spillSnapshot.sourceRange.workbookName,
+          sheetName: spillSnapshot.sourceRange.sheetName,
+          colIndex: spillSnapshot.sourceRange.range.start.col + spillOffset.x,
+          rowIndex: spillSnapshot.sourceRange.range.start.row + spillOffset.y,
+        };
+
+        const evalNode = this.dependencyManager.getCellValueOrEmptyCellNode(
+          cellAddressToKey(cellAddress)
+        );
+        context.dependencyNode.addDependency(evalNode);
+        return evalNode.evaluationResult;
+      },
+      evaluateAllCells: ({ intersection, context, origin }) => {
+        let range = spillSnapshot.sourceRange.range;
+        if (intersection) {
+          const relativeRange = getRelativeRange(intersection, origin);
+          const projectedIntersection = getAbsoluteRange(relativeRange, {
+            colIndex: spillSnapshot.sourceRange.range.start.col,
+            rowIndex: spillSnapshot.sourceRange.range.start.row,
+          });
+          const nextRange = getRangeIntersection(
+            spillSnapshot.sourceRange.range,
+            projectedIntersection
+          );
+          if (nextRange) {
+            range = nextRange;
+          }
+        }
+
+        const rangeAddress = {
+          workbookName: spillSnapshot.sourceRange.workbookName,
+          sheetName: spillSnapshot.sourceRange.sheetName,
+          range,
+        };
+
+        const rangeNode = this.dependencyManager.getRangeNode(
+          rangeAddressToKey(rangeAddress)
+        );
+        context.dependencyNode.addDependency(rangeNode);
+        return rangeNode.result;
+      },
+    };
+  }
+
+  serializeSpillMetaEvaluationResultSnapshot(
+    evaluation: SpillMetaNode["evaluationResult"],
+    options: {
+      sourceNode: CellValueNode | SpillMetaNode | AstEvaluationNode;
+      getNodeSnapshotId: (node: DependencyNode) => NodeSnapshotId;
+    }
+  ): SerializedSpillMetaEvaluationResultSnapshot | undefined {
+    if (evaluation.type === "does-not-spill") {
+      return { type: "does-not-spill" };
+    }
+
+    if (evaluation.type === "error") {
+      return this.serializeErrorEvaluationResultSnapshot(
+        evaluation,
+        options.getNodeSnapshotId
+      );
+    }
+
+    const serialized = this.serializeFunctionEvaluationResultSnapshot(
+      evaluation,
+      options
+    );
+    if (!serialized || serialized.type !== "spilled-values") {
+      return undefined;
+    }
+
+    return serialized;
+  }
+
+  deserializeSpillMetaEvaluationResultSnapshot(
+    evaluation: SerializedSpillMetaEvaluationResultSnapshot,
+    resolveNodeSnapshotId: (nodeId: NodeSnapshotId) => DependencyNode
+  ): SpillMetaNode["evaluationResult"] {
+    if (evaluation.type === "does-not-spill") {
+      return evaluation;
+    }
+
+    if (evaluation.type === "error") {
+      return this.deserializeSingleEvaluationResultSnapshot(
+        evaluation,
+        resolveNodeSnapshotId
+      ) as SpillMetaNode["evaluationResult"];
+    }
+
+    return this.deserializeFunctionEvaluationResultSnapshot(
+      evaluation,
+      resolveNodeSnapshotId
+    ) as SpillMetaNode["evaluationResult"];
   }
 
   evaluateEmptyCell(node: EmptyCellEvaluationNode): void {
@@ -567,6 +945,12 @@ export class EvaluationManager {
   }
 
   convertScalarValueToCellValue(val: SerializedCellValue): CellValue {
+    if (val === "INFINITY") {
+      return { type: "infinity", sign: "positive" };
+    }
+    if (val === "-INFINITY") {
+      return { type: "infinity", sign: "negative" };
+    }
     if (typeof val === "number") {
       return { type: "number", value: val };
     }

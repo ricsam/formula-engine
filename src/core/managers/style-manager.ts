@@ -10,6 +10,7 @@ import type {
   RangeAddress,
   SerializedCellValue,
 } from "../types";
+import type { StyleManagerSnapshot } from "../engine-snapshot";
 import type { WorkbookManager } from "./workbook-manager";
 import type { EvaluationManager } from "./evaluation-manager";
 import { isCellInRange } from "../utils";
@@ -182,6 +183,17 @@ export class StyleManager {
   ): void {
     this.conditionalStyles = conditionalStyles ? [...conditionalStyles] : [];
     this.cellStyles = cellStyles ? [...cellStyles] : [];
+  }
+
+  toSnapshot(): StyleManagerSnapshot {
+    return {
+      conditionalStyles: this.getAllConditionalStyles(),
+      cellStyles: this.getAllCellStyles(),
+    };
+  }
+
+  restoreFromSnapshot(snapshot: StyleManagerSnapshot): void {
+    this.resetStyles(snapshot.conditionalStyles, snapshot.cellStyles);
   }
 
   /**

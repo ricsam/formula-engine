@@ -6,6 +6,7 @@
  */
 
 import type { RangeAddress, TrackedReference } from "../types";
+import type { ReferenceManagerSnapshot } from "../engine-snapshot";
 
 export class ReferenceManager {
   private references: Map<string, TrackedReference>;
@@ -147,5 +148,12 @@ export class ReferenceManager {
       });
     }
   }
-}
 
+  toSnapshot(): ReferenceManagerSnapshot {
+    return this.getAllReferences();
+  }
+
+  restoreFromSnapshot(snapshot: ReferenceManagerSnapshot): void {
+    this.resetReferences(snapshot);
+  }
+}

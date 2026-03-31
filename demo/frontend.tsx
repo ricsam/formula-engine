@@ -6,7 +6,7 @@
  */
 
 import { RouterProvider, createRouter } from "@tanstack/react-router";
-import React, { StrictMode } from "react";
+import React from "react";
 import { createRoot } from "react-dom/client";
 import "./index.css";
 import '@xyflow/react/dist/style.css';
@@ -25,11 +25,7 @@ declare module "@tanstack/react-router" {
 }
 
 const elem = document.getElementById("root")!;
-const app = (
-  <StrictMode>
-    <RouterProvider router={router} />
-  </StrictMode>
-);
+const app = <RouterProvider router={router} />;
 
 if (import.meta.hot) {
   // With hot module reloading, `import.meta.hot.data` is persisted.

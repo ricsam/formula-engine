@@ -8,6 +8,7 @@ import {
   type SpreadsheetRange,
   type Workbook,
 } from "../types";
+import type { WorkbookManagerSnapshot } from "../engine-snapshot";
 import { getCellReference, parseCellReference } from "../utils";
 
 import type { RangeAddress } from "../types";
@@ -236,6 +237,14 @@ export class WorkbookManager {
         });
       });
     });
+  }
+
+  toSnapshot(): WorkbookManagerSnapshot {
+    return this.getWorkbooks();
+  }
+
+  restoreFromSnapshot(snapshot: WorkbookManagerSnapshot): void {
+    this.resetWorkbooks(snapshot);
   }
 
   getSheet({

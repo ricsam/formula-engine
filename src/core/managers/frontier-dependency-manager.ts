@@ -24,15 +24,24 @@ type EvalOrderEntry =
     };
 
 export class FrontierDependencyManager {
-  private evalOrder: EvalOrderEntry[];
+  private evalOrder: EvalOrderEntry[] = [];
   private _resolved: boolean = false;
-  private _directDepsUpdated: boolean;
+  private _directDepsUpdated: boolean = false;
 
   constructor(
     private frontierRange: RangeAddress,
     protected workbookManager: WorkbookManager,
-    protected evaluationManager: DependencyManager
+    protected evaluationManager: DependencyManager,
+    options?: { skipInitialBuild?: boolean }
   ) {
+    if (options?.skipInitialBuild) {
+      return;
+    }
+
+    this.buildInitialEvalOrder();
+  }
+
+  private buildInitialEvalOrder() {
     const addressToSpillMetaNode = (address: CellAddress) => {
       const node = this.evaluationManager.getSpillMetaNode(
         cellAddressToKey(address).replace(/^[^:]+:/, "spill-meta:")
@@ -114,6 +123,17 @@ export class FrontierDependencyManager {
 
   public getRangeEvalOrder() {
     return this.evalOrder;
+  }
+
+  public restoreResolvedSnapshot(options: {
+    dependencies: Set<DependencyNode>;
+  }) {
+    this.evalOrder = [];
+    this._frontierDependencies = new Set();
+    this._discardedFrontierDependencies = new Set();
+    this._dependencies = new Set(options.dependencies);
+    this._directDepsUpdated = false;
+    this._resolved = true;
   }
 
   public get frontierDependencies() {

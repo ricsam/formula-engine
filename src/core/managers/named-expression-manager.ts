@@ -1,4 +1,5 @@
 import type { NamedExpression } from "../types";
+import type { NamedExpressionManagerSnapshot } from "../engine-snapshot";
 import { renameNamedExpressionInFormula } from "../named-expression-renamer";
 import type { EventManager } from "./event-manager";
 import type { NamedExpressionNode } from "../../parser/ast";
@@ -464,6 +465,14 @@ export class NamedExpressionManager {
         });
       }
     );
+  }
+
+  toSnapshot(): NamedExpressionManagerSnapshot {
+    return this.getNamedExpressions();
+  }
+
+  restoreFromSnapshot(snapshot: NamedExpressionManagerSnapshot) {
+    this.resetNamedExpressions(snapshot);
   }
 
   /**

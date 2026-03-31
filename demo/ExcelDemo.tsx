@@ -462,6 +462,22 @@ export function ExcelDemo() {
   const engineState = useEngine(engine);
   const [actionLog, setActionLog] = useState(engine.getActionLog());
 
+  const applyLoadedState = useCallback(
+    (filename: string, data: SavedState) => {
+      if (!data.engineStateSerialized || !data.workbookGridItems) {
+        throw new Error("Invalid file format");
+      }
+
+      engine.resetToSerializedEngine(data.engineStateSerialized);
+      setWorkbookGridItems(data.workbookGridItems);
+      _setViewport(data.viewport);
+      setCurrentFileName(filename);
+      setHasUnsavedChanges(false);
+      console.log(`Loaded ${filename}`);
+    },
+    [engine, _setViewport]
+  );
+
   // Load from OPFS on mount
   useEffect(() => {
     const loadInitialFile = async () => {
@@ -476,17 +492,8 @@ export function ExcelDemo() {
 
         if (fileToLoad) {
           const data = await loadFromOPFS(fileToLoad);
-          if (data && data.engineStateSerialized && data.workbookGridItems) {
-            // Reset the engine using the serialized state
-            engine.resetToSerializedEngine(data.engineStateSerialized);
-
-            setWorkbookGridItems(data.workbookGridItems);
-            if (data.viewport) {
-              _setViewport(data.viewport);
-            }
-            setCurrentFileName(fileToLoad);
-            setHasUnsavedChanges(false);
-            console.log(`Loaded ${fileToLoad} from OPFS`);
+          if (data) {
+            applyLoadedState(fileToLoad, data);
           }
         }
       } catch (error) {
@@ -497,7 +504,7 @@ export function ExcelDemo() {
     };
 
     loadInitialFile();
-  }, [engine, _setViewport]);
+  }, [applyLoadedState]);
 
   // Save to OPFS
   const saveFile = useCallback(async () => {
@@ -530,20 +537,10 @@ export function ExcelDemo() {
     async (filename: string) => {
       try {
         const data = await loadFromOPFS(filename);
-        if (!data || !data.engineStateSerialized || !data.workbookGridItems) {
+        if (!data) {
           throw new Error("Invalid file format");
         }
-
-        // Reset the engine using the serialized state
-        engine.resetToSerializedEngine(data.engineStateSerialized);
-
-        setWorkbookGridItems(data.workbookGridItems);
-        if (data.viewport) {
-          _setViewport(data.viewport);
-        }
-        setCurrentFileName(filename);
-        setHasUnsavedChanges(false);
-        console.log(`Loaded ${filename} from OPFS`);
+        applyLoadedState(filename, data);
       } catch (error) {
         console.error(`Failed to load ${filename}:`, error);
         alert(
@@ -553,7 +550,7 @@ export function ExcelDemo() {
         );
       }
     },
-    [engine, _setViewport]
+    [applyLoadedState]
   );
 
   // Create new file
@@ -764,9 +761,7 @@ export function ExcelDemo() {
           }
 
           await saveToOPFS(filename, importedData);
-
-          // Load the imported file
-          await loadFile(filename);
+          applyLoadedState(filename, importedData);
 
           // Refresh file list
           const files = await listOPFSFiles();
@@ -788,7 +783,7 @@ export function ExcelDemo() {
     };
 
     input.click();
-  }, [engine, _setViewport, opfsFiles, loadFile]);
+  }, [applyLoadedState, opfsFiles]);
 
   // Mark as having unsaved changes when sheets change
   const markUnsavedChanges = useCallback(() => {

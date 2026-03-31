@@ -54,6 +54,10 @@ import { CellOrm } from "./schema/cell-orm";
 import { GridOrm } from "./schema/grid-orm";
 import type { TableSchemaHeaders } from "./managers/schema-manager";
 import {
+  ENGINE_SNAPSHOT_VERSION,
+  type EngineSnapshotV2,
+} from "./engine-snapshot";
+import {
   CommandExecutor,
   SchemaIntegrityError,
 } from "./commands/command-executor";
@@ -1333,18 +1337,46 @@ export class FormulaEngine<
     return this.eventManager.onUpdate(listener);
   }
 
+  private buildSerializedSnapshot(): EngineSnapshotV2 {
+    const evaluationSnapshots = this.dependencyManager.toSnapshot(
+      this.evaluationManager
+    );
+
+    return {
+      version: ENGINE_SNAPSHOT_VERSION,
+      managers: {
+        workbook: this.workbookManager.toSnapshot(),
+        namedExpression: this.namedExpressionManager.toSnapshot(),
+        table: this.tableManager.toSnapshot(),
+        style: this.styleManager.toSnapshot(),
+        reference: this.referenceManager.toSnapshot(),
+        dependency: evaluationSnapshots.dependency,
+        cache: evaluationSnapshots.cache,
+      },
+    };
+  }
+
   serializeEngine(): string {
-    return serialize(this.getState());
+    return serialize(this.buildSerializedSnapshot());
   }
 
   resetToSerializedEngine(data: string) {
-    const deserialized = deserialize(data) as ReturnType<typeof this.getState>;
+    const deserialized = deserialize(data) as Partial<EngineSnapshotV2>;
+    if (
+      !deserialized ||
+      typeof deserialized !== "object" ||
+      deserialized.version !== ENGINE_SNAPSHOT_VERSION ||
+      !deserialized.managers
+    ) {
+      throw new Error(
+        "Unsupported serialized engine format. Expected EngineSnapshot version 2."
+      );
+    }
 
-    this.workbookManager.resetWorkbooks(deserialized.workbooks);
+    this.workbookManager.restoreFromSnapshot(deserialized.managers.workbook);
 
-    deserialized.workbooks.forEach((workbook) => {
+    deserialized.managers.workbook.forEach((workbook) => {
       this.namedExpressionManager.addWorkbook(workbook.name);
-      this.tableManager.addWorkbook(workbook.name);
       workbook.sheets.forEach((sheet) => {
         this.namedExpressionManager.addSheet({
           workbookName: workbook.name,
@@ -1353,43 +1385,22 @@ export class FormulaEngine<
       });
     });
 
-    this.namedExpressionManager.resetNamedExpressions(
-      deserialized.namedExpressions
+    this.namedExpressionManager.restoreFromSnapshot(
+      deserialized.managers.namedExpression
     );
-    this.tableManager.resetTables(deserialized.tables);
+    this.tableManager.restoreFromSnapshot(deserialized.managers.table);
+    this.styleManager.restoreFromSnapshot(deserialized.managers.style);
+    this.referenceManager.restoreFromSnapshot(deserialized.managers.reference);
+    this.dependencyManager.restoreFromSnapshot(
+      {
+        dependency: deserialized.managers.dependency,
+        cache: deserialized.managers.cache,
+      },
+      this.evaluationManager
+    );
+    this.commandExecutor.clearHistory();
+    this.commandExecutor.clearActionLog();
 
-    // Reset styles if present
-    // Handle backward compatibility: if conditionalStyles is a Map, convert it
-    let conditionalStylesArray: ConditionalStyle[] | undefined;
-    let cellStylesArray: DirectCellStyle[] | undefined;
-
-    if (deserialized.conditionalStyles) {
-      if (deserialized.conditionalStyles instanceof Map) {
-        // Old format: Map<string, ConditionalStyle[]>
-        conditionalStylesArray = Array.from(
-          deserialized.conditionalStyles.values()
-        ).flat();
-      } else if (Array.isArray(deserialized.conditionalStyles)) {
-        // New format: ConditionalStyle[]
-        conditionalStylesArray = deserialized.conditionalStyles;
-      }
-    }
-
-    if (deserialized.cellStyles) {
-      if (Array.isArray(deserialized.cellStyles)) {
-        cellStylesArray = deserialized.cellStyles;
-      }
-    }
-
-    this.styleManager.resetStyles(conditionalStylesArray, cellStylesArray);
-
-    // Reset references if present
-    if (deserialized.references) {
-      this.referenceManager.resetReferences(deserialized.references);
-    }
-
-    // Re-evaluate all sheets to ensure all dependencies are resolved correctly
-    this.evaluationManager.clearEvaluationCache();
     this.eventManager.emitUpdate();
   }
   //#endregion

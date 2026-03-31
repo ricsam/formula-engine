@@ -13,10 +13,11 @@ export class RangeEvaluationNode extends FrontierDependencyManager {
   constructor(
     public rangeKey: string,
     dependencyManager: DependencyManager,
-    workbookManager: WorkbookManager
+    workbookManager: WorkbookManager,
+    options?: { skipInitialBuild?: boolean }
   ) {
     const rangeAddress = keyToRangeAddress(rangeKey);
-    super(rangeAddress, workbookManager, dependencyManager);
+    super(rangeAddress, workbookManager, dependencyManager, options);
 
     this.address = rangeAddress;
     this.key = rangeKey;
@@ -37,6 +38,16 @@ export class RangeEvaluationNode extends FrontierDependencyManager {
 
   public override canResolve(): boolean {
     return super.canResolve() && this._result.type !== "awaiting-evaluation";
+  }
+
+  public override restoreResolvedSnapshot(options: {
+    dependencies: Set<import("../core/managers/dependency-node").DependencyNode>;
+    result: EvaluateAllCellsResult;
+  }) {
+    super.restoreResolvedSnapshot({
+      dependencies: options.dependencies,
+    });
+    this._result = options.result;
   }
 
   toJSON(visitor: Set<string> = new Set()): any {
