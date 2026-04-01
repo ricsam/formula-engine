@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.2.3
+
+### Patch Changes
+
+- snapshot whole engine + performant edits
+
 ## 0.2.2
 
 ### Patch Changes
