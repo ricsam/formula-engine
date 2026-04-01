@@ -24,12 +24,26 @@ export class CacheManager {
     return this._evaluationOrderCache.get(nodeKey);
   }
 
+  deleteEvaluationOrder(nodeKey: string): void {
+    this._evaluationOrderCache.delete(nodeKey);
+  }
+
+  deleteEvaluationOrders(nodeKeys: Iterable<string>): void {
+    for (const nodeKey of nodeKeys) {
+      this._evaluationOrderCache.delete(nodeKey);
+    }
+  }
+
   setSCC(sccHash: string, scc: SCC): void {
     this._sccCache.set(sccHash, scc);
   }
 
   getSCC(sccHash: string): SCC | undefined {
     return this._sccCache.get(sccHash);
+  }
+
+  clearSCCCache(): void {
+    this._sccCache.clear();
   }
 
   clear(): void {

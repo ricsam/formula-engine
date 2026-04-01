@@ -76,6 +76,15 @@ export class EmptyCellEvaluationNode extends FrontierDependencyManager {
     this._evaluationResult = options.evaluationResult;
   }
 
+  public override invalidate() {
+    super.invalidate();
+    this._evaluationResult = {
+      type: "awaiting-evaluation",
+      waitingFor: this,
+      errAddress: this,
+    };
+  }
+
   toJSON(visitor: Set<string> = new Set()): any {
     const hasVisited = visitor?.has(this.key);
     if (hasVisited) {

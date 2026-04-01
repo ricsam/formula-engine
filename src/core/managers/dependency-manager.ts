@@ -4,6 +4,7 @@ import {
   type DependencyManagerSnapshot,
   type NodeSnapshotId,
   type SerializedAstNodeSnapshot,
+  type SerializedResourceNodeSnapshot,
   type SerializedDependencyNodeSnapshot,
   type SerializedEmptyCellNodeSnapshot,
   type SerializedRangeNodeSnapshot,
@@ -18,11 +19,17 @@ import {
 import {
   type CellAddress,
   type EvaluationOrder,
+  type RangeAddress,
   type SerializedCellValue,
   type SingleEvaluationResult,
   type SpilledValue,
 } from "../types";
-import { cellAddressToKey, isCellInRange, keyToCellAddress } from "../utils";
+import {
+  cellAddressToKey,
+  checkRangeIntersection,
+  isCellInRange,
+  keyToCellAddress,
+} from "../utils";
 
 import { AstEvaluationNode } from "../../evaluator/dependency-nodes/ast-evaluation-node";
 import { CellValueNode } from "../../evaluator/dependency-nodes/cell-value-node";
@@ -44,6 +51,8 @@ import { WorkbookManager } from "./workbook-manager";
 import { VirtualCellValueNode } from "../../evaluator/dependency-nodes/virtual-cell-value-node";
 import { parseFormula } from "../../parser/parser";
 import type { EvaluationManager } from "./evaluation-manager";
+import type { MutationInvalidation, RemovedScope } from "../commands/types";
+import { ResourceDependencyNode } from "../../evaluator/dependency-nodes/resource-dependency-node";
 
 export interface DependencyTreeNode {
   type: "cell" | "range" | "empty";
@@ -58,7 +67,8 @@ export interface DependencyTreeNode {
     | "value"
     | "range"
     | "error"
-    | "does-not-spill";
+    | "does-not-spill"
+    | "resource";
   deps?: DependencyTreeNode[];
   frontierDependencies?: DependencyTreeNode[];
   self?: boolean;
@@ -68,6 +78,8 @@ export interface DependencyTreeNode {
     activeFrontierDependencies?: string[];
   };
 }
+
+type FrontierWatcherNode = RangeEvaluationNode | EmptyCellEvaluationNode;
 
 /**
  * The DependencyManager is responsible for storing the evaluated values and their dependencies.
@@ -106,10 +118,281 @@ export class DependencyManager {
    */
   private ranges: Map<string, RangeEvaluationNode> = new Map();
 
+  private resourceNodes: Map<string, ResourceDependencyNode> = new Map();
+
+  private hardDependents: Map<DependencyNode, Set<DependencyNode>> = new Map();
+
+  private frontierDependents: Map<DependencyNode, Set<DependencyNode>> =
+    new Map();
+
+  private registeredDependencies: Map<
+    DependencyNode,
+    {
+      hard: Set<DependencyNode>;
+      frontier: Set<DependencyNode>;
+    }
+  > = new Map();
+
+  private coverageWatchersBySheet: Map<string, Set<FrontierWatcherNode>> =
+    new Map();
+
+  private frontierWatchersBySheet: Map<string, Set<FrontierWatcherNode>> =
+    new Map();
+
   constructor(
     private cacheManager: CacheManager,
     private workbookManager: WorkbookManager
   ) {}
+
+  private getSheetWatcherKey(address: {
+    workbookName: string;
+    sheetName: string;
+  }): string {
+    return `${address.workbookName}:${address.sheetName}`;
+  }
+
+  private addReverseEdge(
+    map: Map<DependencyNode, Set<DependencyNode>>,
+    dependency: DependencyNode,
+    dependent: DependencyNode
+  ) {
+    const dependents = map.get(dependency) ?? new Set<DependencyNode>();
+    dependents.add(dependent);
+    map.set(dependency, dependents);
+  }
+
+  private removeReverseEdge(
+    map: Map<DependencyNode, Set<DependencyNode>>,
+    dependency: DependencyNode,
+    dependent: DependencyNode
+  ) {
+    const dependents = map.get(dependency);
+    if (!dependents) {
+      return;
+    }
+    dependents.delete(dependent);
+    if (dependents.size === 0) {
+      map.delete(dependency);
+    }
+  }
+
+  private getWatcherRange(node: FrontierWatcherNode): RangeAddress {
+    return node instanceof RangeEvaluationNode
+      ? node.address
+      : node.getFrontierRange();
+  }
+
+  private addWatcher(
+    map: Map<string, Set<FrontierWatcherNode>>,
+    node: FrontierWatcherNode
+  ) {
+    const watcherKey = this.getSheetWatcherKey(this.getWatcherRange(node));
+    const watchers = map.get(watcherKey) ?? new Set<FrontierWatcherNode>();
+    watchers.add(node);
+    map.set(watcherKey, watchers);
+  }
+
+  private removeWatcher(
+    map: Map<string, Set<FrontierWatcherNode>>,
+    node: FrontierWatcherNode
+  ) {
+    const watcherKey = this.getSheetWatcherKey(this.getWatcherRange(node));
+    const watchers = map.get(watcherKey);
+    if (!watchers) {
+      return;
+    }
+    watchers.delete(node);
+    if (watchers.size === 0) {
+      map.delete(watcherKey);
+    }
+  }
+
+  private registerWatcherNode(node: FrontierWatcherNode) {
+    this.addWatcher(this.coverageWatchersBySheet, node);
+    this.addWatcher(this.frontierWatchersBySheet, node);
+  }
+
+  private unregisterWatcherNode(node: FrontierWatcherNode) {
+    this.removeWatcher(this.coverageWatchersBySheet, node);
+    this.removeWatcher(this.frontierWatchersBySheet, node);
+  }
+
+  private isWatcherNodeResolved(node: FrontierWatcherNode): boolean {
+    return node instanceof RangeEvaluationNode
+      ? node.result.type !== "awaiting-evaluation"
+      : node.evaluationResult.type !== "awaiting-evaluation";
+  }
+
+  private getAllPersistentNodes(): DependencyNode[] {
+    const astNodes: AstEvaluationNode[] = [];
+    for (const astEntries of this.asts.values()) {
+      for (const astEntry of astEntries.entries.values()) {
+        astNodes.push(astEntry.evalNode);
+      }
+    }
+
+    return [
+      ...this.cellNodes.values(),
+      ...this.spillMetaNodes.values(),
+      ...this.emptyCells.values(),
+      ...this.ranges.values(),
+      ...this.resourceNodes.values(),
+      ...astNodes,
+    ];
+  }
+
+  private getExistingCellValueNode(nodeKey: string): CellValueNode | undefined {
+    return this.cellNodes.get(nodeKey);
+  }
+
+  private getExistingSpillMetaNode(nodeKey: string): SpillMetaNode | undefined {
+    return this.spillMetaNodes.get(nodeKey);
+  }
+
+  private getExistingEmptyCellNode(
+    nodeKey: string
+  ): EmptyCellEvaluationNode | undefined {
+    return this.emptyCells.get(nodeKey);
+  }
+
+  private collectExistingNodesForCell(address: CellAddress): DependencyNode[] {
+    const baseKey = cellAddressToKey(address);
+    const nodes: Array<
+      CellValueNode | EmptyCellEvaluationNode | SpillMetaNode | undefined
+    > = [
+      this.getExistingCellValueNode(baseKey),
+      this.getExistingEmptyCellNode(baseKey.replace(/^cell-value:/, "empty:")),
+      this.getExistingSpillMetaNode(
+        baseKey.replace(/^cell-value:/, "spill-meta:")
+      ),
+    ];
+    return nodes.filter(
+      (
+        node
+      ): node is CellValueNode | EmptyCellEvaluationNode | SpillMetaNode =>
+        node !== undefined
+    );
+  }
+
+  private collectSpillOriginsAffectingCell(
+    address: CellAddress
+  ): Set<DependencyNode> {
+    const affected = new Set<DependencyNode>();
+
+    for (const [spillOriginKey, spilledValue] of this._spilledValues.entries()) {
+      if (
+        spilledValue.origin.workbookName !== address.workbookName ||
+        spilledValue.origin.sheetName !== address.sheetName
+      ) {
+        continue;
+      }
+
+      const isOriginCell =
+        spilledValue.origin.colIndex === address.colIndex &&
+        spilledValue.origin.rowIndex === address.rowIndex;
+      if (isOriginCell || !isCellInRange(address, spilledValue.spillOnto)) {
+        continue;
+      }
+
+      const cellValueNode = this.cellNodes.get(`cell-value:${spillOriginKey}`);
+      if (cellValueNode) {
+        affected.add(cellValueNode);
+      }
+
+      const spillMetaNode = this.spillMetaNodes.get(
+        `spill-meta:${spillOriginKey}`
+      );
+      if (spillMetaNode) {
+        affected.add(spillMetaNode);
+      }
+    }
+
+    return affected;
+  }
+
+  private getLinkedSpillMetaNode(
+    node: CellValueNode | SpillMetaNode
+  ): SpillMetaNode | undefined {
+    if (node instanceof SpillMetaNode) {
+      return node;
+    }
+
+    return this.spillMetaNodes.get(
+      node.key.replace(/^cell-value:/, "spill-meta:")
+    );
+  }
+
+  private getLinkedCellValueNode(
+    node: CellValueNode | SpillMetaNode
+  ): CellValueNode | undefined {
+    if (node instanceof CellValueNode) {
+      return node;
+    }
+
+    return this.cellNodes.get(node.key.replace(/^spill-meta:/, "cell-value:"));
+  }
+
+  public registerNode(node: DependencyNode): void {
+    this.unregisterNode(node);
+
+    const hardDependencies = new Set(node.getDependencies());
+    const frontierDependencies =
+      node instanceof RangeEvaluationNode || node instanceof EmptyCellEvaluationNode
+        ? new Set(node.getFrontierDependencies())
+        : new Set<DependencyNode>();
+
+    this.registeredDependencies.set(node, {
+      hard: hardDependencies,
+      frontier: frontierDependencies,
+    });
+
+    for (const dependency of hardDependencies) {
+      this.addReverseEdge(this.hardDependents, dependency, node);
+    }
+
+    for (const dependency of frontierDependencies) {
+      this.addReverseEdge(this.frontierDependents, dependency, node);
+    }
+
+    if (
+      (node instanceof RangeEvaluationNode ||
+        node instanceof EmptyCellEvaluationNode) &&
+      this.isWatcherNodeResolved(node)
+    ) {
+      this.registerWatcherNode(node);
+    }
+  }
+
+  public unregisterNode(node: DependencyNode): void {
+    const registration = this.registeredDependencies.get(node);
+    if (registration) {
+      for (const dependency of registration.hard) {
+        this.removeReverseEdge(this.hardDependents, dependency, node);
+      }
+
+      for (const dependency of registration.frontier) {
+        this.removeReverseEdge(this.frontierDependents, dependency, node);
+      }
+
+      this.registeredDependencies.delete(node);
+    }
+
+    if (node instanceof RangeEvaluationNode || node instanceof EmptyCellEvaluationNode) {
+      this.unregisterWatcherNode(node);
+    }
+  }
+
+  private rebuildRuntimeIndexes() {
+    this.hardDependents.clear();
+    this.frontierDependents.clear();
+    this.registeredDependencies.clear();
+    this.coverageWatchersBySheet.clear();
+    this.frontierWatchersBySheet.clear();
+
+    for (const node of this.getAllPersistentNodes()) {
+      this.registerNode(node);
+    }
+  }
 
   public get spilledValues(): IterableIterator<SpilledValue> {
     return this._spilledValues.values();
@@ -188,7 +471,13 @@ export class DependencyManager {
     this.asts.clear();
     this.spillMetaNodes.clear();
     this.ranges.clear();
+    this.resourceNodes.clear();
     this._spilledValues.clear();
+    this.hardDependents.clear();
+    this.frontierDependents.clear();
+    this.registeredDependencies.clear();
+    this.coverageWatchersBySheet.clear();
+    this.frontierWatchersBySheet.clear();
   }
 
   toSnapshot(evaluationManager: EvaluationManager): {
@@ -202,7 +491,11 @@ export class DependencyManager {
         | EmptyCellEvaluationNode
         | RangeEvaluationNode
         | AstEvaluationNode
+        | ResourceDependencyNode
     ) => {
+      if (node instanceof ResourceDependencyNode) {
+        return true;
+      }
       if (node instanceof RangeEvaluationNode) {
         return node.result.type !== "awaiting-evaluation";
       }
@@ -219,12 +512,18 @@ export class DependencyManager {
     }
 
     const resolvedNodes: Array<
-      CellValueNode | SpillMetaNode | EmptyCellEvaluationNode | RangeEvaluationNode | AstEvaluationNode
+      | CellValueNode
+      | SpillMetaNode
+      | EmptyCellEvaluationNode
+      | RangeEvaluationNode
+      | AstEvaluationNode
+      | ResourceDependencyNode
     > = [
       ...Array.from(this.cellNodes.values()).filter(isNodeSnapshotEligible),
       ...Array.from(this.spillMetaNodes.values()).filter(isNodeSnapshotEligible),
       ...Array.from(this.emptyCells.values()).filter(isNodeSnapshotEligible),
       ...Array.from(this.ranges.values()).filter(isNodeSnapshotEligible),
+      ...Array.from(this.resourceNodes.values()).filter(isNodeSnapshotEligible),
       ...Array.from(astNodes.values()),
     ];
 
@@ -399,6 +698,10 @@ export class DependencyManager {
         continue;
       }
 
+      if (snapshot.kind === "resource") {
+        continue;
+      }
+
       const node = nodesBySnapshotId.get(snapshot.snapshotId) as AstEvaluationNode;
       node.restoreResolvedSnapshot({
         dependencies,
@@ -412,6 +715,7 @@ export class DependencyManager {
     }
 
     this._spilledValues = new Map(snapshots.dependency.spilledValues);
+    this.rebuildRuntimeIndexes();
     this.cacheManager.restoreFromSnapshot(
       snapshots.cache,
       resolveNodeSnapshotId
@@ -424,7 +728,8 @@ export class DependencyManager {
       | SpillMetaNode
       | EmptyCellEvaluationNode
       | RangeEvaluationNode
-      | AstEvaluationNode,
+      | AstEvaluationNode
+      | ResourceDependencyNode,
     evaluationManager: EvaluationManager,
     getNodeSnapshotId: (node: DependencyNode) => NodeSnapshotId,
     allNodeSnapshotIds: Map<DependencyNode, NodeSnapshotId>
@@ -511,6 +816,15 @@ export class DependencyManager {
       };
     }
 
+    if (node instanceof ResourceDependencyNode) {
+      return {
+        kind: "resource",
+        snapshotId,
+        key: node.key,
+        dependencies,
+      };
+    }
+
     const evaluationResult =
       evaluationManager.serializeFunctionEvaluationResultSnapshot(
         node.evaluationResult,
@@ -569,6 +883,12 @@ export class DependencyManager {
       return node;
     }
 
+    if (snapshot.kind === "resource") {
+      const node = new ResourceDependencyNode(snapshot.key);
+      this.resourceNodes.set(snapshot.key, node);
+      return node;
+    }
+
     const node = new AstEvaluationNode(
       parseFormula(snapshot.key.slice(4)),
       snapshot.contextDependency
@@ -582,6 +902,10 @@ export class DependencyManager {
 
   getSpilledValue(nodeKey: string): SpilledValue | undefined {
     return this._spilledValues.get(nodeKey.replace(/^[^:]+:/, ""));
+  }
+
+  deleteSpilledValue(nodeKey: string): void {
+    this._spilledValues.delete(nodeKey.replace(/^[^:]+:/, ""));
   }
 
   getEmptyCellNode(nodeKey: string): EmptyCellEvaluationNode {
@@ -622,6 +946,15 @@ export class DependencyManager {
       return node;
     }
     return this.cellNodes.get(nodeKey)!;
+  }
+
+  getResourceNode(resourceKey: string): ResourceDependencyNode {
+    if (!this.resourceNodes.has(resourceKey)) {
+      const node = new ResourceDependencyNode(resourceKey);
+      this.resourceNodes.set(resourceKey, node);
+      return node;
+    }
+    return this.resourceNodes.get(resourceKey)!;
   }
 
   getCellValueOrEmptyCellNode(
@@ -784,6 +1117,376 @@ export class DependencyManager {
           [contextDependencyKey, { evalNode: ast, contextDependency }],
         ]),
       });
+    }
+  }
+
+  private isFiniteEndAfter(value: number, end: RangeAddress["range"]["end"]["row"]) {
+    return end.type === "infinity" || value < end.value;
+  }
+
+  private doesAddressAffectWatcherFrontier(
+    address: CellAddress,
+    watcher: FrontierWatcherNode
+  ): boolean {
+    const watcherRange = this.getWatcherRange(watcher).range;
+    const rowWithinRange =
+      address.rowIndex >= watcherRange.start.row &&
+      (watcherRange.end.row.type === "infinity" ||
+        address.rowIndex <= watcherRange.end.row.value);
+    const colWithinRange =
+      address.colIndex >= watcherRange.start.col &&
+      (watcherRange.end.col.type === "infinity" ||
+        address.colIndex <= watcherRange.end.col.value);
+    const canReachFurtherRows = this.isFiniteEndAfter(
+      address.rowIndex,
+      watcherRange.end.row
+    );
+    const canReachFurtherCols = this.isFiniteEndAfter(
+      address.colIndex,
+      watcherRange.end.col
+    );
+
+    return (
+      (rowWithinRange && canReachFurtherCols) ||
+      (colWithinRange && canReachFurtherRows) ||
+      (canReachFurtherRows && canReachFurtherCols)
+    );
+  }
+
+  private collectCoverageWatchers(address: CellAddress): Set<FrontierWatcherNode> {
+    const watchers =
+      this.coverageWatchersBySheet.get(this.getSheetWatcherKey(address)) ??
+      new Set<FrontierWatcherNode>();
+    const affected = new Set<FrontierWatcherNode>();
+
+    for (const watcher of watchers) {
+      if (isCellInRange(address, this.getWatcherRange(watcher).range)) {
+        affected.add(watcher);
+      }
+    }
+
+    return affected;
+  }
+
+  private collectFrontierWatchers(address: CellAddress): Set<FrontierWatcherNode> {
+    const watchers =
+      this.frontierWatchersBySheet.get(this.getSheetWatcherKey(address)) ??
+      new Set<FrontierWatcherNode>();
+    const affected = new Set<FrontierWatcherNode>();
+
+    for (const watcher of watchers) {
+      if (this.doesAddressAffectWatcherFrontier(address, watcher)) {
+        affected.add(watcher);
+      }
+    }
+
+    return affected;
+  }
+
+  private collectWatchersIntersectingRange(address: RangeAddress): Set<FrontierWatcherNode> {
+    const watchers =
+      this.coverageWatchersBySheet.get(this.getSheetWatcherKey(address)) ??
+      new Set<FrontierWatcherNode>();
+    const affected = new Set<FrontierWatcherNode>();
+
+    for (const watcher of watchers) {
+      if (
+        checkRangeIntersection(
+          address.range,
+          this.getWatcherRange(watcher).range
+        )
+      ) {
+        affected.add(watcher);
+      }
+    }
+
+    return affected;
+  }
+
+  private getNodeDependents(node: DependencyNode): Set<DependencyNode> {
+    return (this.hardDependents.get(node) ?? new Set()).union(
+      this.frontierDependents.get(node) ?? new Set()
+    );
+  }
+
+  private collectInvalidationExtras(node: DependencyNode): Set<DependencyNode> {
+    const extras = new Set<DependencyNode>();
+
+    if (node instanceof CellValueNode || node instanceof SpillMetaNode) {
+      const spillMetaNode = this.getLinkedSpillMetaNode(node);
+      if (spillMetaNode) {
+        extras.add(spillMetaNode);
+      }
+
+      const cellNode = this.getLinkedCellValueNode(node);
+      if (cellNode) {
+        extras.add(cellNode);
+      }
+
+      const spill = this.getSpilledValue(node.key);
+      if (spill) {
+        for (const watcher of this.collectWatchersIntersectingRange({
+          workbookName: spill.origin.workbookName,
+          sheetName: spill.origin.sheetName,
+          range: spill.spillOnto,
+        })) {
+          extras.add(watcher);
+        }
+      }
+
+      const cellAddress = node.cellAddress;
+      for (const watcher of this.collectCoverageWatchers(cellAddress)) {
+        extras.add(watcher);
+      }
+      for (const watcher of this.collectFrontierWatchers(cellAddress)) {
+        extras.add(watcher);
+      }
+    }
+
+    return extras;
+  }
+
+  private invalidateNodeState(node: DependencyNode, invalidatedKeys: Set<string>) {
+    this.unregisterNode(node);
+    invalidatedKeys.add(node.key);
+
+    if (node instanceof CellValueNode) {
+      node.clearSpillMetaNode();
+      this.deleteSpilledValue(node.key);
+      node.invalidate();
+      return;
+    }
+
+    if (node instanceof SpillMetaNode) {
+      this.deleteSpilledValue(node.key);
+      this.getLinkedCellValueNode(node)?.clearSpillMetaNode();
+      node.invalidate();
+      return;
+    }
+
+    if (
+      node instanceof EmptyCellEvaluationNode ||
+      node instanceof RangeEvaluationNode ||
+      node instanceof AstEvaluationNode
+    ) {
+      node.invalidate();
+      return;
+    }
+
+    if (node instanceof ResourceDependencyNode) {
+      return;
+    }
+  }
+
+  private isResourceNodeInRemovedScope(
+    resourceKey: string,
+    scope: RemovedScope
+  ): boolean {
+    if (scope.type === "workbook") {
+      return (
+        resourceKey === `resource:workbook:${scope.workbookName}` ||
+        resourceKey.startsWith(`resource:sheet:${scope.workbookName}:`) ||
+        resourceKey.startsWith(`resource:table:${scope.workbookName}:`) ||
+        resourceKey.startsWith(
+          `resource:named:workbook:${scope.workbookName}:`
+        ) ||
+        resourceKey.startsWith(`resource:named:sheet:${scope.workbookName}:`)
+      );
+    }
+
+    return (
+      resourceKey ===
+        `resource:sheet:${scope.workbookName}:${scope.sheetName}` ||
+      resourceKey.startsWith(
+        `resource:named:sheet:${scope.workbookName}:${scope.sheetName}:`
+      )
+    );
+  }
+
+  private isNodeInRemovedScope(node: DependencyNode, scope: RemovedScope): boolean {
+    if (node instanceof ResourceDependencyNode) {
+      return this.isResourceNodeInRemovedScope(node.key, scope);
+    }
+
+    if (node instanceof AstEvaluationNode) {
+      const contextDependency = node.getContextDependency();
+      if (scope.type === "workbook") {
+        return contextDependency.workbookName === scope.workbookName;
+      }
+      return (
+        contextDependency.workbookName === scope.workbookName &&
+        contextDependency.sheetName === scope.sheetName
+      );
+    }
+
+    const workbookName =
+      node instanceof RangeEvaluationNode
+        ? node.address.workbookName
+        : node.cellAddress.workbookName;
+    const sheetName =
+      node instanceof RangeEvaluationNode
+        ? node.address.sheetName
+        : node.cellAddress.sheetName;
+
+    if (scope.type === "workbook") {
+      return workbookName === scope.workbookName;
+    }
+
+    return workbookName === scope.workbookName && sheetName === scope.sheetName;
+  }
+
+  private collectNodesForRemovedScopes(
+    removedScopes: RemovedScope[]
+  ): Set<DependencyNode> {
+    const affected = new Set<DependencyNode>();
+
+    for (const node of this.getAllPersistentNodes()) {
+      if (removedScopes.some((scope) => this.isNodeInRemovedScope(node, scope))) {
+        affected.add(node);
+      }
+    }
+
+    return affected;
+  }
+
+  private purgeRemovedScopes(removedScopes: RemovedScope[]) {
+    const shouldRemoveAddress = (
+      address: Pick<CellAddress, "workbookName" | "sheetName">
+    ) =>
+      removedScopes.some((scope) =>
+        scope.type === "workbook"
+          ? address.workbookName === scope.workbookName
+          : address.workbookName === scope.workbookName &&
+            address.sheetName === scope.sheetName
+      );
+
+    for (const [key, node] of Array.from(this.cellNodes.entries())) {
+      if (shouldRemoveAddress(node.cellAddress)) {
+        this.unregisterNode(node);
+        this.cellNodes.delete(key);
+      }
+    }
+
+    for (const [key, node] of Array.from(this.spillMetaNodes.entries())) {
+      if (shouldRemoveAddress(node.cellAddress)) {
+        this.unregisterNode(node);
+        this.spillMetaNodes.delete(key);
+      }
+    }
+
+    for (const [key, node] of Array.from(this.emptyCells.entries())) {
+      if (shouldRemoveAddress(node.cellAddress)) {
+        this.unregisterNode(node);
+        this.emptyCells.delete(key);
+      }
+    }
+
+    for (const [key, node] of Array.from(this.ranges.entries())) {
+      if (
+        shouldRemoveAddress({
+          workbookName: node.address.workbookName,
+          sheetName: node.address.sheetName,
+        })
+      ) {
+        this.unregisterNode(node);
+        this.ranges.delete(key);
+      }
+    }
+
+    for (const [key, node] of Array.from(this.resourceNodes.entries())) {
+      if (removedScopes.some((scope) => this.isResourceNodeInRemovedScope(key, scope))) {
+        this.unregisterNode(node);
+        this.resourceNodes.delete(key);
+      }
+    }
+
+    for (const [astKey, astEntries] of Array.from(this.asts.entries())) {
+      for (const [contextKey, astEntry] of Array.from(astEntries.entries.entries())) {
+        if (
+          removedScopes.some((scope) =>
+            this.isNodeInRemovedScope(astEntry.evalNode, scope)
+          )
+        ) {
+          this.unregisterNode(astEntry.evalNode);
+          astEntries.entries.delete(contextKey);
+        }
+      }
+
+      if (astEntries.entries.size === 0) {
+        this.asts.delete(astKey);
+      }
+    }
+
+    for (const [spillOriginKey, spilledValue] of Array.from(this._spilledValues.entries())) {
+      if (
+        shouldRemoveAddress({
+          workbookName: spilledValue.origin.workbookName,
+          sheetName: spilledValue.origin.sheetName,
+        })
+      ) {
+        this._spilledValues.delete(spillOriginKey);
+      }
+    }
+  }
+
+  public invalidateFromMutation(footprint: MutationInvalidation): void {
+    const queue: DependencyNode[] = [];
+    const visited = new Set<DependencyNode>();
+    const invalidatedNodeKeys = new Set<string>();
+
+    for (const touchedCell of footprint.touchedCells) {
+      for (const node of this.collectExistingNodesForCell(touchedCell.address)) {
+        queue.push(node);
+      }
+
+      for (const node of this.collectSpillOriginsAffectingCell(touchedCell.address)) {
+        queue.push(node);
+      }
+
+      for (const watcher of this.collectCoverageWatchers(touchedCell.address)) {
+        queue.push(watcher);
+      }
+      for (const watcher of this.collectFrontierWatchers(touchedCell.address)) {
+        queue.push(watcher);
+      }
+    }
+
+    for (const resourceKey of footprint.resourceKeys) {
+      const resourceNode = this.resourceNodes.get(resourceKey);
+      if (resourceNode) {
+        queue.push(resourceNode);
+      }
+    }
+
+    if (footprint.removedScopes?.length) {
+      for (const node of this.collectNodesForRemovedScopes(footprint.removedScopes)) {
+        queue.push(node);
+      }
+    }
+
+    while (queue.length > 0) {
+      const node = queue.pop();
+      if (!node || visited.has(node)) {
+        continue;
+      }
+      visited.add(node);
+
+      for (const dependent of this.getNodeDependents(node)) {
+        queue.push(dependent);
+      }
+
+      for (const extra of this.collectInvalidationExtras(node)) {
+        queue.push(extra);
+      }
+
+      this.invalidateNodeState(node, invalidatedNodeKeys);
+    }
+
+    this.cacheManager.deleteEvaluationOrders(invalidatedNodeKeys);
+    this.cacheManager.clearSCCCache();
+
+    if (footprint.removedScopes?.length) {
+      this.purgeRemovedScopes(footprint.removedScopes);
     }
   }
 

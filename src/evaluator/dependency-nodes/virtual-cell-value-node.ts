@@ -31,4 +31,8 @@ export class VirtualCellValueNode extends BaseEvalNode<SingleEvaluationResult> {
   setSpillMetaNode(node: SpillMetaNode) {
     this.spillMeta = node;
   }
+
+  clearSpillMetaNode() {
+    this.spillMeta = undefined;
+  }
 }

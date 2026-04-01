@@ -21,6 +21,7 @@ import type {
   SchemaValidationResult,
   SchemaValidationErrorInfo,
 } from "./types";
+import { emptyMutationInvalidation } from "./types";
 
 /**
  * Error thrown when schema integrity validation fails.
@@ -67,7 +68,10 @@ export class CommandExecutor {
 
     // Re-evaluate if needed
     if (command.requiresReevaluation) {
-      this.evaluationManager.clearEvaluationCache();
+      this.evaluationManager.invalidateFromMutation(
+        command.getInvalidationFootprint?.("execute") ??
+          emptyMutationInvalidation()
+      );
 
       // Validate schemas if requested
       if (validate) {
@@ -76,7 +80,10 @@ export class CommandExecutor {
         if (!validation.valid) {
           // Rollback: undo the command and re-evaluate
           command.undo();
-          this.evaluationManager.clearEvaluationCache();
+          this.evaluationManager.invalidateFromMutation(
+            command.getInvalidationFootprint?.("undo") ??
+              emptyMutationInvalidation()
+          );
           throw new SchemaIntegrityError(validation.errors);
         }
       }
@@ -114,7 +121,10 @@ export class CommandExecutor {
     command.undo();
 
     if (command.requiresReevaluation) {
-      this.evaluationManager.clearEvaluationCache();
+      this.evaluationManager.invalidateFromMutation(
+        command.getInvalidationFootprint?.("undo") ??
+          emptyMutationInvalidation()
+      );
     }
 
     this.redoStack.push(command);
@@ -137,7 +147,10 @@ export class CommandExecutor {
     command.execute();
 
     if (command.requiresReevaluation) {
-      this.evaluationManager.clearEvaluationCache();
+      this.evaluationManager.invalidateFromMutation(
+        command.getInvalidationFootprint?.("execute") ??
+          emptyMutationInvalidation()
+      );
     }
 
     this.undoStack.push(command);

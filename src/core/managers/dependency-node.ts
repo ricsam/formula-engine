@@ -1,6 +1,7 @@
 import { AstEvaluationNode } from "../../evaluator/dependency-nodes/ast-evaluation-node";
 import { CellValueNode } from "../../evaluator/dependency-nodes/cell-value-node";
 import { EmptyCellEvaluationNode } from "../../evaluator/dependency-nodes/empty-cell-evaluation-node";
+import { ResourceDependencyNode } from "../../evaluator/dependency-nodes/resource-dependency-node";
 import { SpillMetaNode } from "../../evaluator/dependency-nodes/spill-meta-node";
 import { RangeEvaluationNode } from "../../evaluator/range-evaluation-node";
 
@@ -9,7 +10,8 @@ export type DependencyNode =
   | RangeEvaluationNode
   | EmptyCellEvaluationNode
   | AstEvaluationNode
-  | SpillMetaNode;
+  | SpillMetaNode
+  | ResourceDependencyNode;
 
 export type CellNodeType = "cell-value" | "empty" | "spill-meta";
 

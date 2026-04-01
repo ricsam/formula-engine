@@ -357,9 +357,11 @@ export class WorkbookManager {
     return sheet;
   }
 
-  updateAllFormulas(updateCallback: (formula: string) => string): void {
-    const update = (map: Map<string, Sheet>) => {
-      map.forEach((sheet) => {
+  updateAllFormulas(updateCallback: (formula: string) => string): CellAddress[] {
+    const changed: CellAddress[] = [];
+
+    const update = (workbookName: string, map: Map<string, Sheet>) => {
+      map.forEach((sheet, sheetName) => {
         sheet.content.forEach((cell, key) => {
           if (typeof cell === "string" && cell.startsWith("=")) {
             const formula = cell.slice(1);
@@ -368,15 +370,24 @@ export class WorkbookManager {
             // Only update if the formula actually changed
             if (updatedFormula !== formula) {
               sheet.content.set(key, `=${updatedFormula}`);
+              const { colIndex, rowIndex } = parseCellReference(key);
+              changed.push({
+                workbookName,
+                sheetName,
+                colIndex,
+                rowIndex,
+              });
             }
           }
         });
       });
     };
 
-    this.workbooks.forEach((workbook) => {
-      update(workbook.sheets);
+    this.workbooks.forEach((workbook, workbookName) => {
+      update(workbookName, workbook.sheets);
     });
+
+    return changed;
   }
 
   updateFormulasExcluding(

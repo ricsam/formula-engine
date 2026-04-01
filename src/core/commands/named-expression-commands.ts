@@ -7,8 +7,13 @@
 import type { NamedExpressionManager } from "../managers/named-expression-manager";
 import type { WorkbookManager } from "../managers/workbook-manager";
 import type { NamedExpression } from "../types";
-import type { EngineCommand, EngineAction } from "./types";
-import { ActionTypes } from "./types";
+import type {
+  EngineCommand,
+  EngineAction,
+  MutationInvalidation,
+} from "./types";
+import { ActionTypes, emptyMutationInvalidation } from "./types";
+import { getNamedExpressionResourceKey } from "../resource-keys";
 
 /**
  * Dependencies needed for named expression commands.
@@ -59,11 +64,33 @@ function optsToScope(opts: {
   }
 }
 
+function getNamedExpressionScopeResourceKeys(
+  expressions: Iterable<string>,
+  opts: {
+    workbookName?: string;
+    sheetName?: string;
+  }
+): string[] {
+  return Array.from(
+    new Set(
+      Array.from(expressions, (expressionName) =>
+        getNamedExpressionResourceKey({
+          expressionName,
+          workbookName: opts.workbookName,
+          sheetName: opts.sheetName,
+        })
+      )
+    )
+  );
+}
+
 /**
  * Command to add a named expression.
  */
 export class AddNamedExpressionCommand implements EngineCommand {
   readonly requiresReevaluation = true;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: NamedExpressionCommandDeps,
@@ -77,6 +104,15 @@ export class AddNamedExpressionCommand implements EngineCommand {
 
   execute(): void {
     this.deps.namedExpressionManager.addNamedExpression(this.opts);
+    const resourceKey = getNamedExpressionResourceKey(this.opts);
+    this.executeFootprint = {
+      touchedCells: [],
+      resourceKeys: [resourceKey],
+    };
+    this.undoFootprint = {
+      touchedCells: [],
+      resourceKeys: [resourceKey],
+    };
   }
 
   undo(): void {
@@ -85,6 +121,10 @@ export class AddNamedExpressionCommand implements EngineCommand {
       sheetName: this.opts.sheetName,
       workbookName: this.opts.workbookName,
     });
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -101,6 +141,8 @@ export class AddNamedExpressionCommand implements EngineCommand {
 export class RemoveNamedExpressionCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private removedExpression: NamedExpression | undefined;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: NamedExpressionCommandDeps,
@@ -118,6 +160,15 @@ export class RemoveNamedExpressionCommand implements EngineCommand {
     );
 
     this.deps.namedExpressionManager.removeNamedExpression(this.opts);
+    const resourceKey = getNamedExpressionResourceKey(this.opts);
+    this.executeFootprint = {
+      touchedCells: [],
+      resourceKeys: [resourceKey],
+    };
+    this.undoFootprint = {
+      touchedCells: [],
+      resourceKeys: [resourceKey],
+    };
   }
 
   undo(): void {
@@ -129,6 +180,10 @@ export class RemoveNamedExpressionCommand implements EngineCommand {
       sheetName: this.opts.sheetName,
       workbookName: this.opts.workbookName,
     });
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -145,6 +200,8 @@ export class RemoveNamedExpressionCommand implements EngineCommand {
 export class UpdateNamedExpressionCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private previousExpression: string | undefined;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: NamedExpressionCommandDeps,
@@ -164,6 +221,15 @@ export class UpdateNamedExpressionCommand implements EngineCommand {
     this.previousExpression = existing?.expression;
 
     this.deps.namedExpressionManager.updateNamedExpression(this.opts);
+    const resourceKey = getNamedExpressionResourceKey(this.opts);
+    this.executeFootprint = {
+      touchedCells: [],
+      resourceKeys: [resourceKey],
+    };
+    this.undoFootprint = {
+      touchedCells: [],
+      resourceKeys: [resourceKey],
+    };
   }
 
   undo(): void {
@@ -175,6 +241,10 @@ export class UpdateNamedExpressionCommand implements EngineCommand {
       sheetName: this.opts.sheetName,
       workbookName: this.opts.workbookName,
     });
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -190,6 +260,8 @@ export class UpdateNamedExpressionCommand implements EngineCommand {
  */
 export class RenameNamedExpressionCommand implements EngineCommand {
   readonly requiresReevaluation = true;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: NamedExpressionCommandDeps,
@@ -205,7 +277,7 @@ export class RenameNamedExpressionCommand implements EngineCommand {
     this.deps.namedExpressionManager.renameNamedExpression(this.opts);
 
     // Update formulas in sheet cells
-    this.deps.workbookManager.updateAllFormulas((formula) =>
+    const changedCells = this.deps.workbookManager.updateAllFormulas((formula) =>
       this.deps.renameNamedExpressionInFormula(
         formula,
         this.opts.expressionName,
@@ -214,13 +286,35 @@ export class RenameNamedExpressionCommand implements EngineCommand {
     );
 
     // Update named expressions
-    this.deps.namedExpressionManager.updateAllNamedExpressions((formula) =>
+    const changedNamedExpressions =
+      this.deps.namedExpressionManager.updateAllNamedExpressions((formula) =>
       this.deps.renameNamedExpressionInFormula(
         formula,
         this.opts.expressionName,
         this.opts.newName
       )
     );
+
+    this.executeFootprint = {
+      touchedCells: changedCells.map((address) => ({
+        address,
+        beforeKind: "formula" as const,
+        afterKind: "formula" as const,
+      })),
+      resourceKeys: [
+        getNamedExpressionResourceKey({
+          expressionName: this.opts.expressionName,
+          workbookName: this.opts.workbookName,
+          sheetName: this.opts.sheetName,
+        }),
+        getNamedExpressionResourceKey({
+          expressionName: this.opts.newName,
+          workbookName: this.opts.workbookName,
+          sheetName: this.opts.sheetName,
+        }),
+        ...changedNamedExpressions,
+      ],
+    };
   }
 
   undo(): void {
@@ -233,7 +327,7 @@ export class RenameNamedExpressionCommand implements EngineCommand {
     });
 
     // Update formulas back
-    this.deps.workbookManager.updateAllFormulas((formula) =>
+    const changedCells = this.deps.workbookManager.updateAllFormulas((formula) =>
       this.deps.renameNamedExpressionInFormula(
         formula,
         this.opts.newName,
@@ -242,13 +336,39 @@ export class RenameNamedExpressionCommand implements EngineCommand {
     );
 
     // Update named expressions back
-    this.deps.namedExpressionManager.updateAllNamedExpressions((formula) =>
+    const changedNamedExpressions =
+      this.deps.namedExpressionManager.updateAllNamedExpressions((formula) =>
       this.deps.renameNamedExpressionInFormula(
         formula,
         this.opts.newName,
         this.opts.expressionName
       )
     );
+
+    this.undoFootprint = {
+      touchedCells: changedCells.map((address) => ({
+        address,
+        beforeKind: "formula" as const,
+        afterKind: "formula" as const,
+      })),
+      resourceKeys: [
+        getNamedExpressionResourceKey({
+          expressionName: this.opts.expressionName,
+          workbookName: this.opts.workbookName,
+          sheetName: this.opts.sheetName,
+        }),
+        getNamedExpressionResourceKey({
+          expressionName: this.opts.newName,
+          workbookName: this.opts.workbookName,
+          sheetName: this.opts.sheetName,
+        }),
+        ...changedNamedExpressions,
+      ],
+    };
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -276,6 +396,8 @@ type SetNamedExpressionsOpts = (
 export class SetNamedExpressionsCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private previousExpressions: Map<string, NamedExpression> | undefined;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: NamedExpressionCommandDeps,
@@ -300,6 +422,29 @@ export class SetNamedExpressionsCommand implements EngineCommand {
     }
 
     this.deps.namedExpressionManager.setNamedExpressions(this.opts);
+    const scope =
+      this.opts.type === "global"
+        ? {}
+        : this.opts.type === "workbook"
+        ? { workbookName: this.opts.workbookName }
+        : {
+            workbookName: this.opts.workbookName,
+            sheetName: this.opts.sheetName,
+          };
+    this.executeFootprint = {
+      touchedCells: [],
+      resourceKeys: [
+        ...getNamedExpressionScopeResourceKeys(
+          this.previousExpressions?.keys() ?? [],
+          scope
+        ),
+        ...getNamedExpressionScopeResourceKeys(this.opts.expressions.keys(), scope),
+      ],
+    };
+    this.undoFootprint = {
+      touchedCells: [],
+      resourceKeys: this.executeFootprint.resourceKeys,
+    };
   }
 
   undo(): void {
@@ -327,6 +472,10 @@ export class SetNamedExpressionsCommand implements EngineCommand {
     }
   }
 
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
+  }
+
   toAction(): EngineAction {
     return {
       type: ActionTypes.SET_NAMED_EXPRESSIONS,
@@ -337,4 +486,3 @@ export class SetNamedExpressionsCommand implements EngineCommand {
     };
   }
 }
-

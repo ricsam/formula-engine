@@ -7,6 +7,44 @@
 
 import type { CellAddress, RangeAddress, SerializedCellValue } from "../types";
 
+export type CellContentKind = "empty" | "scalar" | "formula";
+
+export type RemovedScope =
+  | { type: "workbook"; workbookName: string }
+  | { type: "sheet"; workbookName: string; sheetName: string };
+
+export type MutationInvalidation = {
+  touchedCells: Array<{
+    address: CellAddress;
+    beforeKind: CellContentKind;
+    afterKind: CellContentKind;
+  }>;
+  resourceKeys: string[];
+  removedScopes?: RemovedScope[];
+};
+
+export function getSerializedCellValueKind(
+  value: SerializedCellValue | undefined
+): CellContentKind {
+  if (
+    value === undefined ||
+    (typeof value === "string" && value.length === 0)
+  ) {
+    return "empty";
+  }
+  if (typeof value === "string" && value.startsWith("=")) {
+    return "formula";
+  }
+  return "scalar";
+}
+
+export function emptyMutationInvalidation(): MutationInvalidation {
+  return {
+    touchedCells: [],
+    resourceKeys: [],
+  };
+}
+
 /**
  * Serializable action representation of a command.
  * Used for persistence, collaboration, and changelog functionality.
@@ -26,6 +64,13 @@ export interface EngineCommand {
    * Commands that only affect metadata or styles don't need re-evaluation.
    */
   readonly requiresReevaluation: boolean;
+
+  /**
+   * Returns the exact mutation footprint for the last execute/undo pass.
+   */
+  getInvalidationFootprint?(
+    phase: "execute" | "undo"
+  ): MutationInvalidation;
 
   /**
    * Execute the command (forward operation).
@@ -140,4 +185,3 @@ export const ActionTypes = {
 } as const;
 
 export type ActionType = (typeof ActionTypes)[keyof typeof ActionTypes];
-

@@ -4,6 +4,7 @@ import { renameNamedExpressionInFormula } from "../named-expression-renamer";
 import type { EventManager } from "./event-manager";
 import type { NamedExpressionNode } from "../../parser/ast";
 import type { EvaluationContext } from "../../evaluator/evaluation-context";
+import { getNamedExpressionResourceKey } from "../resource-keys";
 
 export class NamedExpressionManager {
   sheetExpressions: Map<string, Map<string, Map<string, NamedExpression>>> =
@@ -197,8 +198,15 @@ export class NamedExpressionManager {
     return true;
   }
 
-  updateAllNamedExpressions(updateCallback: (formula: string) => string): void {
-    const update = (map: Map<string, NamedExpression>) => {
+  updateAllNamedExpressions(
+    updateCallback: (formula: string) => string
+  ): string[] {
+    const changed = new Set<string>();
+
+    const update = (
+      map: Map<string, NamedExpression>,
+      opts: { workbookName?: string; sheetName?: string }
+    ) => {
       map.forEach((namedExpr, name) => {
         // Don't update the expression we're renaming
         const updatedExpression = updateCallback(namedExpr.expression);
@@ -208,21 +216,30 @@ export class NamedExpressionManager {
             ...namedExpr,
             expression: updatedExpression,
           });
+          changed.add(
+            getNamedExpressionResourceKey({
+              expressionName: name,
+              workbookName: opts.workbookName,
+              sheetName: opts.sheetName,
+            })
+          );
         }
       });
     };
 
-    update(this.globalExpressions);
+    update(this.globalExpressions, {});
 
-    this.workbookExpressions.forEach((workbookLevel) => {
-      update(workbookLevel);
+    this.workbookExpressions.forEach((workbookLevel, workbookName) => {
+      update(workbookLevel, { workbookName });
     });
 
-    this.sheetExpressions.forEach((wbLevel) => {
-      wbLevel.forEach((sheetLevel) => {
-        update(sheetLevel);
+    this.sheetExpressions.forEach((wbLevel, workbookName) => {
+      wbLevel.forEach((sheetLevel, sheetName) => {
+        update(sheetLevel, { workbookName, sheetName });
       });
     });
+
+    return Array.from(changed);
   }
 
   /**
@@ -300,13 +317,21 @@ export class NamedExpressionManager {
     return undefined;
   }
 
-  resolveNamedExpression(
+  resolveNamedExpressionWithScope(
     namedExpression: Pick<
       NamedExpressionNode,
       "name" | "sheetName" | "workbookName"
     >,
     context: EvaluationContext
-  ): string | undefined {
+  ):
+    | {
+        expression: string;
+        scope:
+          | { type: "global" }
+          | { type: "workbook"; workbookName: string }
+          | { type: "sheet"; workbookName: string; sheetName: string };
+      }
+    | undefined {
     // scenario 1: no sheetName nor workbookName
     if (!namedExpression.sheetName && !namedExpression.workbookName) {
       /**
@@ -321,19 +346,37 @@ export class NamedExpressionManager {
         ?.get(context.cellAddress.sheetName)
         ?.get(namedExpression.name);
       if (expression) {
-        return expression.expression;
+        return {
+          expression: expression.expression,
+          scope: {
+            type: "sheet",
+            workbookName: context.cellAddress.workbookName,
+            sheetName: context.cellAddress.sheetName,
+          },
+        };
       } else {
         // step 2, check if there is a named expression in the workbook scope
         const expression = this.workbookExpressions
           .get(context.cellAddress.workbookName)
           ?.get(namedExpression.name);
         if (expression) {
-          return expression.expression;
+          return {
+            expression: expression.expression,
+            scope: {
+              type: "workbook",
+              workbookName: context.cellAddress.workbookName,
+            },
+          };
         } else {
           // step 3, check if there is a named expression in the global scope
           const expression = this.globalExpressions.get(namedExpression.name);
           if (expression) {
-            return expression.expression;
+            return {
+              expression: expression.expression,
+              scope: {
+                type: "global",
+              },
+            };
           }
         }
       }
@@ -346,7 +389,7 @@ export class NamedExpressionManager {
         namedExpression.workbookName ===
         context.cellAddress.workbookName
       ) {
-        return this.resolveNamedExpression(
+        return this.resolveNamedExpressionWithScope(
           {
             name: namedExpression.name,
           },
@@ -359,12 +402,23 @@ export class NamedExpressionManager {
         ?.get(namedExpression.name);
       if (expression) {
         // step 1, check if there is a named expression in the workbook scope
-        return expression.expression;
+        return {
+          expression: expression.expression,
+          scope: {
+            type: "workbook",
+            workbookName: namedExpression.workbookName,
+          },
+        };
       } else {
         // step 2, check if there is a named expression in the global scope
         const expression = this.globalExpressions.get(namedExpression.name);
         if (expression) {
-          return expression.expression;
+          return {
+            expression: expression.expression,
+            scope: {
+              type: "global",
+            },
+          };
         }
       }
     }
@@ -382,19 +436,37 @@ export class NamedExpressionManager {
       context.addContextDependency("workbook");
       if (expression) {
         // step 1, check if there is a named expression in the current workbook against the sheet name
-        return expression.expression;
+        return {
+          expression: expression.expression,
+          scope: {
+            type: "sheet",
+            workbookName: context.cellAddress.workbookName,
+            sheetName: namedExpression.sheetName,
+          },
+        };
       } else {
         // step 2, check if there is a named expression in the current workbook has a workbook scoped named expression
         const expression = this.workbookExpressions
           .get(context.cellAddress.workbookName)
           ?.get(namedExpression.name);
         if (expression) {
-          return expression.expression;
+          return {
+            expression: expression.expression,
+            scope: {
+              type: "workbook",
+              workbookName: context.cellAddress.workbookName,
+            },
+          };
         } else {
           // step 3, check if there is a named expression in the global scope
           const expression = this.globalExpressions.get(namedExpression.name);
           if (expression) {
-            return expression.expression;
+            return {
+              expression: expression.expression,
+              scope: {
+                type: "global",
+              },
+            };
           }
         }
       }
@@ -408,23 +480,52 @@ export class NamedExpressionManager {
         ?.get(namedExpression.name);
       if (expression) {
         // step 1, check if there is a named expression the the sheet scope
-        return expression.expression;
+        return {
+          expression: expression.expression,
+          scope: {
+            type: "sheet",
+            workbookName: namedExpression.workbookName,
+            sheetName: namedExpression.sheetName,
+          },
+        };
       } else {
         // step 2, check if there is a named expression in the workbook scope
         const expression = this.workbookExpressions
           .get(namedExpression.workbookName)
           ?.get(namedExpression.name);
         if (expression) {
-          return expression.expression;
+          return {
+            expression: expression.expression,
+            scope: {
+              type: "workbook",
+              workbookName: namedExpression.workbookName,
+            },
+          };
         } else {
           // step 3, check if there is a named expression in the global scope
           const expression = this.globalExpressions.get(namedExpression.name);
           if (expression) {
-            return expression.expression;
+            return {
+              expression: expression.expression,
+              scope: {
+                type: "global",
+              },
+            };
           }
         }
       }
     }
+  }
+
+  resolveNamedExpression(
+    namedExpression: Pick<
+      NamedExpressionNode,
+      "name" | "sheetName" | "workbookName"
+    >,
+    context: EvaluationContext
+  ): string | undefined {
+    return this.resolveNamedExpressionWithScope(namedExpression, context)
+      ?.expression;
   }
 
   getNamedExpressions() {

@@ -28,6 +28,12 @@ import {
   rangeAddressToKey,
 } from "../core/utils";
 import {
+  getNamedExpressionResourceKey,
+  getSheetResourceKey,
+  getTableResourceKey,
+  getWorkbookResourceKey,
+} from "../core/resource-keys";
+import {
   evaluateScalarOperator,
   type EvaluateScalarOperatorOptions,
 } from "../evaluator/evaluate-scalar-operator";
@@ -105,6 +111,7 @@ export class FormulaEvaluator {
       return astNode.evaluationResult;
     }
 
+    this.dependencyManager.unregisterNode(astNode);
     astNode.resetDirectDepsUpdated();
 
     function runEvaluation(
@@ -173,6 +180,7 @@ export class FormulaEvaluator {
     const astContextDependency = newContext.getContextDependency();
 
     astNode.setContextDependency(astContextDependency);
+    this.dependencyManager.registerNode(astNode);
 
     context.appendContextDependency(astContextDependency);
 
@@ -183,6 +191,19 @@ export class FormulaEvaluator {
     node: StructuredReferenceNode,
     context: EvaluationContext
   ): FunctionEvaluationResult {
+    const resourceWorkbookName =
+      node.workbookName ?? context.cellAddress.workbookName;
+    if (node.tableName) {
+      context.dependencyNode.addDependency(
+        this.dependencyManager.getResourceNode(
+          getTableResourceKey({
+            workbookName: resourceWorkbookName,
+            tableName: node.tableName,
+          })
+        )
+      );
+    }
+
     // the tables are never dependent on the sheet, interesetingly enough
     let table: TableDefinition | undefined;
     if (node.tableName && node.workbookName) {
@@ -488,6 +509,24 @@ export class FormulaEvaluator {
       workbookName: node.workbookName ?? context.cellAddress.workbookName,
       range: node.range,
     };
+
+    if (node.workbookName) {
+      context.dependencyNode.addDependency(
+        this.dependencyManager.getResourceNode(
+          getWorkbookResourceKey(node.workbookName)
+        )
+      );
+    }
+    if (node.sheetName) {
+      context.dependencyNode.addDependency(
+        this.dependencyManager.getResourceNode(
+          getSheetResourceKey({
+            workbookName: rangeAddress.workbookName,
+            sheetName: node.sheetName,
+          })
+        )
+      );
+    }
 
     return {
       type: "spilled-values",
@@ -850,6 +889,24 @@ export class FormulaEvaluator {
       workbookName: node.workbookName ?? context.cellAddress.workbookName,
     };
 
+    if (node.workbookName) {
+      context.dependencyNode.addDependency(
+        this.dependencyManager.getResourceNode(
+          getWorkbookResourceKey(node.workbookName)
+        )
+      );
+    }
+    if (node.sheetName) {
+      context.dependencyNode.addDependency(
+        this.dependencyManager.getResourceNode(
+          getSheetResourceKey({
+            workbookName: cellAddress.workbookName,
+            sheetName: node.sheetName,
+          })
+        )
+      );
+    }
+
     const key = cellAddressToKey(cellAddress);
     const evalNode = this.dependencyManager.getCellValueOrEmptyCellNode(key);
     context.dependencyNode.addDependency(evalNode);
@@ -887,12 +944,13 @@ export class FormulaEvaluator {
     node: NamedExpressionNode,
     context: EvaluationContext
   ): FunctionEvaluationResult {
-    const expression = this.namedExpressionManager.resolveNamedExpression(
-      node,
-      context
-    );
+    const resolvedExpression =
+      this.namedExpressionManager.resolveNamedExpressionWithScope(
+        node,
+        context
+      );
 
-    if (!expression) {
+    if (!resolvedExpression) {
       return {
         type: "error",
         err: FormulaError.NAME,
@@ -901,7 +959,23 @@ export class FormulaEvaluator {
       };
     }
 
-    return this.evaluateFormula(expression, context);
+    context.dependencyNode.addDependency(
+      this.dependencyManager.getResourceNode(
+        getNamedExpressionResourceKey({
+          expressionName: node.name,
+          workbookName:
+            resolvedExpression.scope.type === "global"
+              ? undefined
+              : resolvedExpression.scope.workbookName,
+          sheetName:
+            resolvedExpression.scope.type === "sheet"
+              ? resolvedExpression.scope.sheetName
+              : undefined,
+        })
+      )
+    );
+
+    return this.evaluateFormula(resolvedExpression.expression, context);
   }
 
   /**

@@ -14,8 +14,13 @@ import type {
   SpreadsheetRangeEnd,
   TableDefinition,
 } from "../types";
-import type { EngineCommand, EngineAction } from "./types";
-import { ActionTypes } from "./types";
+import type {
+  EngineCommand,
+  EngineAction,
+  MutationInvalidation,
+} from "./types";
+import { ActionTypes, emptyMutationInvalidation } from "./types";
+import { getTableResourceKey } from "../resource-keys";
 
 /**
  * Dependencies needed for table commands.
@@ -38,6 +43,8 @@ export interface TableCommandDeps {
  */
 export class AddTableCommand implements EngineCommand {
   readonly requiresReevaluation = true;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: TableCommandDeps,
@@ -56,6 +63,15 @@ export class AddTableCommand implements EngineCommand {
       ...this.props,
       getCellValue: this.deps.getCellValue,
     });
+    const resourceKey = getTableResourceKey({
+      workbookName: this.props.workbookName,
+      tableName: this.props.tableName,
+    });
+    this.executeFootprint = {
+      touchedCells: [],
+      resourceKeys: [resourceKey],
+    };
+    this.undoFootprint = this.executeFootprint;
   }
 
   undo(): void {
@@ -63,6 +79,10 @@ export class AddTableCommand implements EngineCommand {
       workbookName: this.props.workbookName,
       tableName: this.props.tableName,
     });
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -79,6 +99,8 @@ export class AddTableCommand implements EngineCommand {
 export class RemoveTableCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private removedTable: TableDefinition | undefined;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: TableCommandDeps,
@@ -93,6 +115,15 @@ export class RemoveTableCommand implements EngineCommand {
     });
 
     this.deps.tableManager.removeTable(this.opts);
+    const resourceKey = getTableResourceKey({
+      workbookName: this.opts.workbookName,
+      tableName: this.opts.tableName,
+    });
+    this.executeFootprint = {
+      touchedCells: [],
+      resourceKeys: [resourceKey],
+    };
+    this.undoFootprint = this.executeFootprint;
   }
 
   undo(): void {
@@ -113,6 +144,10 @@ export class RemoveTableCommand implements EngineCommand {
     });
   }
 
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
+  }
+
   toAction(): EngineAction {
     return {
       type: ActionTypes.REMOVE_TABLE,
@@ -126,6 +161,8 @@ export class RemoveTableCommand implements EngineCommand {
  */
 export class RenameTableCommand implements EngineCommand {
   readonly requiresReevaluation = true;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: TableCommandDeps,
@@ -141,12 +178,13 @@ export class RenameTableCommand implements EngineCommand {
     });
 
     // Update formulas in sheet cells
-    this.deps.workbookManager.updateAllFormulas((formula) =>
+    const changedCells = this.deps.workbookManager.updateAllFormulas((formula) =>
       this.deps.renameTableInFormula(formula, this.oldName, this.newName)
     );
 
     // Update named expressions
-    this.deps.namedExpressionManager.updateAllNamedExpressions((formula) =>
+    const changedNamedExpressions =
+      this.deps.namedExpressionManager.updateAllNamedExpressions((formula) =>
       this.deps.renameTableInFormula(formula, this.oldName, this.newName)
     );
 
@@ -156,6 +194,25 @@ export class RenameTableCommand implements EngineCommand {
       this.oldName,
       this.newName
     );
+
+    this.executeFootprint = {
+      touchedCells: changedCells.map((address) => ({
+        address,
+        beforeKind: "formula" as const,
+        afterKind: "formula" as const,
+      })),
+      resourceKeys: [
+        getTableResourceKey({
+          workbookName: this.workbookName,
+          tableName: this.oldName,
+        }),
+        getTableResourceKey({
+          workbookName: this.workbookName,
+          tableName: this.newName,
+        }),
+        ...changedNamedExpressions,
+      ],
+    };
   }
 
   undo(): void {
@@ -166,12 +223,13 @@ export class RenameTableCommand implements EngineCommand {
     });
 
     // Update formulas back
-    this.deps.workbookManager.updateAllFormulas((formula) =>
+    const changedCells = this.deps.workbookManager.updateAllFormulas((formula) =>
       this.deps.renameTableInFormula(formula, this.newName, this.oldName)
     );
 
     // Update named expressions back
-    this.deps.namedExpressionManager.updateAllNamedExpressions((formula) =>
+    const changedNamedExpressions =
+      this.deps.namedExpressionManager.updateAllNamedExpressions((formula) =>
       this.deps.renameTableInFormula(formula, this.newName, this.oldName)
     );
 
@@ -181,6 +239,29 @@ export class RenameTableCommand implements EngineCommand {
       this.newName,
       this.oldName
     );
+
+    this.undoFootprint = {
+      touchedCells: changedCells.map((address) => ({
+        address,
+        beforeKind: "formula" as const,
+        afterKind: "formula" as const,
+      })),
+      resourceKeys: [
+        getTableResourceKey({
+          workbookName: this.workbookName,
+          tableName: this.oldName,
+        }),
+        getTableResourceKey({
+          workbookName: this.workbookName,
+          tableName: this.newName,
+        }),
+        ...changedNamedExpressions,
+      ],
+    };
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -201,6 +282,8 @@ export class RenameTableCommand implements EngineCommand {
 export class UpdateTableCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private previousTable: TableDefinition | undefined;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: TableCommandDeps,
@@ -225,6 +308,15 @@ export class UpdateTableCommand implements EngineCommand {
       ...this.opts,
       getCellValue: this.deps.getCellValue,
     });
+    const resourceKey = getTableResourceKey({
+      workbookName: this.opts.workbookName,
+      tableName: this.opts.tableName,
+    });
+    this.executeFootprint = {
+      touchedCells: [],
+      resourceKeys: [resourceKey],
+    };
+    this.undoFootprint = this.executeFootprint;
   }
 
   undo(): void {
@@ -245,6 +337,10 @@ export class UpdateTableCommand implements EngineCommand {
     });
   }
 
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
+  }
+
   toAction(): EngineAction {
     return {
       type: ActionTypes.UPDATE_TABLE,
@@ -259,6 +355,8 @@ export class UpdateTableCommand implements EngineCommand {
 export class ResetTablesCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private previousTables: Map<string, Map<string, TableDefinition>> | undefined;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: TableCommandDeps,
@@ -273,11 +371,41 @@ export class ResetTablesCommand implements EngineCommand {
     }
 
     this.deps.tableManager.resetTables(this.newTables);
+    const resourceKeys = new Set<string>();
+    for (const [workbookName, tables] of this.previousTables ?? []) {
+      for (const tableName of tables.keys()) {
+        resourceKeys.add(
+          getTableResourceKey({
+            workbookName,
+            tableName,
+          })
+        );
+      }
+    }
+    for (const [workbookName, tables] of this.newTables) {
+      for (const tableName of tables.keys()) {
+        resourceKeys.add(
+          getTableResourceKey({
+            workbookName,
+            tableName,
+          })
+        );
+      }
+    }
+    this.executeFootprint = {
+      touchedCells: [],
+      resourceKeys: Array.from(resourceKeys),
+    };
+    this.undoFootprint = this.executeFootprint;
   }
 
   undo(): void {
     if (!this.previousTables) return;
     this.deps.tableManager.resetTables(this.previousTables);
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -292,4 +420,3 @@ export class ResetTablesCommand implements EngineCommand {
     };
   }
 }
-

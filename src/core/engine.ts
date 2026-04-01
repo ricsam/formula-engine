@@ -55,7 +55,7 @@ import { GridOrm } from "./schema/grid-orm";
 import type { TableSchemaHeaders } from "./managers/schema-manager";
 import {
   ENGINE_SNAPSHOT_VERSION,
-  type EngineSnapshotV2,
+  type EngineSnapshotV3,
 } from "./engine-snapshot";
 import {
   CommandExecutor,
@@ -1337,7 +1337,7 @@ export class FormulaEngine<
     return this.eventManager.onUpdate(listener);
   }
 
-  private buildSerializedSnapshot(): EngineSnapshotV2 {
+  private buildSerializedSnapshot(): EngineSnapshotV3 {
     const evaluationSnapshots = this.dependencyManager.toSnapshot(
       this.evaluationManager
     );
@@ -1361,7 +1361,7 @@ export class FormulaEngine<
   }
 
   resetToSerializedEngine(data: string) {
-    const deserialized = deserialize(data) as Partial<EngineSnapshotV2>;
+    const deserialized = deserialize(data) as Partial<EngineSnapshotV3>;
     if (
       !deserialized ||
       typeof deserialized !== "object" ||
@@ -1369,7 +1369,7 @@ export class FormulaEngine<
       !deserialized.managers
     ) {
       throw new Error(
-        "Unsupported serialized engine format. Expected EngineSnapshot version 2."
+        "Unsupported serialized engine format. Expected EngineSnapshot version 3."
       );
     }
 

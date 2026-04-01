@@ -11,6 +11,7 @@ import type { StyleManager } from "../managers/style-manager";
 import type { TableManager } from "../managers/table-manager";
 import type { WorkbookManager } from "../managers/workbook-manager";
 import type {
+  CellAddress,
   ConditionalStyle,
   DirectCellStyle,
   NamedExpression,
@@ -18,8 +19,18 @@ import type {
   TableDefinition,
   Workbook,
 } from "../types";
-import type { EngineAction, EngineCommand } from "./types";
-import { ActionTypes } from "./types";
+import type {
+  EngineAction,
+  EngineCommand,
+  MutationInvalidation,
+} from "./types";
+import { ActionTypes, emptyMutationInvalidation } from "./types";
+import {
+  getNamedExpressionResourceKey,
+  getSheetResourceKey,
+  getTableResourceKey,
+  getWorkbookResourceKey,
+} from "../resource-keys";
 
 /**
  * Dependencies needed for structure commands.
@@ -52,6 +63,8 @@ export interface StructureCommandDeps {
  */
 export class AddWorkbookCommand implements EngineCommand {
   readonly requiresReevaluation = true;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: StructureCommandDeps,
@@ -62,12 +75,25 @@ export class AddWorkbookCommand implements EngineCommand {
     this.deps.workbookManager.addWorkbook(this.workbookName);
     this.deps.namedExpressionManager.addWorkbook(this.workbookName);
     this.deps.tableManager.addWorkbook(this.workbookName);
+    this.executeFootprint = {
+      touchedCells: [],
+      resourceKeys: [getWorkbookResourceKey(this.workbookName)],
+    };
+    this.undoFootprint = {
+      touchedCells: [],
+      resourceKeys: [getWorkbookResourceKey(this.workbookName)],
+      removedScopes: [{ type: "workbook", workbookName: this.workbookName }],
+    };
   }
 
   undo(): void {
     this.deps.workbookManager.removeWorkbook(this.workbookName);
     this.deps.namedExpressionManager.removeWorkbook(this.workbookName);
     this.deps.tableManager.removeWorkbook(this.workbookName);
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -169,7 +195,7 @@ function renameWorkbookAcrossManagers(
   deps: StructureCommandDeps,
   oldName: string,
   newName: string
-): void {
+): CellAddress[] {
   deps.workbookManager.renameWorkbook({
     workbookName: oldName,
     newWorkbookName: newName,
@@ -183,7 +209,7 @@ function renameWorkbookAcrossManagers(
     newWorkbookName: newName,
   });
   deps.styleManager.updateWorkbookName(oldName, newName);
-  deps.workbookManager.updateAllFormulas((formula) =>
+  const changedCells = deps.workbookManager.updateAllFormulas((formula) =>
     deps.renameWorkbookInFormula({
       formula,
       oldWorkbookName: oldName,
@@ -192,6 +218,7 @@ function renameWorkbookAcrossManagers(
   );
   deps.referenceManager.updateWorkbookName(oldName, newName);
   deps.apiSchemaManager.updateForWorkbookRename(oldName, newName);
+  return changedCells;
 }
 
 /**
@@ -200,7 +227,7 @@ function renameWorkbookAcrossManagers(
 function renameSheetAcrossManagers(
   deps: StructureCommandDeps,
   opts: { workbookName: string; sheetName: string; newSheetName: string }
-): void {
+): CellAddress[] {
   deps.workbookManager.renameSheet(opts);
   deps.namedExpressionManager.renameSheet(opts);
   deps.tableManager.updateTablesForSheetRename(opts);
@@ -209,7 +236,7 @@ function renameSheetAcrossManagers(
     opts.sheetName,
     opts.newSheetName
   );
-  deps.workbookManager.updateAllFormulas((formula) =>
+  const changedCells = deps.workbookManager.updateAllFormulas((formula) =>
     deps.renameSheetInFormula({
       formula,
       oldSheetName: opts.sheetName,
@@ -226,6 +253,69 @@ function renameSheetAcrossManagers(
     opts.sheetName,
     opts.newSheetName
   );
+  return changedCells;
+}
+
+function getWorkbookSnapshotResourceKeys(
+  workbookName: string,
+  snapshot: WorkbookSnapshot | undefined
+): string[] {
+  const resourceKeys = new Set<string>([getWorkbookResourceKey(workbookName)]);
+  if (!snapshot) {
+    return Array.from(resourceKeys);
+  }
+
+  for (const tableName of snapshot.tables.keys()) {
+    resourceKeys.add(getTableResourceKey({ workbookName, tableName }));
+  }
+  for (const name of snapshot.namedExpressions.workbookLevel.keys()) {
+    resourceKeys.add(
+      getNamedExpressionResourceKey({ expressionName: name, workbookName })
+    );
+  }
+  for (const [sheetName, expressions] of snapshot.namedExpressions.sheetLevel) {
+    resourceKeys.add(getSheetResourceKey({ workbookName, sheetName }));
+    for (const name of expressions.keys()) {
+      resourceKeys.add(
+        getNamedExpressionResourceKey({
+          expressionName: name,
+          workbookName,
+          sheetName,
+        })
+      );
+    }
+  }
+
+  return Array.from(resourceKeys);
+}
+
+function getSheetSnapshotResourceKeys(
+  workbookName: string,
+  sheetName: string,
+  snapshot: SheetSnapshot | undefined
+): string[] {
+  const resourceKeys = new Set<string>([
+    getWorkbookResourceKey(workbookName),
+    getSheetResourceKey({ workbookName, sheetName }),
+  ]);
+  if (!snapshot) {
+    return Array.from(resourceKeys);
+  }
+
+  for (const tableName of snapshot.tables.keys()) {
+    resourceKeys.add(getTableResourceKey({ workbookName, tableName }));
+  }
+  for (const name of snapshot.namedExpressions.keys()) {
+    resourceKeys.add(
+      getNamedExpressionResourceKey({
+        expressionName: name,
+        workbookName,
+        sheetName,
+      })
+    );
+  }
+
+  return Array.from(resourceKeys);
 }
 
 /**
@@ -273,6 +363,8 @@ function restoreStyles(
 export class RemoveWorkbookCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private snapshot: WorkbookSnapshot | undefined;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: StructureCommandDeps,
@@ -282,6 +374,19 @@ export class RemoveWorkbookCommand implements EngineCommand {
   execute(): void {
     this.snapshot = captureWorkbookSnapshot(this.deps, this.workbookName);
     removeWorkbook(this.deps, this.workbookName);
+    const resourceKeys = getWorkbookSnapshotResourceKeys(
+      this.workbookName,
+      this.snapshot
+    );
+    this.executeFootprint = {
+      touchedCells: [],
+      resourceKeys,
+      removedScopes: [{ type: "workbook", workbookName: this.workbookName }],
+    };
+    this.undoFootprint = {
+      touchedCells: [],
+      resourceKeys,
+    };
   }
 
   undo(): void {
@@ -332,6 +437,10 @@ export class RemoveWorkbookCommand implements EngineCommand {
     restoreStyles(this.deps.styleManager, this.snapshot.conditionalStyles, this.snapshot.cellStyles);
   }
 
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
+  }
+
   toAction(): EngineAction {
     return {
       type: ActionTypes.REMOVE_WORKBOOK,
@@ -345,6 +454,9 @@ export class RemoveWorkbookCommand implements EngineCommand {
  */
 export class RenameWorkbookCommand implements EngineCommand {
   readonly requiresReevaluation = true;
+  private snapshot: WorkbookSnapshot | undefined;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: StructureCommandDeps,
@@ -353,11 +465,50 @@ export class RenameWorkbookCommand implements EngineCommand {
   ) {}
 
   execute(): void {
-    renameWorkbookAcrossManagers(this.deps, this.workbookName, this.newWorkbookName);
+    this.snapshot = captureWorkbookSnapshot(this.deps, this.workbookName);
+    const changedCells = renameWorkbookAcrossManagers(
+      this.deps,
+      this.workbookName,
+      this.newWorkbookName
+    );
+    this.executeFootprint = {
+      touchedCells: changedCells.map((address) => ({
+        address,
+        beforeKind: "formula" as const,
+        afterKind: "formula" as const,
+      })),
+      resourceKeys: Array.from(
+        new Set([
+          ...getWorkbookSnapshotResourceKeys(this.workbookName, this.snapshot),
+          ...getWorkbookSnapshotResourceKeys(this.newWorkbookName, this.snapshot),
+        ])
+      ),
+    };
   }
 
   undo(): void {
-    renameWorkbookAcrossManagers(this.deps, this.newWorkbookName, this.workbookName);
+    const changedCells = renameWorkbookAcrossManagers(
+      this.deps,
+      this.newWorkbookName,
+      this.workbookName
+    );
+    this.undoFootprint = {
+      touchedCells: changedCells.map((address) => ({
+        address,
+        beforeKind: "formula" as const,
+        afterKind: "formula" as const,
+      })),
+      resourceKeys: Array.from(
+        new Set([
+          ...getWorkbookSnapshotResourceKeys(this.workbookName, this.snapshot),
+          ...getWorkbookSnapshotResourceKeys(this.newWorkbookName, this.snapshot),
+        ])
+      ),
+    };
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -377,6 +528,8 @@ export class RenameWorkbookCommand implements EngineCommand {
  */
 export class CloneWorkbookCommand implements EngineCommand {
   readonly requiresReevaluation = true;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: StructureCommandDeps,
@@ -543,11 +696,24 @@ export class CloneWorkbookCommand implements EngineCommand {
         newWorkbookName: this.toWorkbookName,
       })
     );
+    this.executeFootprint = {
+      touchedCells: [],
+      resourceKeys: [getWorkbookResourceKey(this.toWorkbookName)],
+    };
+    this.undoFootprint = {
+      touchedCells: [],
+      resourceKeys: [getWorkbookResourceKey(this.toWorkbookName)],
+      removedScopes: [{ type: "workbook", workbookName: this.toWorkbookName }],
+    };
   }
 
   undo(): void {
     // Undo clone = remove the cloned workbook
     removeWorkbook(this.deps, this.toWorkbookName);
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -570,6 +736,8 @@ export class CloneWorkbookCommand implements EngineCommand {
  */
 export class AddSheetCommand implements EngineCommand {
   readonly requiresReevaluation = true;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: StructureCommandDeps,
@@ -579,11 +747,25 @@ export class AddSheetCommand implements EngineCommand {
   execute(): void {
     this.deps.workbookManager.addSheet(this.opts);
     this.deps.namedExpressionManager.addSheet(this.opts);
+    const resourceKey = getSheetResourceKey(this.opts);
+    this.executeFootprint = {
+      touchedCells: [],
+      resourceKeys: [resourceKey, getWorkbookResourceKey(this.opts.workbookName)],
+    };
+    this.undoFootprint = {
+      touchedCells: [],
+      resourceKeys: [resourceKey, getWorkbookResourceKey(this.opts.workbookName)],
+      removedScopes: [{ type: "sheet", ...this.opts }],
+    };
   }
 
   undo(): void {
     this.deps.workbookManager.removeSheet(this.opts);
     this.deps.namedExpressionManager.removeSheet(this.opts);
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -611,6 +793,8 @@ interface SheetSnapshot {
 export class RemoveSheetCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private snapshot: SheetSnapshot | undefined;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: StructureCommandDeps,
@@ -682,6 +866,20 @@ export class RemoveSheetCommand implements EngineCommand {
       this.opts.workbookName,
       this.opts.sheetName
     );
+    const resourceKeys = getSheetSnapshotResourceKeys(
+      this.opts.workbookName,
+      this.opts.sheetName,
+      this.snapshot
+    );
+    this.executeFootprint = {
+      touchedCells: [],
+      resourceKeys,
+      removedScopes: [{ type: "sheet", ...this.opts }],
+    };
+    this.undoFootprint = {
+      touchedCells: [],
+      resourceKeys,
+    };
   }
 
   undo(): void {
@@ -707,6 +905,10 @@ export class RemoveSheetCommand implements EngineCommand {
     restoreStyles(this.deps.styleManager, this.snapshot.conditionalStyles, this.snapshot.cellStyles);
   }
 
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
+  }
+
   toAction(): EngineAction {
     return {
       type: ActionTypes.REMOVE_SHEET,
@@ -720,6 +922,9 @@ export class RemoveSheetCommand implements EngineCommand {
  */
 export class RenameSheetCommand implements EngineCommand {
   readonly requiresReevaluation = true;
+  private snapshot: SheetSnapshot | undefined;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private deps: StructureCommandDeps,
@@ -731,15 +936,81 @@ export class RenameSheetCommand implements EngineCommand {
   ) {}
 
   execute(): void {
-    renameSheetAcrossManagers(this.deps, this.opts);
+    const namedExpressions =
+      this.deps.namedExpressionManager.getNamedExpressions().sheetExpressions
+        .get(this.opts.workbookName)
+        ?.get(this.opts.sheetName) || new Map();
+    const tables = new Map<string, TableDefinition>();
+    for (const [name, table] of this.deps.tableManager.getTables(
+      this.opts.workbookName
+    )) {
+      if (table.sheetName === this.opts.sheetName) {
+        tables.set(name, table);
+      }
+    }
+    const sheet = this.deps.workbookManager.getSheet(this.opts);
+    this.snapshot = {
+      sheet: sheet!,
+      namedExpressions: new Map(namedExpressions),
+      tables,
+      conditionalStyles: [],
+      cellStyles: [],
+    };
+    const changedCells = renameSheetAcrossManagers(this.deps, this.opts);
+    this.executeFootprint = {
+      touchedCells: changedCells.map((address) => ({
+        address,
+        beforeKind: "formula" as const,
+        afterKind: "formula" as const,
+      })),
+      resourceKeys: Array.from(
+        new Set([
+          ...getSheetSnapshotResourceKeys(
+            this.opts.workbookName,
+            this.opts.sheetName,
+            this.snapshot
+          ),
+          ...getSheetSnapshotResourceKeys(
+            this.opts.workbookName,
+            this.opts.newSheetName,
+            this.snapshot
+          ),
+        ])
+      ),
+    };
   }
 
   undo(): void {
-    renameSheetAcrossManagers(this.deps, {
+    const changedCells = renameSheetAcrossManagers(this.deps, {
       workbookName: this.opts.workbookName,
       sheetName: this.opts.newSheetName,
       newSheetName: this.opts.sheetName,
     });
+    this.undoFootprint = {
+      touchedCells: changedCells.map((address) => ({
+        address,
+        beforeKind: "formula" as const,
+        afterKind: "formula" as const,
+      })),
+      resourceKeys: Array.from(
+        new Set([
+          ...getSheetSnapshotResourceKeys(
+            this.opts.workbookName,
+            this.opts.sheetName,
+            this.snapshot
+          ),
+          ...getSheetSnapshotResourceKeys(
+            this.opts.workbookName,
+            this.opts.newSheetName,
+            this.snapshot
+          ),
+        ])
+      ),
+    };
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {

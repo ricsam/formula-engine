@@ -16,7 +16,7 @@ import type {
   Workbook,
 } from "./types";
 
-export const ENGINE_SNAPSHOT_VERSION = 2 as const;
+export const ENGINE_SNAPSHOT_VERSION = 3 as const;
 
 export type NodeSnapshotId = string;
 
@@ -137,12 +137,17 @@ export type SerializedAstNodeSnapshot = SerializedBaseNodeSnapshot & {
   evaluationResult: SerializedFunctionEvaluationResultSnapshot;
 };
 
+export type SerializedResourceNodeSnapshot = SerializedBaseNodeSnapshot & {
+  kind: "resource";
+};
+
 export type SerializedDependencyNodeSnapshot =
   | SerializedCellValueNodeSnapshot
   | SerializedSpillMetaNodeSnapshot
   | SerializedEmptyCellNodeSnapshot
   | SerializedRangeNodeSnapshot
-  | SerializedAstNodeSnapshot;
+  | SerializedAstNodeSnapshot
+  | SerializedResourceNodeSnapshot;
 
 export type DependencyManagerSnapshot = {
   nodes: SerializedDependencyNodeSnapshot[];
@@ -173,7 +178,7 @@ export type CacheManagerSnapshot = {
   }>;
 };
 
-export type EngineSnapshotV2 = {
+export type EngineSnapshotV3 = {
   version: typeof ENGINE_SNAPSHOT_VERSION;
   managers: {
     workbook: WorkbookManagerSnapshot;
@@ -185,6 +190,8 @@ export type EngineSnapshotV2 = {
     cache: CacheManagerSnapshot;
   };
 };
+
+export type EngineSnapshotV2 = EngineSnapshotV3;
 
 export function getAstNodeSnapshotId(
   node: DependencyNode & { getContextDependency(): ContextDependency }

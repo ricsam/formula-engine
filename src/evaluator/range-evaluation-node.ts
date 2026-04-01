@@ -50,6 +50,15 @@ export class RangeEvaluationNode extends FrontierDependencyManager {
     this._result = options.result;
   }
 
+  public override invalidate() {
+    super.invalidate();
+    this._result = {
+      type: "awaiting-evaluation",
+      waitingFor: this,
+      errAddress: this,
+    };
+  }
+
   toJSON(visitor: Set<string> = new Set()): any {
     const hasVisited = visitor?.has(this.key);
     visitor?.add(this.key);

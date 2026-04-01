@@ -27,9 +27,10 @@ export class FrontierDependencyManager {
   private evalOrder: EvalOrderEntry[] = [];
   private _resolved: boolean = false;
   private _directDepsUpdated: boolean = false;
+  private evalOrderInitialized: boolean = false;
 
   constructor(
-    private frontierRange: RangeAddress,
+    protected readonly frontierRange: RangeAddress,
     protected workbookManager: WorkbookManager,
     protected evaluationManager: DependencyManager,
     options?: { skipInitialBuild?: boolean }
@@ -41,7 +42,13 @@ export class FrontierDependencyManager {
     this.buildInitialEvalOrder();
   }
 
-  private buildInitialEvalOrder() {
+  protected buildInitialEvalOrder() {
+    this.evalOrderInitialized = true;
+    this.evalOrder = [];
+    this._frontierDependencies = new Set();
+    this._discardedFrontierDependencies = new Set();
+    this._dependencies = new Set();
+
     const addressToSpillMetaNode = (address: CellAddress) => {
       const node = this.evaluationManager.getSpillMetaNode(
         cellAddressToKey(address).replace(/^[^:]+:/, "spill-meta:")
@@ -94,6 +101,12 @@ export class FrontierDependencyManager {
     this._directDepsUpdated = directDepsUpdated;
   }
 
+  protected ensureEvalOrderBuilt() {
+    if (!this.evalOrderInitialized) {
+      this.buildInitialEvalOrder();
+    }
+  }
+
   /**
    * frontierDependencies is the set of dependency node keys that could spill values onto the target range (if evaluationResult is spilled-values)
    * Key is from cellAddressToKey
@@ -122,13 +135,19 @@ export class FrontierDependencyManager {
   }
 
   public getRangeEvalOrder() {
+    this.ensureEvalOrderBuilt();
     return this.evalOrder;
+  }
+
+  public getFrontierRange() {
+    return this.frontierRange;
   }
 
   public restoreResolvedSnapshot(options: {
     dependencies: Set<DependencyNode>;
   }) {
     this.evalOrder = [];
+    this.evalOrderInitialized = true;
     this._frontierDependencies = new Set();
     this._discardedFrontierDependencies = new Set();
     this._dependencies = new Set(options.dependencies);
@@ -136,13 +155,25 @@ export class FrontierDependencyManager {
     this._resolved = true;
   }
 
+  public invalidate() {
+    this.evalOrder = [];
+    this.evalOrderInitialized = false;
+    this._frontierDependencies = new Set();
+    this._discardedFrontierDependencies = new Set();
+    this._dependencies = new Set();
+    this._directDepsUpdated = false;
+    this._resolved = false;
+  }
+
   public get frontierDependencies() {
+    this.ensureEvalOrderBuilt();
     return this._frontierDependencies
       .difference(this._discardedFrontierDependencies)
       .difference(this._dependencies);
   }
 
   public get discardedFrontierDependencies() {
+    this.ensureEvalOrderBuilt();
     return this._discardedFrontierDependencies;
   }
 
@@ -198,6 +229,7 @@ export class FrontierDependencyManager {
   }
 
   public getDependencies() {
+    this.ensureEvalOrderBuilt();
     return this._dependencies;
   }
 
@@ -206,6 +238,7 @@ export class FrontierDependencyManager {
   }
 
   public getAllDependencies() {
+    this.ensureEvalOrderBuilt();
     return this._dependencies.union(this._frontierDependencies);
   }
 

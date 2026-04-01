@@ -12,9 +12,59 @@ import type {
   RangeAddress,
   SerializedCellValue,
 } from "../types";
-import type { EngineCommand, EngineAction } from "./types";
-import { ActionTypes } from "./types";
+import type {
+  EngineCommand,
+  EngineAction,
+  MutationInvalidation,
+} from "./types";
+import {
+  ActionTypes,
+  emptyMutationInvalidation,
+  getSerializedCellValueKind,
+} from "./types";
 import { getCellReference, parseCellReference } from "../utils";
+
+function buildTouchedCells(
+  cells: Array<{
+    address: CellAddress;
+    before: SerializedCellValue | undefined;
+    after: SerializedCellValue | undefined;
+  }>
+): MutationInvalidation["touchedCells"] {
+  const deduped = new Map<
+    string,
+    {
+      address: CellAddress;
+      beforeKind: ReturnType<typeof getSerializedCellValueKind>;
+      afterKind: ReturnType<typeof getSerializedCellValueKind>;
+    }
+  >();
+
+  for (const cell of cells) {
+    deduped.set(`${cell.address.workbookName}:${cell.address.sheetName}:${getCellReference(cell.address)}`, {
+      address: cell.address,
+      beforeKind: getSerializedCellValueKind(cell.before),
+      afterKind: getSerializedCellValueKind(cell.after),
+    });
+  }
+
+  return Array.from(deduped.values());
+}
+
+function getAddressKey(address: CellAddress): string {
+  return `${address.workbookName}:${address.sheetName}:${getCellReference(address)}`;
+}
+
+function captureCellContents(
+  workbookManager: WorkbookManager,
+  addresses: CellAddress[]
+): Map<string, SerializedCellValue | undefined> {
+  const contents = new Map<string, SerializedCellValue | undefined>();
+  for (const address of addresses) {
+    contents.set(getAddressKey(address), workbookManager.getCellContent(address));
+  }
+  return contents;
+}
 
 /**
  * Command to set a single cell's content.
@@ -23,6 +73,8 @@ export class SetCellContentCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private previousValue: SerializedCellValue | undefined;
   private hadPreviousValue = false;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private workbookManager: WorkbookManager,
@@ -43,6 +95,26 @@ export class SetCellContentCommand implements EngineCommand {
     }
 
     this.workbookManager.setCellContent(this.address, this.newContent);
+    this.executeFootprint = {
+      touchedCells: buildTouchedCells([
+        {
+          address: this.address,
+          before: this.previousValue,
+          after: this.newContent,
+        },
+      ]),
+      resourceKeys: [],
+    };
+    this.undoFootprint = {
+      touchedCells: buildTouchedCells([
+        {
+          address: this.address,
+          before: this.newContent,
+          after: this.hadPreviousValue ? this.previousValue : undefined,
+        },
+      ]),
+      resourceKeys: [],
+    };
   }
 
   undo(): void {
@@ -51,6 +123,10 @@ export class SetCellContentCommand implements EngineCommand {
     } else {
       this.workbookManager.setCellContent(this.address, undefined);
     }
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -70,6 +146,8 @@ export class SetCellContentCommand implements EngineCommand {
 export class SetSheetContentCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private previousContent: Map<string, SerializedCellValue> | undefined;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private workbookManager: WorkbookManager,
@@ -85,12 +163,49 @@ export class SetSheetContentCommand implements EngineCommand {
     }
 
     this.workbookManager.setSheetContent(this.opts, this.newContent);
+    const touchedKeys = new Set<string>([
+      ...Array.from(this.previousContent?.keys() ?? []),
+      ...Array.from(this.newContent.keys()),
+    ]);
+    const touchedCells = buildTouchedCells(
+      Array.from(touchedKeys, (key) => ({
+        address: {
+          workbookName: this.opts.workbookName,
+          sheetName: this.opts.sheetName,
+          ...parseCellReference(key),
+        },
+        before: this.previousContent?.get(key),
+        after: this.newContent.get(key),
+      }))
+    );
+    this.executeFootprint = {
+      touchedCells,
+      resourceKeys: [],
+    };
+    this.undoFootprint = {
+      touchedCells: buildTouchedCells(
+        Array.from(touchedKeys, (key) => ({
+          address: {
+            workbookName: this.opts.workbookName,
+            sheetName: this.opts.sheetName,
+            ...parseCellReference(key),
+          },
+          before: this.newContent.get(key),
+          after: this.previousContent?.get(key),
+        }))
+      ),
+      resourceKeys: [],
+    };
   }
 
   undo(): void {
     if (this.previousContent) {
       this.workbookManager.setSheetContent(this.opts, this.previousContent);
     }
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -110,6 +225,8 @@ export class SetSheetContentCommand implements EngineCommand {
 export class ClearRangeCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private clearedCells: Map<string, SerializedCellValue> = new Map();
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
 
   constructor(
     private workbookManager: WorkbookManager,
@@ -117,6 +234,7 @@ export class ClearRangeCommand implements EngineCommand {
   ) {}
 
   execute(): void {
+    this.clearedCells.clear();
     // Capture cells before clearing using the optimized iterator
     // This handles infinite ranges by only iterating over cells that actually exist
     try {
@@ -132,6 +250,34 @@ export class ClearRangeCommand implements EngineCommand {
     }
 
     this.workbookManager.clearSpreadsheetRange(this.address);
+    this.executeFootprint = {
+      touchedCells: buildTouchedCells(
+        Array.from(this.clearedCells.entries(), ([key, before]) => ({
+          address: {
+            workbookName: this.address.workbookName,
+            sheetName: this.address.sheetName,
+            ...parseCellReference(key),
+          },
+          before,
+          after: undefined,
+        }))
+      ),
+      resourceKeys: [],
+    };
+    this.undoFootprint = {
+      touchedCells: buildTouchedCells(
+        Array.from(this.clearedCells.entries(), ([key, after]) => ({
+          address: {
+            workbookName: this.address.workbookName,
+            sheetName: this.address.sheetName,
+            ...parseCellReference(key),
+          },
+          before: undefined,
+          after,
+        }))
+      ),
+      resourceKeys: [],
+    };
   }
 
   undo(): void {
@@ -148,6 +294,10 @@ export class ClearRangeCommand implements EngineCommand {
         value
       );
     }
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -176,6 +326,10 @@ export class PasteCellsCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private targetSnapshots: CellSnapshot[] = [];
   private sourceSnapshots: CellSnapshot[] = [];
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
+  private executedContents: Map<string, SerializedCellValue | undefined> =
+    new Map();
 
   constructor(
     private workbookManager: WorkbookManager,
@@ -186,6 +340,9 @@ export class PasteCellsCommand implements EngineCommand {
   ) {}
 
   execute(): void {
+    this.targetSnapshots = [];
+    this.sourceSnapshots = [];
+    this.executedContents.clear();
     // Calculate target cells and capture their state
     if (this.source.length > 0) {
       const firstSource = this.source[0]!;
@@ -237,6 +394,38 @@ export class PasteCellsCommand implements EngineCommand {
     }
 
     this.copyManager.pasteCells(this.source, this.target, this.options);
+    const touchedAddresses = [
+      ...this.targetSnapshots.map((snapshot) => snapshot.address),
+      ...this.sourceSnapshots.map((snapshot) => snapshot.address),
+    ];
+    this.executedContents = captureCellContents(this.workbookManager, touchedAddresses);
+    this.executeFootprint = {
+      touchedCells: buildTouchedCells(
+        touchedAddresses.map((address) => {
+          const beforeSnapshot =
+            this.targetSnapshots.find(
+              (snapshot) =>
+                snapshot.address.workbookName === address.workbookName &&
+                snapshot.address.sheetName === address.sheetName &&
+                snapshot.address.colIndex === address.colIndex &&
+                snapshot.address.rowIndex === address.rowIndex
+            ) ??
+            this.sourceSnapshots.find(
+              (snapshot) =>
+                snapshot.address.workbookName === address.workbookName &&
+                snapshot.address.sheetName === address.sheetName &&
+                snapshot.address.colIndex === address.colIndex &&
+                snapshot.address.rowIndex === address.rowIndex
+            );
+          return {
+            address,
+            before: beforeSnapshot?.content,
+            after: this.executedContents.get(getAddressKey(address)),
+          };
+        })
+      ),
+      resourceKeys: [],
+    };
   }
 
   undo(): void {
@@ -257,6 +446,27 @@ export class PasteCellsCommand implements EngineCommand {
         }
       }
     }
+
+    const touchedAddresses = [
+      ...this.targetSnapshots.map((snapshot) => snapshot.address),
+      ...this.sourceSnapshots.map((snapshot) => snapshot.address),
+    ];
+    this.undoFootprint = {
+      touchedCells: buildTouchedCells(
+        touchedAddresses.map((address) => {
+          return {
+            address,
+            before: this.executedContents.get(getAddressKey(address)),
+            after: this.workbookManager.getCellContent(address),
+          };
+        })
+      ),
+      resourceKeys: [],
+    };
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -277,6 +487,10 @@ export class PasteCellsCommand implements EngineCommand {
 export class FillAreasCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private targetSnapshots: Map<string, CellSnapshot> = new Map();
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
+  private executedContents: Map<string, SerializedCellValue | undefined> =
+    new Map();
 
   constructor(
     private workbookManager: WorkbookManager,
@@ -287,6 +501,8 @@ export class FillAreasCommand implements EngineCommand {
   ) {}
 
   execute(): void {
+    this.targetSnapshots.clear();
+    this.executedContents.clear();
     // Capture all target cells before filling
     for (const targetRange of this.targetRanges) {
       const sheet = this.workbookManager.getSheet({
@@ -323,6 +539,20 @@ export class FillAreasCommand implements EngineCommand {
     }
 
     this.copyManager.fillAreas(this.seedRange, this.targetRanges, this.options);
+    const touchedAddresses = Array.from(this.targetSnapshots.values()).map(
+      (snapshot) => snapshot.address
+    );
+    this.executedContents = captureCellContents(this.workbookManager, touchedAddresses);
+    this.executeFootprint = {
+      touchedCells: buildTouchedCells(
+        touchedAddresses.map((address) => ({
+          address,
+          before: this.targetSnapshots.get(getAddressKey(address))?.content,
+          after: this.executedContents.get(getAddressKey(address)),
+        }))
+      ),
+      resourceKeys: [],
+    };
   }
 
   undo(): void {
@@ -333,6 +563,24 @@ export class FillAreasCommand implements EngineCommand {
         this.workbookManager.setCellMetadata(snapshot.address, snapshot.metadata);
       }
     }
+
+    const touchedAddresses = Array.from(this.targetSnapshots.values()).map(
+      (snapshot) => snapshot.address
+    );
+    this.undoFootprint = {
+      touchedCells: buildTouchedCells(
+        touchedAddresses.map((address) => ({
+          address,
+          before: this.executedContents.get(getAddressKey(address)),
+          after: this.workbookManager.getCellContent(address),
+        }))
+      ),
+      resourceKeys: [],
+    };
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -354,6 +602,10 @@ export class MoveCellCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private sourceSnapshot: CellSnapshot | undefined;
   private targetSnapshot: CellSnapshot | undefined;
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
+  private executedContents: Map<string, SerializedCellValue | undefined> =
+    new Map();
 
   constructor(
     private workbookManager: WorkbookManager,
@@ -363,6 +615,9 @@ export class MoveCellCommand implements EngineCommand {
   ) {}
 
   execute(): void {
+    this.sourceSnapshot = undefined;
+    this.targetSnapshot = undefined;
+    this.executedContents.clear();
     // Capture source cell
     const sourceSheet = this.workbookManager.getSheet({
       workbookName: this.source.workbookName,
@@ -399,6 +654,21 @@ export class MoveCellCommand implements EngineCommand {
       type: "formula",
       include: "all",
     });
+    const touchedAddresses = [this.source, this.target];
+    this.executedContents = captureCellContents(this.workbookManager, touchedAddresses);
+    this.executeFootprint = {
+      touchedCells: buildTouchedCells(
+        touchedAddresses.map((address) => ({
+          address,
+          before:
+            this.sourceSnapshot?.address === address
+              ? this.sourceSnapshot.content
+              : this.targetSnapshot?.content,
+          after: this.executedContents.get(getAddressKey(address)),
+        }))
+      ),
+      resourceKeys: [],
+    };
   }
 
   undo(): void {
@@ -429,6 +699,22 @@ export class MoveCellCommand implements EngineCommand {
         );
       }
     }
+
+    const touchedAddresses = [this.source, this.target];
+    this.undoFootprint = {
+      touchedCells: buildTouchedCells(
+        touchedAddresses.map((address) => ({
+          address,
+          before: this.executedContents.get(getAddressKey(address)),
+          after: this.workbookManager.getCellContent(address),
+        }))
+      ),
+      resourceKeys: [],
+    };
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -449,6 +735,10 @@ export class MoveRangeCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private sourceSnapshots: CellSnapshot[] = [];
   private targetSnapshots: CellSnapshot[] = [];
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
+  private executedContents: Map<string, SerializedCellValue | undefined> =
+    new Map();
 
   constructor(
     private workbookManager: WorkbookManager,
@@ -458,6 +748,9 @@ export class MoveRangeCommand implements EngineCommand {
   ) {}
 
   execute(): void {
+    this.sourceSnapshots = [];
+    this.targetSnapshots = [];
+    this.executedContents.clear();
     // Expand source range to cells
     const sourceCells = this.copyManager.expandRangeToCells(this.sourceRange);
 
@@ -514,6 +807,30 @@ export class MoveRangeCommand implements EngineCommand {
       type: "formula",
       include: "all",
     });
+    const touchedAddresses = [
+      ...this.sourceSnapshots.map((snapshot) => snapshot.address),
+      ...this.targetSnapshots.map((snapshot) => snapshot.address),
+    ];
+    this.executedContents = captureCellContents(this.workbookManager, touchedAddresses);
+    this.executeFootprint = {
+      touchedCells: buildTouchedCells(
+        touchedAddresses.map((address) => {
+          const snapshot =
+            this.sourceSnapshots.find(
+              (candidate) => getAddressKey(candidate.address) === getAddressKey(address)
+            ) ??
+            this.targetSnapshots.find(
+              (candidate) => getAddressKey(candidate.address) === getAddressKey(address)
+            );
+          return {
+            address,
+            before: snapshot?.content,
+            after: this.executedContents.get(getAddressKey(address)),
+          };
+        })
+      ),
+      resourceKeys: [],
+    };
   }
 
   undo(): void {
@@ -532,6 +849,25 @@ export class MoveRangeCommand implements EngineCommand {
         this.workbookManager.setCellMetadata(snapshot.address, snapshot.metadata);
       }
     }
+
+    const touchedAddresses = [
+      ...this.sourceSnapshots.map((snapshot) => snapshot.address),
+      ...this.targetSnapshots.map((snapshot) => snapshot.address),
+    ];
+    this.undoFootprint = {
+      touchedCells: buildTouchedCells(
+        touchedAddresses.map((address) => ({
+          address,
+          before: this.executedContents.get(getAddressKey(address)),
+          after: this.workbookManager.getCellContent(address),
+        }))
+      ),
+      resourceKeys: [],
+    };
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -553,6 +889,11 @@ export class AutoFillCommand implements EngineCommand {
   readonly requiresReevaluation = true;
   private previousContent: Map<string, SerializedCellValue> = new Map();
   private previousMetadata: Map<string, unknown> = new Map();
+  private executeFootprint = emptyMutationInvalidation();
+  private undoFootprint = emptyMutationInvalidation();
+  private touchedAddresses: CellAddress[] = [];
+  private executedContents: Map<string, SerializedCellValue | undefined> =
+    new Map();
 
   constructor(
     private workbookManager: WorkbookManager,
@@ -565,6 +906,10 @@ export class AutoFillCommand implements EngineCommand {
   ) {}
 
   execute(): void {
+    this.previousContent.clear();
+    this.previousMetadata.clear();
+    this.touchedAddresses = [];
+    this.executedContents.clear();
     // Capture current content and metadata in fill ranges before modification
     for (const fillRange of this.fillRanges) {
       if (fillRange.end.col.type === "infinity" || fillRange.end.row.type === "infinity") {
@@ -585,6 +930,7 @@ export class AutoFillCommand implements EngineCommand {
             colIndex: col,
             rowIndex: row,
           };
+          this.touchedAddresses.push(address);
           
           const content = this.workbookManager.getCellContent(address);
           if (content !== undefined) {
@@ -601,6 +947,20 @@ export class AutoFillCommand implements EngineCommand {
 
     // Execute the auto-fill operation
     this.autoFillManager.fill(this.opts, this.seedRange, this.fillRanges, this.direction);
+    this.executedContents = captureCellContents(this.workbookManager, this.touchedAddresses);
+    this.executeFootprint = {
+      touchedCells: buildTouchedCells(
+        this.touchedAddresses.map((address) => {
+          const key = getCellReference(address);
+          return {
+            address,
+            before: this.previousContent.get(key),
+            after: this.executedContents.get(getAddressKey(address)),
+          };
+        })
+      ),
+      resourceKeys: [],
+    };
   }
 
   undo(): void {
@@ -648,6 +1008,20 @@ export class AutoFillCommand implements EngineCommand {
 
     // Apply restored content
     this.workbookManager.setSheetContent(this.opts, newContent);
+    this.undoFootprint = {
+      touchedCells: buildTouchedCells(
+        this.touchedAddresses.map((address) => ({
+          address,
+          before: this.executedContents.get(getAddressKey(address)),
+          after: this.workbookManager.getCellContent(address),
+        }))
+      ),
+      resourceKeys: [],
+    };
+  }
+
+  getInvalidationFootprint(phase: "execute" | "undo"): MutationInvalidation {
+    return phase === "execute" ? this.executeFootprint : this.undoFootprint;
   }
 
   toAction(): EngineAction {
@@ -662,4 +1036,3 @@ export class AutoFillCommand implements EngineCommand {
     };
   }
 }
-

@@ -56,6 +56,17 @@ export class BaseEvalNode<T> {
     this._evaluationResult = result;
   }
 
+  public invalidate() {
+    this._dependencies = new Set();
+    this._lastDependencies = new Set();
+    this._resolved = false;
+    this._evaluationResult = {
+      type: "awaiting-evaluation",
+      waitingFor: this,
+      errAddress: this,
+    } as T;
+  }
+
   public resetDirectDepsUpdated() {
     if (this._resolved) {
       return;
