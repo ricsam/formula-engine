@@ -205,7 +205,7 @@ Object.assign(packageJson, {
   files: ["dist"],
   repository: {
     type: "git",
-    url: "git+https://github.com/ricsam/isolate.git"
+    url: "git+https://github.com/ricsam/formula-engine.git"
   }
 });
 
