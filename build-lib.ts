@@ -203,6 +203,10 @@ Object.assign(packageJson, {
     access: "public",
   },
   files: ["dist"],
+  repository: {
+    type: "git",
+    url: "git+https://github.com/ricsam/isolate.git"
+  }
 });
 
 await Bun.write(
