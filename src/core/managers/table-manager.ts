@@ -6,7 +6,11 @@ import type {
   TableDefinition,
 } from "../types";
 import type { TableManagerSnapshot } from "../engine-snapshot";
-import { checkRangeIntersection, getCellReference, parseCellReference } from "../utils";
+import {
+  checkRangeIntersection,
+  getCellReference,
+  parseCellReference,
+} from "../utils";
 import type { WorkbookManager } from "./workbook-manager";
 
 export class TableManager {
@@ -97,7 +101,7 @@ export class TableManager {
     to: {
       workbookName: string;
       tableName: string;
-    }
+    },
   ): void {
     const fromTable = this.getTable({
       workbookName: from.workbookName,
@@ -142,7 +146,7 @@ export class TableManager {
 
   renameTable(
     workbookName: string,
-    names: { oldName: string; newName: string }
+    names: { oldName: string; newName: string },
   ): void {
     const wb = this.tables.get(workbookName);
     if (!wb) {
@@ -237,7 +241,8 @@ export class TableManager {
     // Update tables that belong to the renamed sheet
     const wb = this.tables.get(options.workbookName);
     if (!wb) {
-      throw new Error("Workbook not found");
+      // No tables exist for this workbook yet — nothing to update
+      return;
     }
 
     wb.forEach((table) => {
@@ -253,7 +258,8 @@ export class TableManager {
   }): void {
     const wb = this.tables.get(options.workbookName);
     if (!wb) {
-      throw new Error("Workbook not found");
+      // No tables exist for this workbook yet — nothing to update
+      return;
     }
     this.tables.set(options.newWorkbookName, wb);
     this.tables.delete(options.workbookName);
@@ -359,7 +365,7 @@ export class TableManager {
   doesRangeIntersectTable(
     workbookName: string,
     sheetName: string,
-    range: SpreadsheetRange
+    range: SpreadsheetRange,
   ): boolean {
     for (const table of this.getTables(workbookName).values()) {
       if (table.sheetName !== sheetName) {

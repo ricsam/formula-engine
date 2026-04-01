@@ -750,11 +750,11 @@ export class AddSheetCommand implements EngineCommand {
     const resourceKey = getSheetResourceKey(this.opts);
     this.executeFootprint = {
       touchedCells: [],
-      resourceKeys: [resourceKey, getWorkbookResourceKey(this.opts.workbookName)],
+      resourceKeys: [resourceKey],
     };
     this.undoFootprint = {
       touchedCells: [],
-      resourceKeys: [resourceKey, getWorkbookResourceKey(this.opts.workbookName)],
+      resourceKeys: [resourceKey],
       removedScopes: [{ type: "sheet", ...this.opts }],
     };
   }

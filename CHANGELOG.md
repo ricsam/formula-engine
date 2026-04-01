@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.2.4
+
+### Patch Changes
+
+- sheet rename fixes
+
 ## 0.2.3
 
 ### Patch Changes

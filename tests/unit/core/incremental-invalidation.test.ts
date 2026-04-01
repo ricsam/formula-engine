@@ -184,4 +184,32 @@ describe("Incremental invalidation", () => {
     expect(cell("A1", "Sheet2")).toBe(6);
     expect(cell("A1", "Sheet3")).toBe(11);
   });
+
+  test("sheet creation invalidates only formulas that explicitly depend on the new sheet", () => {
+    setCellContent("A1", 1);
+    setCellContent("B1", `=[${workbookName}]${sheetName}!A1+1`);
+    setCellContent("C1", "=Sheet2!A1");
+    setCellContent("D1", "=10+1");
+
+    expect(cell("B1")).toBe(2);
+    expect(typeof cell("C1")).toBe("string");
+    expect(cell("D1")).toBe(11);
+
+    const explicitWorkbookNode = cellNode("B1");
+    const newSheetDependentNode = cellNode("C1");
+    const unrelatedNode = cellNode("D1");
+
+    expect(explicitWorkbookNode.resolved).toBe(true);
+    expect(newSheetDependentNode.resolved).toBe(true);
+    expect(unrelatedNode.resolved).toBe(true);
+
+    engine.addSheet({ workbookName, sheetName: "Sheet2" });
+
+    expect(explicitWorkbookNode.resolved).toBe(true);
+    expect(newSheetDependentNode.resolved).toBe(false);
+    expect(unrelatedNode.resolved).toBe(true);
+    expect(cell("B1")).toBe(2);
+    expect(cell("C1")).toBe("");
+    expect(cell("D1")).toBe(11);
+  });
 });
