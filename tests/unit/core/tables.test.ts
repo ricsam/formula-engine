@@ -1246,8 +1246,8 @@ describe("Tables", () => {
     setCellContent("J2", "=Summary1_RFP[[#Data],[20uM]:[100uM]]");
     expect(cell("J2")).toBe(200);
 
-    setCellContent("J3", "=Summary1_RFP[[#All],[50uM]:[null]]");
-    expect(cell("J3")).toBe("50uM");
+    setCellContent("J4", "=Summary1_RFP[[#All],[50uM]:[null]]");
+    expect(cell("J4")).toBe("50uM");
   });
 
   test("should match vertical spill range against horizontal header range", () => {
