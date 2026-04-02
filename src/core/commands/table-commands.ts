@@ -19,8 +19,113 @@ import type {
   EngineAction,
   MutationInvalidation,
 } from "./types";
-import { ActionTypes, emptyMutationInvalidation } from "./types";
+import {
+  ActionTypes,
+  emptyMutationInvalidation,
+  getSerializedCellValueKind,
+} from "./types";
 import { getTableResourceKey } from "../resource-keys";
+import { parseCellReference } from "../utils";
+
+function getAddressKey(address: CellAddress): string {
+  return `${address.workbookName}:${address.sheetName}:${address.rowIndex}:${address.colIndex}`;
+}
+
+function collectTableFootprintCells(
+  workbookManager: WorkbookManager,
+  table: TableDefinition
+): Array<{
+  address: CellAddress;
+  content: SerializedCellValue | undefined;
+}> {
+  const cells = new Map<
+    string,
+    {
+      address: CellAddress;
+      content: SerializedCellValue | undefined;
+    }
+  >();
+  const sheet = workbookManager.getSheet({
+    workbookName: table.workbookName,
+    sheetName: table.sheetName,
+  });
+  if (!sheet) {
+    return [];
+  }
+
+  const startColIndex = table.start.colIndex;
+  const endColIndex = startColIndex + table.headers.size - 1;
+
+  if (table.endRow.type === "number") {
+    for (let rowIndex = table.start.rowIndex; rowIndex <= table.endRow.value; rowIndex++) {
+      for (let colIndex = startColIndex; colIndex <= endColIndex; colIndex++) {
+        const address = {
+          workbookName: table.workbookName,
+          sheetName: table.sheetName,
+          rowIndex,
+          colIndex,
+        };
+        cells.set(getAddressKey(address), {
+          address,
+          content: workbookManager.getCellContent(address),
+        });
+      }
+    }
+    return Array.from(cells.values());
+  }
+
+  for (const [ref, content] of sheet.content.entries()) {
+    const { rowIndex, colIndex } = parseCellReference(ref);
+    if (rowIndex < table.start.rowIndex) {
+      continue;
+    }
+    if (colIndex < startColIndex || colIndex > endColIndex) {
+      continue;
+    }
+
+    const address = {
+      workbookName: table.workbookName,
+      sheetName: table.sheetName,
+      rowIndex,
+      colIndex,
+    };
+    cells.set(getAddressKey(address), {
+      address,
+      content,
+    });
+  }
+
+  return Array.from(cells.values());
+}
+
+function buildTableTouchedCells(
+  workbookManager: WorkbookManager,
+  tables: Array<TableDefinition | undefined>
+): MutationInvalidation["touchedCells"] {
+  const touchedCells = new Map<
+    string,
+    {
+      address: CellAddress;
+      beforeKind: ReturnType<typeof getSerializedCellValueKind>;
+      afterKind: ReturnType<typeof getSerializedCellValueKind>;
+    }
+  >();
+
+  for (const table of tables) {
+    if (!table) {
+      continue;
+    }
+    for (const cell of collectTableFootprintCells(workbookManager, table)) {
+      touchedCells.set(getAddressKey(cell.address), {
+        address: cell.address,
+        beforeKind: getSerializedCellValueKind(cell.content),
+        afterKind: getSerializedCellValueKind(cell.content),
+      });
+    }
+  }
+
+  return Array.from(touchedCells.values());
+}
 
 /**
  * Dependencies needed for table commands.
@@ -59,7 +164,7 @@ export class AddTableCommand implements EngineCommand {
   ) {}
 
   execute(): void {
-    this.deps.tableManager.addTable({
+    const table = this.deps.tableManager.addTable({
       ...this.props,
       getCellValue: this.deps.getCellValue,
     });
@@ -68,7 +173,7 @@ export class AddTableCommand implements EngineCommand {
       tableName: this.props.tableName,
     });
     this.executeFootprint = {
-      touchedCells: [],
+      touchedCells: buildTableTouchedCells(this.deps.workbookManager, [table]),
       resourceKeys: [resourceKey],
     };
     this.undoFootprint = this.executeFootprint;
@@ -120,7 +225,9 @@ export class RemoveTableCommand implements EngineCommand {
       tableName: this.opts.tableName,
     });
     this.executeFootprint = {
-      touchedCells: [],
+      touchedCells: buildTableTouchedCells(this.deps.workbookManager, [
+        this.removedTable,
+      ]),
       resourceKeys: [resourceKey],
     };
     this.undoFootprint = this.executeFootprint;
@@ -312,8 +419,15 @@ export class UpdateTableCommand implements EngineCommand {
       workbookName: this.opts.workbookName,
       tableName: this.opts.tableName,
     });
+    const nextTable = this.deps.tableManager.getTable({
+      workbookName: this.opts.workbookName,
+      name: this.opts.tableName,
+    });
     this.executeFootprint = {
-      touchedCells: [],
+      touchedCells: buildTableTouchedCells(this.deps.workbookManager, [
+        this.previousTable,
+        nextTable,
+      ]),
       resourceKeys: [resourceKey],
     };
     this.undoFootprint = this.executeFootprint;
@@ -393,7 +507,14 @@ export class ResetTablesCommand implements EngineCommand {
       }
     }
     this.executeFootprint = {
-      touchedCells: [],
+      touchedCells: buildTableTouchedCells(this.deps.workbookManager, [
+        ...Array.from(this.previousTables?.values() ?? []).flatMap((tables) =>
+          Array.from(tables.values())
+        ),
+        ...Array.from(this.newTables.values()).flatMap((tables) =>
+          Array.from(tables.values())
+        ),
+      ]),
       resourceKeys: Array.from(resourceKeys),
     };
     this.undoFootprint = this.executeFootprint;

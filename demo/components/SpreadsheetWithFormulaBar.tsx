@@ -17,6 +17,11 @@ import { FormulaEngine } from "../../src/core/engine";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import { Input } from "../components/ui/input";
+import {
+  getFiniteTableLastRowIndex,
+  getFiniteTableRowCount,
+  isTableLastRow,
+} from "../lib/table-metrics";
 import type { WorkbookClipboardManager } from "@/WorkbookClipboardManager";
 
 interface SpreadsheetWithFormulaBarProps {
@@ -94,6 +99,22 @@ export function SpreadsheetWithFormulaBar({
     if (!currentSelectedTable) return [];
     return Array.from(currentSelectedTable.headers.keys());
   }, [currentSelectedTable, state]);
+
+  const currentSelectedTableLastRowIndex = useMemo(() => {
+    if (!currentSelectedTable) {
+      return undefined;
+    }
+
+    return getFiniteTableLastRowIndex(currentSelectedTable);
+  }, [currentSelectedTable]);
+
+  const currentSelectedTableRowCount = useMemo(() => {
+    if (!currentSelectedTable) {
+      return undefined;
+    }
+
+    return getFiniteTableRowCount(currentSelectedTable);
+  }, [currentSelectedTable]);
 
   const addTableFromSelection = useCallback(() => {
     const effectiveTableName = (newTableName || defaultTableName).trim();
@@ -361,14 +382,11 @@ export function SpreadsheetWithFormulaBar({
                         rowIndex: currentSelectedTable.start.rowIndex,
                         colIndex: currentSelectedTable.start.colIndex,
                       })}
-                      {currentSelectedTable.endRow.type === "number" ? (
+                      {currentSelectedTableLastRowIndex !== undefined ? (
                         <>
                           :
                           {getCellReference({
-                            rowIndex:
-                              currentSelectedTable.start.rowIndex +
-                              currentSelectedTable.endRow.value -
-                              1,
+                            rowIndex: currentSelectedTableLastRowIndex,
                             colIndex:
                               currentSelectedTable.start.colIndex +
                               currentSelectedTable.headers.size -
@@ -391,11 +409,11 @@ export function SpreadsheetWithFormulaBar({
                     <span className="text-gray-600">
                       {currentSelectedTable.headers.size} columns
                     </span>
-                    {currentSelectedTable.endRow.type === "number" && (
+                    {currentSelectedTableRowCount !== undefined && (
                       <>
                         <span className="text-gray-500">•</span>
                         <span className="text-gray-600">
-                          {currentSelectedTable.endRow.value} rows
+                          {currentSelectedTableRowCount} rows
                         </span>
                       </>
                     )}
@@ -634,12 +652,7 @@ export function SpreadsheetWithFormulaBar({
               cell.colIndex ===
               tableInfo.start.colIndex + tableInfo.headers.size - 1;
 
-            // Calculate if this is the last row of the table
-            const isLastRow =
-              tableInfo.endRow.type === "number"
-                ? cell.rowIndex ===
-                  tableInfo.start.rowIndex + tableInfo.endRow.value - 1
-                : false; // For infinite tables, we don't style the last row differently
+            const isLastRow = isTableLastRow(tableInfo, cell.rowIndex);
 
             // Excel-like table styling
             const style: React.CSSProperties = {

@@ -274,6 +274,47 @@ export class DependencyManager {
     );
   }
 
+  private collectExistingContextSensitiveAstNodesForCell(
+    address: CellAddress
+  ): AstEvaluationNode[] {
+    const cellNode = this.getExistingCellValueNode(cellAddressToKey(address));
+    if (!cellNode) {
+      return [];
+    }
+
+    const collected = new Set<AstEvaluationNode>();
+    const visited = new Set<AstEvaluationNode>();
+    const stack = Array.from(cellNode.getDependencies()).filter(
+      (dependency): dependency is AstEvaluationNode =>
+        dependency instanceof AstEvaluationNode
+    );
+
+    while (stack.length > 0) {
+      const dependency = stack.pop();
+      if (!dependency) {
+        continue;
+      }
+
+      if (visited.has(dependency)) {
+        continue;
+      }
+      visited.add(dependency);
+
+      const contextDependency = dependency.getContextDependency();
+      if (Object.values(contextDependency).some((value) => value !== undefined)) {
+        collected.add(dependency);
+      }
+
+      for (const nestedDependency of dependency.getDependencies()) {
+        if (nestedDependency instanceof AstEvaluationNode) {
+          stack.push(nestedDependency);
+        }
+      }
+    }
+
+    return Array.from(collected);
+  }
+
   private collectSpillOriginsAffectingCell(
     address: CellAddress
   ): Set<DependencyNode> {
@@ -1437,6 +1478,17 @@ export class DependencyManager {
     for (const touchedCell of footprint.touchedCells) {
       for (const node of this.collectExistingNodesForCell(touchedCell.address)) {
         queue.push(node);
+      }
+
+      if (
+        touchedCell.beforeKind === "formula" ||
+        touchedCell.afterKind === "formula"
+      ) {
+        for (const astNode of this.collectExistingContextSensitiveAstNodesForCell(
+          touchedCell.address
+        )) {
+          queue.push(astNode);
+        }
       }
 
       for (const node of this.collectSpillOriginsAffectingCell(touchedCell.address)) {

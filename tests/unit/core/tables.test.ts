@@ -205,6 +205,56 @@ describe("Tables", () => {
     ).toBe(1000);
   });
 
+  test("should invalidate cached current-row references when a table is added", () => {
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map<string, SerializedCellValue>([
+        ["A1", "Cell line ID"],
+        ["B1", "Payload"],
+        ["C1", "ATR ID"],
+        ["D1", "TTR-ID"],
+        ["E1", "ATR-ID"],
+        ["F1", "pMHC ID"],
+        ["A2", "TTR"],
+        ["B2", "A, 1, 2, 3, 4"],
+        ["C2", '=LEFT([@Payload],FIND(",",[@Payload])-1)'],
+        ["D2", "=[@[Cell line ID]]"],
+        ["E2", "=[@[ATR ID]]"],
+        ["A3", "TTR"],
+        ["B3", "B, 1, 2, 3, 4"],
+        ["C3", '=LEFT([@Payload],FIND(",",[@Payload])-1)'],
+        ["D3", "=[@[Cell line ID]]"],
+        ["E3", "=[@[ATR ID]]"],
+      ])
+    );
+
+    expect(cell("C2", true)).toMatchInlineSnapshot(
+      `"#REF! in ast:[@Payload] Table undefined not found"`
+    );
+    expect(cell("D2", true)).toMatchInlineSnapshot(
+      `"#REF! in ast:[@Cell line ID] Table undefined not found"`
+    );
+    expect(cell("E3", true)).toMatchInlineSnapshot(
+      `"#REF! in ast:[@ATR ID] Table undefined not found"`
+    );
+
+    engine.addTable({
+      tableName: "LineData",
+      sheetName: sheetAddress.sheetName,
+      workbookName: sheetAddress.workbookName,
+      start: "A1",
+      numRows: { type: "number", value: 2 },
+      numCols: 6,
+    });
+
+    expect(cell("C2")).toBe("A");
+    expect(cell("D2")).toBe("TTR");
+    expect(cell("E2")).toBe("A");
+    expect(cell("C3")).toBe("B");
+    expect(cell("D3")).toBe("TTR");
+    expect(cell("E3")).toBe("B");
+  });
+
   test("should update named expressions when table is renamed", () => {
     // Create table
     engine.setSheetContent(

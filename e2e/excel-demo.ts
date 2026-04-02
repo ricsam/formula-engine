@@ -605,6 +605,57 @@ test.describe('Excel Demo', () => {
     await expect(page.locator('[data-testid="table-name-input"]')).toHaveValue('Table2');
   });
 
+  test('should render the bottom border on the actual last row of finite tables', async ({ page }) => {
+    const setCell = async (cellRef: string, value: string) => {
+      await page.locator(`[data-testid="spreadsheet-cell-${cellRef}"]`).dblclick();
+      await page.locator(`[data-testid="spreadsheet-cell-input-${cellRef}"]`).fill(value);
+      await page.keyboard.press('Enter');
+    };
+
+    const getBorderBottomWidth = async (cellRef: string) =>
+      page
+        .locator(`[data-testid="spreadsheet-cell-${cellRef}"]`)
+        .evaluate((element) => getComputedStyle(element).borderBottomWidth);
+
+    await expect(page.locator('[data-testid="spreadsheet-container"]')).toBeVisible();
+
+    await setCell('A1', 'Name');
+    await setCell('B1', 'Age');
+    await setCell('A2', 'John');
+    await setCell('B2', '25');
+    await setCell('A3', 'Jane');
+    await setCell('B3', '30');
+    await setCell('A4', 'Kim');
+    await setCell('B4', '35');
+    await setCell('A5', 'Lee');
+    await setCell('B5', '40');
+
+    await page.locator('[data-testid="spreadsheet-cell-A1"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-B5"]').click({ modifiers: ['Shift'] });
+    await page.locator('[data-testid="create-table-button"]').click();
+
+    await expect(await getBorderBottomWidth('A4')).toBe('1px');
+    await expect(await getBorderBottomWidth('A5')).toBe('2px');
+
+    await setCell('D3', 'City');
+    await setCell('E3', 'Country');
+    await setCell('D4', 'Stockholm');
+    await setCell('E4', 'Sweden');
+    await setCell('D5', 'Oslo');
+    await setCell('E5', 'Norway');
+    await setCell('D6', 'Copenhagen');
+    await setCell('E6', 'Denmark');
+    await setCell('D7', 'Helsinki');
+    await setCell('E7', 'Finland');
+
+    await page.locator('[data-testid="spreadsheet-cell-D3"]').click();
+    await page.locator('[data-testid="spreadsheet-cell-E7"]').click({ modifiers: ['Shift'] });
+    await page.locator('[data-testid="create-table-button"]').click();
+
+    await expect(await getBorderBottomWidth('D6')).toBe('1px');
+    await expect(await getBorderBottomWidth('D7')).toBe('2px');
+  });
+
   test('should create, rename, and remove tables with formula updates', async ({ page }) => {
     // Create a table with data
     await page.locator('[data-testid="spreadsheet-cell-A1"]').dblclick();
