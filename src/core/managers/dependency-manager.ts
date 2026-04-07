@@ -274,7 +274,7 @@ export class DependencyManager {
     );
   }
 
-  private collectExistingContextSensitiveAstNodesForCell(
+  private collectExistingAstNodesForCell(
     address: CellAddress
   ): AstEvaluationNode[] {
     const cellNode = this.getExistingCellValueNode(cellAddressToKey(address));
@@ -283,7 +283,6 @@ export class DependencyManager {
     }
 
     const collected = new Set<AstEvaluationNode>();
-    const visited = new Set<AstEvaluationNode>();
     const stack = Array.from(cellNode.getDependencies()).filter(
       (dependency): dependency is AstEvaluationNode =>
         dependency instanceof AstEvaluationNode
@@ -295,15 +294,10 @@ export class DependencyManager {
         continue;
       }
 
-      if (visited.has(dependency)) {
+      if (collected.has(dependency)) {
         continue;
       }
-      visited.add(dependency);
-
-      const contextDependency = dependency.getContextDependency();
-      if (Object.values(contextDependency).some((value) => value !== undefined)) {
-        collected.add(dependency);
-      }
+      collected.add(dependency);
 
       for (const nestedDependency of dependency.getDependencies()) {
         if (nestedDependency instanceof AstEvaluationNode) {
@@ -313,6 +307,77 @@ export class DependencyManager {
     }
 
     return Array.from(collected);
+  }
+
+  private astNodeHasExternalDependents(
+    node: AstEvaluationNode,
+    formulaAstNodes: Set<AstEvaluationNode>,
+    removedDependents: Set<DependencyNode>
+  ): boolean {
+    for (const dependent of this.getNodeDependents(node)) {
+      if (removedDependents.has(dependent)) {
+        continue;
+      }
+
+      if (dependent instanceof AstEvaluationNode && formulaAstNodes.has(dependent)) {
+        continue;
+      }
+
+      return true;
+    }
+
+    return false;
+  }
+
+  private collectOrphanedOldFormulaAstNodesForCell(
+    address: CellAddress
+  ): AstEvaluationNode[] {
+    const astNodes = this.collectExistingAstNodesForCell(address);
+    if (astNodes.length === 0) {
+      return [];
+    }
+
+    const formulaAstNodes = new Set(astNodes);
+    const removedDependents = new Set<DependencyNode>(
+      this.collectExistingNodesForCell(address)
+    );
+    const keptAstNodes = new Set<AstEvaluationNode>();
+    const stack = astNodes.filter((node) =>
+      this.astNodeHasExternalDependents(node, formulaAstNodes, removedDependents)
+    );
+
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (!node || keptAstNodes.has(node)) {
+        continue;
+      }
+      keptAstNodes.add(node);
+
+      for (const dependency of node.getDependencies()) {
+        if (dependency instanceof AstEvaluationNode && formulaAstNodes.has(dependency)) {
+          stack.push(dependency);
+        }
+      }
+    }
+
+    return astNodes.filter((node) => !keptAstNodes.has(node));
+  }
+
+  private removeAstNodeFromCache(node: AstEvaluationNode): void {
+    const astEntries = this.asts.get(node.key);
+    if (!astEntries) {
+      return;
+    }
+
+    for (const [contextKey, astEntry] of Array.from(astEntries.entries.entries())) {
+      if (astEntry.evalNode === node) {
+        astEntries.entries.delete(contextKey);
+      }
+    }
+
+    if (astEntries.entries.size === 0) {
+      this.asts.delete(node.key);
+    }
   }
 
   private collectSpillOriginsAffectingCell(
@@ -1476,19 +1541,19 @@ export class DependencyManager {
     const invalidatedNodeKeys = new Set<string>();
 
     for (const touchedCell of footprint.touchedCells) {
-      for (const node of this.collectExistingNodesForCell(touchedCell.address)) {
-        queue.push(node);
-      }
-
-      if (
-        touchedCell.beforeKind === "formula" ||
-        touchedCell.afterKind === "formula"
-      ) {
-        for (const astNode of this.collectExistingContextSensitiveAstNodesForCell(
+      if (touchedCell.beforeKind === "formula") {
+        for (const astNode of this.collectOrphanedOldFormulaAstNodesForCell(
           touchedCell.address
         )) {
-          queue.push(astNode);
+          this.unregisterNode(astNode);
+          astNode.invalidate();
+          this.removeAstNodeFromCache(astNode);
+          invalidatedNodeKeys.add(astNode.key);
         }
+      }
+
+      for (const node of this.collectExistingNodesForCell(touchedCell.address)) {
+        queue.push(node);
       }
 
       for (const node of this.collectSpillOriginsAffectingCell(touchedCell.address)) {

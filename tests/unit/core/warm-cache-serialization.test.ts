@@ -99,6 +99,22 @@ describe("Warm-cache serialization", () => {
     expect(hydratedEngine.getCellValue(address("B2"))).toBe(4);
   });
 
+  test("clearing a warmed formula removes orphaned AST snapshots", () => {
+    engine.setCellContent(address("A1"), "=1+1");
+
+    expect(engine.getCellValue(address("A1"))).toBe(2);
+
+    engine.setCellContent(address("A1"), undefined);
+
+    const snapshot = deserialize(engine.serializeEngine()) as any;
+
+    expect(
+      snapshot.managers.dependency.nodes.filter(
+        (node: any) => node.kind === "ast"
+      )
+    ).toEqual([]);
+  });
+
   test("roundtrips open-ended range consumers that were already hot", () => {
     engine.setSheetContent(
       { workbookName, sheetName },

@@ -105,6 +105,66 @@ describe("Incremental invalidation", () => {
     expect(cell("C1")).toBe(15);
   });
 
+  test("clearing a formula prunes orphaned ASTs without invalidating sibling table formulas", () => {
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map<string, string | number>([
+        ["A1", "key"],
+        ["B1", "amount"],
+        ["C1", "total"],
+        ["D1", "=10+1"],
+        ["A2", "x"],
+        ["A3", "y"],
+        ["A4", "x"],
+        ["B2", 1],
+        ["B3", 2],
+        ["B4", 3],
+        ["C2", "=SUMIFS(Table1[amount],Table1[key],[@key])"],
+        ["C3", "=SUMIFS(Table1[amount],Table1[key],[@key])"],
+        ["C4", "=SUMIFS(Table1[amount],Table1[key],[@key])"],
+      ])
+    );
+
+    engine.addTable({
+      tableName: "Table1",
+      sheetName,
+      workbookName,
+      start: "A1",
+      numRows: { type: "number", value: 3 },
+      numCols: 3,
+    });
+
+    expect(cell("C2")).toBe(4);
+    expect(cell("C3")).toBe(2);
+    expect(cell("C4")).toBe(4);
+    expect(cell("D1")).toBe(11);
+
+    const siblingNode = cellNode("C3");
+    const otherSiblingNode = cellNode("C4");
+    const unrelatedNode = cellNode("D1");
+
+    expect(siblingNode.resolved).toBe(true);
+    expect(otherSiblingNode.resolved).toBe(true);
+    expect(unrelatedNode.resolved).toBe(true);
+
+    setCellContent("C2", undefined);
+
+    expect(siblingNode.resolved).toBe(true);
+    expect(otherSiblingNode.resolved).toBe(true);
+    expect(unrelatedNode.resolved).toBe(true);
+    expect(cell("C3")).toBe(2);
+    expect(cell("C4")).toBe(4);
+    expect(cell("D1")).toBe(11);
+
+    const restoredEngine = FormulaEngine.buildEmpty();
+    restoredEngine.addWorkbook(workbookName);
+    restoredEngine.addSheet({ workbookName, sheetName });
+    restoredEngine.resetToSerializedEngine(engine.serializeEngine());
+
+    expect(restoredEngine.getCellValue(address("C3"))).toBe(2);
+    expect(restoredEngine.getCellValue(address("C4"))).toBe(4);
+  });
+
   test("spill shape changes invalidate intersecting consumers and keep unrelated caches warm", () => {
     setCellContent("C1", 1);
     setCellContent("A1", "=IF(C1=1,SEQUENCE(2,2),SEQUENCE(1,1))");
