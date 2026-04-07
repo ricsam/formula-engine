@@ -127,6 +127,45 @@ function buildTableTouchedCells(
   return Array.from(touchedCells.values());
 }
 
+function mergeTouchedCells(
+  ...groups: MutationInvalidation["touchedCells"][]
+): MutationInvalidation["touchedCells"] {
+  const precedence = {
+    empty: 0,
+    scalar: 1,
+    formula: 2,
+  } as const;
+  const merged = new Map<
+    string,
+    MutationInvalidation["touchedCells"][number]
+  >();
+
+  for (const group of groups) {
+    for (const touchedCell of group) {
+      const key = getAddressKey(touchedCell.address);
+      const existing = merged.get(key);
+      if (!existing) {
+        merged.set(key, touchedCell);
+        continue;
+      }
+
+      merged.set(key, {
+        address: touchedCell.address,
+        beforeKind:
+          precedence[touchedCell.beforeKind] >= precedence[existing.beforeKind]
+            ? touchedCell.beforeKind
+            : existing.beforeKind,
+        afterKind:
+          precedence[touchedCell.afterKind] >= precedence[existing.afterKind]
+            ? touchedCell.afterKind
+            : existing.afterKind,
+      });
+    }
+  }
+
+  return Array.from(merged.values());
+}
+
 /**
  * Dependencies needed for table commands.
  */
@@ -279,6 +318,10 @@ export class RenameTableCommand implements EngineCommand {
   ) {}
 
   execute(): void {
+    const previousTable = this.deps.tableManager.getTable({
+      workbookName: this.workbookName,
+      name: this.oldName,
+    });
     this.deps.tableManager.renameTable(this.workbookName, {
       oldName: this.oldName,
       newName: this.newName,
@@ -301,13 +344,23 @@ export class RenameTableCommand implements EngineCommand {
       this.oldName,
       this.newName
     );
+    const renamedTable = this.deps.tableManager.getTable({
+      workbookName: this.workbookName,
+      name: this.newName,
+    });
 
     this.executeFootprint = {
-      touchedCells: changedCells.map((address) => ({
-        address,
-        beforeKind: "formula" as const,
-        afterKind: "formula" as const,
-      })),
+      touchedCells: mergeTouchedCells(
+        buildTableTouchedCells(this.deps.workbookManager, [
+          previousTable,
+          renamedTable,
+        ]),
+        changedCells.map((address) => ({
+          address,
+          beforeKind: "formula" as const,
+          afterKind: "formula" as const,
+        }))
+      ),
       resourceKeys: [
         getTableResourceKey({
           workbookName: this.workbookName,
@@ -323,6 +376,10 @@ export class RenameTableCommand implements EngineCommand {
   }
 
   undo(): void {
+    const currentTable = this.deps.tableManager.getTable({
+      workbookName: this.workbookName,
+      name: this.newName,
+    });
     // Rename back
     this.deps.tableManager.renameTable(this.workbookName, {
       oldName: this.newName,
@@ -346,13 +403,23 @@ export class RenameTableCommand implements EngineCommand {
       this.newName,
       this.oldName
     );
+    const restoredTable = this.deps.tableManager.getTable({
+      workbookName: this.workbookName,
+      name: this.oldName,
+    });
 
     this.undoFootprint = {
-      touchedCells: changedCells.map((address) => ({
-        address,
-        beforeKind: "formula" as const,
-        afterKind: "formula" as const,
-      })),
+      touchedCells: mergeTouchedCells(
+        buildTableTouchedCells(this.deps.workbookManager, [
+          currentTable,
+          restoredTable,
+        ]),
+        changedCells.map((address) => ({
+          address,
+          beforeKind: "formula" as const,
+          afterKind: "formula" as const,
+        }))
+      ),
       resourceKeys: [
         getTableResourceKey({
           workbookName: this.workbookName,

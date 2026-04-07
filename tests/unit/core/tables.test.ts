@@ -255,6 +255,66 @@ describe("Tables", () => {
     expect(cell("E3")).toBe("B");
   });
 
+  test("should invalidate cached current-row references independently across sheets", () => {
+    const sheet2 = "Sheet2";
+    engine.addSheet({ workbookName, sheetName: sheet2 });
+
+    const sharedContent = new Map<string, SerializedCellValue>([
+      ["A1", "Value"],
+      ["B1", "Calc"],
+      ["A2", 10],
+      ["B2", "=[@Value]*2"],
+    ]);
+
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map(sharedContent)
+    );
+    engine.setSheetContent(
+      { workbookName, sheetName: sheet2 },
+      new Map(sharedContent)
+    );
+
+    const sheet2Cell = (ref: string, debug?: boolean) =>
+      engine.getCellValue(
+        { workbookName, sheetName: sheet2, ...parseCellReference(ref) },
+        debug
+      );
+
+    expect(cell("B2", true)).toMatchInlineSnapshot(
+      `"#REF! in ast:[@Value] Table undefined not found"`
+    );
+    expect(sheet2Cell("B2", true)).toMatchInlineSnapshot(
+      `"#REF! in ast:[@Value] Table undefined not found"`
+    );
+
+    engine.addTable({
+      tableName: "Sheet1Table",
+      sheetName,
+      workbookName,
+      start: "A1",
+      numRows: { type: "number", value: 1 },
+      numCols: 2,
+    });
+
+    expect(cell("B2")).toBe(20);
+    expect(sheet2Cell("B2", true)).toMatchInlineSnapshot(
+      `"#REF! in ast:[@Value] Table undefined not found"`
+    );
+
+    engine.addTable({
+      tableName: "Sheet2Table",
+      sheetName: sheet2,
+      workbookName,
+      start: "A1",
+      numRows: { type: "number", value: 1 },
+      numCols: 2,
+    });
+
+    expect(cell("B2")).toBe(20);
+    expect(sheet2Cell("B2")).toBe(20);
+  });
+
   test("should update named expressions when table is renamed", () => {
     // Create table
     engine.setSheetContent(

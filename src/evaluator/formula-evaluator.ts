@@ -219,8 +219,10 @@ export class FormulaEvaluator {
         .getTables(context.cellAddress.workbookName)
         .get(node.tableName);
     } else {
-      // if no table nor workbook name is provided, we need to find the table in the current workbook
-      // and the formula will be evaluated differently based on the table (and workbook) we are evaluating it in
+      // If no table nor workbook name is provided, the current cell's table
+      // membership determines the result. We record that membership explicitly,
+      // including the "no table" sentinel, so stale pre-table ASTs are not
+      // reused after a table is later created for the cell.
       context.addContextDependency("workbook", "table");
       table = this.tableManager.isCellInTable(context.cellAddress);
     }

@@ -1168,7 +1168,9 @@ export class DependencyManager {
   getAstNode(
     ast: ASTNode,
     currentContext: Omit<Required<ContextDependency>, "tableName"> & {
-      tableName?: string;
+      // `null` is the explicit "evaluated outside a table" sentinel.
+      // `undefined` means the table dimension is omitted from this lookup.
+      tableName?: string | null;
     }
   ): AstEvaluationNode {
     const astKey = `ast:${astToString(ast)}`; // cache normalize this later
