@@ -174,6 +174,31 @@ describe("Sheets", () => {
     expect(cell(newName, "B1")).toBe(42);
   });
 
+  test("should preserve sheet order when renaming a sheet", () => {
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    engine.addSheet({ workbookName, sheetName: "Sheet2" });
+    engine.addSheet({ workbookName, sheetName: "Sheet3" });
+    engine.addSheet({ workbookName, sheetName: "Sheet4" });
+    engine.addSheet({ workbookName, sheetName: "Sheet5" });
+
+    engine.renameSheet({
+      workbookName,
+      sheetName: "Sheet2",
+      newSheetName: "blabla",
+    });
+
+    expect(Array.from(engine.getSheets(workbookName).keys())).toEqual([
+      "Sheet1",
+      "blabla",
+      "Sheet3",
+      "Sheet4",
+      "Sheet5",
+    ]);
+    expect(
+      engine.getSheet({ workbookName, sheetName: "blabla" })?.index
+    ).toBe(1);
+  });
+
   test("should throw error when renaming non-existent sheet", () => {
     expect(() => {
       engine.renameSheet({
@@ -525,9 +550,53 @@ describe("Sheets", () => {
     // Remove middle sheet
     engine.removeSheet({ workbookName, sheetName: "Second" });
 
-    // Add new sheet - should get next available index
+    // Add new sheet - should append at the end with a unique index
     engine.addSheet({ workbookName, sheetName: "Fourth" });
     const sheet4 = engine.getSheet({ workbookName, sheetName: "Fourth" });
-    expect(sheet4?.index).toBe(2); // Should reuse the index from removed sheet
+    expect(sheet4?.index).toBe(3);
+  });
+
+  test("should return sheet names in workbook order", () => {
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    engine.addSheet({ workbookName, sheetName: "Sheet2" });
+    engine.addSheet({ workbookName, sheetName: "Sheet3" });
+
+    engine.renameSheet({
+      workbookName,
+      sheetName: "Sheet2",
+      newSheetName: "blabla",
+    });
+
+    engine.removeSheet({ workbookName, sheetName: "Sheet1" });
+    engine.addSheet({ workbookName, sheetName: "Sheet4" });
+
+    expect(engine.getOrderedSheetNames(workbookName)).toEqual([
+      "blabla",
+      "Sheet3",
+      "Sheet4",
+    ]);
+  });
+
+  test("should generate the next available default sheet name", () => {
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    engine.addSheet({ workbookName, sheetName: "Sheet2" });
+    engine.addSheet({ workbookName, sheetName: "Sheet3" });
+
+    engine.renameSheet({
+      workbookName,
+      sheetName: "Sheet2",
+      newSheetName: "Summary",
+    });
+
+    expect(engine.getNextAvailableSheetName(workbookName)).toBe("Sheet2");
+
+    const newSheet = engine.createSheet({ workbookName });
+    expect(newSheet.name).toBe("Sheet2");
+    expect(engine.getOrderedSheetNames(workbookName)).toEqual([
+      "Sheet1",
+      "Summary",
+      "Sheet3",
+      "Sheet2",
+    ]);
   });
 });

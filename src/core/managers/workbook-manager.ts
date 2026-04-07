@@ -144,6 +144,48 @@ export class WorkbookManager {
     return workbook.sheets;
   }
 
+  getOrderedSheets(workbookName: string): Sheet[] {
+    const workbook = this.workbooks.get(workbookName);
+    if (!workbook) {
+      throw new WorkbookNotFoundError(workbookName);
+    }
+
+    return Array.from(workbook.sheets.entries())
+      .map(([name, sheet], insertionOrder) => ({
+        name,
+        sheet,
+        insertionOrder,
+      }))
+      .sort((left, right) => {
+        if (left.sheet.index !== right.sheet.index) {
+          return left.sheet.index - right.sheet.index;
+        }
+        return left.insertionOrder - right.insertionOrder;
+      })
+      .map(({ sheet }) => sheet);
+  }
+
+  getOrderedSheetNames(workbookName: string): string[] {
+    return this.getOrderedSheets(workbookName).map((sheet) => sheet.name);
+  }
+
+  getNextAvailableSheetName(
+    workbookName: string,
+    baseName: string = "Sheet"
+  ): string {
+    const workbook = this.workbooks.get(workbookName);
+    if (!workbook) {
+      throw new WorkbookNotFoundError(workbookName);
+    }
+
+    let suffix = 1;
+    while (workbook.sheets.has(`${baseName}${suffix}`)) {
+      suffix++;
+    }
+
+    return `${baseName}${suffix}`;
+  }
+
   getWorkbooks(): Map<string, Workbook> {
     return this.workbooks;
   }
@@ -270,9 +312,15 @@ export class WorkbookManager {
     if (!workbook) {
       throw new WorkbookNotFoundError(workbookName);
     }
+
+    let nextSheetIndex = -1;
+    for (const existingSheet of workbook.sheets.values()) {
+      nextSheetIndex = Math.max(nextSheetIndex, existingSheet.index);
+    }
+
     const sheet = {
       name: sheetName,
-      index: workbook.sheets.size,
+      index: nextSheetIndex + 1,
       content: new Map(),
       metadata: new Map(),
       sheetMetadata: undefined,
@@ -341,9 +389,19 @@ export class WorkbookManager {
     // Update sheet name
     sheet.name = newSheetName;
 
-    // Update sheets map
-    workbook.sheets.set(newSheetName, sheet);
-    workbook.sheets.delete(sheetName);
+    // Rebuild the map so the renamed sheet keeps its original position
+    const renamedSheets = new Map<string, Sheet>();
+    for (const [existingSheetName, existingSheet] of workbook.sheets.entries()) {
+      if (existingSheetName === sheetName) {
+        renamedSheets.set(newSheetName, sheet);
+      } else {
+        renamedSheets.set(existingSheetName, existingSheet);
+      }
+    }
+    workbook.sheets.clear();
+    for (const [existingSheetName, existingSheet] of renamedSheets.entries()) {
+      workbook.sheets.set(existingSheetName, existingSheet);
+    }
 
     // Move indexes to new key
     const oldKey = this.getSheetIndexKey(workbookName, sheetName);

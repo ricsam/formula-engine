@@ -960,8 +960,8 @@ export function ExcelDemo() {
   const deleteSheet = useCallback(
     (workbookName: string, sheetName: string) => {
       try {
-        const sheets = engine.getSheets(workbookName);
-        if (sheets.size <= 1) {
+        const sheetNames = engine.getOrderedSheetNames(workbookName);
+        if (sheetNames.length <= 1) {
           alert("Cannot delete the last sheet in a workbook");
           return;
         }
@@ -973,8 +973,7 @@ export function ExcelDemo() {
           (item) => item.name === workbookName
         );
         if (workbookItem?.activeSheet === sheetName) {
-          const remainingSheets = engine.getSheets(workbookName);
-          const firstSheet = Array.from(remainingSheets.keys())[0];
+          const firstSheet = engine.getOrderedSheetNames(workbookName)[0];
           if (firstSheet) {
             updateWorkbookActiveSheet(workbookName, firstSheet);
           }
@@ -1971,22 +1970,17 @@ export function ExcelDemo() {
       if (!workbookItem) return null;
 
       // Get all sheets for this workbook
-      const sheets = engine.getSheets(workbookName);
-      const sheetNames = Array.from(sheets.keys());
+      const sheetNames = engine.getOrderedSheetNames(workbookName);
 
       // Add new sheet handler
       const addSheet = () => {
-        const newSheetCount = sheetNames.length + 1;
-        const newSheetName = `Sheet${newSheetCount}`;
-
         try {
-          engine.addSheet({
+          const newSheet = engine.createSheet({
             workbookName,
-            sheetName: newSheetName,
           });
 
           // Switch to the new sheet
-          updateWorkbookActiveSheet(workbookName, newSheetName);
+          updateWorkbookActiveSheet(workbookName, newSheet.name);
           markUnsavedChanges();
         } catch (error) {
           console.error("Failed to add sheet:", error);

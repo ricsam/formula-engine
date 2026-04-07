@@ -13,6 +13,7 @@ import {
   type NamedExpression,
   type RangeAddress,
   type SerializedCellValue,
+  type Sheet,
   type SingleEvaluationResult,
   type SpreadsheetRange,
   type SpreadsheetRangeEnd,
@@ -1142,11 +1143,36 @@ export class FormulaEngine<
   //#endregion
 
   //#region Sheets
-  addSheet(opts: { workbookName: string; sheetName: string }): void {
+  addSheet(opts: { workbookName: string; sheetName: string }): Sheet {
     this.commandExecutor.execute(
       new AddSheetCommand(this.getStructureCommandDeps(), opts),
       { validate: this.schemaManager.hasSchemas() }
     );
+
+    const sheet = this.workbookManager.getSheet(opts);
+    if (!sheet) {
+      throw new Error(`Failed to create sheet '${opts.sheetName}'`);
+    }
+
+    return sheet;
+  }
+
+  createSheet(opts: {
+    workbookName: string;
+    sheetName?: string;
+    baseName?: string;
+  }): Sheet {
+    const sheetName =
+      opts.sheetName ??
+      this.workbookManager.getNextAvailableSheetName(
+        opts.workbookName,
+        opts.baseName
+      );
+
+    return this.addSheet({
+      workbookName: opts.workbookName,
+      sheetName,
+    });
   }
 
   removeSheet(opts: { workbookName: string; sheetName: string }): void {
@@ -1176,6 +1202,21 @@ export class FormulaEngine<
 
   getSheets(workbookName: string) {
     return this.workbookManager.getSheets(workbookName);
+  }
+
+  getOrderedSheets(workbookName: string) {
+    return this.workbookManager.getOrderedSheets(workbookName);
+  }
+
+  getOrderedSheetNames(workbookName: string) {
+    return this.workbookManager.getOrderedSheetNames(workbookName);
+  }
+
+  getNextAvailableSheetName(workbookName: string, baseName?: string) {
+    return this.workbookManager.getNextAvailableSheetName(
+      workbookName,
+      baseName
+    );
   }
 
   getSheet({
