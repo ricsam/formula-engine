@@ -1188,9 +1188,7 @@ export class DependencyManager {
   getAstNode(
     ast: ASTNode,
     currentContext: Omit<Required<ContextDependency>, "tableName"> & {
-      // `null` is the explicit "evaluated outside a table" sentinel.
-      // `undefined` means the table dimension is omitted from this lookup.
-      tableName?: string | null;
+      tableName?: string;
     }
   ): AstEvaluationNode {
     const astKey = `ast:${astToString(ast)}`; // cache normalize this later
@@ -1562,16 +1560,25 @@ export class DependencyManager {
     const visited = new Set<DependencyNode>();
     const invalidatedNodeKeys = new Set<string>();
     const invalidatedAstNodes = new Set<AstEvaluationNode>();
+    const evictedAstNodes = new Set<AstEvaluationNode>();
+
+    const evictAstNodeFromCache = (astNode: AstEvaluationNode) => {
+      if (evictedAstNodes.has(astNode)) {
+        return;
+      }
+      evictedAstNodes.add(astNode);
+      this.removeAstNodeFromCache(astNode);
+      invalidatedNodeKeys.add(astNode.key);
+    };
 
     const invalidateAstNode = (astNode: AstEvaluationNode) => {
       if (invalidatedAstNodes.has(astNode)) {
         return;
       }
       invalidatedAstNodes.add(astNode);
+      evictAstNodeFromCache(astNode);
       this.unregisterNode(astNode);
       astNode.invalidate();
-      this.removeAstNodeFromCache(astNode);
-      invalidatedNodeKeys.add(astNode.key);
     };
 
     const tableContextChangedCells = Array.from(
@@ -1582,6 +1589,12 @@ export class DependencyManager {
         ])
       ).values()
     );
+
+    for (const astNode of this.collectExistingAstNodesForCells(
+      tableContextChangedCells
+    )) {
+      evictAstNodeFromCache(astNode);
+    }
 
     for (const astNode of this.collectOrphanedOldFormulaAstNodesForCells(
       tableContextChangedCells

@@ -4,12 +4,7 @@ import type { CellAddress } from "../core/types";
 
 export class EvaluationContext {
   private _cellAddress: CellAddress;
-  /**
-   * `null` means the current cell was checked and is explicitly outside any
-   * table. `undefined` is reserved for "table dimension not part of this
-   * dependency key" and is therefore not used for the evaluated cell context.
-   */
-  private _tableName: string | null;
+  private _tableName: string | undefined;
   /**
    * Can be a range or a cell
    */
@@ -22,7 +17,7 @@ export class EvaluationContext {
     this._dependencyNode = dependencyNode;
     this._cellAddress = cellAddress;
     const table = tableManager.isCellInTable(cellAddress);
-    this._tableName = table?.name ?? null;
+    this._tableName = table?.name;
   }
 
   get dependencyNode() {
@@ -99,12 +94,7 @@ export class EvaluationContext {
 export type ContextDependency = {
   workbookName?: string;
   sheetName?: string;
-  /**
-   * `undefined` means the dependency does not care about table membership.
-   * `null` means it explicitly depends on the cell being outside a table.
-   * A string means it depends on membership in that concrete table.
-   */
-  tableName?: string | null;
+  tableName?: string;
   rowIndex?: number;
   colIndex?: number;
 };
@@ -156,12 +146,7 @@ export function keyFromDependency(dep: ContextDependency): string {
 type Context = {
   workbookName: string;
   sheetName: string;
-  /**
-   * `undefined` means the caller is not modeling the table dimension for cache
-   * lookup. `null` is the explicit "no table" sentinel used by implicit
-   * structured references before a table exists.
-   */
-  tableName?: string | null;
+  tableName?: string;
   rowIndex: number;
   colIndex: number;
 };
@@ -193,8 +178,7 @@ export function eligibleKeysForContext(ctx: Context): string[] {
   const n = DIM_ORDER.length;
 
   // If tableName is undefined in the context, the lookup is not modeling table
-  // membership at all, so we cannot generate keys that specify it. `null`
-  // remains a valid explicit value and produces "no table" cache keys.
+  // membership at all, so we cannot generate keys that specify it.
   const tableIdx = DIM_ORDER.indexOf("tableName");
 
   const totalMasks = 1 << n; // 2^n
@@ -207,8 +191,7 @@ export function eligibleKeysForContext(ctx: Context): string[] {
       if (((mask >> i) & 1) === 1) {
         const k = DIM_ORDER[i];
         const v = (ctx as any)[k!];
-        // Only assign when the dimension participates in the context. `null`
-        // is intentionally preserved as the explicit "no table" sentinel.
+        // Only assign when the dimension participates in the context.
         if (v !== undefined) (dep as any)[k!] = v;
       }
     }

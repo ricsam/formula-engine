@@ -316,7 +316,7 @@ describe("Tables", () => {
     expect(sheet2Cell("B2")).toBe(20);
   });
 
-  test("should prune shared stale no-table ASTs from the warm cache when adding a table", () => {
+  test("should prune shared stale tableless AST cache entries when a table is added", () => {
     engine.setSheetContent(
       { workbookName, sheetName },
       new Map<string, SerializedCellValue>([
@@ -345,6 +345,9 @@ describe("Tables", () => {
       numCols: 3,
     });
 
+    expect(cell("B2")).toBe(10);
+    expect(cell("C2")).toBe(10);
+
     const snapshot = deserialize(engine.serializeEngine()) as any;
     const staleAstSnapshots = snapshot.managers.dependency.nodes.filter(
       (node: any) =>
@@ -352,10 +355,19 @@ describe("Tables", () => {
         node.key === "ast:[@Value]" &&
         node.contextDependency?.workbookName === workbookName &&
         node.contextDependency?.rowIndex === 1 &&
-        node.contextDependency?.tableName === null
+        node.contextDependency?.tableName === undefined
+    );
+    const tableScopedAstSnapshots = snapshot.managers.dependency.nodes.filter(
+      (node: any) =>
+        node.kind === "ast" &&
+        node.key === "ast:[@Value]" &&
+        node.contextDependency?.workbookName === workbookName &&
+        node.contextDependency?.rowIndex === 1 &&
+        node.contextDependency?.tableName === "ValueTable"
     );
 
     expect(staleAstSnapshots).toHaveLength(0);
+    expect(tableScopedAstSnapshots.length).toBeGreaterThan(0);
   });
 
   test("should update named expressions when table is renamed", () => {

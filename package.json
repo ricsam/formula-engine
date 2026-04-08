@@ -19,7 +19,8 @@
     "demo:generate-routes": "tsr generate",
     "demo:watch-routes": "tsr watch",
     "knip": "knip",
-    "build": "bun build-lib.ts"
+    "build": "bun build-lib.ts",
+    "install:local": "bun scripts/install-local-build.ts"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.4",
