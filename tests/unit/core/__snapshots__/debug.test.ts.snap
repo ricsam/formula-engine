@@ -33,7 +33,7 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                       "type": "cell",
                     },
                     {
-                      "canResolve": false,
+                      "canResolve": true,
                       "deps": [
                         {
                           "canResolve": true,
@@ -95,9 +95,6 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                           "resultType": "range",
                           "type": "range",
                         },
-                      ],
-                      "directDepsUpdated": false,
-                      "frontierDependencies": [
                         {
                           "canResolve": true,
                           "deps": [
@@ -112,27 +109,28 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                           ],
                           "directDepsUpdated": false,
                           "key": "A1",
-                          "resolved": false,
+                          "resolved": true,
                           "resultType": "spilled-values",
                           "type": "cell",
                         },
                       ],
+                      "directDepsUpdated": false,
                       "key": "A1:A5",
-                      "resolved": false,
+                      "resolved": true,
                       "resultType": "range",
                       "type": "range",
                     },
                   ],
                   "directDepsUpdated": false,
                   "key": "ast:SUM(A1:A5)",
-                  "resolved": false,
+                  "resolved": true,
                   "resultType": "value",
                   "type": "cell",
                 },
               ],
               "directDepsUpdated": false,
               "key": "B1",
-              "resolved": false,
+              "resolved": true,
               "resultType": "value",
               "type": "cell",
             },
@@ -151,7 +149,7 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                       "type": "cell",
                     },
                     {
-                      "canResolve": false,
+                      "canResolve": true,
                       "deps": [
                         {
                           "canResolve": true,
@@ -213,9 +211,6 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                           "resultType": "range",
                           "type": "range",
                         },
-                      ],
-                      "directDepsUpdated": false,
-                      "frontierDependencies": [
                         {
                           "canResolve": true,
                           "deps": [
@@ -230,13 +225,14 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                           ],
                           "directDepsUpdated": false,
                           "key": "A1",
-                          "resolved": false,
+                          "resolved": true,
                           "resultType": "spilled-values",
                           "type": "cell",
                         },
                       ],
+                      "directDepsUpdated": false,
                       "key": "A1:A5",
-                      "resolved": false,
+                      "resolved": true,
                       "resultType": "range",
                       "type": "range",
                     },
@@ -269,7 +265,7 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                       "type": "cell",
                     },
                     {
-                      "canResolve": false,
+                      "canResolve": true,
                       "deps": [
                         {
                           "canResolve": true,
@@ -331,9 +327,6 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                           "resultType": "range",
                           "type": "range",
                         },
-                      ],
-                      "directDepsUpdated": false,
-                      "frontierDependencies": [
                         {
                           "canResolve": true,
                           "deps": [
@@ -348,13 +341,14 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                           ],
                           "directDepsUpdated": false,
                           "key": "A1",
-                          "resolved": false,
+                          "resolved": true,
                           "resultType": "spilled-values",
                           "type": "cell",
                         },
                       ],
+                      "directDepsUpdated": false,
                       "key": "A1:A5",
-                      "resolved": false,
+                      "resolved": true,
                       "resultType": "range",
                       "type": "range",
                     },
@@ -375,21 +369,21 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
           ],
           "directDepsUpdated": false,
           "key": "B1:B3",
-          "resolved": false,
+          "resolved": true,
           "resultType": "range",
           "type": "range",
         },
       ],
       "directDepsUpdated": false,
       "key": "ast:SUM(B1:B3)",
-      "resolved": false,
+      "resolved": true,
       "resultType": "value",
       "type": "cell",
     },
   ],
   "directDepsUpdated": false,
   "key": "B4",
-  "resolved": false,
+  "resolved": true,
   "resultType": "value",
   "type": "cell",
 }

@@ -178,7 +178,7 @@ export class FrontierDependencyManager {
   }
 
   public maybeDiscardFrontierDependency(dependency: SpillMetaNode) {
-    if (!this._resolved) {
+    if (!dependency.resolved && !dependency.canResolve()) {
       return;
     }
     if (this._discardedFrontierDependencies.has(dependency)) {
@@ -189,7 +189,7 @@ export class FrontierDependencyManager {
   }
 
   public maybeUpgradeFrontierDependency(dependency: SpillMetaNode) {
-    if (!this._resolved) {
+    if (!dependency.resolved && !dependency.canResolve()) {
       return;
     }
     if (this._dependencies.has(dependency)) {
@@ -239,7 +239,7 @@ export class FrontierDependencyManager {
 
   public getAllDependencies() {
     this.ensureEvalOrderBuilt();
-    return this._dependencies.union(this._frontierDependencies);
+    return this._dependencies.union(this.frontierDependencies);
   }
 
   public getDiscardedFrontierDependencies() {

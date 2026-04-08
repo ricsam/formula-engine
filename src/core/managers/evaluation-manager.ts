@@ -69,6 +69,29 @@ export class EvaluationManager {
     this.dependencyManager.clearEvaluationCache();
   }
 
+  private dependsOnNode(
+    candidate: DependencyNode,
+    target: DependencyNode,
+    visited: Set<DependencyNode> = new Set()
+  ): boolean {
+    if (candidate === target) {
+      return true;
+    }
+
+    if (visited.has(candidate)) {
+      return false;
+    }
+    visited.add(candidate);
+
+    for (const dep of candidate.getDependencies()) {
+      if (this.dependsOnNode(dep, target, visited)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   invalidateFromMutation(footprint: MutationInvalidation): void {
     this.dependencyManager.invalidateFromMutation(footprint);
   }
@@ -550,11 +573,29 @@ export class EvaluationManager {
       node.upgradeFrontierDependencies();
 
       const evalOrder = node.getRangeEvalOrder();
+      const circularEntryCache = new Map<DependencyNode, boolean>();
+      const shouldSkipCircularEntry = (candidate: DependencyNode) => {
+        const cached = circularEntryCache.get(candidate);
+        if (cached !== undefined) {
+          return cached;
+        }
+
+        // If a cell inside the range depends back on the range itself, including
+        // its current value would count a circular result back into the same
+        // aggregate on a later rerun.
+        const isCircular = this.dependsOnNode(candidate, node);
+        circularEntryCache.set(candidate, isCircular);
+        return isCircular;
+      };
 
       const results: CellInRangeResult[] = [];
 
       for (const entry of evalOrder) {
         if (entry.type === "value") {
+          if (shouldSkipCircularEntry(entry.node)) {
+            continue;
+          }
+
           const entryAddress = entry.address;
           const result = entry.node.evaluationResult;
 
@@ -569,6 +610,10 @@ export class EvaluationManager {
           entry.type === "empty_range"
         ) {
           for (const candidateNode of entry.candidates) {
+            if (shouldSkipCircularEntry(candidateNode)) {
+              continue;
+            }
+
             if (candidateNode.evaluationResult.type === "spilled-values") {
               const spillArea = candidateNode.evaluationResult.spillArea(
                 candidateNode.cellAddress
