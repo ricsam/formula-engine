@@ -19,6 +19,11 @@ export type MutationInvalidation = {
     beforeKind: CellContentKind;
     afterKind: CellContentKind;
   }>;
+  /**
+   * Cells whose table membership or implicit current-row table context changed
+   * without necessarily changing their formula text.
+   */
+  tableContextChangedCells?: CellAddress[];
   resourceKeys: string[];
   removedScopes?: RemovedScope[];
 };

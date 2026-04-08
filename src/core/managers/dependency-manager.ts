@@ -309,6 +309,20 @@ export class DependencyManager {
     return Array.from(collected);
   }
 
+  private collectExistingAstNodesForCells(
+    addresses: CellAddress[]
+  ): AstEvaluationNode[] {
+    const collected = new Set<AstEvaluationNode>();
+
+    for (const address of addresses) {
+      for (const astNode of this.collectExistingAstNodesForCell(address)) {
+        collected.add(astNode);
+      }
+    }
+
+    return Array.from(collected);
+  }
+
   private astNodeHasExternalDependents(
     node: AstEvaluationNode,
     formulaAstNodes: Set<AstEvaluationNode>,
@@ -332,14 +346,20 @@ export class DependencyManager {
   private collectOrphanedOldFormulaAstNodesForCell(
     address: CellAddress
   ): AstEvaluationNode[] {
-    const astNodes = this.collectExistingAstNodesForCell(address);
+    return this.collectOrphanedOldFormulaAstNodesForCells([address]);
+  }
+
+  private collectOrphanedOldFormulaAstNodesForCells(
+    addresses: CellAddress[]
+  ): AstEvaluationNode[] {
+    const astNodes = this.collectExistingAstNodesForCells(addresses);
     if (astNodes.length === 0) {
       return [];
     }
 
     const formulaAstNodes = new Set(astNodes);
     const removedDependents = new Set<DependencyNode>(
-      this.collectExistingNodesForCell(address)
+      addresses.flatMap((address) => this.collectExistingNodesForCell(address))
     );
     const keptAstNodes = new Set<AstEvaluationNode>();
     const stack = astNodes.filter((node) =>
@@ -1541,16 +1561,40 @@ export class DependencyManager {
     const queue: DependencyNode[] = [];
     const visited = new Set<DependencyNode>();
     const invalidatedNodeKeys = new Set<string>();
+    const invalidatedAstNodes = new Set<AstEvaluationNode>();
+
+    const invalidateAstNode = (astNode: AstEvaluationNode) => {
+      if (invalidatedAstNodes.has(astNode)) {
+        return;
+      }
+      invalidatedAstNodes.add(astNode);
+      this.unregisterNode(astNode);
+      astNode.invalidate();
+      this.removeAstNodeFromCache(astNode);
+      invalidatedNodeKeys.add(astNode.key);
+    };
+
+    const tableContextChangedCells = Array.from(
+      new Map(
+        (footprint.tableContextChangedCells ?? []).map((address) => [
+          cellAddressToKey(address),
+          address,
+        ])
+      ).values()
+    );
+
+    for (const astNode of this.collectOrphanedOldFormulaAstNodesForCells(
+      tableContextChangedCells
+    )) {
+      invalidateAstNode(astNode);
+    }
 
     for (const touchedCell of footprint.touchedCells) {
       if (touchedCell.beforeKind === "formula") {
         for (const astNode of this.collectOrphanedOldFormulaAstNodesForCell(
           touchedCell.address
         )) {
-          this.unregisterNode(astNode);
-          astNode.invalidate();
-          this.removeAstNodeFromCache(astNode);
-          invalidatedNodeKeys.add(astNode.key);
+          invalidateAstNode(astNode);
         }
       }
 

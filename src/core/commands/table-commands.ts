@@ -127,6 +127,24 @@ function buildTableTouchedCells(
   return Array.from(touchedCells.values());
 }
 
+function buildTableContextChangedCells(
+  workbookManager: WorkbookManager,
+  tables: Array<TableDefinition | undefined>
+): CellAddress[] {
+  const changedCells = new Map<string, CellAddress>();
+
+  for (const table of tables) {
+    if (!table) {
+      continue;
+    }
+    for (const cell of collectTableFootprintCells(workbookManager, table)) {
+      changedCells.set(getAddressKey(cell.address), cell.address);
+    }
+  }
+
+  return Array.from(changedCells.values());
+}
+
 function mergeTouchedCells(
   ...groups: MutationInvalidation["touchedCells"][]
 ): MutationInvalidation["touchedCells"] {
@@ -213,6 +231,10 @@ export class AddTableCommand implements EngineCommand {
     });
     this.executeFootprint = {
       touchedCells: buildTableTouchedCells(this.deps.workbookManager, [table]),
+      tableContextChangedCells: buildTableContextChangedCells(
+        this.deps.workbookManager,
+        [table]
+      ),
       resourceKeys: [resourceKey],
     };
     this.undoFootprint = this.executeFootprint;
@@ -267,6 +289,10 @@ export class RemoveTableCommand implements EngineCommand {
       touchedCells: buildTableTouchedCells(this.deps.workbookManager, [
         this.removedTable,
       ]),
+      tableContextChangedCells: buildTableContextChangedCells(
+        this.deps.workbookManager,
+        [this.removedTable]
+      ),
       resourceKeys: [resourceKey],
     };
     this.undoFootprint = this.executeFootprint;
@@ -361,6 +387,10 @@ export class RenameTableCommand implements EngineCommand {
           afterKind: "formula" as const,
         }))
       ),
+      tableContextChangedCells: buildTableContextChangedCells(
+        this.deps.workbookManager,
+        [previousTable, renamedTable]
+      ),
       resourceKeys: [
         getTableResourceKey({
           workbookName: this.workbookName,
@@ -419,6 +449,10 @@ export class RenameTableCommand implements EngineCommand {
           beforeKind: "formula" as const,
           afterKind: "formula" as const,
         }))
+      ),
+      tableContextChangedCells: buildTableContextChangedCells(
+        this.deps.workbookManager,
+        [currentTable, restoredTable]
       ),
       resourceKeys: [
         getTableResourceKey({
@@ -495,6 +529,10 @@ export class UpdateTableCommand implements EngineCommand {
         this.previousTable,
         nextTable,
       ]),
+      tableContextChangedCells: buildTableContextChangedCells(
+        this.deps.workbookManager,
+        [this.previousTable, nextTable]
+      ),
       resourceKeys: [resourceKey],
     };
     this.undoFootprint = this.executeFootprint;
@@ -582,6 +620,17 @@ export class ResetTablesCommand implements EngineCommand {
           Array.from(tables.values())
         ),
       ]),
+      tableContextChangedCells: buildTableContextChangedCells(
+        this.deps.workbookManager,
+        [
+          ...Array.from(this.previousTables?.values() ?? []).flatMap((tables) =>
+            Array.from(tables.values())
+          ),
+          ...Array.from(this.newTables.values()).flatMap((tables) =>
+            Array.from(tables.values())
+          ),
+        ]
+      ),
       resourceKeys: Array.from(resourceKeys),
     };
     this.undoFootprint = this.executeFootprint;

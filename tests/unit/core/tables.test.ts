@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
+import { deserialize } from "../../../src/core/map-serializer";
 import { type SerializedCellValue } from "../../../src/core/types";
 import { parseCellReference } from "../../../src/core/utils";
 import { FormulaEngine } from "../../../src/core/engine";
@@ -313,6 +314,48 @@ describe("Tables", () => {
 
     expect(cell("B2")).toBe(20);
     expect(sheet2Cell("B2")).toBe(20);
+  });
+
+  test("should prune shared stale no-table ASTs from the warm cache when adding a table", () => {
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map<string, SerializedCellValue>([
+        ["A1", "Value"],
+        ["B1", "Calc 1"],
+        ["C1", "Calc 2"],
+        ["A2", 10],
+        ["B2", "=[@Value]"],
+        ["C2", "=[@Value]"],
+      ])
+    );
+
+    expect(cell("B2", true)).toMatchInlineSnapshot(
+      `"#REF! in ast:[@Value] Table undefined not found"`
+    );
+    expect(cell("C2", true)).toMatchInlineSnapshot(
+      `"#REF! in ast:[@Value] Table undefined not found"`
+    );
+
+    engine.addTable({
+      tableName: "ValueTable",
+      sheetName,
+      workbookName,
+      start: "A1",
+      numRows: { type: "number", value: 1 },
+      numCols: 3,
+    });
+
+    const snapshot = deserialize(engine.serializeEngine()) as any;
+    const staleAstSnapshots = snapshot.managers.dependency.nodes.filter(
+      (node: any) =>
+        node.kind === "ast" &&
+        node.key === "ast:[@Value]" &&
+        node.contextDependency?.workbookName === workbookName &&
+        node.contextDependency?.rowIndex === 1 &&
+        node.contextDependency?.tableName === null
+    );
+
+    expect(staleAstSnapshots).toHaveLength(0);
   });
 
   test("should update named expressions when table is renamed", () => {
