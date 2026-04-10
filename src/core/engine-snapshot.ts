@@ -16,7 +16,7 @@ import type {
   Workbook,
 } from "./types";
 
-export const ENGINE_SNAPSHOT_VERSION = 3 as const;
+export const ENGINE_SNAPSHOT_VERSION = 4 as const;
 
 export type NodeSnapshotId = string;
 
@@ -178,20 +178,20 @@ export type CacheManagerSnapshot = {
   }>;
 };
 
-export type EngineSnapshotV3 = {
-  version: typeof ENGINE_SNAPSHOT_VERSION;
-  managers: {
-    workbook: WorkbookManagerSnapshot;
-    namedExpression: NamedExpressionManagerSnapshot;
-    table: TableManagerSnapshot;
-    style: StyleManagerSnapshot;
-    reference: ReferenceManagerSnapshot;
-    dependency: DependencyManagerSnapshot;
-    cache: CacheManagerSnapshot;
-  };
+type EngineSnapshotManagers = {
+  workbook: WorkbookManagerSnapshot;
+  namedExpression: NamedExpressionManagerSnapshot;
+  table: TableManagerSnapshot;
+  style: StyleManagerSnapshot;
+  reference: ReferenceManagerSnapshot;
+  dependency: DependencyManagerSnapshot;
+  cache: CacheManagerSnapshot;
 };
 
-export type EngineSnapshotV2 = EngineSnapshotV3;
+export type EngineSnapshot = {
+  version: typeof ENGINE_SNAPSHOT_VERSION;
+  managers: EngineSnapshotManagers;
+};
 
 export function getAstNodeSnapshotId(
   node: DependencyNode & { getContextDependency(): ContextDependency }

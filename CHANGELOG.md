@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.2.6
+
+### Patch Changes
+
+- bump snapshot version
+
 ## 0.2.5
 
 ### Patch Changes

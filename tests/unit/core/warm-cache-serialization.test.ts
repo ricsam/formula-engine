@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { FormulaEngine } from "../../../src/core/engine";
+import { ENGINE_SNAPSHOT_VERSION } from "../../../src/core/engine-snapshot";
 import { deserialize, serialize } from "../../../src/core/map-serializer";
 import { cellAddressToKey, rangeAddressToKey, parseCellReference } from "../../../src/core/utils";
 
@@ -41,7 +42,7 @@ describe("Warm-cache serialization", () => {
     expect(engine.getCellValue(address("B1"))).toBe(12);
 
     const snapshot = deserialize(engine.serializeEngine()) as any;
-    expect(snapshot.version).toBe(3);
+    expect(snapshot.version).toBe(ENGINE_SNAPSHOT_VERSION);
     expect(snapshot.managers.cache.evaluationOrders.length).toBeGreaterThan(0);
     expect(
       snapshot.managers.dependency.nodes.some((node: any) => node.kind === "ast")
@@ -275,7 +276,7 @@ describe("Warm-cache serialization", () => {
     const hydratedEngine = FormulaEngine.buildEmpty();
 
     expect(() => hydratedEngine.resetToSerializedEngine(legacyPayload)).toThrow(
-      "Unsupported serialized engine format. Expected EngineSnapshot version 3."
+      `Unsupported serialized engine format. Expected EngineSnapshot version ${ENGINE_SNAPSHOT_VERSION}.`
     );
   });
 
