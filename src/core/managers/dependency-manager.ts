@@ -30,6 +30,7 @@ import {
   isCellInRange,
   keyToCellAddress,
 } from "../utils";
+import { traverseAST } from "../ast-traverser";
 
 import { AstEvaluationNode } from "../../evaluator/dependency-nodes/ast-evaluation-node";
 import { CellValueNode } from "../../evaluator/dependency-nodes/cell-value-node";
@@ -637,7 +638,7 @@ export class DependencyManager {
       }
     }
 
-    const resolvedNodes: Array<
+    const snapshotSeedNodes: Array<
       | CellValueNode
       | SpillMetaNode
       | EmptyCellEvaluationNode
@@ -652,6 +653,42 @@ export class DependencyManager {
       ...Array.from(this.resourceNodes.values()).filter(isNodeSnapshotEligible),
       ...Array.from(astNodes.values()),
     ];
+
+    const resolvedNodesSet = new Set<
+      | CellValueNode
+      | SpillMetaNode
+      | EmptyCellEvaluationNode
+      | RangeEvaluationNode
+      | AstEvaluationNode
+      | ResourceDependencyNode
+    >();
+    const stack = [...snapshotSeedNodes];
+
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (!node || resolvedNodesSet.has(node)) {
+        continue;
+      }
+
+      resolvedNodesSet.add(node);
+
+      if (
+        node instanceof CellValueNode &&
+        node.spillMeta &&
+        isNodeSnapshotEligible(node.spillMeta)
+      ) {
+        stack.push(node.spillMeta);
+      }
+
+      for (const dependency of node.getDependencies()) {
+        if (!isNodeSnapshotEligible(dependency)) {
+          continue;
+        }
+        stack.push(dependency);
+      }
+    }
+
+    const resolvedNodes = Array.from(resolvedNodesSet);
 
     const allNodeSnapshotIds = new Map<DependencyNode, NodeSnapshotId>();
     for (const node of resolvedNodes) {
@@ -1193,6 +1230,9 @@ export class DependencyManager {
   ): AstEvaluationNode {
     const astKey = `ast:${astToString(ast)}`; // cache normalize this later
     const astEntries = this.asts.get(astKey);
+    const requiresExplicitTableContext =
+      currentContext.tableName !== undefined &&
+      this.astUsesImplicitCurrentTableReference(ast);
 
     // if any of the ast entries match the current context, then we can return the ast node
     // otherwise we have to evalute the ast node to understand if it is context dependent
@@ -1202,6 +1242,19 @@ export class DependencyManager {
 
     for (const key of keys) {
       const astEntry = astEntries?.entries.get(key);
+      if (!astEntry) {
+        continue;
+      }
+
+      // Implicit current-table references must not reuse table-agnostic cache
+      // entries when evaluating inside a concrete table.
+      if (
+        requiresExplicitTableContext &&
+        astEntry.contextDependency.tableName === undefined
+      ) {
+        continue;
+      }
+
       if (astEntry) {
         return astEntry.evalNode;
       }
@@ -1214,6 +1267,21 @@ export class DependencyManager {
     // but later, once resolved, we can store it under a looser dependency key, e.g. only sheet, workbook and table dependent
     this.saveAstNode(node, currentContext);
     return node;
+  }
+
+  private astUsesImplicitCurrentTableReference(ast: ASTNode): boolean {
+    let usesImplicitCurrentTableReference = false;
+
+    traverseAST(ast, (node) => {
+      if (
+        node.type === "structured-reference" &&
+        node.tableName === undefined
+      ) {
+        usesImplicitCurrentTableReference = true;
+      }
+    });
+
+    return usesImplicitCurrentTableReference;
   }
 
   /**

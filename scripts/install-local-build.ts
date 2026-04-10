@@ -31,6 +31,9 @@ const parseArgs = (): CliArgs => {
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
+    if (!arg) {
+      continue;
+    }
 
     if (arg === "--help" || arg === "-h") {
       console.log(helpText.trim());
@@ -104,9 +107,11 @@ const shouldSkipSourceFile = (file: string) =>
   file.endsWith("performance-test.ts") ||
   file.endsWith("performance-test.tsx");
 
-const logBuildLogs = (logs: BuildMessage[]) => {
+const logBuildLogs = (
+  logs: ReadonlyArray<{ level?: string; message?: string }>
+) => {
   for (const log of logs) {
-    console.log(`[${log.level}] ${log.message}`);
+    console.log(`[${log.level ?? "info"}] ${log.message ?? ""}`);
   }
 };
 

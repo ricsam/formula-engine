@@ -165,6 +165,76 @@ describe("Warm-cache serialization", () => {
     expect(hydratedRangeNode.resolved).toBe(true);
   });
 
+  test("roundtrips table-scoped current-row ASTs", () => {
+    const secondSheetName = "Sheet2";
+    engine.addSheet({ workbookName, sheetName: secondSheetName });
+
+    const sharedContent = new Map<string, string | number>([
+      ["A1", "Identifier"],
+      ["B1", "Calc"],
+      ["A2", "abc"],
+      ["B2", "=[@Identifier]"],
+    ]);
+
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map(sharedContent)
+    );
+    engine.setSheetContent(
+      { workbookName, sheetName: secondSheetName },
+      new Map(sharedContent)
+    );
+
+    const secondSheetAddress = (ref: string) => ({
+      workbookName,
+      sheetName: secondSheetName,
+      ...parseCellReference(ref),
+    });
+
+    expect(engine.getCellValue(address("B2"), true)).toBe(
+      "#REF! in ast:[@Identifier] Table undefined not found"
+    );
+    expect(engine.getCellValue(secondSheetAddress("B2"), true)).toBe(
+      "#REF! in ast:[@Identifier] Table undefined not found"
+    );
+
+    engine.addTable({
+      tableName: "Sheet1Table",
+      sheetName,
+      workbookName,
+      start: "A1",
+      numRows: { type: "number", value: 1 },
+      numCols: 2,
+    });
+
+    expect(engine.getCellValue(address("B2"))).toBe("abc");
+    expect(engine.getCellValue(secondSheetAddress("B2"), true)).toBe(
+      "#REF! in ast:[@Identifier] Table undefined not found"
+    );
+
+    const serialized = engine.serializeEngine();
+    const snapshot = deserialize(serialized) as any;
+
+    expect(
+      snapshot.managers.dependency.nodes.some(
+        (node: any) =>
+          node.kind === "ast" &&
+          node.key === "ast:[@Identifier]" &&
+          node.contextDependency?.workbookName === workbookName &&
+          node.contextDependency?.rowIndex === 1 &&
+          node.contextDependency?.tableName === "Sheet1Table"
+      )
+    ).toBe(true);
+
+    const hydratedEngine = FormulaEngine.buildEmpty();
+    hydratedEngine.resetToSerializedEngine(serialized);
+
+    expect(hydratedEngine.getCellValue(address("B2"))).toBe("abc");
+    expect(hydratedEngine.getCellValue(secondSheetAddress("B2"), true)).toBe(
+      "#REF! in ast:[@Identifier] Table undefined not found"
+    );
+  });
+
   test("edits, undo, and redo invalidate stale cache state before reserializing", () => {
     engine.setSheetContent(
       { workbookName, sheetName },
