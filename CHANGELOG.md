@@ -1,5 +1,17 @@
 # @ricsam/formula-engine
 
+## 0.2.5
+
+### Patch Changes
+
+- Fixed a dependency-resolution bug where open ranges could keep stable frontier candidates alive for too long during reevaluation.
+
+  In the failing cases, a formula would reference an open range such as `Q18:Q` or `A1:INFINITY`. The range planner correctly added frontier candidates that might spill into that range, but once those candidates had been evaluated and were known not to spill, they were not being discarded early enough. That left avoidable transient dependencies in the graph, caused repeated evaluation-plan rebuilds, and made some operations such as toggling a table feel much slower than they should.
+
+  This change lets range nodes prune frontier candidates as soon as those candidates are stable enough to prove that they do not spill into the range, and it excludes discarded frontier dependencies from traversal of the active dependency graph. In practice this removes a large amount of false-positive reevaluation work for open ranges and significantly improves recalculation time after table and range-shape changes.
+
+  While fixing that, the reevaluation path for circular open-range cases was also tightened so a formula such as `SUM(A1:INFINITY)` does not count its own circular result back into the aggregate on a later rerun.
+
 ## 0.2.4
 
 ### Patch Changes
