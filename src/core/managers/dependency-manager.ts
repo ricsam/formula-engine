@@ -30,7 +30,6 @@ import {
   isCellInRange,
   keyToCellAddress,
 } from "../utils";
-import { traverseAST } from "../ast-traverser";
 
 import { AstEvaluationNode } from "../../evaluator/dependency-nodes/ast-evaluation-node";
 import { CellValueNode } from "../../evaluator/dependency-nodes/cell-value-node";
@@ -898,11 +897,23 @@ export class DependencyManager {
     allNodeSnapshotIds: Map<DependencyNode, NodeSnapshotId>
   ): SerializedDependencyNodeSnapshot | undefined {
     const snapshotId = getNodeSnapshotId(node);
-    const dependencies = Array.from(node.getDependencies())
-      .map((dependency) => allNodeSnapshotIds.get(dependency))
-      .filter((dependency): dependency is NodeSnapshotId => dependency !== undefined);
+    const dependencies: NodeSnapshotId[] = [];
+    for (const dependency of node.getDependencies()) {
+      const dependencySnapshotId = allNodeSnapshotIds.get(dependency);
+      if (!dependencySnapshotId) {
+        return undefined;
+      }
+      dependencies.push(dependencySnapshotId);
+    }
 
     if (node instanceof CellValueNode) {
+      const spillMetaSnapshotId = node.spillMeta
+        ? allNodeSnapshotIds.get(node.spillMeta)
+        : undefined;
+      if (node.spillMeta && !spillMetaSnapshotId) {
+        return undefined;
+      }
+
       const evaluationResult =
         evaluationManager.serializeSingleEvaluationResultSnapshot(
           node.evaluationResult,
@@ -917,9 +928,7 @@ export class DependencyManager {
         key: node.key,
         dependencies,
         evaluationResult,
-        spillMetaSnapshotId: node.spillMeta
-          ? allNodeSnapshotIds.get(node.spillMeta)
-          : undefined,
+        spillMetaSnapshotId,
       };
     }
 
@@ -1230,9 +1239,6 @@ export class DependencyManager {
   ): AstEvaluationNode {
     const astKey = `ast:${astToString(ast)}`; // cache normalize this later
     const astEntries = this.asts.get(astKey);
-    const requiresExplicitTableContext =
-      currentContext.tableName !== undefined &&
-      this.astUsesImplicitCurrentTableReference(ast);
 
     // if any of the ast entries match the current context, then we can return the ast node
     // otherwise we have to evalute the ast node to understand if it is context dependent
@@ -1243,15 +1249,6 @@ export class DependencyManager {
     for (const key of keys) {
       const astEntry = astEntries?.entries.get(key);
       if (!astEntry) {
-        continue;
-      }
-
-      // Implicit current-table references must not reuse table-agnostic cache
-      // entries when evaluating inside a concrete table.
-      if (
-        requiresExplicitTableContext &&
-        astEntry.contextDependency.tableName === undefined
-      ) {
         continue;
       }
 
@@ -1269,20 +1266,6 @@ export class DependencyManager {
     return node;
   }
 
-  private astUsesImplicitCurrentTableReference(ast: ASTNode): boolean {
-    let usesImplicitCurrentTableReference = false;
-
-    traverseAST(ast, (node) => {
-      if (
-        node.type === "structured-reference" &&
-        node.tableName === undefined
-      ) {
-        usesImplicitCurrentTableReference = true;
-      }
-    });
-
-    return usesImplicitCurrentTableReference;
-  }
 
   /**
    * Once an AST node is evaluated, we know if it is context dependent
@@ -1297,6 +1280,7 @@ export class DependencyManager {
   ) {
     const astKey = ast.key;
     const contextDependencyKey = getContextDependencyKey(contextDependency);
+    this.removeAstNodeFromCache(ast);
     const astEntries = this.asts.get(astKey);
 
     if (astEntries) {

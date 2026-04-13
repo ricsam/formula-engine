@@ -6,7 +6,12 @@ import { parseCellReference } from "../../../src/core/utils";
 import { AstEvaluationNode } from "../../../src/evaluator/dependency-nodes/ast-evaluation-node";
 import { EmptyCellEvaluationNode } from "../../../src/evaluator/dependency-nodes/empty-cell-evaluation-node";
 import { SpillMetaNode } from "../../../src/evaluator/dependency-nodes/spill-meta-node";
+import {
+  getContextDependencyKey,
+  NO_TABLE_CONTEXT_NAME,
+} from "../../../src/evaluator/evaluation-context";
 import { RangeEvaluationNode } from "../../../src/evaluator/range-evaluation-node";
+import { parseFormula } from "../../../src/parser/parser";
 
 describe("DependencyManager", () => {
   const sheetName = "TestSheet";
@@ -2123,6 +2128,83 @@ describe("DependencyManager", () => {
     expect(cell("C1", true)).toBe(24.5);
 
     //#endregion
+  });
+
+  test("prefers the most specific cached AST match over wildcard table entries", () => {
+    const ast = parseFormula("ValueTable[@Value]");
+    const broadContext = {
+      workbookName,
+      rowIndex: 1,
+    };
+    const specificContext = {
+      workbookName,
+      sheetName,
+      rowIndex: 1,
+      colIndex: 5,
+    };
+
+    const broadNode = new AstEvaluationNode(ast, broadContext);
+    const specificNode = new AstEvaluationNode(ast, specificContext);
+
+    engine._dependencyManager.asts.set("ast:ValueTable[@Value]", {
+      entries: new Map([
+        [
+          getContextDependencyKey(broadContext),
+          {
+            evalNode: broadNode,
+            contextDependency: broadContext,
+          },
+        ],
+        [
+          getContextDependencyKey(specificContext),
+          {
+            evalNode: specificNode,
+            contextDependency: specificContext,
+          },
+        ],
+      ]),
+    });
+
+    expect(
+      engine._dependencyManager.getAstNode(ast, specificContext)
+    ).toBe(specificNode);
+  });
+
+  test("keeps implicit current-row AST cache entries distinct across no-table and table contexts", () => {
+    const ast = parseFormula("[@Value]");
+    const noTableContext = {
+      workbookName,
+      sheetName,
+      tableName: NO_TABLE_CONTEXT_NAME,
+      rowIndex: 1,
+      colIndex: 5,
+    };
+    const tableContext = {
+      workbookName,
+      sheetName,
+      tableName: "ValueTable",
+      rowIndex: 1,
+      colIndex: 5,
+    };
+
+    const staleNode = new AstEvaluationNode(ast, noTableContext);
+    engine._dependencyManager.asts.set("ast:[@Value]", {
+      entries: new Map([
+        [
+          getContextDependencyKey(noTableContext),
+          {
+            evalNode: staleNode,
+            contextDependency: noTableContext,
+          },
+        ],
+      ]),
+    });
+
+    const node = engine._dependencyManager.getAstNode(ast, tableContext);
+
+    expect(node).toBeInstanceOf(AstEvaluationNode);
+    expect(node).not.toBe(staleNode);
+    expect(engine._dependencyManager.asts.get(node.key)?.entries.size).toBe(2);
   });
 
   test("should detect cycles", () => {

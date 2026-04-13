@@ -2,9 +2,12 @@ import type { DependencyNode } from "../core/managers/dependency-node";
 import type { TableManager } from "../core/managers/table-manager";
 import type { CellAddress } from "../core/types";
 
+export const NO_TABLE_CONTEXT_NAME = "__no_current_table__";
+
 export class EvaluationContext {
   private _cellAddress: CellAddress;
   private _tableName: string | undefined;
+  private _cacheTableName: string;
   /**
    * Can be a range or a cell
    */
@@ -18,6 +21,7 @@ export class EvaluationContext {
     this._cellAddress = cellAddress;
     const table = tableManager.isCellInTable(cellAddress);
     this._tableName = table?.name;
+    this._cacheTableName = table?.name ?? NO_TABLE_CONTEXT_NAME;
   }
 
   get dependencyNode() {
@@ -42,6 +46,10 @@ export class EvaluationContext {
     return this._tableName;
   }
 
+  get cacheTableName() {
+    return this._cacheTableName;
+  }
+
   addContextDependency(...types: ContextDependencyType[]) {
     for (const type of types) {
       switch (type) {
@@ -58,7 +66,7 @@ export class EvaluationContext {
           this._contextDependency.sheetName = this._cellAddress.sheetName;
           break;
         case "table":
-          this._contextDependency.tableName = this.tableName;
+          this._contextDependency.tableName = this.cacheTableName;
           break;
         default:
           throw new Error(`Invalid context dependency type: ${type}`);
@@ -174,7 +182,7 @@ export function eligibleKeysForContext(ctx: Context): string[] {
     return cachedKeys;
   }
 
-  const results: string[] = [];
+  const results: Array<{ key: string; specificity: number; mask: number }> = [];
   const n = DIM_ORDER.length;
 
   // If tableName is undefined in the context, the lookup is not modeling table
@@ -187,20 +195,35 @@ export function eligibleKeysForContext(ctx: Context): string[] {
     if (ctx.tableName === undefined && ((mask >> tableIdx) & 1) === 1) continue;
 
     const dep: ContextDependency = {};
+    let specificity = 0;
     for (let i = 0; i < n; i++) {
       if (((mask >> i) & 1) === 1) {
         const k = DIM_ORDER[i];
         const v = (ctx as any)[k!];
         // Only assign when the dimension participates in the context.
-        if (v !== undefined) (dep as any)[k!] = v;
+        if (v !== undefined) {
+          (dep as any)[k!] = v;
+          specificity++;
+        }
       }
     }
-    results.push(keyFromDependency(dep));
+    results.push({
+      key: keyFromDependency(dep),
+      specificity,
+      mask,
+    });
   }
 
-  contextCacheKey.set(mostRestrictiveKey, results);
+  results.sort(
+    (left, right) =>
+      right.specificity - left.specificity || right.mask - left.mask
+  );
 
-  return results;
+  const orderedKeys = results.map((result) => result.key);
+
+  contextCacheKey.set(mostRestrictiveKey, orderedKeys);
+
+  return orderedKeys;
 }
 
 export function getContextDependencyKey(contextDependency: ContextDependency) {

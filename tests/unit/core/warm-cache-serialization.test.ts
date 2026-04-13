@@ -3,6 +3,7 @@ import { FormulaEngine } from "../../../src/core/engine";
 import { ENGINE_SNAPSHOT_VERSION } from "../../../src/core/engine-snapshot";
 import { deserialize, serialize } from "../../../src/core/map-serializer";
 import { cellAddressToKey, rangeAddressToKey, parseCellReference } from "../../../src/core/utils";
+import { NO_TABLE_CONTEXT_NAME } from "../../../src/evaluator/evaluation-context";
 
 const workbookName = "TestWorkbook";
 const sheetName = "TestSheet";
@@ -166,7 +167,7 @@ describe("Warm-cache serialization", () => {
     expect(hydratedRangeNode.resolved).toBe(true);
   });
 
-  test("roundtrips table-scoped current-row ASTs", () => {
+  test("roundtrips table-scoped current-row ASTs without mixing table and no-table contexts", () => {
     const secondSheetName = "Sheet2";
     engine.addSheet({ workbookName, sheetName: secondSheetName });
 
@@ -221,9 +222,35 @@ describe("Warm-cache serialization", () => {
         (node: any) =>
           node.kind === "ast" &&
           node.key === "ast:[@Identifier]" &&
+          node.contextDependency?.sheetName === sheetName &&
           node.contextDependency?.workbookName === workbookName &&
           node.contextDependency?.rowIndex === 1 &&
           node.contextDependency?.tableName === "Sheet1Table"
+      )
+    ).toBe(true);
+    expect(
+      snapshot.managers.dependency.nodes.some(
+        (node: any) =>
+          node.kind === "ast" &&
+          node.key === "ast:[@Identifier]" &&
+          node.contextDependency?.sheetName === secondSheetName &&
+          node.contextDependency?.workbookName === workbookName &&
+          node.contextDependency?.rowIndex === 1 &&
+          node.contextDependency?.tableName === NO_TABLE_CONTEXT_NAME
+      )
+    ).toBe(true);
+    expect(
+      snapshot.managers.dependency.nodes.some(
+        (node: any) =>
+          node.kind === "cell-value" &&
+          node.key === cellAddressToKey(address("B2"))
+      )
+    ).toBe(true);
+    expect(
+      snapshot.managers.dependency.nodes.some(
+        (node: any) =>
+          node.kind === "cell-value" &&
+          node.key === cellAddressToKey(secondSheetAddress("B2"))
       )
     ).toBe(true);
 

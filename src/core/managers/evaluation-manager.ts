@@ -719,6 +719,14 @@ export class EvaluationManager {
       return;
     }
 
+    const finalizePersistentNode = () => {
+      if (node instanceof VirtualCellValueNode) {
+        return;
+      }
+
+      this.dependencyManager.registerNode(node);
+    };
+
     if (!(node instanceof VirtualCellValueNode)) {
       this.dependencyManager.unregisterNode(node);
     }
@@ -741,7 +749,7 @@ export class EvaluationManager {
           ctx
         );
         node.setEvaluationResult(result);
-        this.dependencyManager.registerNode(node);
+        finalizePersistentNode();
         return;
       }
     }
@@ -772,7 +780,7 @@ export class EvaluationManager {
         node.setEvaluationResult({
           type: "does-not-spill",
         });
-        this.dependencyManager.registerNode(node);
+        finalizePersistentNode();
         return;
       }
       // Static value cells cannot have frontier dependencies
@@ -781,9 +789,7 @@ export class EvaluationManager {
         result: this.convertScalarValueToCellValue(content),
       };
       node.setEvaluationResult(result);
-      if (!(node instanceof VirtualCellValueNode)) {
-        this.dependencyManager.registerNode(node);
-      }
+      finalizePersistentNode();
       return;
     }
 
@@ -817,7 +823,7 @@ export class EvaluationManager {
         // we have already setup an origin/spill meta node relationship,
         // so we are just reevaluating the spill meta node here
         node.setEvaluationResult(evaluation);
-        this.dependencyManager.registerNode(node);
+        finalizePersistentNode();
       } else {
         const spillMetaNode = this.dependencyManager.getSpillMetaNode(
           node.key.replace(/^[^:]+:/, "spill-meta:")
@@ -836,9 +842,7 @@ export class EvaluationManager {
           node.setEvaluationResult(evaluation);
         }
       }
-      if (!(node instanceof VirtualCellValueNode)) {
-        this.dependencyManager.registerNode(node);
-      }
+      finalizePersistentNode();
       return;
     }
 
@@ -847,21 +851,17 @@ export class EvaluationManager {
         node.setEvaluationResult({
           type: "does-not-spill",
         });
-        this.dependencyManager.registerNode(node);
+        finalizePersistentNode();
         return;
       } else {
         node.setEvaluationResult(evaluation);
-        if (!(node instanceof VirtualCellValueNode)) {
-          this.dependencyManager.registerNode(node);
-        }
+        finalizePersistentNode();
         return;
       }
     }
 
     node.setEvaluationResult(evaluation);
-    if (!(node instanceof VirtualCellValueNode)) {
-      this.dependencyManager.registerNode(node);
-    }
+    finalizePersistentNode();
   }
 
   evaluateDependencyNode(dependency: DependencyNode): void {

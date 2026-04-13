@@ -4,6 +4,7 @@ import { type SerializedCellValue } from "../../../src/core/types";
 import { parseCellReference } from "../../../src/core/utils";
 import { FormulaEngine } from "../../../src/core/engine";
 import { visualizeSpreadsheet } from "../../../src/core/utils/spreadsheet-visualizer";
+import { NO_TABLE_CONTEXT_NAME } from "../../../src/evaluator/evaluation-context";
 
 describe("Tables", () => {
   const sheetName = "TestSheet";
@@ -256,6 +257,188 @@ describe("Tables", () => {
     expect(cell("E3")).toBe("B");
   });
 
+  test("should not reuse pre-table calculated-column cache when a table is added later", () => {
+    const inputSheetName = "Input";
+    const dataSheetName = "Data";
+    const summarySheetName = "Summary";
+    const infiniteRows = { type: "infinity", sign: "positive" } as const;
+
+    engine.addSheet({ workbookName, sheetName: inputSheetName });
+    engine.addSheet({ workbookName, sheetName: dataSheetName });
+    engine.addSheet({ workbookName, sheetName: summarySheetName });
+
+    const sheetCell = (targetSheetName: string, ref: string, debug?: boolean) =>
+      engine.getCellValue(
+        {
+          workbookName,
+          sheetName: targetSheetName,
+          ...parseCellReference(ref),
+        },
+        debug
+      );
+
+    const evaluateUsedRectangle = (
+      targetSheetName: string,
+      maxRowIndex: number,
+      maxColIndex: number
+    ) => {
+      for (let rowIndex = 0; rowIndex <= maxRowIndex; rowIndex++) {
+        for (let colIndex = 0; colIndex <= maxColIndex; colIndex++) {
+          engine.getCellValue({
+            workbookName,
+            sheetName: targetSheetName,
+            rowIndex,
+            colIndex,
+          });
+        }
+      }
+    };
+
+    engine.setSheetContent(
+      { workbookName, sheetName: inputSheetName },
+      new Map<string, SerializedCellValue>([
+        ["A1", "Identifier"],
+        ["B1", "Peptide"],
+        ["A2", "Plate 1-E"],
+        ["B2", "APD-18"],
+        ["A3", "Plate 2-E"],
+        ["B3", "APD-19"],
+      ])
+    );
+
+    engine.setSheetContent(
+      { workbookName, sheetName: dataSheetName },
+      new Map<string, SerializedCellValue>([
+        ["A1", "Identifier"],
+        ["B1", "Plate"],
+        ["C1", "Row"],
+        ["D1", "Peptide"],
+        ["E1", "Condition"],
+        ["F1", "Value"],
+        ["A2", '=CONCATENATE([@Plate],"-",[@Row])'],
+        ["B2", "Plate 1"],
+        ["C2", "E"],
+        [
+          "D2",
+          "=INDEX(Layout[Peptide],MATCH([@Identifier],Layout[Identifier],0))",
+        ],
+        ["E2", "10uM"],
+        ["F2", 63.6],
+        ["A3", '=CONCATENATE([@Plate],"-",[@Row])'],
+        ["B3", "Plate 1"],
+        ["C3", "E"],
+        [
+          "D3",
+          "=INDEX(Layout[Peptide],MATCH([@Identifier],Layout[Identifier],0))",
+        ],
+        ["E3", "null"],
+        ["F3", 0.3],
+        ["A4", '=CONCATENATE([@Plate],"-",[@Row])'],
+        ["B4", "Plate 2"],
+        ["C4", "E"],
+        [
+          "D4",
+          "=INDEX(Layout[Peptide],MATCH([@Identifier],Layout[Identifier],0))",
+        ],
+        ["E4", "10uM"],
+        ["F4", 85.5],
+      ])
+    );
+
+    engine.setSheetContent(
+      { workbookName, sheetName: summarySheetName },
+      new Map<string, SerializedCellValue>([
+        ["A1", "Peptide"],
+        ["B1", "Calc"],
+        ["A2", "APD-18"],
+        [
+          "B2",
+          '=IFERROR(AVERAGEIFS(DataTable[Value],DataTable[Peptide],[@Peptide],DataTable[Condition],"10uM"),"")',
+        ],
+      ])
+    );
+
+    // This mirrors the UI warm-up pass: all sheets are evaluated before any
+    // tables exist, so table references create warm-cache entries in error paths.
+    evaluateUsedRectangle(inputSheetName, 2, 1);
+    evaluateUsedRectangle(dataSheetName, 3, 5);
+    evaluateUsedRectangle(summarySheetName, 1, 1);
+
+    engine.addTable({
+      tableName: "Layout",
+      sheetName: inputSheetName,
+      workbookName,
+      start: "A1",
+      numRows: infiniteRows,
+      numCols: 2,
+    });
+    // Only the sheet containing the newly added table is evaluated, matching the
+    // staged UI workflow.
+    evaluateUsedRectangle(inputSheetName, 2, 1);
+
+    engine.addTable({
+      tableName: "DataTable",
+      sheetName: dataSheetName,
+      workbookName,
+      start: "A1",
+      numRows: infiniteRows,
+      numCols: 6,
+    });
+    evaluateUsedRectangle(dataSheetName, 3, 5);
+
+    expect(sheetCell(dataSheetName, "A4")).toBe("Plate 2-E");
+    expect(sheetCell(dataSheetName, "D4")).toBe("APD-19");
+
+    engine.addTable({
+      tableName: "SummaryTable",
+      sheetName: summarySheetName,
+      workbookName,
+      start: "A1",
+      numRows: infiniteRows,
+      numCols: 2,
+    });
+    evaluateUsedRectangle(summarySheetName, 1, 1);
+
+    expect(sheetCell(summarySheetName, "B2")).toBe(63.6);
+  });
+
+  test("should serialize implicit current-row table AST nodes with explicit table context", () => {
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map<string, SerializedCellValue>([
+        ["A1", "Value"],
+        ["B1", "Calc"],
+        ["A2", 10],
+        ["B2", "=[@Value]*2"],
+      ])
+    );
+
+    engine.addTable({
+      tableName: "ValueTable",
+      sheetName,
+      workbookName,
+      start: "A1",
+      numRows: { type: "number", value: 1 },
+      numCols: 2,
+    });
+
+    expect(cell("B2")).toBe(20);
+
+    const snapshot = deserialize(engine.serializeEngine()) as any;
+    const implicitAstSnapshots = snapshot.managers.dependency.nodes.filter(
+      (node: any) =>
+        node.kind === "ast" &&
+        (node.key === "ast:[@Value]" || node.key === "ast:[@Value]*2")
+    );
+
+    expect(implicitAstSnapshots.length).toBeGreaterThan(0);
+    expect(
+      implicitAstSnapshots.every(
+        (node: any) => node.contextDependency?.tableName === "ValueTable"
+      )
+    ).toBe(true);
+  });
+
   test("should invalidate cached current-row references independently across sheets", () => {
     const sheet2 = "Sheet2";
     engine.addSheet({ workbookName, sheetName: sheet2 });
@@ -353,14 +536,16 @@ describe("Tables", () => {
       (node: any) =>
         node.kind === "ast" &&
         node.key === "ast:[@Value]" &&
+        node.contextDependency?.sheetName === sheetName &&
         node.contextDependency?.workbookName === workbookName &&
         node.contextDependency?.rowIndex === 1 &&
-        node.contextDependency?.tableName === undefined
+        node.contextDependency?.tableName === NO_TABLE_CONTEXT_NAME
     );
     const tableScopedAstSnapshots = snapshot.managers.dependency.nodes.filter(
       (node: any) =>
         node.kind === "ast" &&
         node.key === "ast:[@Value]" &&
+        node.contextDependency?.sheetName === sheetName &&
         node.contextDependency?.workbookName === workbookName &&
         node.contextDependency?.rowIndex === 1 &&
         node.contextDependency?.tableName === "ValueTable"

@@ -95,7 +95,7 @@ export class FormulaEvaluator {
   ): FunctionEvaluationResult {
     const currentContext = {
       ...context.cellAddress,
-      tableName: context.tableName,
+      tableName: context.cacheTableName,
     };
 
     const astNode = this.dependencyManager.getAstNode(node, currentContext);
@@ -221,7 +221,7 @@ export class FormulaEvaluator {
     } else {
       // If no table nor workbook name is provided, the current cell's table
       // membership determines the result.
-      context.addContextDependency("workbook", "table");
+      context.addContextDependency("workbook", "sheet", "table");
       table = this.tableManager.isCellInTable(context.cellAddress);
     }
 
