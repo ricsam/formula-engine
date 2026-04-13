@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.2.7
+
+### Patch Changes
+
+- better cache invalidation
+
 ## 0.2.6
 
 ### Patch Changes
