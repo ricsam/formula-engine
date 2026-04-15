@@ -9,7 +9,6 @@ import {
   type ConditionalStyle,
   type CopyCellsOptions,
   type DirectCellStyle,
-  type FiniteSpreadsheetRange,
   type NamedExpression,
   type RangeAddress,
   type SerializedCellValue,
@@ -29,12 +28,7 @@ import { renameNamedExpressionInFormula } from "./named-expression-renamer";
 import { renameSheetInFormula } from "./sheet-renamer";
 import { renameTableInFormula } from "./table-renamer";
 import { renameWorkbookInFormula } from "./workbook-renamer";
-import {
-  cellAddressToKey,
-  getCellReference,
-  keyToCellAddress,
-  parseCellReference,
-} from "./utils";
+import { getCellReference, parseCellReference } from "./utils";
 import { CacheManager } from "./managers/cache-manager";
 import { NamedExpressionManager } from "./managers/named-expression-manager";
 import { TableManager } from "./managers/table-manager";
@@ -45,72 +39,28 @@ import { StyleManager } from "./managers/style-manager";
 import { CopyManager } from "./managers/copy-manager";
 import { ReferenceManager } from "./managers/reference-manager";
 import {
-  SchemaManager,
-  SchemaValidationError,
-} from "./managers/schema-manager";
-import type { Schema, CreateSchema, SchemaDeclaration, TableSchemaDefinition, CellSchemaDefinition } from "./schema/schema";
-import { buildSchemaFromDeclaration } from "./schema/schema-builder";
-import { TableOrm } from "./schema/table-orm";
-import { CellOrm } from "./schema/cell-orm";
-import { GridOrm } from "./schema/grid-orm";
-import type { TableSchemaHeaders } from "./managers/schema-manager";
-import {
   ENGINE_SNAPSHOT_VERSION,
   type EngineSnapshot,
 } from "./engine-snapshot";
 import {
-  CommandExecutor,
-  SchemaIntegrityError,
-} from "./commands/command-executor";
-import { type EngineAction } from "./commands/types";
+  buildFormulaTouchedCells,
+  buildSheetContentTouchedCells,
+  buildTableContextChangedCells,
+  buildTableTouchedCells,
+  buildTouchedCells,
+  captureCellContents,
+  getFiniteRangeAddresses,
+  getMutationAddressKey,
+  getNamedExpressionScopeResourceKeys,
+  mergeTouchedCells,
+  type MutationInvalidation,
+} from "./mutation-invalidation";
 import {
-  SetCellContentCommand,
-  SetSheetContentCommand,
-  ClearRangeCommand,
-  PasteCellsCommand,
-  FillAreasCommand,
-  MoveCellCommand,
-  MoveRangeCommand,
-  AutoFillCommand,
-} from "./commands/content-commands";
-import {
-  AddWorkbookCommand,
-  RemoveWorkbookCommand,
-  RenameWorkbookCommand,
-  CloneWorkbookCommand,
-  AddSheetCommand,
-  RemoveSheetCommand,
-  RenameSheetCommand,
-  type StructureCommandDeps,
-} from "./commands/structure-commands";
-import {
-  AddTableCommand,
-  RemoveTableCommand,
-  RenameTableCommand,
-  UpdateTableCommand,
-  ResetTablesCommand,
-  type TableCommandDeps,
-} from "./commands/table-commands";
-import {
-  AddNamedExpressionCommand,
-  RemoveNamedExpressionCommand,
-  UpdateNamedExpressionCommand,
-  RenameNamedExpressionCommand,
-  SetNamedExpressionsCommand,
-  type NamedExpressionCommandDeps,
-} from "./commands/named-expression-commands";
-import {
-  SetCellMetadataCommand,
-  SetSheetMetadataCommand,
-  SetWorkbookMetadataCommand,
-} from "./commands/metadata-commands";
-import {
-  AddConditionalStyleCommand,
-  RemoveConditionalStyleCommand,
-  AddCellStyleCommand,
-  RemoveCellStyleCommand,
-  ClearCellStylesCommand,
-} from "./commands/style-commands";
+  getNamedExpressionResourceKey,
+  getSheetResourceKey,
+  getTableResourceKey,
+  getWorkbookResourceKey,
+} from "./resource-keys";
 
 type Metadata = {
   cell?: unknown;
@@ -123,18 +73,11 @@ type MetadataType<
   TKey extends keyof Metadata
 > = TMetadata[TKey];
 
-/**
- * Main FormulaEngine class
- * @template TCellMetadata - Consumer-defined type for cell metadata (rich text, links, custom data, etc.)
- * @template TSheetMetadata - Consumer-defined type for sheet metadata (text boxes, frozen panes, etc.)
- * @template TWorkbookMetadata - Consumer-defined type for workbook metadata (themes, document properties, etc.)
+ /**
+  * Main FormulaEngine class
+ * @template TMetadata - Consumer-defined metadata shape with optional cell, sheet, and workbook entries.
  */
-export class FormulaEngine<
-  TMetadata extends Metadata = Metadata,
-  TCreateSchema extends
-    | CreateSchema<MetadataType<TMetadata, "cell">, Schema, SchemaDeclaration>
-    | undefined = undefined
-> {
+export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   private workbookManager: WorkbookManager;
   private namedExpressionManager: NamedExpressionManager;
   private tableManager: TableManager;
@@ -145,18 +88,6 @@ export class FormulaEngine<
   private styleManager: StyleManager;
   private copyManager: CopyManager;
   private referenceManager: ReferenceManager;
-  private schemaManager: SchemaManager;
-  private commandExecutor: CommandExecutor;
-
-  public schema: TCreateSchema extends CreateSchema<
-    MetadataType<TMetadata, "cell">,
-    Schema,
-    SchemaDeclaration
-  >
-    ? TCreateSchema["schema"]
-    : undefined;
-
-  private schemaDeclaration: SchemaDeclaration | undefined;
 
   /**
    * Public access to the store manager for testing
@@ -170,8 +101,7 @@ export class FormulaEngine<
   public _dependencyManager: DependencyManager;
   public _styleManager: StyleManager;
 
-  constructor(schema?: TCreateSchema) {
-    this.schemaDeclaration = (schema as any)?.declaration;
+  constructor() {
     this.eventManager = new EventManager();
     this.workbookManager = new WorkbookManager();
     this.namedExpressionManager = new NamedExpressionManager();
@@ -208,30 +138,6 @@ export class FormulaEngine<
     );
 
     this.referenceManager = new ReferenceManager();
-    this.schemaManager = new SchemaManager(this.tableManager);
-
-    // Initialize command executor
-    this.commandExecutor = new CommandExecutor(
-      this.evaluationManager,
-      this.eventManager,
-      () =>
-        this.schemaManager.validateAllSchemaConstraints(
-          (cell) => this.getCellValue(cell),
-          (cell) => this.getCellMetadata(cell),
-          (table) => this.getTableDataCells(table)
-        )
-    );
-
-    // Build the working schema from declaration if provided
-    if (this.schemaDeclaration) {
-      this.schema = buildSchemaFromDeclaration(
-        this,
-        this.schemaDeclaration,
-        this.schemaManager
-      ) as any;
-    } else {
-      this.schema = {} as any;
-    }
 
     this._workbookManager = this.workbookManager;
     this._namedExpressionManager = this.namedExpressionManager;
@@ -245,168 +151,103 @@ export class FormulaEngine<
 
   /**
    * Static factory method to build an empty engine
-   * @template TC - Consumer-defined cell metadata type
-   * @template TS - Consumer-defined sheet metadata type
-   * @template TW - Consumer-defined workbook metadata type
+   * @template TMetadata - Consumer-defined metadata shape with optional cell, sheet, and workbook entries.
    */
-  static buildEmpty<
-    TMetadata extends Metadata = Metadata,
-    TSchemaDeclaration extends
-      | CreateSchema<MetadataType<TMetadata, "cell">, any, any>
-      | undefined = undefined
-  >(schema?: TSchemaDeclaration) {
-    return new FormulaEngine<TMetadata, TSchemaDeclaration>(schema);
+  static buildEmpty<TMetadata extends Metadata = Metadata>() {
+    return new FormulaEngine<TMetadata>();
   }
 
-  /**
-   * Add a table schema at runtime
-   * @param namespace - Unique namespace for the schema
-   * @param address - Table address (workbookName and tableName)
-   * @param headers - Table headers with parse functions
-   * @returns The TableOrm instance for immediate use
-   */
-  addTableSchema<THeaders extends TableSchemaHeaders<MetadataType<TMetadata, "cell">>>(
-    namespace: string,
-    address: { workbookName: string; tableName: string },
-    headers: THeaders
-  ): TableOrm<{
-    [K in keyof THeaders]: ReturnType<THeaders[K]["parse"]>;
-  }> {
-    // Register the schema with the schema manager
-    this.schemaManager.registerTableSchema(
-      namespace,
-      address.workbookName,
-      address.tableName,
-      headers
-    );
-
-    // Create the ORM instance
-    const orm = new TableOrm<{
-      [K in keyof THeaders]: ReturnType<THeaders[K]["parse"]>;
-    }>(
-      this,
-      address.workbookName,
-      address.tableName,
-      headers,
-      namespace
-    );
-
-    // Add to schema object for runtime access
-    (this.schema as Record<string, object>)[namespace] = orm;
-
-    return orm;
-  }
-  
-
-  /**
-   * Add a cell schema at runtime
-   * @param namespace - Unique namespace for the schema
-   * @param cellAddress - Address of the cell
-   * @param parse - Parse function for the cell value
-   * @returns The CellOrm instance for immediate use
-   */
-  addCellSchema<TValue>(
-    namespace: string,
-    cellAddress: CellAddress,
-    parse: (value: unknown, metadata: MetadataType<TMetadata, "cell">) => TValue,
-    write: (value: TValue) => { value: SerializedCellValue; metadata?: MetadataType<TMetadata, "cell"> } = (value) => ({ value: value as unknown as SerializedCellValue })
-  ): CellOrm<TValue> {
-    // Register the schema with the schema manager
-    this.schemaManager.registerCellSchema(namespace, cellAddress, parse);
-
-    // Create the ORM instance
-    const orm = new CellOrm(this, cellAddress, parse, write, namespace);
-
-    // Add to schema object for runtime access
-    (this.schema as Record<string, object>)[namespace] = orm;
-
-    return orm;
+  private emitMutation(footprint: MutationInvalidation): void {
+    this.evaluationManager.invalidateFromMutation(footprint);
+    this.eventManager.emitUpdate();
   }
 
-  /**
-   * Add a grid schema at runtime
-   * @param namespace - Unique namespace for the schema
-   * @param address - Grid address (workbookName and sheetName)
-   * @param range - Finite range of cells for the grid
-   * @param parse - Parse function for the cell values
-   * @param write - Write function for serializing values (optional for primitive types)
-   * @returns The GridOrm instance for immediate use
-   */
-  addGridSchema<TValue>(
-    namespace: string,
-    address: { workbookName: string; sheetName: string },
-    range: FiniteSpreadsheetRange,
-    parse: (value: unknown, metadata: MetadataType<TMetadata, "cell">) => TValue,
-    write: (value: TValue) => { value: SerializedCellValue; metadata?: MetadataType<TMetadata, "cell"> } = (value) => ({ value: value as unknown as SerializedCellValue })
-  ): GridOrm<TValue, MetadataType<TMetadata, "cell">> {
-    // Register the schema with the schema manager
-    this.schemaManager.registerGridSchema(
-      namespace,
-      address.workbookName,
-      address.sheetName,
-      range,
-      parse
-    );
-
-    // Create the ORM instance
-    const orm = new GridOrm<TValue, MetadataType<TMetadata, "cell">>(
-      this,
-      address.workbookName,
-      address.sheetName,
-      range,
-      parse,
-      write,
-      namespace
-    );
-
-    // Add to schema object for runtime access
-    (this.schema as Record<string, object>)[namespace] = orm;
-
-    return orm;
+  private emitUpdate(): void {
+    this.eventManager.emitUpdate();
   }
 
-  /**
-   * Remove a table schema at runtime.
-   * @param namespace - Namespace of the table schema to remove
-   * @returns true when a matching table schema was removed, false otherwise
-   */
-  removeTableSchema(namespace: string): boolean {
-    return this.removeSchemaOfType(namespace, "table");
+  private getExistingSheetContent(opts: {
+    workbookName: string;
+    sheetName: string;
+  }): Map<string, SerializedCellValue> | undefined {
+    const sheet = this.workbookManager.getSheet(opts);
+    return sheet ? new Map(sheet.content) : undefined;
   }
 
-  /**
-   * Remove a cell schema at runtime.
-   * @param namespace - Namespace of the cell schema to remove
-   * @returns true when a matching cell schema was removed, false otherwise
-   */
-  removeCellSchema(namespace: string): boolean {
-    return this.removeSchemaOfType(namespace, "cell");
-  }
+  private getWorkbookResourceKeys(workbookName: string): string[] {
+    const resourceKeys = new Set<string>([getWorkbookResourceKey(workbookName)]);
 
-  /**
-   * Remove a grid schema at runtime.
-   * @param namespace - Namespace of the grid schema to remove
-   * @returns true when a matching grid schema was removed, false otherwise
-   */
-  removeGridSchema(namespace: string): boolean {
-    return this.removeSchemaOfType(namespace, "grid");
-  }
-
-  private removeSchemaOfType(
-    namespace: string,
-    type: "table" | "cell" | "grid"
-  ): boolean {
-    const schema = this.schemaManager.getSchema(namespace);
-    if (!schema || schema.type !== type) {
-      return false;
+    for (const sheetName of this.workbookManager
+      .getWorkbooks()
+      .get(workbookName)
+      ?.sheets.keys() ?? []) {
+      resourceKeys.add(getSheetResourceKey({ workbookName, sheetName }));
     }
 
-    const removed = this.schemaManager.removeSchema(namespace);
-    if (removed) {
-      delete (this.schema as Record<string, object>)[namespace];
+    for (const tableName of this.tableManager.getTables(workbookName).keys()) {
+      resourceKeys.add(getTableResourceKey({ workbookName, tableName }));
     }
 
-    return removed;
+    const namedExpressions = this.namedExpressionManager.getNamedExpressions();
+    for (const name of namedExpressions.workbookExpressions
+      .get(workbookName)
+      ?.keys() ?? []) {
+      resourceKeys.add(
+        getNamedExpressionResourceKey({ expressionName: name, workbookName })
+      );
+    }
+    for (const [sheetName, expressions] of namedExpressions.sheetExpressions.get(
+      workbookName
+    ) ?? []) {
+      resourceKeys.add(getSheetResourceKey({ workbookName, sheetName }));
+      for (const name of expressions.keys()) {
+        resourceKeys.add(
+          getNamedExpressionResourceKey({
+            expressionName: name,
+            workbookName,
+            sheetName,
+          })
+        );
+      }
+    }
+
+    return Array.from(resourceKeys);
+  }
+
+  private getSheetResourceKeys(opts: {
+    workbookName: string;
+    sheetName: string;
+  }): string[] {
+    const resourceKeys = new Set<string>([
+      getWorkbookResourceKey(opts.workbookName),
+      getSheetResourceKey(opts),
+    ]);
+
+    for (const [tableName, table] of this.tableManager.getTables(
+      opts.workbookName
+    )) {
+      if (table.sheetName === opts.sheetName) {
+        resourceKeys.add(
+          getTableResourceKey({ workbookName: opts.workbookName, tableName })
+        );
+      }
+    }
+
+    const sheetExpressions = this.namedExpressionManager
+      .getNamedExpressions()
+      .sheetExpressions.get(opts.workbookName)
+      ?.get(opts.sheetName);
+    for (const name of sheetExpressions?.keys() ?? []) {
+      resourceKeys.add(
+        getNamedExpressionResourceKey({
+          expressionName: name,
+          workbookName: opts.workbookName,
+          sheetName: opts.sheetName,
+        })
+      );
+    }
+
+    return Array.from(resourceKeys);
   }
 
   //#region Cell
@@ -437,9 +278,8 @@ export class FormulaEngine<
     address: CellAddress,
     metadata: MetadataType<TMetadata, "cell"> | undefined
   ): void {
-    this.commandExecutor.execute(
-      new SetCellMetadataCommand(this.workbookManager, address, metadata)
-    );
+    this.workbookManager.setCellMetadata(address, metadata);
+    this.emitUpdate();
   }
 
   /**
@@ -473,9 +313,8 @@ export class FormulaEngine<
     opts: { workbookName: string; sheetName: string },
     metadata: MetadataType<TMetadata, "sheet">
   ): void {
-    this.commandExecutor.execute(
-      new SetSheetMetadataCommand(this.workbookManager, opts, metadata)
-    );
+    this.workbookManager.setSheetMetadata(opts, metadata);
+    this.emitUpdate();
   }
 
   /**
@@ -498,13 +337,8 @@ export class FormulaEngine<
     workbookName: string,
     metadata: MetadataType<TMetadata, "workbook">
   ): void {
-    this.commandExecutor.execute(
-      new SetWorkbookMetadataCommand(
-        this.workbookManager,
-        workbookName,
-        metadata
-      )
-    );
+    this.workbookManager.setWorkbookMetadata(workbookName, metadata);
+    this.emitUpdate();
   }
 
   /**
@@ -586,10 +420,11 @@ export class FormulaEngine<
     sheetName?: string;
     workbookName?: string;
   }) {
-    this.commandExecutor.execute(
-      new AddNamedExpressionCommand(this.getNamedExpressionCommandDeps(), opts),
-      { validate: this.schemaManager.hasSchemas() }
-    );
+    this.namedExpressionManager.addNamedExpression(opts);
+    this.emitMutation({
+      touchedCells: [],
+      resourceKeys: [getNamedExpressionResourceKey(opts)],
+    });
   }
 
   removeNamedExpression(opts: {
@@ -597,13 +432,13 @@ export class FormulaEngine<
     sheetName?: string;
     workbookName?: string;
   }): void {
-    this.commandExecutor.execute(
-      new RemoveNamedExpressionCommand(
-        this.getNamedExpressionCommandDeps(),
-        opts
-      ),
-      { validate: this.schemaManager.hasSchemas() }
-    );
+    const removed = this.namedExpressionManager.removeNamedExpression(opts);
+    if (removed) {
+      this.emitMutation({
+        touchedCells: [],
+        resourceKeys: [getNamedExpressionResourceKey(opts)],
+      });
+    }
   }
 
   /**
@@ -637,13 +472,11 @@ export class FormulaEngine<
     sheetName?: string;
     workbookName?: string;
   }): void {
-    this.commandExecutor.execute(
-      new UpdateNamedExpressionCommand(
-        this.getNamedExpressionCommandDeps(),
-        opts
-      ),
-      { validate: this.schemaManager.hasSchemas() }
-    );
+    this.namedExpressionManager.updateNamedExpression(opts);
+    this.emitMutation({
+      touchedCells: [],
+      resourceKeys: [getNamedExpressionResourceKey(opts)],
+    });
   }
 
   renameNamedExpression(opts: {
@@ -652,13 +485,41 @@ export class FormulaEngine<
     workbookName?: string;
     newName: string;
   }): void {
-    this.commandExecutor.execute(
-      new RenameNamedExpressionCommand(
-        this.getNamedExpressionCommandDeps(),
-        opts
-      ),
-      { validate: this.schemaManager.hasSchemas() }
+    this.namedExpressionManager.renameNamedExpression(opts);
+
+    const changedCells = this.workbookManager.updateAllFormulas((formula) =>
+      renameNamedExpressionInFormula(
+        formula,
+        opts.expressionName,
+        opts.newName
+      )
     );
+
+    const changedNamedExpressions =
+      this.namedExpressionManager.updateAllNamedExpressions((formula) =>
+        renameNamedExpressionInFormula(
+          formula,
+          opts.expressionName,
+          opts.newName
+        )
+      );
+
+    this.emitMutation({
+      touchedCells: buildFormulaTouchedCells(changedCells),
+      resourceKeys: [
+        getNamedExpressionResourceKey({
+          expressionName: opts.expressionName,
+          workbookName: opts.workbookName,
+          sheetName: opts.sheetName,
+        }),
+        getNamedExpressionResourceKey({
+          expressionName: opts.newName,
+          workbookName: opts.workbookName,
+          sheetName: opts.sheetName,
+        }),
+        ...changedNamedExpressions,
+      ],
+    });
   }
 
   setNamedExpressions(
@@ -670,13 +531,44 @@ export class FormulaEngine<
       expressions: Map<string, NamedExpression>;
     }
   ) {
-    this.commandExecutor.execute(
-      new SetNamedExpressionsCommand(
-        this.getNamedExpressionCommandDeps(),
-        opts
-      ),
-      { validate: this.schemaManager.hasSchemas() }
-    );
+    const allExpressions = this.namedExpressionManager.getNamedExpressions();
+    let previousExpressions: Map<string, NamedExpression> | undefined;
+
+    if (opts.type === "global") {
+      previousExpressions = new Map(allExpressions.globalExpressions);
+    } else if (opts.type === "workbook") {
+      previousExpressions = new Map(
+        allExpressions.workbookExpressions.get(opts.workbookName) || []
+      );
+    } else {
+      const sheetExpressions = allExpressions.sheetExpressions
+        .get(opts.workbookName)
+        ?.get(opts.sheetName);
+      previousExpressions = new Map(sheetExpressions || []);
+    }
+
+    this.namedExpressionManager.setNamedExpressions(opts);
+
+    const scope =
+      opts.type === "global"
+        ? {}
+        : opts.type === "workbook"
+        ? { workbookName: opts.workbookName }
+        : {
+            workbookName: opts.workbookName,
+            sheetName: opts.sheetName,
+          };
+
+    this.emitMutation({
+      touchedCells: [],
+      resourceKeys: [
+        ...getNamedExpressionScopeResourceKeys(
+          previousExpressions.keys(),
+          scope
+        ),
+        ...getNamedExpressionScopeResourceKeys(opts.expressions.keys(), scope),
+      ],
+    });
   }
   //#endregion
 
@@ -689,25 +581,77 @@ export class FormulaEngine<
     numRows: SpreadsheetRangeEnd;
     numCols: number;
   }): void {
-    this.commandExecutor.execute(
-      new AddTableCommand(this.getTableCommandDeps(), props),
-      { validate: this.schemaManager.hasSchemas() }
-    );
+    const table = this.tableManager.addTable({
+      ...props,
+      getCellValue: (cellAddress: CellAddress) =>
+        this.getCellValue(cellAddress),
+    });
+
+    this.emitMutation({
+      touchedCells: buildTableTouchedCells(this.workbookManager, [table]),
+      tableContextChangedCells: buildTableContextChangedCells(
+        this.workbookManager,
+        [table]
+      ),
+      resourceKeys: [
+        getTableResourceKey({
+          workbookName: props.workbookName,
+          tableName: props.tableName,
+        }),
+      ],
+    });
   }
 
   renameTable(
     workbookName: string,
     names: { oldName: string; newName: string }
   ): void {
-    this.commandExecutor.execute(
-      new RenameTableCommand(
-        this.getTableCommandDeps(),
-        workbookName,
-        names.oldName,
-        names.newName
-      ),
-      { validate: this.schemaManager.hasSchemas() }
+    const oldTable = this.tableManager.getTable({
+      workbookName,
+      name: names.oldName,
+    });
+    const oldTableSnapshot = oldTable
+      ? { ...oldTable, headers: new Map(oldTable.headers) }
+      : undefined;
+
+    this.tableManager.renameTable(workbookName, names);
+
+    const changedCells = this.workbookManager.updateAllFormulas((formula) =>
+      renameTableInFormula(formula, names.oldName, names.newName)
     );
+
+    const changedNamedExpressions =
+      this.namedExpressionManager.updateAllNamedExpressions((formula) =>
+        renameTableInFormula(formula, names.oldName, names.newName)
+      );
+
+    const newTable = this.tableManager.getTable({
+      workbookName,
+      name: names.newName,
+    });
+
+    this.emitMutation({
+      touchedCells: mergeTouchedCells(
+        buildTableTouchedCells(this.workbookManager, [oldTableSnapshot]),
+        buildTableTouchedCells(this.workbookManager, [newTable]),
+        buildFormulaTouchedCells(changedCells)
+      ),
+      tableContextChangedCells: buildTableContextChangedCells(
+        this.workbookManager,
+        [oldTableSnapshot, newTable]
+      ),
+      resourceKeys: [
+        getTableResourceKey({
+          workbookName,
+          tableName: names.oldName,
+        }),
+        getTableResourceKey({
+          workbookName,
+          tableName: names.newName,
+        }),
+        ...changedNamedExpressions,
+      ],
+    });
   }
 
   updateTable(opts: {
@@ -718,16 +662,78 @@ export class FormulaEngine<
     numCols?: number;
     workbookName: string;
   }): void {
-    this.commandExecutor.execute(
-      new UpdateTableCommand(this.getTableCommandDeps(), opts),
-      { validate: this.schemaManager.hasSchemas() }
-    );
+    const oldTable = this.tableManager.getTable({
+      workbookName: opts.workbookName,
+      name: opts.tableName,
+    });
+    const oldTableSnapshot = oldTable
+      ? { ...oldTable, headers: new Map(oldTable.headers) }
+      : undefined;
+
+    this.tableManager.updateTable({
+      ...opts,
+      getCellValue: (cellAddress: CellAddress) =>
+        this.getCellValue(cellAddress),
+    });
+
+    const newTable = this.tableManager.getTable({
+      workbookName: opts.workbookName,
+      name: opts.tableName,
+    });
+
+    this.emitMutation({
+      touchedCells: mergeTouchedCells(
+        buildTableTouchedCells(this.workbookManager, [oldTableSnapshot]),
+        buildTableTouchedCells(this.workbookManager, [newTable])
+      ),
+      tableContextChangedCells: buildTableContextChangedCells(
+        this.workbookManager,
+        [oldTableSnapshot, newTable]
+      ),
+      resourceKeys: [
+        getTableResourceKey({
+          workbookName: opts.workbookName,
+          tableName: opts.tableName,
+        }),
+      ],
+    });
   }
 
   removeTable(opts: { tableName: string; workbookName: string }): void {
-    this.commandExecutor.execute(
-      new RemoveTableCommand(this.getTableCommandDeps(), opts),
-      { validate: this.schemaManager.hasSchemas() }
+    const oldTable = this.tableManager.getTable({
+      workbookName: opts.workbookName,
+      name: opts.tableName,
+    });
+    const oldTableSnapshot = oldTable
+      ? { ...oldTable, headers: new Map(oldTable.headers) }
+      : undefined;
+
+    const found = this.tableManager.removeTable(opts);
+    if (found) {
+      this.emitMutation({
+        touchedCells: buildTableTouchedCells(this.workbookManager, [
+          oldTableSnapshot,
+        ]),
+        tableContextChangedCells: buildTableContextChangedCells(
+          this.workbookManager,
+          [oldTableSnapshot]
+        ),
+        resourceKeys: [
+          getTableResourceKey({
+            workbookName: opts.workbookName,
+            tableName: opts.tableName,
+          }),
+        ],
+      });
+    }
+  }
+
+  private getAllTables(): TableDefinition[] {
+    return Array.from(this.tableManager.tables.values()).flatMap((tables) =>
+      Array.from(tables.values()).map((table) => ({
+        ...table,
+        headers: new Map(table.headers),
+      }))
     );
   }
 
@@ -755,10 +761,32 @@ export class FormulaEngine<
   }
 
   resetTables(tables: Map<string, Map<string, TableDefinition>>): void {
-    this.commandExecutor.execute(
-      new ResetTablesCommand(this.getTableCommandDeps(), tables),
-      { validate: this.schemaManager.hasSchemas() }
+    const oldTables = this.getAllTables();
+    const newTables = Array.from(tables.values()).flatMap((workbookTables) =>
+      Array.from(workbookTables.values())
     );
+    const resourceKeys = new Set<string>();
+    for (const table of [...oldTables, ...newTables]) {
+      resourceKeys.add(
+        getTableResourceKey({
+          workbookName: table.workbookName,
+          tableName: table.name,
+        })
+      );
+    }
+
+    this.tableManager.resetTables(tables);
+    this.emitMutation({
+      touchedCells: mergeTouchedCells(
+        buildTableTouchedCells(this.workbookManager, oldTables),
+        buildTableTouchedCells(this.workbookManager, newTables)
+      ),
+      tableContextChangedCells: buildTableContextChangedCells(
+        this.workbookManager,
+        [...oldTables, ...newTables]
+      ),
+      resourceKeys: Array.from(resourceKeys),
+    });
   }
 
   getTables(workbookName: string) {
@@ -769,33 +797,6 @@ export class FormulaEngine<
     return this.tableManager.isCellInTable(cellAddress);
   }
 
-  /**
-   * Get all data cells in a table (excluding header row).
-   * Since spills cannot enter tables (they get #SPILL! error), this only
-   * needs to return cells with direct content.
-   */
-  private getTableDataCells(table: TableDefinition): CellAddress[] {
-    const { start, endRow, headers } = table;
-    const dataStartRow = start.rowIndex + 1;
-    const endColIndex = start.colIndex + headers.size - 1;
-
-    // Build a RangeAddress for the data area
-    const rangeAddress: RangeAddress = {
-      workbookName: table.workbookName,
-      sheetName: table.sheetName,
-      range: {
-        start: { col: start.colIndex, row: dataStartRow },
-        end: {
-          col: { type: "number", value: endColIndex },
-          row: endRow,
-        },
-      },
-    };
-
-    // Return cells with direct content - spills cannot enter tables
-    return this.workbookManager.getCellsInRange(rangeAddress);
-  }
-
   //#endregion
 
   //#region Conditional Styling
@@ -803,18 +804,21 @@ export class FormulaEngine<
    * Add a conditional style rule
    */
   addConditionalStyle(style: ConditionalStyle): void {
-    this.commandExecutor.execute(
-      new AddConditionalStyleCommand(this.styleManager, style)
-    );
+    this.styleManager.addConditionalStyle(style);
+    this.emitUpdate();
   }
 
   /**
    * Remove a conditional style rule by index
    */
   removeConditionalStyle(workbookName: string, index: number): void {
-    this.commandExecutor.execute(
-      new RemoveConditionalStyleCommand(this.styleManager, workbookName, index)
+    const removed = this.styleManager.removeConditionalStyle(
+      workbookName,
+      index
     );
+    if (removed) {
+      this.emitUpdate();
+    }
   }
 
   /**
@@ -861,18 +865,18 @@ export class FormulaEngine<
    * Add a direct cell style rule
    */
   addCellStyle(style: DirectCellStyle): void {
-    this.commandExecutor.execute(
-      new AddCellStyleCommand(this.styleManager, style)
-    );
+    this.styleManager.addCellStyle(style);
+    this.emitUpdate();
   }
 
   /**
    * Remove a direct cell style rule by index
    */
   removeCellStyle(workbookName: string, index: number): void {
-    this.commandExecutor.execute(
-      new RemoveCellStyleCommand(this.styleManager, workbookName, index)
-    );
+    const removed = this.styleManager.removeCellStyle(workbookName, index);
+    if (removed) {
+      this.emitUpdate();
+    }
   }
 
   /**
@@ -906,14 +910,58 @@ export class FormulaEngine<
    * Adjusts existing style ranges rather than deleting them entirely
    */
   clearCellStyles(range: RangeAddress): void {
-    this.commandExecutor.execute(
-      new ClearCellStylesCommand(this.styleManager, range)
-    );
+    this.styleManager.clearCellStyles(range);
+    this.emitUpdate();
   }
 
   //#endregion
 
   //#region Copy/Paste
+  private getTopLeftCell(cells: CellAddress[]): CellAddress {
+    let topLeft = cells[0]!;
+    for (const cell of cells) {
+      if (
+        cell.rowIndex < topLeft.rowIndex ||
+        (cell.rowIndex === topLeft.rowIndex &&
+          cell.colIndex < topLeft.colIndex)
+      ) {
+        topLeft = cell;
+      }
+    }
+    return topLeft;
+  }
+
+  private dedupeAddresses(addresses: CellAddress[]): CellAddress[] {
+    return Array.from(
+      new Map(addresses.map((address) => [getMutationAddressKey(address), address]))
+        .values()
+    );
+  }
+
+  private getPasteTouchedAddresses(
+    source: CellAddress[],
+    target: CellAddress,
+    options: CopyCellsOptions
+  ): CellAddress[] {
+    if (source.length === 0) {
+      return [];
+    }
+
+    const topLeft = this.getTopLeftCell(source);
+    const colOffset = target.colIndex - topLeft.colIndex;
+    const rowOffset = target.rowIndex - topLeft.rowIndex;
+    const targetCells = source.map((sourceCell) => ({
+      workbookName: target.workbookName,
+      sheetName: target.sheetName,
+      colIndex: sourceCell.colIndex + colOffset,
+      rowIndex: sourceCell.rowIndex + rowOffset,
+    }));
+
+    return this.dedupeAddresses(
+      options.cut ? [...source, ...targetCells] : targetCells
+    );
+  }
+
   /**
    * Paste cells from source to target
    */
@@ -922,16 +970,30 @@ export class FormulaEngine<
     target: CellAddress,
     options: CopyCellsOptions
   ): void {
-    this.commandExecutor.execute(
-      new PasteCellsCommand(
-        this.workbookManager,
-        this.copyManager,
-        source,
-        target,
-        options
-      ),
-      { validate: this.schemaManager.hasSchemas() }
+    if (source.length === 0) {
+      return;
+    }
+
+    const touchedAddresses = this.getPasteTouchedAddresses(
+      source,
+      target,
+      options
     );
+    const before = captureCellContents(this.workbookManager, touchedAddresses);
+
+    this.copyManager.pasteCells(source, target, options);
+
+    const after = captureCellContents(this.workbookManager, touchedAddresses);
+    this.emitMutation({
+      touchedCells: buildTouchedCells(
+        touchedAddresses.map((address) => ({
+          address,
+          before: before.get(getMutationAddressKey(address)),
+          after: after.get(getMutationAddressKey(address)),
+        }))
+      ),
+      resourceKeys: [],
+    });
   }
 
   /**
@@ -970,16 +1032,27 @@ export class FormulaEngine<
     targetRanges: RangeAddress[],
     options: CopyCellsOptions
   ): void {
-    this.commandExecutor.execute(
-      new FillAreasCommand(
-        this.workbookManager,
-        this.copyManager,
-        seedRange,
-        targetRanges,
-        options
+    const touchedAddresses = this.dedupeAddresses([
+      ...targetRanges.flatMap((targetRange) =>
+        getFiniteRangeAddresses(targetRange)
       ),
-      { validate: this.schemaManager.hasSchemas() }
-    );
+      ...(options.cut ? getFiniteRangeAddresses(seedRange) : []),
+    ]);
+    const before = captureCellContents(this.workbookManager, touchedAddresses);
+
+    this.copyManager.fillAreas(seedRange, targetRanges, options);
+
+    const after = captureCellContents(this.workbookManager, touchedAddresses);
+    this.emitMutation({
+      touchedCells: buildTouchedCells(
+        touchedAddresses.map((address) => ({
+          address,
+          before: before.get(getMutationAddressKey(address)),
+          after: after.get(getMutationAddressKey(address)),
+        }))
+      ),
+      resourceKeys: [],
+    });
   }
 
   /**
@@ -1141,15 +1214,11 @@ export class FormulaEngine<
    * );
    */
   moveCell(source: CellAddress, target: CellAddress): void {
-    this.commandExecutor.execute(
-      new MoveCellCommand(
-        this.workbookManager,
-        this.copyManager,
-        source,
-        target
-      ),
-      { validate: this.schemaManager.hasSchemas() }
-    );
+    this.pasteCells([source], target, {
+      cut: true,
+      type: "formula",
+      include: "all",
+    });
   }
 
   /**
@@ -1174,30 +1243,23 @@ export class FormulaEngine<
    * );
    */
   moveRange(sourceRange: RangeAddress, target: CellAddress): void {
-    this.commandExecutor.execute(
-      new MoveRangeCommand(
-        this.workbookManager,
-        this.copyManager,
-        sourceRange,
-        target
-      ),
-      { validate: this.schemaManager.hasSchemas() }
-    );
+    const cells = this.copyManager.expandRangeToCells(sourceRange);
+    this.pasteCells(cells, target, {
+      cut: true,
+      type: "formula",
+      include: "all",
+    });
   }
   //#endregion
 
   //#region Sheets
   addSheet(opts: { workbookName: string; sheetName: string }): Sheet {
-    this.commandExecutor.execute(
-      new AddSheetCommand(this.getStructureCommandDeps(), opts),
-      { validate: this.schemaManager.hasSchemas() }
-    );
-
-    const sheet = this.workbookManager.getSheet(opts);
-    if (!sheet) {
-      throw new Error(`Failed to create sheet '${opts.sheetName}'`);
-    }
-
+    const sheet = this.workbookManager.addSheet(opts);
+    this.namedExpressionManager.addSheet(opts);
+    this.emitMutation({
+      touchedCells: [],
+      resourceKeys: [getSheetResourceKey(opts)],
+    });
     return sheet;
   }
 
@@ -1220,10 +1282,17 @@ export class FormulaEngine<
   }
 
   removeSheet(opts: { workbookName: string; sheetName: string }): void {
-    this.commandExecutor.execute(
-      new RemoveSheetCommand(this.getStructureCommandDeps(), opts),
-      { validate: this.schemaManager.hasSchemas() }
-    );
+    const resourceKeys = this.getSheetResourceKeys(opts);
+    this.workbookManager.removeSheet(opts);
+    this.namedExpressionManager.removeSheet(opts);
+    this.tableManager.removeSheet(opts);
+    this.styleManager.removeSheetStyles(opts.workbookName, opts.sheetName);
+    this.referenceManager.invalidateSheet(opts.workbookName, opts.sheetName);
+    this.emitMutation({
+      touchedCells: [],
+      resourceKeys,
+      removedScopes: [{ type: "sheet", ...opts }],
+    });
   }
 
   renameSheet(opts: {
@@ -1231,10 +1300,41 @@ export class FormulaEngine<
     newSheetName: string;
     workbookName: string;
   }): void {
-    this.commandExecutor.execute(
-      new RenameSheetCommand(this.getStructureCommandDeps(), opts),
-      { validate: this.schemaManager.hasSchemas() }
+    const oldResourceKeys = this.getSheetResourceKeys(opts);
+
+    this.workbookManager.renameSheet(opts);
+    this.namedExpressionManager.renameSheet(opts);
+    this.tableManager.updateTablesForSheetRename(opts);
+    this.styleManager.updateSheetName(
+      opts.workbookName,
+      opts.sheetName,
+      opts.newSheetName
     );
+    const changedCells = this.workbookManager.updateAllFormulas((formula) =>
+      renameSheetInFormula({
+        formula,
+        oldSheetName: opts.sheetName,
+        newSheetName: opts.newSheetName,
+      })
+    );
+    this.referenceManager.updateSheetName(
+      opts.workbookName,
+      opts.sheetName,
+      opts.newSheetName
+    );
+
+    this.emitMutation({
+      touchedCells: buildFormulaTouchedCells(changedCells),
+      resourceKeys: Array.from(
+        new Set([
+          ...oldResourceKeys,
+          ...this.getSheetResourceKeys({
+            workbookName: opts.workbookName,
+            sheetName: opts.newSheetName,
+          }),
+        ])
+      ),
+    });
   }
 
   /**
@@ -1284,17 +1384,27 @@ export class FormulaEngine<
 
   //#region Workbook
   addWorkbook(workbookName: string): void {
-    this.commandExecutor.execute(
-      new AddWorkbookCommand(this.getStructureCommandDeps(), workbookName),
-      { validate: this.schemaManager.hasSchemas() }
-    );
+    this.workbookManager.addWorkbook(workbookName);
+    this.namedExpressionManager.addWorkbook(workbookName);
+    this.tableManager.addWorkbook(workbookName);
+    this.emitMutation({
+      touchedCells: [],
+      resourceKeys: [getWorkbookResourceKey(workbookName)],
+    });
   }
 
   removeWorkbook(workbookName: string): void {
-    this.commandExecutor.execute(
-      new RemoveWorkbookCommand(this.getStructureCommandDeps(), workbookName),
-      { validate: this.schemaManager.hasSchemas() }
-    );
+    const resourceKeys = this.getWorkbookResourceKeys(workbookName);
+    this.workbookManager.removeWorkbook(workbookName);
+    this.namedExpressionManager.removeWorkbook(workbookName);
+    this.tableManager.removeWorkbook(workbookName);
+    this.styleManager.removeWorkbookStyles(workbookName);
+    this.referenceManager.invalidateWorkbook(workbookName);
+    this.emitMutation({
+      touchedCells: [],
+      resourceKeys,
+      removedScopes: [{ type: "workbook", workbookName }],
+    });
   }
 
   /**
@@ -1305,25 +1415,164 @@ export class FormulaEngine<
   }
 
   cloneWorkbook(fromWorkbookName: string, toWorkbookName: string): void {
-    this.commandExecutor.execute(
-      new CloneWorkbookCommand(
-        this.getStructureCommandDeps(),
-        fromWorkbookName,
-        toWorkbookName
-      ),
-      { validate: this.schemaManager.hasSchemas() }
+    const sourceWorkbook = this.workbookManager
+      .getWorkbooks()
+      .get(fromWorkbookName);
+    if (!sourceWorkbook) {
+      throw new Error(`Source workbook "${fromWorkbookName}" not found`);
+    }
+    if (this.workbookManager.getWorkbooks().has(toWorkbookName)) {
+      throw new Error(`Target workbook "${toWorkbookName}" already exists`);
+    }
+
+    this.workbookManager.addWorkbook(toWorkbookName);
+    this.namedExpressionManager.addWorkbook(toWorkbookName);
+    this.tableManager.addWorkbook(toWorkbookName);
+
+    for (const [sheetName, sheet] of sourceWorkbook.sheets) {
+      this.workbookManager.addSheet({
+        workbookName: toWorkbookName,
+        sheetName,
+      });
+      this.namedExpressionManager.addSheet({
+        workbookName: toWorkbookName,
+        sheetName,
+      });
+      this.workbookManager.setSheetContent(
+        { workbookName: toWorkbookName, sheetName },
+        new Map(sheet.content)
+      );
+
+      const targetSheet = this.workbookManager.getSheet({
+        workbookName: toWorkbookName,
+        sheetName,
+      });
+      if (targetSheet) {
+        targetSheet.metadata = new Map(sheet.metadata);
+        if (sheet.sheetMetadata !== undefined) {
+          targetSheet.sheetMetadata = structuredClone(sheet.sheetMetadata);
+        }
+      }
+    }
+
+    const targetWorkbook = this.workbookManager
+      .getWorkbooks()
+      .get(toWorkbookName);
+    if (targetWorkbook && sourceWorkbook.workbookMetadata !== undefined) {
+      targetWorkbook.workbookMetadata = structuredClone(
+        sourceWorkbook.workbookMetadata
+      );
+    }
+
+    const namedExpressions = this.namedExpressionManager.getNamedExpressions();
+    const sourceWorkbookExpressions =
+      namedExpressions.workbookExpressions.get(fromWorkbookName);
+    if (sourceWorkbookExpressions) {
+      for (const [expressionName, expression] of sourceWorkbookExpressions) {
+        this.namedExpressionManager.addNamedExpression({
+          expressionName,
+          expression: expression.expression,
+          workbookName: toWorkbookName,
+        });
+      }
+    }
+
+    const sourceSheetExpressions =
+      namedExpressions.sheetExpressions.get(fromWorkbookName);
+    if (sourceSheetExpressions) {
+      for (const [sheetName, expressions] of sourceSheetExpressions) {
+        for (const [expressionName, expression] of expressions) {
+          this.namedExpressionManager.addNamedExpression({
+            expressionName,
+            expression: expression.expression,
+            workbookName: toWorkbookName,
+            sheetName,
+          });
+        }
+      }
+    }
+
+    const sourceTables = this.tableManager.tables.get(fromWorkbookName);
+    if (sourceTables) {
+      for (const [tableName] of sourceTables) {
+        this.tableManager.copyTable(
+          { workbookName: fromWorkbookName, tableName },
+          { workbookName: toWorkbookName, tableName }
+        );
+      }
+    }
+
+    for (const style of this.styleManager.getAllConditionalStyles()) {
+      if (style.areas.some((area) => area.workbookName === fromWorkbookName)) {
+        this.styleManager.addConditionalStyle({
+          ...style,
+          areas: style.areas.map((area) =>
+            area.workbookName === fromWorkbookName
+              ? { ...area, workbookName: toWorkbookName }
+              : area
+          ),
+        });
+      }
+    }
+
+    for (const style of this.styleManager.getAllCellStyles()) {
+      if (style.areas.some((area) => area.workbookName === fromWorkbookName)) {
+        this.styleManager.addCellStyle({
+          ...style,
+          areas: style.areas.map((area) =>
+            area.workbookName === fromWorkbookName
+              ? { ...area, workbookName: toWorkbookName }
+              : area
+          ),
+        });
+      }
+    }
+
+    this.workbookManager.updateFormulasForWorkbook(toWorkbookName, (formula) =>
+      renameWorkbookInFormula({
+        formula,
+        oldWorkbookName: fromWorkbookName,
+        newWorkbookName: toWorkbookName,
+      })
     );
+
+    this.emitMutation({
+      touchedCells: [],
+      resourceKeys: [getWorkbookResourceKey(toWorkbookName)],
+    });
   }
 
   renameWorkbook(opts: { workbookName: string; newWorkbookName: string }) {
-    this.commandExecutor.execute(
-      new RenameWorkbookCommand(
-        this.getStructureCommandDeps(),
-        opts.workbookName,
-        opts.newWorkbookName
-      ),
-      { validate: this.schemaManager.hasSchemas() }
+    const oldResourceKeys = this.getWorkbookResourceKeys(opts.workbookName);
+
+    this.workbookManager.renameWorkbook(opts);
+    this.namedExpressionManager.renameWorkbook(opts);
+    this.tableManager.updateTablesForWorkbookRename(opts);
+    this.styleManager.updateWorkbookName(
+      opts.workbookName,
+      opts.newWorkbookName
     );
+    const changedCells = this.workbookManager.updateAllFormulas((formula) =>
+      renameWorkbookInFormula({
+        formula,
+        oldWorkbookName: opts.workbookName,
+        newWorkbookName: opts.newWorkbookName,
+      })
+    );
+    this.referenceManager.updateWorkbookName(
+      opts.workbookName,
+      opts.newWorkbookName
+    );
+
+    this.emitMutation({
+      touchedCells: buildFormulaTouchedCells(changedCells),
+      resourceKeys: Array.from(
+        new Set([
+          ...oldResourceKeys,
+          ...this.getWorkbookResourceKeys(opts.newWorkbookName),
+        ])
+      ),
+    });
   }
 
   getWorkbooks() {
@@ -1337,27 +1586,39 @@ export class FormulaEngine<
    * @param sheetName - The name of the sheet to set the content of
    * @param content - A map of cell addresses to their serialized values
    * @remarks This method is used to set the content of a sheet. It will re-evaluate all sheets to ensure all dependencies are resolved correctly.
-   * @throws SchemaIntegrityError if any evaluated cell value violates a schema constraint
    */
   setSheetContent(
     opts: { sheetName: string; workbookName: string },
     content: Map<string, SerializedCellValue>
   ) {
-    this.commandExecutor.execute(
-      new SetSheetContentCommand(this.workbookManager, opts, content),
-      { validate: this.schemaManager.hasSchemas() }
-    );
+    const previousContent = this.getExistingSheetContent(opts);
+    this.workbookManager.setSheetContent(opts, content);
+    this.emitMutation({
+      touchedCells: buildSheetContentTouchedCells(
+        opts,
+        previousContent,
+        content
+      ),
+      resourceKeys: [],
+    });
   }
 
   /**
    * Set the content of a single cell.
-   * @throws SchemaIntegrityError if the evaluated value violates a schema constraint
    */
   setCellContent(address: CellAddress, content: SerializedCellValue) {
-    this.commandExecutor.execute(
-      new SetCellContentCommand(this.workbookManager, address, content),
-      { validate: this.schemaManager.hasSchemas() }
-    );
+    const previousValue = this.workbookManager.getCellContent(address);
+    this.workbookManager.setCellContent(address, content);
+    this.emitMutation({
+      touchedCells: buildTouchedCells([
+        {
+          address,
+          before: previousValue,
+          after: content,
+        },
+      ]),
+      resourceKeys: [],
+    });
   }
   //#endregion
 
@@ -1381,28 +1642,53 @@ export class FormulaEngine<
      */
     direction: FillDirection
   ): void {
-    this.commandExecutor.execute(
-      new AutoFillCommand(
-        this.workbookManager,
-        this.styleManager,
-        this.autoFillManager,
-        opts,
-        seedRange,
-        fillRanges,
-        direction
-      ),
-      { validate: this.schemaManager.hasSchemas() }
+    const touchedAddresses = this.dedupeAddresses(
+      fillRanges.flatMap((range) =>
+        getFiniteRangeAddresses({
+          workbookName: opts.workbookName,
+          sheetName: opts.sheetName,
+          range,
+        })
+      )
     );
+    const before = captureCellContents(this.workbookManager, touchedAddresses);
+
+    this.autoFillManager.fill(opts, seedRange, fillRanges, direction);
+
+    const after = captureCellContents(this.workbookManager, touchedAddresses);
+    this.emitMutation({
+      touchedCells: buildTouchedCells(
+        touchedAddresses.map((address) => ({
+          address,
+          before: before.get(getMutationAddressKey(address)),
+          after: after.get(getMutationAddressKey(address)),
+        }))
+      ),
+      resourceKeys: [],
+    });
   }
 
   /**
    * Removes the content in the spreadsheet that is inside the range.
    */
   clearSpreadsheetRange(address: RangeAddress) {
-    this.commandExecutor.execute(
-      new ClearRangeCommand(this.workbookManager, address),
-      { validate: this.schemaManager.hasSchemas() }
+    const clearedCells = Array.from(
+      this.workbookManager.iterateCellsInRange(address)
     );
+    const before = captureCellContents(this.workbookManager, clearedCells);
+
+    this.workbookManager.clearSpreadsheetRange(address);
+
+    this.emitMutation({
+      touchedCells: buildTouchedCells(
+        clearedCells.map((cellAddress) => ({
+          address: cellAddress,
+          before: before.get(getMutationAddressKey(cellAddress)),
+          after: undefined,
+        }))
+      ),
+      resourceKeys: [],
+    });
   }
   //#endregion
 
@@ -1485,110 +1771,7 @@ export class FormulaEngine<
       this.evaluationManager
     );
 
-    this.commandExecutor.clearHistory();
-    this.commandExecutor.clearActionLog();
-
     this.eventManager.emitUpdate();
-  }
-  //#endregion
-
-  //#region Undo/Redo
-  /**
-   * Undo the last command.
-   * @returns true if undo was performed, false if nothing to undo
-   */
-  undo(): boolean {
-    return this.commandExecutor.undo();
-  }
-
-  /**
-   * Redo the last undone command.
-   * @returns true if redo was performed, false if nothing to redo
-   */
-  redo(): boolean {
-    return this.commandExecutor.redo();
-  }
-
-  /**
-   * Check if undo is available.
-   */
-  canUndo(): boolean {
-    return this.commandExecutor.canUndo();
-  }
-
-  /**
-   * Check if redo is available.
-   */
-  canRedo(): boolean {
-    return this.commandExecutor.canRedo();
-  }
-
-  /**
-   * Get the action log for persistence/collaboration.
-   * Actions can be serialized and replayed to reconstruct state.
-   */
-  getActionLog(): EngineAction[] {
-    return this.commandExecutor.getActionLog();
-  }
-
-  /**
-   * Clear the action log.
-   */
-  clearActionLog(): void {
-    this.commandExecutor.clearActionLog();
-  }
-
-  /**
-   * Clear undo/redo history.
-   */
-  clearHistory(): void {
-    this.commandExecutor.clearHistory();
-  }
-  //#endregion
-
-  //#region Command Dependencies (internal)
-  /**
-   * Get dependencies for structure commands.
-   * @internal
-   */
-  private getStructureCommandDeps(): StructureCommandDeps {
-    return {
-      workbookManager: this.workbookManager,
-      namedExpressionManager: this.namedExpressionManager,
-      tableManager: this.tableManager,
-      styleManager: this.styleManager,
-      referenceManager: this.referenceManager,
-      apiSchemaManager: this.schemaManager,
-      renameSheetInFormula,
-      renameWorkbookInFormula,
-    };
-  }
-
-  /**
-   * Get dependencies for table commands.
-   * @internal
-   */
-  private getTableCommandDeps(): TableCommandDeps {
-    return {
-      tableManager: this.tableManager,
-      namedExpressionManager: this.namedExpressionManager,
-      workbookManager: this.workbookManager,
-      apiSchemaManager: this.schemaManager,
-      getCellValue: (cell) => this.getCellValue(cell),
-      renameTableInFormula,
-    };
-  }
-
-  /**
-   * Get dependencies for named expression commands.
-   * @internal
-   */
-  private getNamedExpressionCommandDeps(): NamedExpressionCommandDeps {
-    return {
-      namedExpressionManager: this.namedExpressionManager,
-      workbookManager: this.workbookManager,
-      renameNamedExpressionInFormula,
-    };
   }
   //#endregion
 }

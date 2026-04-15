@@ -263,7 +263,7 @@ describe("Warm-cache serialization", () => {
     );
   });
 
-  test("edits, undo, and redo invalidate stale cache state before reserializing", () => {
+  test("edits invalidate stale cache state before reserializing", () => {
     engine.setSheetContent(
       { workbookName, sheetName },
       new Map<string, string | number>([
@@ -285,15 +285,12 @@ describe("Warm-cache serialization", () => {
     afterEdit.resetToSerializedEngine(hydratedEngine.serializeEngine());
     expect(afterEdit.getCellValue(address("B1"))).toBe(11);
 
-    expect(hydratedEngine.undo()).toBe(true);
-    expect(hydratedEngine.getCellValue(address("B1"))).toBe(2);
+    hydratedEngine.setCellContent(address("A1"), 20);
+    expect(hydratedEngine.getCellValue(address("B1"))).toBe(21);
 
-    const afterUndo = FormulaEngine.buildEmpty();
-    afterUndo.resetToSerializedEngine(hydratedEngine.serializeEngine());
-    expect(afterUndo.getCellValue(address("B1"))).toBe(2);
-
-    expect(hydratedEngine.redo()).toBe(true);
-    expect(hydratedEngine.getCellValue(address("B1"))).toBe(11);
+    const afterSecondEdit = FormulaEngine.buildEmpty();
+    afterSecondEdit.resetToSerializedEngine(hydratedEngine.serializeEngine());
+    expect(afterSecondEdit.getCellValue(address("B1"))).toBe(21);
   });
 
   test("rejects legacy serialized engine payloads", () => {

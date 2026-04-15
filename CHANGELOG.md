@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.2.9
+
+### Patch Changes
+
+- remove the schema api this will become a user responsibility
+
 ## 0.2.8
 
 ### Patch Changes

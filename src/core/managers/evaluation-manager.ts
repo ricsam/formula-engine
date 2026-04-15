@@ -53,7 +53,7 @@ import type {
   SerializedSpillMetaEvaluationResultSnapshot,
   SerializedSpilledValuesEvaluationResultSnapshot,
 } from "../engine-snapshot";
-import type { MutationInvalidation } from "../commands/types";
+import type { MutationInvalidation } from "../mutation-invalidation";
 
 export class EvaluationManager {
   private isEvaluating = false;

@@ -51,7 +51,10 @@ import { WorkbookManager } from "./workbook-manager";
 import { VirtualCellValueNode } from "../../evaluator/dependency-nodes/virtual-cell-value-node";
 import { parseFormula } from "../../parser/parser";
 import type { EvaluationManager } from "./evaluation-manager";
-import type { MutationInvalidation, RemovedScope } from "../commands/types";
+import type {
+  MutationInvalidation,
+  RemovedScope,
+} from "../mutation-invalidation";
 import { ResourceDependencyNode } from "../../evaluator/dependency-nodes/resource-dependency-node";
 
 export interface DependencyTreeNode {

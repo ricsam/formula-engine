@@ -11,12 +11,9 @@ import {
   File,
   Files,
   FileText,
-  History,
   Plus,
-  Redo,
   Save,
   Trash2,
-  Undo,
   Upload,
   X,
 } from "lucide-react";
@@ -25,7 +22,6 @@ import { FormulaEngine } from "../src/core/engine";
 import { deserialize, serialize } from "../src/core/map-serializer";
 import { hexToLch, lchToHex } from "../src/core/utils/color-utils";
 import { useEngine } from "../src/react/hooks";
-import type { EngineAction } from "../src/core/commands/types";
 import { SpreadsheetWithFormulaBar } from "./components/SpreadsheetWithFormulaBar";
 import { Button } from "./components/ui/button";
 import { Input } from "./components/ui/input";
@@ -167,214 +163,6 @@ const {
 } = createEngine();
 console.log("engine", engine);
 
-// Helper function to format action types for display
-function formatAction(action: EngineAction): {
-  type: string;
-  description?: string;
-  details?: string;
-} {
-  const payload = action.payload as any;
-  
-  switch (action.type) {
-    case "SET_CELL_CONTENT":
-      return {
-        type: "Set Cell",
-        description: `Cell ${payload.address?.sheetName || ""} ${getCellRef(payload.address)}`,
-        details: String(payload.content || "").substring(0, 50),
-      };
-    case "SET_SHEET_CONTENT":
-      return {
-        type: "Set Sheet Content",
-        description: `${payload.opts?.sheetName || ""} (${payload.content?.length || 0} cells)`,
-      };
-    case "CLEAR_RANGE":
-      return {
-        type: "Clear Range",
-        description: `${payload.address?.sheetName || ""} ${formatRange(payload.address?.range)}`,
-      };
-    case "AUTO_FILL":
-      return {
-        type: "Auto Fill",
-        description: `${payload.opts?.sheetName || ""}`,
-      };
-    case "PASTE_CELLS":
-      return {
-        type: "Paste Cells",
-        description: `${payload.target?.sheetName || ""}`,
-      };
-    case "FILL_AREAS":
-      return {
-        type: "Fill Areas",
-        description: `${payload.targetRanges?.length || 0} ranges`,
-      };
-    case "MOVE_CELL":
-      return {
-        type: "Move Cell",
-        description: `${payload.source?.sheetName || ""} → ${payload.target?.sheetName || ""}`,
-      };
-    case "MOVE_RANGE":
-      return {
-        type: "Move Range",
-        description: `${payload.sourceRange?.sheetName || ""} → ${payload.target?.sheetName || ""}`,
-      };
-    case "ADD_WORKBOOK":
-      return {
-        type: "Add Workbook",
-        description: payload.workbookName || "",
-      };
-    case "REMOVE_WORKBOOK":
-      return {
-        type: "Remove Workbook",
-        description: payload.workbookName || "",
-      };
-    case "RENAME_WORKBOOK":
-      return {
-        type: "Rename Workbook",
-        description: `${payload.workbookName || ""} → ${payload.newWorkbookName || ""}`,
-      };
-    case "CLONE_WORKBOOK":
-      return {
-        type: "Clone Workbook",
-        description: `${payload.fromWorkbookName || ""} → ${payload.toWorkbookName || ""}`,
-      };
-    case "ADD_SHEET":
-      return {
-        type: "Add Sheet",
-        description: `${payload.workbookName || ""} → ${payload.sheetName || ""}`,
-      };
-    case "REMOVE_SHEET":
-      return {
-        type: "Remove Sheet",
-        description: `${payload.workbookName || ""} → ${payload.sheetName || ""}`,
-      };
-    case "RENAME_SHEET":
-      return {
-        type: "Rename Sheet",
-        description: `${payload.workbookName || ""} → ${payload.sheetName || ""} → ${payload.newSheetName || ""}`,
-      };
-    case "ADD_TABLE":
-      return {
-        type: "Add Table",
-        description: `${payload.tableName || ""} (${payload.workbookName || ""})`,
-      };
-    case "REMOVE_TABLE":
-      return {
-        type: "Remove Table",
-        description: `${payload.tableName || ""} (${payload.workbookName || ""})`,
-      };
-    case "RENAME_TABLE":
-      return {
-        type: "Rename Table",
-        description: `${payload.oldName || ""} → ${payload.newName || ""}`,
-      };
-    case "UPDATE_TABLE":
-      return {
-        type: "Update Table",
-        description: payload.tableName || "",
-      };
-    case "RESET_TABLES":
-      return {
-        type: "Reset Tables",
-        description: `${payload.tables?.length || 0} tables`,
-      };
-    case "ADD_NAMED_EXPRESSION":
-      return {
-        type: "Add Named Expression",
-        description: payload.expressionName || "",
-      };
-    case "REMOVE_NAMED_EXPRESSION":
-      return {
-        type: "Remove Named Expression",
-        description: payload.expressionName || "",
-      };
-    case "UPDATE_NAMED_EXPRESSION":
-      return {
-        type: "Update Named Expression",
-        description: payload.expressionName || "",
-      };
-    case "RENAME_NAMED_EXPRESSION":
-      return {
-        type: "Rename Named Expression",
-        description: `${payload.oldName || ""} → ${payload.newName || ""}`,
-      };
-    case "SET_NAMED_EXPRESSIONS":
-      return {
-        type: "Set Named Expressions",
-        description: `${payload.expressions?.length || 0} expressions`,
-      };
-    case "ADD_CONDITIONAL_STYLE":
-      return {
-        type: "Add Conditional Style",
-        description: `${payload.style?.areas?.[0]?.workbookName || ""}`,
-      };
-    case "REMOVE_CONDITIONAL_STYLE":
-      return {
-        type: "Remove Conditional Style",
-        description: payload.workbookName || "",
-      };
-    case "ADD_CELL_STYLE":
-      return {
-        type: "Add Cell Style",
-        description: `${payload.style?.areas?.[0]?.workbookName || ""}`,
-      };
-    case "REMOVE_CELL_STYLE":
-      return {
-        type: "Remove Cell Style",
-        description: payload.workbookName || "",
-      };
-    case "CLEAR_CELL_STYLES":
-      return {
-        type: "Clear Cell Styles",
-        description: formatRange(payload.range),
-      };
-    case "SET_CELL_METADATA":
-      return {
-        type: "Set Cell Metadata",
-        description: getCellRef(payload.address),
-      };
-    case "SET_SHEET_METADATA":
-      return {
-        type: "Set Sheet Metadata",
-        description: `${payload.opts?.workbookName || ""} → ${payload.opts?.sheetName || ""}`,
-      };
-    case "SET_WORKBOOK_METADATA":
-      return {
-        type: "Set Workbook Metadata",
-        description: payload.workbookName || "",
-      };
-    case "RESET_TO_SERIALIZED":
-      return {
-        type: "Reset to Serialized State",
-        description: "Full state reset",
-      };
-    default:
-      return {
-        type: action.type.replace(/_/g, " "),
-        description: JSON.stringify(payload).substring(0, 100),
-      };
-  }
-}
-
-function getCellRef(address: any): string {
-  if (!address) return "";
-  const col = String.fromCharCode(65 + (address.colIndex || 0));
-  const row = (address.rowIndex || 0) + 1;
-  return `${col}${row}`;
-}
-
-function formatRange(range: any): string {
-  if (!range) return "";
-  const startCol = String.fromCharCode(65 + (range.start?.col || 0));
-  const startRow = (range.start?.row || 0) + 1;
-  const endCol = range.end?.col?.type === "number"
-    ? String.fromCharCode(65 + range.end.col.value)
-    : "∞";
-  const endRow = range.end?.row?.type === "number"
-    ? range.end.row.value + 1
-    : "∞";
-  return `${startCol}${startRow}:${endCol}${endRow}`;
-}
-
 export function ExcelDemo() {
   const [workbookGridItems, setWorkbookGridItems] = useState<
     WorkbookGridItem[]
@@ -388,7 +176,6 @@ export function ExcelDemo() {
   const [currentFileName, setCurrentFileName] = useState<string>(DEFAULT_FILE);
   const [opfsFiles, setOpfsFiles] = useState<string[]>([]);
   const [showFileManager, setShowFileManager] = useState(false);
-  const [showChangelog, setShowChangelog] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
   const setViewport: typeof _setViewport = useCallback(
@@ -460,7 +247,6 @@ export function ExcelDemo() {
   const [newWorkbookName, setNewWorkbookName] = useState("");
 
   const engineState = useEngine(engine);
-  const [actionLog, setActionLog] = useState(engine.getActionLog());
 
   const applyLoadedState = useCallback(
     (filename: string, data: SavedState) => {
@@ -794,35 +580,9 @@ export function ExcelDemo() {
   useEffect(() => {
     const unsubscribe = engine.onUpdate(() => {
       markUnsavedChanges();
-      setActionLog(engine.getActionLog());
     });
     return unsubscribe;
   }, [engine, markUnsavedChanges]);
-
-  // Keyboard shortcuts for undo/redo
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === "z" && !e.shiftKey) {
-        e.preventDefault();
-        if (engine.canUndo()) {
-          engine.undo();
-          setActionLog(engine.getActionLog());
-        }
-      } else if (
-        (e.ctrlKey || e.metaKey) &&
-        (e.key === "y" || (e.key === "z" && e.shiftKey))
-      ) {
-        e.preventDefault();
-        if (engine.canRedo()) {
-          engine.redo();
-          setActionLog(engine.getActionLog());
-        }
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [engine]);
 
   // Add new workbook
   const addWorkbook = useCallback(() => {
@@ -2316,37 +2076,6 @@ export function ExcelDemo() {
                 </span>
               )}
               <div className="flex items-center gap-2">
-                {/* Undo/Redo */}
-                <div className="flex items-center gap-1 border-r border-gray-300 pr-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-gray-300 text-gray-700"
-                    onClick={() => {
-                      engine.undo();
-                      setActionLog(engine.getActionLog());
-                    }}
-                    disabled={!engine.canUndo()}
-                    title="Undo (Ctrl+Z)"
-                    data-testid="undo-button"
-                  >
-                    <Undo className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="border-gray-300 text-gray-700"
-                    onClick={() => {
-                      engine.redo();
-                      setActionLog(engine.getActionLog());
-                    }}
-                    disabled={!engine.canRedo()}
-                    title="Redo (Ctrl+Y)"
-                    data-testid="redo-button"
-                  >
-                    <Redo className="h-4 w-4" />
-                  </Button>
-                </div>
                 {/* File Operations */}
                 <div className="flex items-center gap-1 border-r border-gray-300 pr-2">
                   <Button
@@ -2439,27 +2168,6 @@ export function ExcelDemo() {
                   Add Workbook
                 </Button>
 
-                {/* Tools */}
-                <Button
-                  size="sm"
-                  variant={showChangelog ? "default" : "outline"}
-                  className={
-                    showChangelog
-                      ? "bg-blue-600 hover:bg-blue-700 text-white"
-                      : "border-gray-300 text-gray-700"
-                  }
-                  onClick={() => {
-                    setShowChangelog(!showChangelog);
-                    if (!showChangelog) {
-                      setActionLog(engine.getActionLog());
-                    }
-                  }}
-                  data-testid="changelog-toggle"
-                  title="Changelog"
-                >
-                  <History className="h-4 w-4 mr-1" />
-                  Changelog ({actionLog.length})
-                </Button>
                 <Button
                   size="sm"
                   variant="outline"
@@ -3602,79 +3310,6 @@ export function ExcelDemo() {
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Changelog Sidebar */}
-      {showChangelog && (
-        <div
-          className="border-b border-gray-200 bg-gray-50 p-4"
-          data-testid="changelog-panel"
-        >
-          <div className="bg-white p-3 rounded border border-gray-200">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-gray-800">
-                Changelog ({actionLog.length} actions)
-              </h3>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-6 w-6 p-0"
-                onClick={() => setShowChangelog(false)}
-                title="Close Changelog"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {actionLog.length === 0 ? (
-                <p className="text-xs text-gray-500 italic">
-                  No actions recorded yet
-                </p>
-              ) : (
-                actionLog
-                  .slice()
-                  .reverse()
-                  .map((action, index) => {
-                    const actionIndex = actionLog.length - index - 1;
-                    const formattedAction = formatAction(action);
-                    return (
-                      <div
-                        key={`${action.type}-${actionIndex}-${action.timestamp}`}
-                        className="flex items-start gap-2 bg-gray-50 p-2 rounded text-xs"
-                        data-testid={`changelog-action-${actionIndex}`}
-                      >
-                        <div className="flex-shrink-0 w-8 text-right text-gray-500 font-mono">
-                          {actionIndex + 1}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <span className="font-medium text-gray-800">
-                              {formattedAction.type}
-                            </span>
-                            {action.timestamp && (
-                              <span className="text-gray-500">
-                                {new Date(action.timestamp).toLocaleTimeString()}
-                              </span>
-                            )}
-                          </div>
-                          {formattedAction.description && (
-                            <div className="text-gray-600 text-xs">
-                              {formattedAction.description}
-                            </div>
-                          )}
-                          {formattedAction.details && (
-                            <div className="text-gray-500 text-xs mt-1 font-mono">
-                              {formattedAction.details}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-              )}
             </div>
           </div>
         </div>

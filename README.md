@@ -9,7 +9,6 @@ A TypeScript-based spreadsheet formula evaluation library designed for high-perf
 - **Excel-compatible** addressing (A1 notation)
 - **Multi-sheet support** with sheet management
 - **Named expressions** with global and sheet-level scoping
-- **Undo/redo system** with command pattern
 - **Copy/paste operations** with clipboard support
 - **TypeScript-first** design with comprehensive type safety
 
@@ -65,7 +64,6 @@ const values = engine.getRangeValues(range); // [[1,2,3],[4,5,6],[7,8,9]]
 - Sparse data storage with Map-based implementation
 - Copy/paste operations
 - Named expressions (storage only)
-- Undo/redo infrastructure
 
 ### 🚧 In Progress
 - Formula parser and lexer
