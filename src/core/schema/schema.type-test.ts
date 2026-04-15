@@ -316,3 +316,7 @@ engine.addTableSchema(
     email: defineHeader(2, (v) => parseString(v)),
   }
 );
+
+const _removedTableSchema: boolean = engine.removeTableSchema("users");
+const _removedCellSchema: boolean = engine.removeCellSchema("project");
+const _removedGridSchema: boolean = engine.removeGridSchema("plate");

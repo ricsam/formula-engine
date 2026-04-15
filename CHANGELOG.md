@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.2.8
+
+### Patch Changes
+
+- add removeSchema support to the engine
+
 ## 0.2.7
 
 ### Patch Changes

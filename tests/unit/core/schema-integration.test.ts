@@ -488,6 +488,91 @@ describe("Schema Integration", () => {
           );
         }).not.toThrow();
       });
+
+      test("removeTableSchema removes table validation and schema access", () => {
+        engine.schema.users.append({
+          id: 1,
+          name: "Alice",
+          email: "alice@example.com",
+          age: 25,
+        });
+
+        expect(engine.removeTableSchema("users")).toBe(true);
+        expect((engine.schema as Record<string, object>).users).toBeUndefined();
+        expect(engine.hasTable({ workbookName, tableName: "Users" })).toBe(true);
+
+        expect(() => {
+          engine.setCellContent(
+            { workbookName, sheetName, colIndex: 3, rowIndex: 1 },
+            "not-a-number"
+          );
+        }).not.toThrow();
+      });
+
+      test("removeCellSchema removes cell validation and schema access", () => {
+        expect(engine.removeCellSchema("config")).toBe(true);
+        expect((engine.schema as Record<string, object>).config).toBeUndefined();
+
+        expect(() => {
+          engine.setCellContent(
+            { workbookName, sheetName, colIndex: 5, rowIndex: 0 },
+            123
+          );
+        }).not.toThrow();
+      });
+
+      test("removeGridSchema removes grid validation and schema access", () => {
+        engine.addSheet({ workbookName, sheetName: "GridSheet" });
+
+        expect(engine.removeGridSchema("plate")).toBe(true);
+        expect((engine.schema).plate).toBeUndefined();
+
+        expect(() => {
+          engine.setCellContent(
+            { workbookName, sheetName: "GridSheet", colIndex: 1, rowIndex: 1 },
+            "not-a-number"
+          );
+        }).not.toThrow();
+      });
+
+      test("schema removal returns false for missing namespaces", () => {
+        expect(engine.removeTableSchema("missingTable")).toBe(false);
+        expect(engine.removeCellSchema("missingCell")).toBe(false);
+        expect(engine.removeGridSchema("missingGrid")).toBe(false);
+      });
+
+      test("schema removal returns false for kind mismatches and leaves schemas active", () => {
+        const schema = engine.addSheet({ workbookName, sheetName: "GridSheet" });
+
+        expect(engine.removeTableSchema("config")).toBe(false);
+        expect(engine.removeCellSchema("plate")).toBe(false);
+        expect(engine.removeGridSchema("users")).toBe(false);
+
+        expect((engine.schema).config).toBeDefined();
+        expect((engine.schema).plate).toBeDefined();
+        expect((engine.schema).users).toBeDefined();
+
+        expect(() => {
+          engine.setCellContent(
+            { workbookName, sheetName, colIndex: 5, rowIndex: 0 },
+            123
+          );
+        }).toThrow(SchemaIntegrityError);
+
+        expect(() => {
+          engine.setCellContent(
+            { workbookName, sheetName: "GridSheet", colIndex: 1, rowIndex: 1 },
+            "not-a-number"
+          );
+        }).toThrow(SchemaIntegrityError);
+
+        expect(() => {
+          engine.setCellContent(
+            { workbookName, sheetName, colIndex: 3, rowIndex: 1 },
+            "not-a-number"
+          );
+        }).toThrow(SchemaIntegrityError);
+      });
     });
 
     describe("Spill validation into schema-protected cells", () => {

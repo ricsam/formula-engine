@@ -365,6 +365,50 @@ export class FormulaEngine<
     return orm;
   }
 
+  /**
+   * Remove a table schema at runtime.
+   * @param namespace - Namespace of the table schema to remove
+   * @returns true when a matching table schema was removed, false otherwise
+   */
+  removeTableSchema(namespace: string): boolean {
+    return this.removeSchemaOfType(namespace, "table");
+  }
+
+  /**
+   * Remove a cell schema at runtime.
+   * @param namespace - Namespace of the cell schema to remove
+   * @returns true when a matching cell schema was removed, false otherwise
+   */
+  removeCellSchema(namespace: string): boolean {
+    return this.removeSchemaOfType(namespace, "cell");
+  }
+
+  /**
+   * Remove a grid schema at runtime.
+   * @param namespace - Namespace of the grid schema to remove
+   * @returns true when a matching grid schema was removed, false otherwise
+   */
+  removeGridSchema(namespace: string): boolean {
+    return this.removeSchemaOfType(namespace, "grid");
+  }
+
+  private removeSchemaOfType(
+    namespace: string,
+    type: "table" | "cell" | "grid"
+  ): boolean {
+    const schema = this.schemaManager.getSchema(namespace);
+    if (!schema || schema.type !== type) {
+      return false;
+    }
+
+    const removed = this.schemaManager.removeSchema(namespace);
+    if (removed) {
+      delete (this.schema as Record<string, object>)[namespace];
+    }
+
+    return removed;
+  }
+
   //#region Cell
   getCellEvaluationResult(
     cellAddress: CellAddress
