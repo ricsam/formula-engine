@@ -83,6 +83,13 @@ export interface DependencyTreeNode {
 }
 
 type FrontierWatcherNode = RangeEvaluationNode | EmptyCellEvaluationNode;
+type SnapshotEligibleNode =
+  | CellValueNode
+  | SpillMetaNode
+  | EmptyCellEvaluationNode
+  | RangeEvaluationNode
+  | AstEvaluationNode
+  | ResourceDependencyNode;
 
 /**
  * The DependencyManager is responsible for storing the evaluated values and their dependencies.
@@ -146,6 +153,69 @@ export class DependencyManager {
     private cacheManager: CacheManager,
     private workbookManager: WorkbookManager
   ) {}
+
+  private getSnapshotEligibilityState(node: SnapshotEligibleNode): {
+    eligible: boolean;
+    reason: string;
+  } {
+    if (node instanceof ResourceDependencyNode) {
+      return {
+        eligible: true,
+        reason: "resource nodes are always snapshot eligible",
+      };
+    }
+
+    if (node instanceof RangeEvaluationNode) {
+      return node.result.type === "awaiting-evaluation"
+        ? {
+            eligible: false,
+            reason: "range result is still awaiting evaluation",
+          }
+        : {
+            eligible: true,
+            reason: `range result type is ${node.result.type}`,
+          };
+    }
+
+    return node.evaluationResult.type === "awaiting-evaluation"
+      ? {
+          eligible: false,
+          reason: "evaluation result is still awaiting evaluation",
+        }
+      : {
+          eligible: true,
+          reason: `evaluation result type is ${node.evaluationResult.type}`,
+        };
+  }
+
+  private logSnapshotRestoreWarning(
+    message: string,
+    payload: Record<string, unknown>
+  ) {
+    console.warn("[FormulaEngine snapshot]", message, payload);
+  }
+
+  private getLogicalNodeSnapshotId(node: DependencyNode): NodeSnapshotId {
+    if (node instanceof AstEvaluationNode) {
+      return getAstNodeSnapshotId(node);
+    }
+
+    return node.key;
+  }
+
+  private resetRestoredNodeToColdState(node: DependencyNode) {
+    this.unregisterNode(node);
+
+    if (node instanceof ResourceDependencyNode) {
+      return;
+    }
+
+    if (node instanceof CellValueNode) {
+      node.clearSpillMetaNode();
+    }
+
+    node.invalidate();
+  }
 
   private getSheetWatcherKey(address: {
     workbookName: string;
@@ -614,21 +684,9 @@ export class DependencyManager {
     cache: CacheManagerSnapshot;
   } {
     const isNodeSnapshotEligible = (
-      node:
-        | CellValueNode
-        | SpillMetaNode
-        | EmptyCellEvaluationNode
-        | RangeEvaluationNode
-        | AstEvaluationNode
-        | ResourceDependencyNode
+      node: SnapshotEligibleNode
     ) => {
-      if (node instanceof ResourceDependencyNode) {
-        return true;
-      }
-      if (node instanceof RangeEvaluationNode) {
-        return node.result.type !== "awaiting-evaluation";
-      }
-      return node.evaluationResult.type !== "awaiting-evaluation";
+      return this.getSnapshotEligibilityState(node).eligible;
     };
 
     const astNodes = new Set<AstEvaluationNode>();
@@ -693,16 +751,28 @@ export class DependencyManager {
     const resolvedNodes = Array.from(resolvedNodesSet);
 
     const allNodeSnapshotIds = new Map<DependencyNode, NodeSnapshotId>();
+    const availableSnapshotIds = new Set<NodeSnapshotId>();
     for (const node of resolvedNodes) {
-      if (node instanceof AstEvaluationNode) {
-        allNodeSnapshotIds.set(node, getAstNodeSnapshotId(node));
-      } else {
-        allNodeSnapshotIds.set(node, node.key);
-      }
+      const snapshotId = this.getLogicalNodeSnapshotId(node);
+      allNodeSnapshotIds.set(node, snapshotId);
+      availableSnapshotIds.add(snapshotId);
     }
 
-    const getAllNodeSnapshotId = (node: DependencyNode): NodeSnapshotId => {
-      const snapshotId = allNodeSnapshotIds.get(node);
+    const getAllNodeSnapshotId = (
+      node: DependencyNode,
+      _context?: {
+        sourceNode?: DependencyNode;
+        relation?: string;
+      }
+    ): NodeSnapshotId => {
+      const snapshotId =
+        allNodeSnapshotIds.get(node) ??
+        (() => {
+          const logicalSnapshotId = this.getLogicalNodeSnapshotId(node);
+          return availableSnapshotIds.has(logicalSnapshotId)
+            ? logicalSnapshotId
+            : undefined;
+        })();
       if (!snapshotId) {
         throw new Error(`Missing snapshot id for dependency node ${node.key}`);
       }
@@ -775,10 +845,33 @@ export class DependencyManager {
     this.clearEvaluationCache();
 
     const nodesBySnapshotId = new Map<NodeSnapshotId, DependencyNode>();
+    let hadRestoreFailures = false;
 
     for (const snapshot of snapshots.dependency.nodes) {
-      const node = this.createNodeFromSnapshot(snapshot);
-      nodesBySnapshotId.set(snapshot.snapshotId, node);
+      try {
+        const node = this.createNodeFromSnapshot(snapshot);
+        nodesBySnapshotId.set(snapshot.snapshotId, node);
+      } catch (error) {
+        hadRestoreFailures = true;
+        this.logSnapshotRestoreWarning(
+          "Failed to create warm snapshot node; discarding warm dependency state",
+          {
+            phase: "create-node",
+            snapshotId: snapshot.snapshotId,
+            kind: snapshot.kind,
+            key: snapshot.key,
+            error:
+              error instanceof Error
+                ? { name: error.name, message: error.message }
+                : { message: String(error) },
+          }
+        );
+      }
+    }
+
+    if (hadRestoreFailures) {
+      this.clearEvaluationCache();
+      return;
     }
 
     const resolveNodeSnapshotId = (snapshotId: NodeSnapshotId) =>
@@ -794,89 +887,109 @@ export class DependencyManager {
     };
 
     for (const snapshot of snapshots.dependency.nodes) {
+      const targetNode = nodesBySnapshotId.get(snapshot.snapshotId);
+      if (!targetNode) {
+        hadRestoreFailures = true;
+        continue;
+      }
+
       const dependencies = new Set(
         snapshot.dependencies
           .map(resolveNodeSnapshotId)
           .filter((node): node is DependencyNode => node !== undefined)
       );
 
-      if (snapshot.kind === "cell-value") {
-        const node = nodesBySnapshotId.get(snapshot.snapshotId) as CellValueNode;
-        node.restoreResolvedSnapshot({
-          dependencies,
-          evaluationResult:
-            evaluationManager.deserializeSingleEvaluationResultSnapshot(
-              snapshot.evaluationResult,
-              resolveRequiredNodeSnapshotId
-            ),
-        });
-        if (snapshot.spillMetaSnapshotId) {
-          const spillMetaNode = resolveNodeSnapshotId(
-            snapshot.spillMetaSnapshotId
-          );
-          if (spillMetaNode instanceof SpillMetaNode) {
-            node.setSpillMetaNode(spillMetaNode);
+      try {
+        if (snapshot.kind === "cell-value") {
+          const node = targetNode as CellValueNode;
+          node.restoreResolvedSnapshot({
+            dependencies,
+            evaluationResult:
+              evaluationManager.deserializeSingleEvaluationResultSnapshot(
+                snapshot.evaluationResult,
+                resolveRequiredNodeSnapshotId
+              ),
+          });
+          if (snapshot.spillMetaSnapshotId) {
+            const spillMetaNode = resolveNodeSnapshotId(
+              snapshot.spillMetaSnapshotId
+            );
+            if (spillMetaNode instanceof SpillMetaNode) {
+              node.setSpillMetaNode(spillMetaNode);
+            }
           }
+          continue;
         }
-        continue;
-      }
 
-      if (snapshot.kind === "spill-meta") {
-        const node = nodesBySnapshotId.get(snapshot.snapshotId) as SpillMetaNode;
+        if (snapshot.kind === "spill-meta") {
+          const node = targetNode as SpillMetaNode;
+          node.restoreResolvedSnapshot({
+            dependencies,
+            evaluationResult:
+              evaluationManager.deserializeSpillMetaEvaluationResultSnapshot(
+                snapshot.evaluationResult,
+                resolveRequiredNodeSnapshotId
+              ),
+          });
+          continue;
+        }
+
+        if (snapshot.kind === "empty") {
+          const node = targetNode as EmptyCellEvaluationNode;
+          node.restoreResolvedSnapshot({
+            dependencies,
+            evaluationResult:
+              evaluationManager.deserializeSingleEvaluationResultSnapshot(
+                snapshot.evaluationResult,
+                resolveRequiredNodeSnapshotId
+              ),
+          });
+          continue;
+        }
+
+        if (snapshot.kind === "range") {
+          const node = targetNode as RangeEvaluationNode;
+          node.restoreResolvedSnapshot({
+            dependencies,
+            result: evaluationManager.deserializeEvaluateAllCellsResultSnapshot(
+              snapshot.result,
+              resolveRequiredNodeSnapshotId
+            ),
+          });
+          continue;
+        }
+
+        if (snapshot.kind === "resource") {
+          continue;
+        }
+
+        const node = targetNode as AstEvaluationNode;
         node.restoreResolvedSnapshot({
           dependencies,
           evaluationResult:
-            evaluationManager.deserializeSpillMetaEvaluationResultSnapshot(
+            evaluationManager.deserializeFunctionEvaluationResultSnapshot(
               snapshot.evaluationResult,
               resolveRequiredNodeSnapshotId
             ),
         });
-        continue;
+        this.saveAstNode(node, snapshot.contextDependency);
+      } catch (error) {
+        hadRestoreFailures = true;
+        this.resetRestoredNodeToColdState(targetNode);
+        this.logSnapshotRestoreWarning(
+          "Failed to deserialize warm snapshot node; discarding warm dependency state",
+          {
+            phase: "restore-node",
+            snapshotId: snapshot.snapshotId,
+            kind: snapshot.kind,
+            key: snapshot.key,
+            error:
+              error instanceof Error
+                ? { name: error.name, message: error.message }
+                : { message: String(error) },
+          }
+        );
       }
-
-      if (snapshot.kind === "empty") {
-        const node = nodesBySnapshotId.get(
-          snapshot.snapshotId
-        ) as EmptyCellEvaluationNode;
-        node.restoreResolvedSnapshot({
-          dependencies,
-          evaluationResult:
-            evaluationManager.deserializeSingleEvaluationResultSnapshot(
-              snapshot.evaluationResult,
-              resolveRequiredNodeSnapshotId
-            ),
-        });
-        continue;
-      }
-
-      if (snapshot.kind === "range") {
-        const node = nodesBySnapshotId.get(
-          snapshot.snapshotId
-        ) as RangeEvaluationNode;
-        node.restoreResolvedSnapshot({
-          dependencies,
-          result: evaluationManager.deserializeEvaluateAllCellsResultSnapshot(
-            snapshot.result,
-            resolveRequiredNodeSnapshotId
-          ),
-        });
-        continue;
-      }
-
-      if (snapshot.kind === "resource") {
-        continue;
-      }
-
-      const node = nodesBySnapshotId.get(snapshot.snapshotId) as AstEvaluationNode;
-      node.restoreResolvedSnapshot({
-        dependencies,
-        evaluationResult:
-          evaluationManager.deserializeFunctionEvaluationResultSnapshot(
-            snapshot.evaluationResult,
-            resolveRequiredNodeSnapshotId
-          ),
-      });
-      this.saveAstNode(node, snapshot.contextDependency);
     }
 
     this._spilledValues = new Map(snapshots.dependency.spilledValues);
@@ -888,30 +1001,50 @@ export class DependencyManager {
   }
 
   private serializeNodeSnapshot(
-    node:
-      | CellValueNode
-      | SpillMetaNode
-      | EmptyCellEvaluationNode
-      | RangeEvaluationNode
-      | AstEvaluationNode
-      | ResourceDependencyNode,
+    node: SnapshotEligibleNode,
     evaluationManager: EvaluationManager,
-    getNodeSnapshotId: (node: DependencyNode) => NodeSnapshotId,
+    getNodeSnapshotId: (
+      node: DependencyNode,
+      context?: {
+        sourceNode?: DependencyNode;
+        relation?: string;
+      }
+    ) => NodeSnapshotId,
     allNodeSnapshotIds: Map<DependencyNode, NodeSnapshotId>
   ): SerializedDependencyNodeSnapshot | undefined {
     const snapshotId = getNodeSnapshotId(node);
+    const getKnownSnapshotId = (dependency: DependencyNode) => {
+      const directSnapshotId = allNodeSnapshotIds.get(dependency);
+      if (directSnapshotId) {
+        return directSnapshotId;
+      }
+
+      const logicalSnapshotId = this.getLogicalNodeSnapshotId(dependency);
+      return allNodeSnapshotIds
+        .values()
+        .some((knownSnapshotId) => knownSnapshotId === logicalSnapshotId)
+        ? logicalSnapshotId
+        : undefined;
+    };
+
     const dependencies: NodeSnapshotId[] = [];
     for (const dependency of node.getDependencies()) {
-      const dependencySnapshotId = allNodeSnapshotIds.get(dependency);
+      const dependencySnapshotId = getKnownSnapshotId(dependency);
       if (!dependencySnapshotId) {
         return undefined;
       }
       dependencies.push(dependencySnapshotId);
     }
 
+    const getReferencedNodeSnapshotId = (dependency: DependencyNode) =>
+      getNodeSnapshotId(dependency, {
+        sourceNode: node,
+        relation: "evaluation result errAddress",
+      });
+
     if (node instanceof CellValueNode) {
       const spillMetaSnapshotId = node.spillMeta
-        ? allNodeSnapshotIds.get(node.spillMeta)
+        ? getKnownSnapshotId(node.spillMeta)
         : undefined;
       if (node.spillMeta && !spillMetaSnapshotId) {
         return undefined;
@@ -920,7 +1053,7 @@ export class DependencyManager {
       const evaluationResult =
         evaluationManager.serializeSingleEvaluationResultSnapshot(
           node.evaluationResult,
-          getNodeSnapshotId
+          getReferencedNodeSnapshotId
         );
       if (!evaluationResult) {
         return undefined;
@@ -941,7 +1074,7 @@ export class DependencyManager {
           node.evaluationResult,
           {
             sourceNode: node,
-            getNodeSnapshotId,
+            getNodeSnapshotId: getReferencedNodeSnapshotId,
           }
         );
       if (!evaluationResult) {
@@ -960,7 +1093,7 @@ export class DependencyManager {
       const evaluationResult =
         evaluationManager.serializeSingleEvaluationResultSnapshot(
           node.evaluationResult,
-          getNodeSnapshotId
+          getReferencedNodeSnapshotId
         );
       if (!evaluationResult) {
         return undefined;
@@ -977,7 +1110,7 @@ export class DependencyManager {
     if (node instanceof RangeEvaluationNode) {
       const result = evaluationManager.serializeEvaluateAllCellsResultSnapshot(
         node.result,
-        getNodeSnapshotId
+        getReferencedNodeSnapshotId
       );
       if (!result) {
         return undefined;
@@ -1005,7 +1138,7 @@ export class DependencyManager {
         node.evaluationResult,
         {
           sourceNode: node,
-          getNodeSnapshotId,
+          getNodeSnapshotId: getReferencedNodeSnapshotId,
         }
       );
     if (!evaluationResult) {

@@ -2,8 +2,15 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { FormulaEngine } from "../../../src/core/engine";
 import { ENGINE_SNAPSHOT_VERSION } from "../../../src/core/engine-snapshot";
 import { deserialize, serialize } from "../../../src/core/map-serializer";
-import { cellAddressToKey, rangeAddressToKey, parseCellReference } from "../../../src/core/utils";
+import {
+  cellAddressToKey,
+  rangeAddressToKey,
+  parseCellReference,
+} from "../../../src/core/utils";
+import { FormulaError } from "../../../src/core/types";
 import { NO_TABLE_CONTEXT_NAME } from "../../../src/evaluator/evaluation-context";
+import { AstEvaluationNode } from "../../../src/evaluator/dependency-nodes/ast-evaluation-node";
+import { parseFormula } from "../../../src/parser/parser";
 
 const workbookName = "TestWorkbook";
 const sheetName = "TestSheet";
@@ -291,6 +298,80 @@ describe("Warm-cache serialization", () => {
     const afterSecondEdit = FormulaEngine.buildEmpty();
     afterSecondEdit.resetToSerializedEngine(hydratedEngine.serializeEngine());
     expect(afterSecondEdit.getCellValue(address("B1"))).toBe(21);
+  });
+
+  test("falls back to cold dependency state when an AST snapshot key is invalid", () => {
+    engine.setCellContent(address("A1"), "=1+1");
+
+    expect(engine.getCellValue(address("A1"))).toBe(2);
+
+    const snapshot = deserialize(engine.serializeEngine()) as any;
+    const astSnapshot = snapshot.managers.dependency.nodes.find(
+      (node: any) => node.kind === "ast"
+    );
+
+    expect(astSnapshot).toBeDefined();
+    astSnapshot.key = "ast:SUM(";
+    astSnapshot.snapshotId = "ast:SUM(::{}";
+
+    const originalConsoleWarn = console.warn;
+    const warnings: unknown[][] = [];
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args);
+    };
+
+    try {
+      const hydratedEngine = FormulaEngine.buildEmpty();
+      expect(() =>
+        hydratedEngine.resetToSerializedEngine(serialize(snapshot))
+      ).not.toThrow();
+      expect(hydratedEngine.getCellValue(address("A1"))).toBe(2);
+    } finally {
+      console.warn = originalConsoleWarn;
+    }
+
+    expect(
+      warnings.some(
+        (entry) =>
+          entry[0] === "[FormulaEngine snapshot]" &&
+          String(entry[1]).includes("Failed to create warm snapshot node")
+      )
+    ).toBe(true);
+  });
+
+  test("serializes when an error references an equivalent AST snapshot identity", () => {
+    engine.setCellContent(address("A1"), '="a"+1');
+
+    expect(engine.getCellValue(address("A1"))).toBe(FormulaError.VALUE);
+
+    const cellNode = engine._dependencyManager.getCellValueNode(
+      cellAddressToKey(address("A1"))
+    );
+    const astEntries = engine._dependencyManager.asts.get('ast:"a"+1');
+    const liveAstNode = astEntries
+      ? Array.from(astEntries.entries.values())[0]?.evalNode
+      : undefined;
+
+    expect(liveAstNode).toBeDefined();
+
+    const duplicateAstNode = new AstEvaluationNode(parseFormula('"a"+1'), {});
+    duplicateAstNode.setEvaluationResult({
+      type: "error",
+      err: FormulaError.VALUE,
+      errAddress: duplicateAstNode,
+      message: "simulated equivalent stale AST reference",
+    });
+    duplicateAstNode.setContextDependency(liveAstNode!.getContextDependency());
+    duplicateAstNode.resolve();
+
+    cellNode.setEvaluationResult({
+      type: "error",
+      err: FormulaError.VALUE,
+      errAddress: duplicateAstNode,
+      message: "simulated equivalent stale AST reference",
+    });
+
+    expect(() => engine.serializeEngine()).not.toThrow();
   });
 
   test("rejects legacy serialized engine payloads", () => {
