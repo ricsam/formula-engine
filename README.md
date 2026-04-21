@@ -55,6 +55,29 @@ const range = {
 const values = engine.getRangeValues(range); // [[1,2,3],[4,5,6],[7,8,9]]
 ```
 
+## Search Raw Formulas
+
+```typescript
+engine.addWorkbook("Workbook1");
+engine.addSheet({ workbookName: "Workbook1", sheetName: "Sheet1" });
+engine.setSheetContent(
+  { workbookName: "Workbook1", sheetName: "Sheet1" },
+  new Map([["A1", "=SUM(B1:B10)"]])
+);
+
+const matches = engine.searchFormulas("sum", { workbookName: "Workbook1" });
+
+// Returns raw formulas and A1 references, not evaluated values
+// [
+//   {
+//     workbookName: "Workbook1",
+//     sheetName: "Sheet1",
+//     cellReference: "A1",
+//     formula: "=SUM(B1:B10)"
+//   }
+// ]
+```
+
 ## Development Status
 
 ### ✅ Completed

@@ -2450,4 +2450,216 @@ describe("FormulaEngine", () => {
       expect(cell("C1")).toBe(50);
     });
   });
+
+  describe("searchFormulas", () => {
+    test("should search formulas in a single sheet", () => {
+      engine.addSheet({ workbookName, sheetName: "Sheet2" });
+
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "=SUM(B1:B3)"],
+          ["A2", "=AVERAGE(B1:B3)"],
+        ])
+      );
+      engine.setSheetContent(
+        { workbookName, sheetName: "Sheet2" },
+        new Map<string, SerializedCellValue>([["A1", "=SUM(C1:C3)"]])
+      );
+
+      expect(
+        engine.searchFormulas("sum", { workbookName, sheetName })
+      ).toEqual([
+        {
+          workbookName,
+          sheetName,
+          cellReference: "A1",
+          formula: "=SUM(B1:B3)",
+        },
+      ]);
+    });
+
+    test("should search formulas across all sheets in a workbook", () => {
+      engine.addSheet({ workbookName, sheetName: "Sheet2" });
+      engine.addSheet({ workbookName, sheetName: "Sheet3" });
+
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([["B1", "=SUM(A1:A3)"]])
+      );
+      engine.setSheetContent(
+        { workbookName, sheetName: "Sheet2" },
+        new Map<string, SerializedCellValue>([
+          ["A1", "=sum(C1:C3)"],
+          ["A2", "=AVERAGE(C1:C3)"],
+        ])
+      );
+      engine.setSheetContent(
+        { workbookName, sheetName: "Sheet3" },
+        new Map<string, SerializedCellValue>([["C1", "=SUM(D1:D3)"]])
+      );
+
+      expect(engine.searchFormulas("SuM", { workbookName })).toEqual([
+        {
+          workbookName,
+          sheetName,
+          cellReference: "B1",
+          formula: "=SUM(A1:A3)",
+        },
+        {
+          workbookName,
+          sheetName: "Sheet2",
+          cellReference: "A1",
+          formula: "=sum(C1:C3)",
+        },
+        {
+          workbookName,
+          sheetName: "Sheet3",
+          cellReference: "C1",
+          formula: "=SUM(D1:D3)",
+        },
+      ]);
+    });
+
+    test("should search formulas across the full engine", () => {
+      const secondWorkbookName = "Workbook2";
+
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([["A1", "=SUM(B1:B2)"]])
+      );
+
+      engine.addWorkbook(secondWorkbookName);
+      engine.addSheet({
+        workbookName: secondWorkbookName,
+        sheetName: "SheetA",
+      });
+      engine.addSheet({
+        workbookName: secondWorkbookName,
+        sheetName: "SheetB",
+      });
+      engine.setSheetContent(
+        { workbookName: secondWorkbookName, sheetName: "SheetA" },
+        new Map<string, SerializedCellValue>([["B2", "=SUM(C1:C4)"]])
+      );
+      engine.setSheetContent(
+        { workbookName: secondWorkbookName, sheetName: "SheetB" },
+        new Map<string, SerializedCellValue>([["C3", "=SUM(D1:D4)"]])
+      );
+
+      expect(engine.searchFormulas("sum")).toEqual([
+        {
+          workbookName,
+          sheetName,
+          cellReference: "A1",
+          formula: "=SUM(B1:B2)",
+        },
+        {
+          workbookName: secondWorkbookName,
+          sheetName: "SheetA",
+          cellReference: "B2",
+          formula: "=SUM(C1:C4)",
+        },
+        {
+          workbookName: secondWorkbookName,
+          sheetName: "SheetB",
+          cellReference: "C3",
+          formula: "=SUM(D1:D4)",
+        },
+      ]);
+    });
+
+    test("should ignore non-formula cells and evaluated values", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "=1+1"],
+          ["A2", "=SUM(1, 1)"],
+          ["A3", "sum"],
+          ["A4", 2],
+        ])
+      );
+
+      expect(engine.searchFormulas("2", { workbookName, sheetName })).toEqual(
+        []
+      );
+      expect(
+        engine.searchFormulas("sum", { workbookName, sheetName })
+      ).toEqual([
+        {
+          workbookName,
+          sheetName,
+          cellReference: "A2",
+          formula: "=SUM(1, 1)",
+        },
+      ]);
+    });
+
+    test("should sort results within a sheet by row then column", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["B2", "=SUM(A1:A2)"],
+          ["A3", "=SUM(A1:A3)"],
+          ["C1", "=SUM(C2:C3)"],
+          ["A1", "=SUM(B1:B2)"],
+        ])
+      );
+
+      expect(
+        engine.searchFormulas("sum", { workbookName, sheetName })
+      ).toEqual([
+        {
+          workbookName,
+          sheetName,
+          cellReference: "A1",
+          formula: "=SUM(B1:B2)",
+        },
+        {
+          workbookName,
+          sheetName,
+          cellReference: "C1",
+          formula: "=SUM(C2:C3)",
+        },
+        {
+          workbookName,
+          sheetName,
+          cellReference: "B2",
+          formula: "=SUM(A1:A2)",
+        },
+        {
+          workbookName,
+          sheetName,
+          cellReference: "A3",
+          formula: "=SUM(A1:A3)",
+        },
+      ]);
+    });
+
+    test("should return an empty array for an empty query", () => {
+      setCellContent("A1", "=SUM(B1:B3)");
+
+      expect(engine.searchFormulas("", { workbookName, sheetName })).toEqual(
+        []
+      );
+    });
+
+    test("should validate search filters and missing scopes", () => {
+      expect(() => engine.searchFormulas("sum", { sheetName })).toThrow(
+        "workbookName"
+      );
+      expect(() => engine.searchFormulas("", { sheetName })).toThrow(
+        "workbookName"
+      );
+      expect(() =>
+        engine.searchFormulas("sum", { workbookName: "MissingWorkbook" })
+      ).toThrow("Workbook not found: MissingWorkbook");
+      expect(() =>
+        engine.searchFormulas("sum", {
+          workbookName,
+          sheetName: "MissingSheet",
+        })
+      ).toThrow("Sheet not found: MissingSheet");
+    });
+  });
 });

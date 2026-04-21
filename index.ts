@@ -4,6 +4,10 @@
 
 // Export the main engine
 export { FormulaEngine } from "./src/core/engine";
+export type {
+  FormulaSearchFilters,
+  FormulaSearchResult,
+} from "./src/core/types";
 
 // Export React integration (optional - only import if using React)
 export { useEngine as useSerializedSheet } from "./src/react/hooks";

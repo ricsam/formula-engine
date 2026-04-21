@@ -2,6 +2,8 @@ import {
   FormulaError,
   type CellAddress,
   type FiniteSpreadsheetRange,
+  type FormulaSearchFilters,
+  type FormulaSearchResult,
   type LocalCellAddress,
   type SerializedCellValue,
   type Sheet,
@@ -34,6 +36,16 @@ export interface SheetIndexes {
   cellsSortedByRow: IndexEntry[];
   cellsSortedByCol: IndexEntry[];
 }
+
+type SearchScopeSheet = {
+  workbookName: string;
+  sheet: Sheet;
+};
+
+type SortableFormulaSearchResult = FormulaSearchResult & {
+  rowIndex: number;
+  colIndex: number;
+};
 
 /**
  * Utility class for binary search operations on IndexEntry arrays
@@ -518,6 +530,100 @@ export class WorkbookManager {
     }
 
     return sheet.content;
+  }
+
+  private resolveFormulaSearchScope(
+    filters?: FormulaSearchFilters
+  ): SearchScopeSheet[] {
+    if (filters?.sheetName && !filters.workbookName) {
+      throw new Error(
+        "searchFormulas requires workbookName when sheetName is provided"
+      );
+    }
+
+    if (!filters?.workbookName) {
+      const scopedSheets: SearchScopeSheet[] = [];
+      for (const workbookName of this.workbooks.keys()) {
+        for (const sheet of this.getOrderedSheets(workbookName)) {
+          scopedSheets.push({ workbookName, sheet });
+        }
+      }
+      return scopedSheets;
+    }
+
+    const workbookName = filters.workbookName;
+    if (!this.workbooks.has(workbookName)) {
+      throw new WorkbookNotFoundError(workbookName);
+    }
+
+    if (!filters.sheetName) {
+      return this.getOrderedSheets(workbookName).map((sheet) => ({
+        workbookName,
+        sheet,
+      }));
+    }
+
+    const sheet = this.getSheet({
+      workbookName,
+      sheetName: filters.sheetName,
+    });
+
+    if (!sheet) {
+      throw new SheetNotFoundError(filters.sheetName);
+    }
+
+    return [{ workbookName, sheet }];
+  }
+
+  searchFormulas(
+    query: string,
+    filters?: FormulaSearchFilters
+  ): FormulaSearchResult[] {
+    const scopedSheets = this.resolveFormulaSearchScope(filters);
+
+    if (query.length === 0) {
+      return [];
+    }
+
+    const normalizedQuery = query.toLowerCase();
+    const results: FormulaSearchResult[] = [];
+
+    for (const { workbookName, sheet } of scopedSheets) {
+      const sheetMatches: SortableFormulaSearchResult[] = [];
+
+      for (const [cellReference, value] of sheet.content.entries()) {
+        if (typeof value !== "string" || !value.startsWith("=")) {
+          continue;
+        }
+
+        if (!value.toLowerCase().includes(normalizedQuery)) {
+          continue;
+        }
+
+        const { rowIndex, colIndex } = parseCellReference(cellReference);
+        sheetMatches.push({
+          workbookName,
+          sheetName: sheet.name,
+          cellReference,
+          formula: value,
+          rowIndex,
+          colIndex,
+        });
+      }
+
+      sheetMatches.sort(
+        (left, right) =>
+          left.rowIndex - right.rowIndex || left.colIndex - right.colIndex
+      );
+
+      results.push(
+        ...sheetMatches.map(
+          ({ rowIndex: _rowIndex, colIndex: _colIndex, ...match }) => match
+        )
+      );
+    }
+
+    return results;
   }
 
   /**

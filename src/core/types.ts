@@ -102,6 +102,18 @@ export type CellValue = CellNumber | CellString | CellBoolean | CellInfinity;
  */
 export type SerializedCellValue = string | number | boolean | undefined;
 
+export interface FormulaSearchFilters {
+  workbookName?: string;
+  sheetName?: string;
+}
+
+export interface FormulaSearchResult {
+  workbookName: string;
+  sheetName: string;
+  cellReference: string;
+  formula: string;
+}
+
 // Named expressions
 export interface NamedExpression {
   name: string;

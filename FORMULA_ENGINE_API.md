@@ -17,7 +17,8 @@ In the UI I interface with the formula-engine like this:
 
 
 
-* API surface: addSheet, setSheetContent, getSheetContent, getCellValue, listenToSheetContentUpdate
+* API surface: addSheet, setSheetContent, getSheetContent, getCellValue, searchFormulas, listenToSheetContentUpdate
+* `searchFormulas(query, filters?)` searches raw formula strings from serialized sheet content and returns flat matches with workbook name, sheet name, A1 cell reference, and raw formula text.
 * Keep a dependency DAG with both forward (precedents) and reverse (dependents) edges.
 * Maintain a dirty set and only reevaluate nodes whose inputs actually changed.
 * Spill results are modeled explicitly so that membership changes (shape/placement) propagate correctly.
@@ -99,4 +100,3 @@ In the UI I interface with the formula-engine like this:
      * If unchanged: leave version; do **not** enqueue dependents.
 
    After finishing pass, set `dirty = nextDirty`, **recompute topo just over `dirty`** and repeat until `dirty` is empty. (In practice you’ll fold this into a single pass by pushing dependents when a value changes.)
-

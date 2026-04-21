@@ -9,6 +9,8 @@ import {
   type ConditionalStyle,
   type CopyCellsOptions,
   type DirectCellStyle,
+  type FormulaSearchFilters,
+  type FormulaSearchResult,
   type NamedExpression,
   type RangeAddress,
   type SerializedCellValue,
@@ -1378,6 +1380,17 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     workbookName: string;
   }): Map<string, SerializedCellValue> {
     return this.workbookManager.getSheetSerialized(opts);
+  }
+
+  /**
+   * Search raw formula text without evaluating cell values.
+   * Returns flat results with workbook/sheet names and A1 cell references.
+   */
+  searchFormulas(
+    query: string,
+    filters?: FormulaSearchFilters
+  ): FormulaSearchResult[] {
+    return this.workbookManager.searchFormulas(query, filters);
   }
 
   //#endregion
