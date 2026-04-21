@@ -378,10 +378,8 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
   let result = "";
 
   if (workbookName) {
-    result += `[${workbookName}]`;
-  }
-
-  if (sheetName) {
+    result += `[${workbookName}]!`;
+  } else if (sheetName) {
     const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
     result += `${quotedSheet}!`;
   }

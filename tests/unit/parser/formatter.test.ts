@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createStructuredReferenceNode } from "../../../src/parser/ast";
 import { astToString, formatFormula } from "../../../src/parser/formatter";
 import { parseFormula } from "../../../src/parser/parser";
 
@@ -404,8 +405,19 @@ describe("Formula Formatter", () => {
     });
 
     test("should format workbook table references", () => {
-      expect(formatFormula("[MyWorkbook]Sheet1!Table1[Column1]")).toBe("[MyWorkbook]Sheet1!Table1[Column1]");
-      expect(formatFormula("[My Workbook]Sheet1!Table1[Column With Spaces]")).toBe("[My Workbook]Sheet1!Table1[Column With Spaces]");
+      expect(formatFormula("[MyWorkbook]!Table1[Column1]")).toBe("[MyWorkbook]!Table1[Column1]");
+      expect(formatFormula("[Quarterly Model]!Products[Price]")).toBe("[Quarterly Model]!Products[Price]");
+    });
+
+    test("should canonicalize workbook table references without sheet qualifiers", () => {
+      const ast = createStructuredReferenceNode({
+        tableName: "Table1",
+        sheetName: "Sheet1",
+        workbookName: "MyWorkbook",
+        cols: { startCol: "Column1", endCol: "Column1" },
+      });
+
+      expect(astToString(ast)).toBe("[MyWorkbook]!Table1[Column1]");
     });
 
     test("should format complex workbook names", () => {
@@ -505,7 +517,8 @@ describe("Formula Formatter", () => {
       "[MyWorkbook]Sheet1!A1:C5",
       "[MyWorkbook]Sheet1!A1:INFINITY",
       "[MyWorkbook]Sheet1!TaxRate",
-      "[MyWorkbook]Sheet1!Table1[Column1]"
+      "[MyWorkbook]!Table1[Column1]",
+      "[Quarterly Model]!Products[Price]"
     ];
 
     test.each(testCases)("should round-trip formula: %s", (formula: string) => {

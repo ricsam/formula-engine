@@ -48,7 +48,7 @@ export function renameWorkbookInFormula(options: {
         };
       }
       
-      // Handle structured references with workbook names (e.g., [MyWorkbook]Sheet1!Table1[Column1])
+      // Handle structured references with workbook names (e.g., [MyWorkbook]!Table1[Column1])
       if (node.type === "structured-reference" && node.workbookName === oldWorkbookName) {
         return {
           ...node,

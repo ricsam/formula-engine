@@ -1473,11 +1473,37 @@ describe("Parser - Workbook References", () => {
   });
 
   test("should parse workbook table reference", () => {
-    const ast = parseFormula("[MyWorkbook]Sheet1!Table1[Column1]");
+    const ast = parseFormula("[MyWorkbook]!Table1[Column1]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.sheetName).toBeUndefined();
     expect(ast.tableName).toBe("Table1");
     expect(ast.cols).toEqual({ startCol: "Column1", endCol: "Column1" });
+  });
+
+  test("should parse workbook table reference with spaces in the workbook name", () => {
+    const ast = parseFormula("[Quarterly Model]!Products[Price]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.workbookName).toBe("Quarterly Model");
+    expect(ast.sheetName).toBeUndefined();
+    expect(ast.tableName).toBe("Products");
+    expect(ast.cols).toEqual({ startCol: "Price", endCol: "Price" });
+  });
+
+  test("should parse workbook table references with selectors and column ranges", () => {
+    const ast = parseFormula("[MyWorkbook]!Table1[[#Data],[Column1]:[Column2]]");
+    expect(ast.type).toBe("structured-reference");
+    expect(ast.workbookName).toBe("MyWorkbook");
+    expect(ast.selector).toBe("#Data");
+    expect(ast.cols).toEqual({ startCol: "Column1", endCol: "Column2" });
+  });
+
+  test("should reject legacy workbook sheet table references", () => {
+    expect(() =>
+      parseFormula("[MyWorkbook]Sheet1!Table1[Column1]")
+    ).toThrow(
+      "Cross-workbook table references use [MyWorkbook]!Table1[...] instead of [MyWorkbook]Sheet1!Table1[...]"
+    );
   });
 
   test("should parse workbook infinite ranges", () => {

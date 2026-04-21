@@ -207,6 +207,42 @@ describe("Tables", () => {
     ).toBe(1000);
   });
 
+  test("should handle cross-workbook table references", () => {
+    const sourceWorkbookName = "Quarterly Model";
+    const sourceSheetName = "Data";
+
+    engine.addWorkbook(sourceWorkbookName);
+    engine.addSheet({
+      workbookName: sourceWorkbookName,
+      sheetName: sourceSheetName,
+    });
+
+    engine.setSheetContent(
+      { workbookName: sourceWorkbookName, sheetName: sourceSheetName },
+      new Map<string, SerializedCellValue>([
+        ["A1", "Product"],
+        ["B1", "Price"],
+        ["A2", "Alpha"],
+        ["B2", 10],
+        ["A3", "Beta"],
+        ["B3", 15],
+      ])
+    );
+
+    engine.addTable({
+      tableName: "Products",
+      sheetName: sourceSheetName,
+      workbookName: sourceWorkbookName,
+      start: "A1",
+      numRows: { type: "number", value: 2 },
+      numCols: 2,
+    });
+
+    setCellContent("D1", "=SUM([Quarterly Model]!Products[Price])");
+
+    expect(cell("D1", true)).toBe(25);
+  });
+
   test("should invalidate cached current-row references when a table is added", () => {
     engine.setSheetContent(
       { workbookName, sheetName },

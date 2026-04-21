@@ -240,6 +240,22 @@ export class FormulaEvaluator {
 
     const rowIndex = context.cellAddress.rowIndex;
     const tableStart = table.start;
+    const createResolvedTableRangeNode = (range: SpreadsheetRange): RangeNode => ({
+      type: "range",
+      range,
+      isAbsolute: {
+        start: {
+          col: true,
+          row: true,
+        },
+        end: {
+          col: true,
+          row: true,
+        },
+      },
+      sheetName: table.sheetName,
+      workbookName: table.workbookName,
+    });
 
     // Handle selector-based references
     if (node.selector) {
@@ -295,21 +311,7 @@ export class FormulaEvaluator {
         };
 
         return this.evaluateRange(
-          {
-            type: "range",
-            range,
-            isAbsolute: {
-              start: {
-                col: true,
-                row: true,
-              },
-              end: {
-                col: true,
-                row: true,
-              },
-            },
-            sheetName: table.sheetName,
-          },
+          createResolvedTableRangeNode(range),
           context
         );
       } else {
@@ -329,21 +331,7 @@ export class FormulaEvaluator {
         };
 
         return this.evaluateRange(
-          {
-            type: "range",
-            range,
-            isAbsolute: {
-              start: {
-                col: true,
-                row: true,
-              },
-              end: {
-                col: true,
-                row: true,
-              },
-            },
-            sheetName: table.sheetName,
-          },
+          createResolvedTableRangeNode(range),
           context
         );
       }
@@ -377,21 +365,7 @@ export class FormulaEvaluator {
       };
 
       return this.evaluateRange(
-        {
-          type: "range",
-          range,
-          isAbsolute: {
-            start: {
-              col: true,
-              row: true,
-            },
-            end: {
-              col: true,
-              row: true,
-            },
-          },
-          sheetName: table.sheetName,
-        },
+        createResolvedTableRangeNode(range),
         context
       );
     }
