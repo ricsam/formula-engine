@@ -2,9 +2,11 @@ import {
   FormulaError,
   type CellAddress,
   type FiniteSpreadsheetRange,
-  type FormulaSearchFilters,
-  type FormulaSearchResult,
   type LocalCellAddress,
+  type ReplaceChange,
+  type ReplaceTarget,
+  type SearchMatch,
+  type SearchOptions,
   type SerializedCellValue,
   type Sheet,
   type SpreadsheetRange,
@@ -42,9 +44,28 @@ type SearchScopeSheet = {
   sheet: Sheet;
 };
 
-type SortableFormulaSearchResult = FormulaSearchResult & {
+type SortableSearchMatch = SearchMatch & {
   rowIndex: number;
   colIndex: number;
+};
+
+type StringCellMatch = Pick<
+  SearchMatch,
+  "occurrenceIndex" | "startIndex" | "endIndexExclusive" | "matchedText"
+>;
+
+type PreparedReplace = {
+  address: CellAddress;
+  beforeContent: string;
+  afterContent: string;
+  change: ReplaceChange;
+};
+
+type PreparedCellReplaceAll = {
+  address: CellAddress;
+  beforeContent: string;
+  afterContent: string;
+  changes: ReplaceChange[];
 };
 
 /**
@@ -532,16 +553,14 @@ export class WorkbookManager {
     return sheet.content;
   }
 
-  private resolveFormulaSearchScope(
-    filters?: FormulaSearchFilters
+  private resolveSearchScope(
+    options?: SearchOptions
   ): SearchScopeSheet[] {
-    if (filters?.sheetName && !filters.workbookName) {
-      throw new Error(
-        "searchFormulas requires workbookName when sheetName is provided"
-      );
+    if (options?.sheetName && !options.workbookName) {
+      throw new Error("workbookName is required when sheetName is provided");
     }
 
-    if (!filters?.workbookName) {
+    if (!options?.workbookName) {
       const scopedSheets: SearchScopeSheet[] = [];
       for (const workbookName of this.workbooks.keys()) {
         for (const sheet of this.getOrderedSheets(workbookName)) {
@@ -551,12 +570,12 @@ export class WorkbookManager {
       return scopedSheets;
     }
 
-    const workbookName = filters.workbookName;
+    const workbookName = options.workbookName;
     if (!this.workbooks.has(workbookName)) {
       throw new WorkbookNotFoundError(workbookName);
     }
 
-    if (!filters.sheetName) {
+    if (!options.sheetName) {
       return this.getOrderedSheets(workbookName).map((sheet) => ({
         workbookName,
         sheet,
@@ -565,65 +584,268 @@ export class WorkbookManager {
 
     const sheet = this.getSheet({
       workbookName,
-      sheetName: filters.sheetName,
+      sheetName: options.sheetName,
     });
 
     if (!sheet) {
-      throw new SheetNotFoundError(filters.sheetName);
+      throw new SheetNotFoundError(options.sheetName);
     }
 
     return [{ workbookName, sheet }];
   }
 
-  searchFormulas(
+  private getStringContentKind(cellContent: string): SearchMatch["contentKind"] {
+    return cellContent.startsWith("=") ? "formula" : "text";
+  }
+
+  private findMatchesInString(
+    cellContent: string,
     query: string,
-    filters?: FormulaSearchFilters
-  ): FormulaSearchResult[] {
-    const scopedSheets = this.resolveFormulaSearchScope(filters);
+    caseSensitive: boolean
+  ): StringCellMatch[] {
+    if (query.length === 0) {
+      return [];
+    }
+
+    const normalizedContent = caseSensitive
+      ? cellContent
+      : cellContent.toLowerCase();
+    const normalizedQuery = caseSensitive ? query : query.toLowerCase();
+    const matches: StringCellMatch[] = [];
+    let searchFromIndex = 0;
+
+    while (searchFromIndex <= normalizedContent.length - normalizedQuery.length) {
+      const startIndex = normalizedContent.indexOf(normalizedQuery, searchFromIndex);
+      if (startIndex === -1) {
+        break;
+      }
+
+      const endIndexExclusive = startIndex + normalizedQuery.length;
+      matches.push({
+        occurrenceIndex: matches.length,
+        startIndex,
+        endIndexExclusive,
+        matchedText: cellContent.slice(startIndex, endIndexExclusive),
+      });
+      searchFromIndex = endIndexExclusive;
+    }
+
+    return matches;
+  }
+
+  private buildSearchMatchesInScope(
+    query: string,
+    scopedSheets: SearchScopeSheet[],
+    caseSensitive: boolean
+  ): SearchMatch[] {
+    const results: SearchMatch[] = [];
+
+    for (const { workbookName, sheet } of scopedSheets) {
+      const sheetMatches: SortableSearchMatch[] = [];
+
+      for (const [cellReference, value] of sheet.content.entries()) {
+        if (typeof value !== "string") {
+          continue;
+        }
+
+        const matches = this.findMatchesInString(value, query, caseSensitive);
+        if (matches.length === 0) {
+          continue;
+        }
+
+        const { rowIndex, colIndex } = parseCellReference(cellReference);
+        const contentKind = this.getStringContentKind(value);
+
+        sheetMatches.push(
+          ...matches.map((match) => ({
+            workbookName,
+            sheetName: sheet.name,
+            cellReference,
+            cellContent: value,
+            contentKind,
+            occurrenceIndex: match.occurrenceIndex,
+            startIndex: match.startIndex,
+            endIndexExclusive: match.endIndexExclusive,
+            matchedText: match.matchedText,
+            rowIndex,
+            colIndex,
+          }))
+        );
+      }
+
+      sheetMatches.sort(
+        (left, right) =>
+          left.rowIndex - right.rowIndex ||
+          left.colIndex - right.colIndex ||
+          left.occurrenceIndex - right.occurrenceIndex
+      );
+
+      results.push(
+        ...sheetMatches.map(({ rowIndex: _rowIndex, colIndex: _colIndex, ...match }) => match)
+      );
+    }
+
+    return results;
+  }
+
+  search(
+    query: string,
+    options?: SearchOptions
+  ): SearchMatch[] {
+    const scopedSheets = this.resolveSearchScope(options);
 
     if (query.length === 0) {
       return [];
     }
 
-    const normalizedQuery = query.toLowerCase();
-    const results: FormulaSearchResult[] = [];
+    return this.buildSearchMatchesInScope(
+      query,
+      scopedSheets,
+      options?.caseSensitive === true
+    );
+  }
 
-    for (const { workbookName, sheet } of scopedSheets) {
-      const sheetMatches: SortableFormulaSearchResult[] = [];
+  private buildReplacedContent(
+    beforeContent: string,
+    matches: Array<Pick<SearchMatch, "startIndex" | "endIndexExclusive">>,
+    replacement: string
+  ): string {
+    let cursor = 0;
+    let replacedContent = "";
 
-      for (const [cellReference, value] of sheet.content.entries()) {
-        if (typeof value !== "string" || !value.startsWith("=")) {
-          continue;
-        }
+    for (const match of matches) {
+      replacedContent += beforeContent.slice(cursor, match.startIndex);
+      replacedContent += replacement;
+      cursor = match.endIndexExclusive;
+    }
 
-        if (!value.toLowerCase().includes(normalizedQuery)) {
-          continue;
-        }
+    replacedContent += beforeContent.slice(cursor);
+    return replacedContent;
+  }
 
-        const { rowIndex, colIndex } = parseCellReference(cellReference);
-        sheetMatches.push({
-          workbookName,
-          sheetName: sheet.name,
-          cellReference,
-          formula: value,
-          rowIndex,
-          colIndex,
-        });
-      }
+  prepareReplace(
+    query: string,
+    replacement: string,
+    target: ReplaceTarget,
+    options?: { caseSensitive?: boolean }
+  ): PreparedReplace {
+    if (query.length === 0) {
+      throw new Error("replace requires a non-empty query");
+    }
 
-      sheetMatches.sort(
-        (left, right) =>
-          left.rowIndex - right.rowIndex || left.colIndex - right.colIndex
-      );
+    const address: CellAddress = {
+      workbookName: target.workbookName,
+      sheetName: target.sheetName,
+      ...parseCellReference(target.cellReference),
+    };
+    const beforeContent = this.getCellContent(address);
 
-      results.push(
-        ...sheetMatches.map(
-          ({ rowIndex: _rowIndex, colIndex: _colIndex, ...match }) => match
-        )
+    if (typeof beforeContent !== "string") {
+      throw new Error(
+        `replace requires target cell ${target.cellReference} to contain a string`
       );
     }
 
-    return results;
+    const matches = this.findMatchesInString(
+      beforeContent,
+      query,
+      options?.caseSensitive === true
+    );
+    const match = matches[target.occurrenceIndex];
+
+    if (!match) {
+      throw new Error(
+        `Occurrence ${target.occurrenceIndex} not found in cell ${target.cellReference}`
+      );
+    }
+
+    const afterContent = this.buildReplacedContent(beforeContent, [match], replacement);
+    const contentKind = this.getStringContentKind(beforeContent);
+
+    return {
+      address,
+      beforeContent,
+      afterContent,
+      change: {
+        workbookName: target.workbookName,
+        sheetName: target.sheetName,
+        cellReference: target.cellReference,
+        contentKind,
+        occurrenceIndex: match.occurrenceIndex,
+        startIndex: match.startIndex,
+        endIndexExclusive: match.endIndexExclusive,
+        matchedText: match.matchedText,
+        replacementText: replacement,
+        beforeContent,
+        afterContent,
+      },
+    };
+  }
+
+  prepareReplaceAll(
+    query: string,
+    replacement: string,
+    options?: SearchOptions
+  ): PreparedCellReplaceAll[] {
+    const scopedSheets = this.resolveSearchScope(options);
+
+    if (query.length === 0) {
+      throw new Error("replaceAll requires a non-empty query");
+    }
+
+    const matches = this.buildSearchMatchesInScope(
+      query,
+      scopedSheets,
+      options?.caseSensitive === true
+    );
+    const matchesByCell = new Map<string, SearchMatch[]>();
+
+    for (const match of matches) {
+      const cellKey = `${match.workbookName}:${match.sheetName}:${match.cellReference}`;
+      const existing = matchesByCell.get(cellKey);
+      if (existing) {
+        existing.push(match);
+      } else {
+        matchesByCell.set(cellKey, [match]);
+      }
+    }
+
+    return Array.from(matchesByCell.values()).map((cellMatches) => {
+      const [firstMatch] = cellMatches;
+      if (!firstMatch) {
+        throw new Error("Expected at least one match per cell");
+      }
+
+      const address: CellAddress = {
+        workbookName: firstMatch.workbookName,
+        sheetName: firstMatch.sheetName,
+        ...parseCellReference(firstMatch.cellReference),
+      };
+      const afterContent = this.buildReplacedContent(
+        firstMatch.cellContent,
+        cellMatches,
+        replacement
+      );
+
+      return {
+        address,
+        beforeContent: firstMatch.cellContent,
+        afterContent,
+        changes: cellMatches.map((match) => ({
+          workbookName: match.workbookName,
+          sheetName: match.sheetName,
+          cellReference: match.cellReference,
+          contentKind: match.contentKind,
+          occurrenceIndex: match.occurrenceIndex,
+          startIndex: match.startIndex,
+          endIndexExclusive: match.endIndexExclusive,
+          matchedText: match.matchedText,
+          replacementText: replacement,
+          beforeContent: firstMatch.cellContent,
+          afterContent,
+        })),
+      };
+    });
   }
 
   /**

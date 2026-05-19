@@ -55,25 +55,42 @@ const range = {
 const values = engine.getRangeValues(range); // [[1,2,3],[4,5,6],[7,8,9]]
 ```
 
-## Search Raw Formulas
+## Search And Replace Raw Strings
 
 ```typescript
 engine.addWorkbook("Workbook1");
 engine.addSheet({ workbookName: "Workbook1", sheetName: "Sheet1" });
 engine.setSheetContent(
   { workbookName: "Workbook1", sheetName: "Sheet1" },
-  new Map([["A1", "=SUM(B1:B10)"]])
+  new Map([
+    ["A1", "=SUM(B1:B10)"],
+    ["A2", "draft summary"],
+  ])
 );
 
-const matches = engine.searchFormulas("sum", { workbookName: "Workbook1" });
+const matches = engine.search("sum", { workbookName: "Workbook1" });
+const oneChange = engine.replace("sum", "avg", {
+  workbookName: "Workbook1",
+  sheetName: "Sheet1",
+  cellReference: "A1",
+  occurrenceIndex: 0,
+});
+const allChanges = engine.replaceAll("draft", "published", {
+  workbookName: "Workbook1",
+});
 
-// Returns raw formulas and A1 references, not evaluated values
+// Works on any stored string cell, including formulas and plain text
 // [
 //   {
 //     workbookName: "Workbook1",
 //     sheetName: "Sheet1",
 //     cellReference: "A1",
-//     formula: "=SUM(B1:B10)"
+//     cellContent: "=SUM(B1:B10)",
+//     contentKind: "formula",
+//     occurrenceIndex: 0,
+//     startIndex: 1,
+//     endIndexExclusive: 4,
+//     matchedText: "SUM"
 //   }
 // ]
 ```

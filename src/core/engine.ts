@@ -9,10 +9,12 @@ import {
   type ConditionalStyle,
   type CopyCellsOptions,
   type DirectCellStyle,
-  type FormulaSearchFilters,
-  type FormulaSearchResult,
   type NamedExpression,
   type RangeAddress,
+  type ReplaceChange,
+  type ReplaceTarget,
+  type SearchMatch,
+  type SearchOptions,
   type SerializedCellValue,
   type Sheet,
   type SingleEvaluationResult,
@@ -1383,14 +1385,80 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   }
 
   /**
-   * Search raw formula text without evaluating cell values.
-   * Returns flat results with workbook/sheet names and A1 cell references.
+   * Search raw stored string content without evaluating cell values.
    */
-  searchFormulas(
+  search(
     query: string,
-    filters?: FormulaSearchFilters
-  ): FormulaSearchResult[] {
-    return this.workbookManager.searchFormulas(query, filters);
+    options?: SearchOptions
+  ): SearchMatch[] {
+    return this.workbookManager.search(query, options);
+  }
+
+  /**
+   * Replace one specific search occurrence inside one addressed cell.
+   */
+  replace(
+    query: string,
+    replacement: string,
+    target: ReplaceTarget,
+    options?: { caseSensitive?: boolean }
+  ): ReplaceChange {
+    const prepared = this.workbookManager.prepareReplace(
+      query,
+      replacement,
+      target,
+      options
+    );
+
+    this.workbookManager.setCellContent(prepared.address, prepared.afterContent);
+    this.emitMutation({
+      touchedCells: buildTouchedCells([
+        {
+          address: prepared.address,
+          before: prepared.beforeContent,
+          after: prepared.afterContent,
+        },
+      ]),
+      resourceKeys: [],
+    });
+
+    return prepared.change;
+  }
+
+  /**
+   * Replace all matching raw string occurrences within the requested scope.
+   */
+  replaceAll(
+    query: string,
+    replacement: string,
+    options?: SearchOptions
+  ): ReplaceChange[] {
+    const preparedReplacements = this.workbookManager.prepareReplaceAll(
+      query,
+      replacement,
+      options
+    );
+
+    if (preparedReplacements.length === 0) {
+      return [];
+    }
+
+    for (const prepared of preparedReplacements) {
+      this.workbookManager.setCellContent(prepared.address, prepared.afterContent);
+    }
+
+    this.emitMutation({
+      touchedCells: buildTouchedCells(
+        preparedReplacements.map((prepared) => ({
+          address: prepared.address,
+          before: prepared.beforeContent,
+          after: prepared.afterContent,
+        }))
+      ),
+      resourceKeys: [],
+    });
+
+    return preparedReplacements.flatMap((prepared) => prepared.changes);
   }
 
   //#endregion

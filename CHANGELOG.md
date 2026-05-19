@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.2.10
+
+### Patch Changes
+
+- add search and replace
+
 ## 0.2.9
 
 ### Patch Changes

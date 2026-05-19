@@ -102,16 +102,43 @@ export type CellValue = CellNumber | CellString | CellBoolean | CellInfinity;
  */
 export type SerializedCellValue = string | number | boolean | undefined;
 
-export interface FormulaSearchFilters {
+export interface SearchOptions {
   workbookName?: string;
   sheetName?: string;
+  caseSensitive?: boolean;
 }
 
-export interface FormulaSearchResult {
+export interface SearchMatch {
   workbookName: string;
   sheetName: string;
   cellReference: string;
-  formula: string;
+  cellContent: string;
+  contentKind: "formula" | "text";
+  occurrenceIndex: number;
+  startIndex: number;
+  endIndexExclusive: number;
+  matchedText: string;
+}
+
+export interface ReplaceTarget {
+  workbookName: string;
+  sheetName: string;
+  cellReference: string;
+  occurrenceIndex: number;
+}
+
+export interface ReplaceChange {
+  workbookName: string;
+  sheetName: string;
+  cellReference: string;
+  contentKind: "formula" | "text";
+  occurrenceIndex: number;
+  startIndex: number;
+  endIndexExclusive: number;
+  matchedText: string;
+  replacementText: string;
+  beforeContent: string;
+  afterContent: string;
 }
 
 // Named expressions

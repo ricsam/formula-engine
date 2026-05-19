@@ -2451,82 +2451,142 @@ describe("FormulaEngine", () => {
     });
   });
 
-  describe("searchFormulas", () => {
-    test("should search formulas in a single sheet", () => {
+  describe("search", () => {
+    test("should search raw string cells in a single sheet", () => {
       engine.addSheet({ workbookName, sheetName: "Sheet2" });
 
       engine.setSheetContent(
         sheetAddress,
         new Map<string, SerializedCellValue>([
           ["A1", "=SUM(B1:B3)"],
-          ["A2", "=AVERAGE(B1:B3)"],
+          ["A2", "summary"],
+          ["A3", 42],
         ])
       );
       engine.setSheetContent(
         { workbookName, sheetName: "Sheet2" },
-        new Map<string, SerializedCellValue>([["A1", "=SUM(C1:C3)"]])
+        new Map<string, SerializedCellValue>([["A1", "sum"]])
       );
 
+      expect(engine.search("sum", { workbookName, sheetName })).toEqual([
+        {
+          workbookName,
+          sheetName,
+          cellReference: "A1",
+          cellContent: "=SUM(B1:B3)",
+          contentKind: "formula",
+          occurrenceIndex: 0,
+          startIndex: 1,
+          endIndexExclusive: 4,
+          matchedText: "SUM",
+        },
+        {
+          workbookName,
+          sheetName,
+          cellReference: "A2",
+          cellContent: "summary",
+          contentKind: "text",
+          occurrenceIndex: 0,
+          startIndex: 0,
+          endIndexExclusive: 3,
+          matchedText: "sum",
+        },
+      ]);
+    });
+
+    test("should return separate ordered occurrences and respect case sensitivity", () => {
+      setCellContent("A1", "sum SUM sum");
+
       expect(
-        engine.searchFormulas("sum", { workbookName, sheetName })
+        engine.search("sum", {
+          workbookName,
+          sheetName,
+          caseSensitive: false,
+        })
       ).toEqual([
         {
           workbookName,
           sheetName,
           cellReference: "A1",
-          formula: "=SUM(B1:B3)",
+          cellContent: "sum SUM sum",
+          contentKind: "text",
+          occurrenceIndex: 0,
+          startIndex: 0,
+          endIndexExclusive: 3,
+          matchedText: "sum",
         },
-      ]);
-    });
-
-    test("should search formulas across all sheets in a workbook", () => {
-      engine.addSheet({ workbookName, sheetName: "Sheet2" });
-      engine.addSheet({ workbookName, sheetName: "Sheet3" });
-
-      engine.setSheetContent(
-        sheetAddress,
-        new Map<string, SerializedCellValue>([["B1", "=SUM(A1:A3)"]])
-      );
-      engine.setSheetContent(
-        { workbookName, sheetName: "Sheet2" },
-        new Map<string, SerializedCellValue>([
-          ["A1", "=sum(C1:C3)"],
-          ["A2", "=AVERAGE(C1:C3)"],
-        ])
-      );
-      engine.setSheetContent(
-        { workbookName, sheetName: "Sheet3" },
-        new Map<string, SerializedCellValue>([["C1", "=SUM(D1:D3)"]])
-      );
-
-      expect(engine.searchFormulas("SuM", { workbookName })).toEqual([
         {
           workbookName,
           sheetName,
-          cellReference: "B1",
-          formula: "=SUM(A1:A3)",
-        },
-        {
-          workbookName,
-          sheetName: "Sheet2",
           cellReference: "A1",
-          formula: "=sum(C1:C3)",
+          cellContent: "sum SUM sum",
+          contentKind: "text",
+          occurrenceIndex: 1,
+          startIndex: 4,
+          endIndexExclusive: 7,
+          matchedText: "SUM",
         },
         {
           workbookName,
-          sheetName: "Sheet3",
-          cellReference: "C1",
-          formula: "=SUM(D1:D3)",
+          sheetName,
+          cellReference: "A1",
+          cellContent: "sum SUM sum",
+          contentKind: "text",
+          occurrenceIndex: 2,
+          startIndex: 8,
+          endIndexExclusive: 11,
+          matchedText: "sum",
+        },
+      ]);
+
+      expect(
+        engine.search("sum", {
+          workbookName,
+          sheetName,
+          caseSensitive: true,
+        })
+      ).toEqual([
+        {
+          workbookName,
+          sheetName,
+          cellReference: "A1",
+          cellContent: "sum SUM sum",
+          contentKind: "text",
+          occurrenceIndex: 0,
+          startIndex: 0,
+          endIndexExclusive: 3,
+          matchedText: "sum",
+        },
+        {
+          workbookName,
+          sheetName,
+          cellReference: "A1",
+          cellContent: "sum SUM sum",
+          contentKind: "text",
+          occurrenceIndex: 1,
+          startIndex: 8,
+          endIndexExclusive: 11,
+          matchedText: "sum",
         },
       ]);
     });
 
-    test("should search formulas across the full engine", () => {
+    test("should preserve workbook, sheet, cell, and occurrence ordering", () => {
       const secondWorkbookName = "Workbook2";
+      const secondSheetName = "Sheet2";
 
+      engine.addSheet({ workbookName, sheetName: secondSheetName });
       engine.setSheetContent(
         sheetAddress,
-        new Map<string, SerializedCellValue>([["A1", "=SUM(B1:B2)"]])
+        new Map<string, SerializedCellValue>([
+          ["B2", "sum"],
+          ["A1", "sum sum"],
+          ["C1", "=SUM(A1)"],
+        ])
+      );
+      engine.setSheetContent(
+        { workbookName, sheetName: secondSheetName },
+        new Map<string, SerializedCellValue>([["A1", "sum"]])
       );
 
       engine.addWorkbook(secondWorkbookName);
@@ -2534,132 +2594,381 @@ describe("FormulaEngine", () => {
         workbookName: secondWorkbookName,
         sheetName: "SheetA",
       });
-      engine.addSheet({
-        workbookName: secondWorkbookName,
-        sheetName: "SheetB",
-      });
       engine.setSheetContent(
         { workbookName: secondWorkbookName, sheetName: "SheetA" },
-        new Map<string, SerializedCellValue>([["B2", "=SUM(C1:C4)"]])
-      );
-      engine.setSheetContent(
-        { workbookName: secondWorkbookName, sheetName: "SheetB" },
-        new Map<string, SerializedCellValue>([["C3", "=SUM(D1:D4)"]])
+        new Map<string, SerializedCellValue>([["B2", "sum"]])
       );
 
-      expect(engine.searchFormulas("sum")).toEqual([
+      expect(engine.search("sum")).toEqual([
         {
           workbookName,
           sheetName,
           cellReference: "A1",
-          formula: "=SUM(B1:B2)",
+          cellContent: "sum sum",
+          contentKind: "text",
+          occurrenceIndex: 0,
+          startIndex: 0,
+          endIndexExclusive: 3,
+          matchedText: "sum",
         },
-        {
-          workbookName: secondWorkbookName,
-          sheetName: "SheetA",
-          cellReference: "B2",
-          formula: "=SUM(C1:C4)",
-        },
-        {
-          workbookName: secondWorkbookName,
-          sheetName: "SheetB",
-          cellReference: "C3",
-          formula: "=SUM(D1:D4)",
-        },
-      ]);
-    });
-
-    test("should ignore non-formula cells and evaluated values", () => {
-      engine.setSheetContent(
-        sheetAddress,
-        new Map<string, SerializedCellValue>([
-          ["A1", "=1+1"],
-          ["A2", "=SUM(1, 1)"],
-          ["A3", "sum"],
-          ["A4", 2],
-        ])
-      );
-
-      expect(engine.searchFormulas("2", { workbookName, sheetName })).toEqual(
-        []
-      );
-      expect(
-        engine.searchFormulas("sum", { workbookName, sheetName })
-      ).toEqual([
-        {
-          workbookName,
-          sheetName,
-          cellReference: "A2",
-          formula: "=SUM(1, 1)",
-        },
-      ]);
-    });
-
-    test("should sort results within a sheet by row then column", () => {
-      engine.setSheetContent(
-        sheetAddress,
-        new Map<string, SerializedCellValue>([
-          ["B2", "=SUM(A1:A2)"],
-          ["A3", "=SUM(A1:A3)"],
-          ["C1", "=SUM(C2:C3)"],
-          ["A1", "=SUM(B1:B2)"],
-        ])
-      );
-
-      expect(
-        engine.searchFormulas("sum", { workbookName, sheetName })
-      ).toEqual([
         {
           workbookName,
           sheetName,
           cellReference: "A1",
-          formula: "=SUM(B1:B2)",
+          cellContent: "sum sum",
+          contentKind: "text",
+          occurrenceIndex: 1,
+          startIndex: 4,
+          endIndexExclusive: 7,
+          matchedText: "sum",
         },
         {
           workbookName,
           sheetName,
           cellReference: "C1",
-          formula: "=SUM(C2:C3)",
+          cellContent: "=SUM(A1)",
+          contentKind: "formula",
+          occurrenceIndex: 0,
+          startIndex: 1,
+          endIndexExclusive: 4,
+          matchedText: "SUM",
         },
         {
           workbookName,
           sheetName,
           cellReference: "B2",
-          formula: "=SUM(A1:A2)",
+          cellContent: "sum",
+          contentKind: "text",
+          occurrenceIndex: 0,
+          startIndex: 0,
+          endIndexExclusive: 3,
+          matchedText: "sum",
         },
         {
           workbookName,
-          sheetName,
-          cellReference: "A3",
-          formula: "=SUM(A1:A3)",
+          sheetName: secondSheetName,
+          cellReference: "A1",
+          cellContent: "sum",
+          contentKind: "text",
+          occurrenceIndex: 0,
+          startIndex: 0,
+          endIndexExclusive: 3,
+          matchedText: "sum",
+        },
+        {
+          workbookName: secondWorkbookName,
+          sheetName: "SheetA",
+          cellReference: "B2",
+          cellContent: "sum",
+          contentKind: "text",
+          occurrenceIndex: 0,
+          startIndex: 0,
+          endIndexExclusive: 3,
+          matchedText: "sum",
         },
       ]);
     });
 
-    test("should return an empty array for an empty query", () => {
-      setCellContent("A1", "=SUM(B1:B3)");
-
-      expect(engine.searchFormulas("", { workbookName, sheetName })).toEqual(
-        []
+    test("should ignore non-string cells and empty values", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 2],
+          ["A2", true],
+          ["A3", ""],
+          ["A4", "two"],
+        ])
       );
+
+      expect(engine.search("2", { workbookName, sheetName })).toEqual([]);
+      expect(engine.search("true", { workbookName, sheetName })).toEqual([]);
+    });
+
+    test("should return an empty array for an empty query", () => {
+      setCellContent("A1", "sum");
+
+      expect(engine.search("", { workbookName, sheetName })).toEqual([]);
     });
 
     test("should validate search filters and missing scopes", () => {
-      expect(() => engine.searchFormulas("sum", { sheetName })).toThrow(
-        "workbookName"
-      );
-      expect(() => engine.searchFormulas("", { sheetName })).toThrow(
-        "workbookName"
-      );
+      expect(() => engine.search("sum", { sheetName })).toThrow("workbookName");
+      expect(() => engine.search("", { sheetName })).toThrow("workbookName");
       expect(() =>
-        engine.searchFormulas("sum", { workbookName: "MissingWorkbook" })
+        engine.search("sum", { workbookName: "MissingWorkbook" })
       ).toThrow("Workbook not found: MissingWorkbook");
       expect(() =>
-        engine.searchFormulas("sum", {
+        engine.search("sum", {
           workbookName,
           sheetName: "MissingSheet",
         })
       ).toThrow("Sheet not found: MissingSheet");
+    });
+  });
+
+  describe("replace", () => {
+    test("should replace one targeted occurrence in a text cell", () => {
+      setCellContent("A1", "sum SUM sum");
+
+      expect(
+        engine.replace(
+          "sum",
+          "avg",
+          {
+            workbookName,
+            sheetName,
+            cellReference: "A1",
+            occurrenceIndex: 1,
+          },
+          { caseSensitive: false }
+        )
+      ).toEqual({
+        workbookName,
+        sheetName,
+        cellReference: "A1",
+        contentKind: "text",
+        occurrenceIndex: 1,
+        startIndex: 4,
+        endIndexExclusive: 7,
+        matchedText: "SUM",
+        replacementText: "avg",
+        beforeContent: "sum SUM sum",
+        afterContent: "sum avg sum",
+      });
+
+      expect(cellContent("A1")).toBe("sum avg sum");
+    });
+
+    test("should replace one targeted occurrence in a formula cell and recalculate", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          ["A2", 5],
+          ["B1", "=A1+A1"],
+          ["C1", "=B1"],
+        ])
+      );
+
+      expect(
+        engine.replace("A1", "A2", {
+          workbookName,
+          sheetName,
+          cellReference: "B1",
+          occurrenceIndex: 1,
+        })
+      ).toEqual({
+        workbookName,
+        sheetName,
+        cellReference: "B1",
+        contentKind: "formula",
+        occurrenceIndex: 1,
+        startIndex: 4,
+        endIndexExclusive: 6,
+        matchedText: "A1",
+        replacementText: "A2",
+        beforeContent: "=A1+A1",
+        afterContent: "=A1+A2",
+      });
+
+      expect(cellContent("B1")).toBe("=A1+A2");
+      expect(cell("B1")).toBe(15);
+      expect(cell("C1")).toBe(15);
+    });
+
+    test("should validate replace targets and occurrences", () => {
+      setCellContent("A1", 10);
+      setCellContent("B1", "sum");
+
+      expect(() =>
+        engine.replace("sum", "avg", {
+          workbookName,
+          sheetName,
+          cellReference: "A1",
+          occurrenceIndex: 0,
+        })
+      ).toThrow("contain a string");
+      expect(() =>
+        engine.replace("sum", "avg", {
+          workbookName,
+          sheetName,
+          cellReference: "B1",
+          occurrenceIndex: 1,
+        })
+      ).toThrow("Occurrence 1");
+      expect(() =>
+        engine.replace("sum", "avg", {
+          workbookName,
+          sheetName,
+          cellReference: "BAD",
+          occurrenceIndex: 0,
+        })
+      ).toThrow("Invalid cell reference: BAD");
+      expect(() =>
+        engine.replace("", "avg", {
+          workbookName,
+          sheetName,
+          cellReference: "B1",
+          occurrenceIndex: 0,
+        })
+      ).toThrow("non-empty query");
+    });
+  });
+
+  describe("replaceAll", () => {
+    test("should replace all matches in scope and return one change per occurrence", () => {
+      const secondSheetName = "Sheet2";
+      engine.addSheet({ workbookName, sheetName: secondSheetName });
+
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "sum sum"],
+          ["A2", 1],
+          ["A3", 2],
+          ["B1", "=SUM(A2)+SUM(A3)"],
+          ["C1", "=B1"],
+        ])
+      );
+      engine.setSheetContent(
+        { workbookName, sheetName: secondSheetName },
+        new Map<string, SerializedCellValue>([["A1", "sum"]])
+      );
+
+      expect(engine.replaceAll("sum", "AVERAGE", { workbookName })).toEqual([
+        {
+          workbookName,
+          sheetName,
+          cellReference: "A1",
+          contentKind: "text",
+          occurrenceIndex: 0,
+          startIndex: 0,
+          endIndexExclusive: 3,
+          matchedText: "sum",
+          replacementText: "AVERAGE",
+          beforeContent: "sum sum",
+          afterContent: "AVERAGE AVERAGE",
+        },
+        {
+          workbookName,
+          sheetName,
+          cellReference: "A1",
+          contentKind: "text",
+          occurrenceIndex: 1,
+          startIndex: 4,
+          endIndexExclusive: 7,
+          matchedText: "sum",
+          replacementText: "AVERAGE",
+          beforeContent: "sum sum",
+          afterContent: "AVERAGE AVERAGE",
+        },
+        {
+          workbookName,
+          sheetName,
+          cellReference: "B1",
+          contentKind: "formula",
+          occurrenceIndex: 0,
+          startIndex: 1,
+          endIndexExclusive: 4,
+          matchedText: "SUM",
+          replacementText: "AVERAGE",
+          beforeContent: "=SUM(A2)+SUM(A3)",
+          afterContent: "=AVERAGE(A2)+AVERAGE(A3)",
+        },
+        {
+          workbookName,
+          sheetName,
+          cellReference: "B1",
+          contentKind: "formula",
+          occurrenceIndex: 1,
+          startIndex: 9,
+          endIndexExclusive: 12,
+          matchedText: "SUM",
+          replacementText: "AVERAGE",
+          beforeContent: "=SUM(A2)+SUM(A3)",
+          afterContent: "=AVERAGE(A2)+AVERAGE(A3)",
+        },
+        {
+          workbookName,
+          sheetName: secondSheetName,
+          cellReference: "A1",
+          contentKind: "text",
+          occurrenceIndex: 0,
+          startIndex: 0,
+          endIndexExclusive: 3,
+          matchedText: "sum",
+          replacementText: "AVERAGE",
+          beforeContent: "sum",
+          afterContent: "AVERAGE",
+        },
+      ]);
+
+      expect(cellContent("A1")).toBe("AVERAGE AVERAGE");
+      expect(cellContent("B1")).toBe("=AVERAGE(A2)+AVERAGE(A3)");
+      expect(
+        engine.getSheetSerialized({
+          workbookName,
+          sheetName: secondSheetName,
+        }).get("A1")
+      ).toBe("AVERAGE");
+      expect(cell("B1")).toBe(3);
+      expect(cell("C1")).toBe(3);
+    });
+
+    test("should respect sheet scope, case sensitivity, and emit one update", () => {
+      const secondSheetName = "Sheet2";
+      engine.addSheet({ workbookName, sheetName: secondSheetName });
+
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([["A1", "sum SUM"]])
+      );
+      engine.setSheetContent(
+        { workbookName, sheetName: secondSheetName },
+        new Map<string, SerializedCellValue>([["A1", "sum"]])
+      );
+
+      let updateCount = 0;
+      const unsubscribe = engine.onUpdate(() => {
+        updateCount++;
+      });
+
+      const changes = engine.replaceAll("sum", "avg", {
+        workbookName,
+        sheetName,
+        caseSensitive: true,
+      });
+
+      unsubscribe();
+
+      expect(changes).toEqual([
+        {
+          workbookName,
+          sheetName,
+          cellReference: "A1",
+          contentKind: "text",
+          occurrenceIndex: 0,
+          startIndex: 0,
+          endIndexExclusive: 3,
+          matchedText: "sum",
+          replacementText: "avg",
+          beforeContent: "sum SUM",
+          afterContent: "avg SUM",
+        },
+      ]);
+      expect(updateCount).toBe(1);
+      expect(cellContent("A1")).toBe("avg SUM");
+      expect(
+        engine.getSheetSerialized({
+          workbookName,
+          sheetName: secondSheetName,
+        }).get("A1")
+      ).toBe("sum");
+    });
+
+    test("should reject empty replaceAll queries", () => {
+      expect(() =>
+        engine.replaceAll("", "avg", { workbookName })
+      ).toThrow("non-empty query");
     });
   });
 });

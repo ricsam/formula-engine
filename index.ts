@@ -5,8 +5,10 @@
 // Export the main engine
 export { FormulaEngine } from "./src/core/engine";
 export type {
-  FormulaSearchFilters,
-  FormulaSearchResult,
+  ReplaceChange,
+  ReplaceTarget,
+  SearchMatch,
+  SearchOptions,
 } from "./src/core/types";
 
 // Export React integration (optional - only import if using React)
