@@ -254,6 +254,33 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     return Array.from(resourceKeys);
   }
 
+  private assertNamedExpressionScopeExists(opts: {
+    workbookName?: string;
+    sheetName?: string;
+  }): void {
+    if (opts.sheetName && !opts.workbookName) {
+      throw new Error("Missing workbookName");
+    }
+
+    if (!opts.workbookName) {
+      return;
+    }
+
+    if (!this.workbookManager.getWorkbooks().has(opts.workbookName)) {
+      throw new Error(`Workbook not found: ${opts.workbookName}`);
+    }
+
+    if (
+      opts.sheetName &&
+      !this.workbookManager.getSheet({
+        workbookName: opts.workbookName,
+        sheetName: opts.sheetName,
+      })
+    ) {
+      throw new Error(`Sheet not found: ${opts.sheetName}`);
+    }
+  }
+
   //#region Cell
   getCellEvaluationResult(
     cellAddress: CellAddress
@@ -424,6 +451,7 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     sheetName?: string;
     workbookName?: string;
   }) {
+    this.assertNamedExpressionScopeExists(opts);
     this.namedExpressionManager.addNamedExpression(opts);
     this.emitMutation({
       touchedCells: [],
@@ -1793,18 +1821,60 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     const evaluationSnapshots = this.dependencyManager.toSnapshot(
       this.evaluationManager
     );
+    const workbookSnapshot = this.workbookManager.toSnapshot();
 
     return {
       version: ENGINE_SNAPSHOT_VERSION,
       managers: {
-        workbook: this.workbookManager.toSnapshot(),
-        namedExpression: this.namedExpressionManager.toSnapshot(),
+        workbook: workbookSnapshot,
+        namedExpression: this.buildNamedExpressionSnapshot(workbookSnapshot),
         table: this.tableManager.toSnapshot(),
         style: this.styleManager.toSnapshot(),
         reference: this.referenceManager.toSnapshot(),
         dependency: evaluationSnapshots.dependency,
         cache: evaluationSnapshots.cache,
       },
+    };
+  }
+
+  private buildNamedExpressionSnapshot(
+    workbookSnapshot: EngineSnapshot["managers"]["workbook"]
+  ): EngineSnapshot["managers"]["namedExpression"] {
+    const namedExpressions = this.namedExpressionManager.toSnapshot();
+    const workbookExpressions = new Map<string, Map<string, NamedExpression>>();
+    const sheetExpressions = new Map<
+      string,
+      Map<string, Map<string, NamedExpression>>
+    >();
+
+    workbookSnapshot.forEach((workbook) => {
+      const sourceWorkbookExpressions =
+        namedExpressions.workbookExpressions.get(workbook.name);
+      workbookExpressions.set(
+        workbook.name,
+        new Map(sourceWorkbookExpressions ?? [])
+      );
+
+      const sourceSheets = namedExpressions.sheetExpressions.get(
+        workbook.name
+      );
+      const workbookSheetExpressions = new Map<
+        string,
+        Map<string, NamedExpression>
+      >();
+      workbook.sheets.forEach((_, sheetName) => {
+        workbookSheetExpressions.set(
+          sheetName,
+          new Map(sourceSheets?.get(sheetName) ?? [])
+        );
+      });
+      sheetExpressions.set(workbook.name, workbookSheetExpressions);
+    });
+
+    return {
+      sheetExpressions,
+      workbookExpressions,
+      globalExpressions: new Map(namedExpressions.globalExpressions),
     };
   }
 
@@ -1826,6 +1896,7 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
       );
     }
 
+    this.namedExpressionManager.clear();
     this.workbookManager.restoreFromSnapshot(deserialized.managers.workbook);
 
     deserialized.managers.workbook.forEach((workbook) => {

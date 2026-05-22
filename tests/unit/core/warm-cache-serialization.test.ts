@@ -300,6 +300,115 @@ describe("Warm-cache serialization", () => {
     expect(afterSecondEdit.getCellValue(address("B1"))).toBe(21);
   });
 
+  test("resetting an engine replaces stale named-expression scopes before reserializing", () => {
+    engine.addNamedExpression({
+      expressionName: "LOCAL_RATE",
+      expression: "0.2",
+      sheetName,
+      workbookName,
+    });
+
+    const dirtyEngine = FormulaEngine.buildEmpty();
+    dirtyEngine.addWorkbook("a");
+    dirtyEngine.addSheet({ workbookName: "a", sheetName: "Sheet1" });
+    dirtyEngine.addNamedExpression({
+      expressionName: "STALE_RATE",
+      expression: "0.1",
+      workbookName: "a",
+    });
+
+    dirtyEngine.resetToSerializedEngine(engine.serializeEngine());
+
+    const snapshot = deserialize(dirtyEngine.serializeEngine()) as any;
+    expect(snapshot.managers.namedExpression.workbookExpressions.has("a")).toBe(
+      false
+    );
+    expect(snapshot.managers.namedExpression.sheetExpressions.has("a")).toBe(
+      false
+    );
+    expect(
+      dirtyEngine.hasNamedExpression({
+        expressionName: "LOCAL_RATE",
+        sheetName,
+        workbookName,
+      })
+    ).toBe(true);
+  });
+
+  test("serializeEngine filters named-expression scopes to existing workbooks and sheets", () => {
+    engine._namedExpressionManager.addNamedExpression({
+      expressionName: "STALE_WORKBOOK",
+      expression: "1",
+      workbookName: "a",
+    });
+    engine._namedExpressionManager.addNamedExpression({
+      expressionName: "STALE_SHEET",
+      expression: "2",
+      sheetName: "MissingSheet",
+      workbookName,
+    });
+
+    const snapshot = deserialize(engine.serializeEngine()) as any;
+
+    expect(snapshot.managers.namedExpression.workbookExpressions.has("a")).toBe(
+      false
+    );
+    expect(
+      snapshot.managers.namedExpression.sheetExpressions.has(workbookName)
+    ).toBe(true);
+    expect(
+      snapshot.managers.namedExpression.sheetExpressions
+        .get(workbookName)
+        ?.has(sheetName)
+    ).toBe(true);
+    expect(
+      snapshot.managers.namedExpression.sheetExpressions
+        .get(workbookName)
+        ?.has("MissingSheet")
+    ).toBe(false);
+  });
+
+  test("ignores orphan named-expression scopes in serialized snapshots", () => {
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map<string, string | number>([
+        ["A1", "Value"],
+        ["A2", 1],
+      ])
+    );
+    engine.addTable({
+      tableName: "Data",
+      sheetName,
+      workbookName,
+      start: "A1",
+      numRows: { type: "number", value: 1 },
+      numCols: 1,
+    });
+
+    const snapshot = deserialize(engine.serializeEngine()) as any;
+    snapshot.managers.namedExpression.workbookExpressions.set("a", new Map());
+    snapshot.managers.namedExpression.sheetExpressions.set(
+      "a",
+      new Map([["Sheet1", new Map()]])
+    );
+
+    const hydratedEngine = FormulaEngine.buildEmpty();
+    expect(() =>
+      hydratedEngine.resetToSerializedEngine(serialize(snapshot))
+    ).not.toThrow();
+    expect(
+      hydratedEngine.getState().tables.get(workbookName)?.has("Data")
+    ).toBe(true);
+
+    const cleanedSnapshot = deserialize(hydratedEngine.serializeEngine()) as any;
+    expect(
+      cleanedSnapshot.managers.namedExpression.workbookExpressions.has("a")
+    ).toBe(false);
+    expect(
+      cleanedSnapshot.managers.namedExpression.sheetExpressions.has("a")
+    ).toBe(false);
+  });
+
   test("falls back to cold dependency state when an AST snapshot key is invalid", () => {
     engine.setCellContent(address("A1"), "=1+1");
 

@@ -1,5 +1,12 @@
 # @ricsam/formula-engine
 
+## 0.2.11
+
+### Patch Changes
+
+- Fix serialized engine restores so named-expression scopes are rebuilt from workbook snapshots and orphan scopes are ignored.
+- fix bug with serialization / deserialization
+
 ## 0.2.10
 
 ### Patch Changes

@@ -34,6 +34,27 @@ describe("Named Expressions", () => {
     engine.addSheet({ workbookName, sheetName });
   });
 
+  test("should reject named expressions for missing workbook scopes", () => {
+    expect(() =>
+      engine.addNamedExpression({
+        expressionName: "MISSING_WORKBOOK_SCOPE",
+        expression: "1",
+        workbookName: "MissingWorkbook",
+      })
+    ).toThrow("Workbook not found: MissingWorkbook");
+  });
+
+  test("should reject named expressions for missing sheet scopes", () => {
+    expect(() =>
+      engine.addNamedExpression({
+        expressionName: "MISSING_SHEET_SCOPE",
+        expression: "1",
+        sheetName: "MissingSheet",
+        workbookName,
+      })
+    ).toThrow("Sheet not found: MissingSheet");
+  });
+
   test("should add and use global named expressions", () => {
     // Add a global named expression
     engine.addNamedExpression({

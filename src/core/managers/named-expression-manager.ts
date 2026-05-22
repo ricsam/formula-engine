@@ -539,33 +539,31 @@ export class NamedExpressionManager {
   resetNamedExpressions(
     namedExpressions: ReturnType<typeof this.getNamedExpressions>
   ) {
-    this.setNamedExpressions({
-      type: "global",
-      expressions: namedExpressions.globalExpressions,
+    this.globalExpressions.clear();
+    namedExpressions.globalExpressions.forEach((expression, name) => {
+      this.globalExpressions.set(name, expression);
     });
 
-    namedExpressions.workbookExpressions.forEach(
-      (workbookExpressions, workbookName) => {
-        this.setNamedExpressions({
-          type: "workbook",
-          expressions: workbookExpressions,
-          workbookName,
+    this.workbookExpressions.forEach((workbookExpressions, workbookName) => {
+      workbookExpressions.clear();
+      namedExpressions.workbookExpressions
+        .get(workbookName)
+        ?.forEach((expression, name) => {
+          workbookExpressions.set(name, expression);
         });
-      }
-    );
+    });
 
-    namedExpressions.sheetExpressions.forEach(
-      (sheetExpressions, workbookName) => {
-        sheetExpressions.forEach((sheetExpression, sheetName) => {
-          this.setNamedExpressions({
-            type: "sheet",
-            expressions: sheetExpression,
-            sheetName,
-            workbookName,
+    this.sheetExpressions.forEach((sheets, workbookName) => {
+      sheets.forEach((sheetExpressions, sheetName) => {
+        sheetExpressions.clear();
+        namedExpressions.sheetExpressions
+          .get(workbookName)
+          ?.get(sheetName)
+          ?.forEach((expression, name) => {
+            sheetExpressions.set(name, expression);
           });
-        });
-      }
-    );
+      });
+    });
   }
 
   toSnapshot(): NamedExpressionManagerSnapshot {
@@ -574,6 +572,12 @@ export class NamedExpressionManager {
 
   restoreFromSnapshot(snapshot: NamedExpressionManagerSnapshot) {
     this.resetNamedExpressions(snapshot);
+  }
+
+  clear() {
+    this.sheetExpressions.clear();
+    this.workbookExpressions.clear();
+    this.globalExpressions.clear();
   }
 
   /**
