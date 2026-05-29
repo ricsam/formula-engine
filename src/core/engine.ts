@@ -11,6 +11,8 @@ import {
   type DirectCellStyle,
   type NamedExpression,
   type RangeAddress,
+  type RangeMetadata,
+  type RangeMetadataInput,
   type ReplaceChange,
   type ReplaceTarget,
   type SearchMatch,
@@ -42,6 +44,7 @@ import { DependencyManager } from "./managers/dependency-manager";
 import { StyleManager } from "./managers/style-manager";
 import { CopyManager } from "./managers/copy-manager";
 import { ReferenceManager } from "./managers/reference-manager";
+import { RangeMetadataManager } from "./managers/range-metadata-manager";
 import {
   ENGINE_SNAPSHOT_VERSION,
   type EngineSnapshot,
@@ -68,6 +71,7 @@ import {
 
 type Metadata = {
   cell?: unknown;
+  range?: unknown;
   sheet?: unknown;
   workbook?: unknown;
 };
@@ -90,6 +94,7 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   private autoFillManager: AutoFill;
   private dependencyManager: DependencyManager;
   private styleManager: StyleManager;
+  private rangeMetadataManager: RangeMetadataManager<MetadataType<TMetadata, "range">>;
   private copyManager: CopyManager;
   private referenceManager: ReferenceManager;
 
@@ -104,6 +109,7 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   public _autoFillManager: AutoFill;
   public _dependencyManager: DependencyManager;
   public _styleManager: StyleManager;
+  public _rangeMetadataManager: RangeMetadataManager<MetadataType<TMetadata, "range">>;
 
   constructor() {
     this.eventManager = new EventManager();
@@ -130,15 +136,20 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     );
 
     this.styleManager = new StyleManager(this.evaluationManager);
+    this.rangeMetadataManager = new RangeMetadataManager<
+      MetadataType<TMetadata, "range">
+    >();
     this.copyManager = new CopyManager(
       this.workbookManager,
       this.evaluationManager,
-      this.styleManager
+      this.styleManager,
+      this.rangeMetadataManager
     );
 
     this.autoFillManager = new AutoFill(
       this.workbookManager,
-      this.styleManager
+      this.styleManager,
+      this.rangeMetadataManager
     );
 
     this.referenceManager = new ReferenceManager();
@@ -151,6 +162,7 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     this._autoFillManager = this.autoFillManager;
     this._dependencyManager = this.dependencyManager;
     this._styleManager = this.styleManager;
+    this._rangeMetadataManager = this.rangeMetadataManager;
   }
 
   /**
@@ -381,6 +393,64 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     return this.workbookManager.getWorkbookMetadata(workbookName) as
       | MetadataType<TMetadata, "workbook">
       | undefined;
+  }
+
+  /**
+   * Add metadata attached to one or more ranges.
+   * Range metadata is arbitrary consumer-defined data that follows range
+   * copy/paste, autofill, workbook/sheet rename, and serialization flows.
+   */
+  addRangeMetadata(
+    metadata: RangeMetadataInput<MetadataType<TMetadata, "range">>
+  ): string {
+    const id = this.rangeMetadataManager.addRangeMetadata(metadata);
+    this.emitUpdate();
+    return id;
+  }
+
+  /**
+   * Remove a range metadata entry by id.
+   */
+  removeRangeMetadata(id: string): void {
+    const removed = this.rangeMetadataManager.removeRangeMetadata(id);
+    if (removed) {
+      this.emitUpdate();
+    }
+  }
+
+  /**
+   * Get all range metadata entries.
+   */
+  getAllRangeMetadata(): RangeMetadata<MetadataType<TMetadata, "range">>[] {
+    return this.rangeMetadataManager.getAllRangeMetadata();
+  }
+
+  /**
+   * Get range metadata entries that apply to a specific cell.
+   */
+  getRangeMetadataForCell(
+    address: CellAddress
+  ): RangeMetadata<MetadataType<TMetadata, "range">>[] {
+    return this.rangeMetadataManager.getRangeMetadataForCell(address);
+  }
+
+  /**
+   * Get range metadata entries intersecting with a range.
+   */
+  getRangeMetadataIntersectingWithRange(
+    range: RangeAddress
+  ): RangeMetadata<MetadataType<TMetadata, "range">>[] {
+    return this.rangeMetadataManager.getRangeMetadataIntersectingWithRange(
+      range
+    );
+  }
+
+  /**
+   * Clear range metadata from a range, preserving non-overlapping portions.
+   */
+  clearRangeMetadata(range: RangeAddress): void {
+    this.rangeMetadataManager.clearRangeMetadataInRange(range);
+    this.emitUpdate();
   }
 
   //#endregion
@@ -1319,6 +1389,10 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     this.namedExpressionManager.removeSheet(opts);
     this.tableManager.removeSheet(opts);
     this.styleManager.removeSheetStyles(opts.workbookName, opts.sheetName);
+    this.rangeMetadataManager.removeSheetRangeMetadata(
+      opts.workbookName,
+      opts.sheetName
+    );
     this.referenceManager.invalidateSheet(opts.workbookName, opts.sheetName);
     this.emitMutation({
       touchedCells: [],
@@ -1338,6 +1412,11 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     this.namedExpressionManager.renameSheet(opts);
     this.tableManager.updateTablesForSheetRename(opts);
     this.styleManager.updateSheetName(
+      opts.workbookName,
+      opts.sheetName,
+      opts.newSheetName
+    );
+    this.rangeMetadataManager.updateSheetName(
       opts.workbookName,
       opts.sheetName,
       opts.newSheetName
@@ -1508,6 +1587,7 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     this.namedExpressionManager.removeWorkbook(workbookName);
     this.tableManager.removeWorkbook(workbookName);
     this.styleManager.removeWorkbookStyles(workbookName);
+    this.rangeMetadataManager.removeWorkbookRangeMetadata(workbookName);
     this.referenceManager.invalidateWorkbook(workbookName);
     this.emitMutation({
       touchedCells: [],
@@ -1637,6 +1717,19 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
       }
     }
 
+    for (const metadata of this.rangeMetadataManager.getAllRangeMetadata()) {
+      if (metadata.areas.some((area) => area.workbookName === fromWorkbookName)) {
+        this.rangeMetadataManager.addRangeMetadata({
+          metadata: metadata.metadata,
+          areas: metadata.areas.map((area) =>
+            area.workbookName === fromWorkbookName
+              ? { ...area, workbookName: toWorkbookName }
+              : area
+          ),
+        });
+      }
+    }
+
     this.workbookManager.updateFormulasForWorkbook(toWorkbookName, (formula) =>
       renameWorkbookInFormula({
         formula,
@@ -1658,6 +1751,10 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     this.namedExpressionManager.renameWorkbook(opts);
     this.tableManager.updateTablesForWorkbookRename(opts);
     this.styleManager.updateWorkbookName(
+      opts.workbookName,
+      opts.newWorkbookName
+    );
+    this.rangeMetadataManager.updateWorkbookName(
       opts.workbookName,
       opts.newWorkbookName
     );
@@ -1809,6 +1906,7 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
       tables: this.tableManager.tables,
       conditionalStyles: this.styleManager.getAllConditionalStyles(),
       cellStyles: this.styleManager.getAllCellStyles(),
+      rangeMetadata: this.rangeMetadataManager.getAllRangeMetadata(),
       references: this.referenceManager.getAllReferences(),
     };
   }
@@ -1830,6 +1928,7 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
         namedExpression: this.buildNamedExpressionSnapshot(workbookSnapshot),
         table: this.tableManager.toSnapshot(),
         style: this.styleManager.toSnapshot(),
+        rangeMetadata: this.rangeMetadataManager.toSnapshot(),
         reference: this.referenceManager.toSnapshot(),
         dependency: evaluationSnapshots.dependency,
         cache: evaluationSnapshots.cache,
@@ -1914,6 +2013,9 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     );
     this.tableManager.restoreFromSnapshot(deserialized.managers.table);
     this.styleManager.restoreFromSnapshot(deserialized.managers.style);
+    this.rangeMetadataManager.restoreFromSnapshot(
+      deserialized.managers.rangeMetadata
+    );
     this.referenceManager.restoreFromSnapshot(deserialized.managers.reference);
     this.dependencyManager.restoreFromSnapshot(
       {

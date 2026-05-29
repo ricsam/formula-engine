@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.2.12
+
+### Patch Changes
+
+- add range metadata + add wrapText style prop
+
 ## 0.2.11
 
 ### Patch Changes

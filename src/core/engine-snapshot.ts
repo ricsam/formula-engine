@@ -9,6 +9,7 @@ import type {
   FormulaError,
   NamedExpression,
   RangeAddress,
+  RangeMetadata,
   RelativeRange,
   SpreadsheetRange,
   TableDefinition,
@@ -16,7 +17,7 @@ import type {
   Workbook,
 } from "./types";
 
-export const ENGINE_SNAPSHOT_VERSION = 4 as const;
+export const ENGINE_SNAPSHOT_VERSION = 5 as const;
 
 export type NodeSnapshotId = string;
 
@@ -34,6 +35,8 @@ export type StyleManagerSnapshot = {
   conditionalStyles: ConditionalStyle[];
   cellStyles: DirectCellStyle[];
 };
+
+export type RangeMetadataManagerSnapshot = RangeMetadata[];
 
 export type ReferenceManagerSnapshot = Map<string, TrackedReference>;
 
@@ -183,6 +186,7 @@ type EngineSnapshotManagers = {
   namedExpression: NamedExpressionManagerSnapshot;
   table: TableManagerSnapshot;
   style: StyleManagerSnapshot;
+  rangeMetadata: RangeMetadataManagerSnapshot;
   reference: ReferenceManagerSnapshot;
   dependency: DependencyManagerSnapshot;
   cache: CacheManagerSnapshot;

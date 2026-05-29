@@ -5,16 +5,19 @@
 import type {
   CellAddress,
   CopyCellsOptions,
+  CopyCellsIncludePart,
   ConditionalStyle,
   DirectCellStyle,
   LocalCellAddress,
   RangeAddress,
+  RangeMetadataInput,
   SerializedCellValue,
   SpreadsheetRange,
 } from "../types";
 import type { WorkbookManager } from "./workbook-manager";
 import type { EvaluationManager } from "./evaluation-manager";
 import type { StyleManager } from "./style-manager";
+import type { RangeMetadataManager } from "./range-metadata-manager";
 import { parseFormula } from "../../parser/parser";
 import { astToString } from "../../parser/formatter";
 import { transformAST } from "../ast-traverser";
@@ -41,7 +44,8 @@ export class CopyManager {
   constructor(
     private workbookManager: WorkbookManager,
     private evaluationManager: EvaluationManager,
-    private styleManager: StyleManager
+    private styleManager: StyleManager,
+    private rangeMetadataManager: RangeMetadataManager
   ) {}
 
   /**
@@ -49,9 +53,9 @@ export class CopyManager {
    */
   private normalizeInclude(
     include: CopyCellsOptions["include"]
-  ): ("content" | "style" | "metadata")[] {
+  ): CopyCellsIncludePart[] {
     if (!include || include === "all") {
-      return ["content", "style", "metadata"];
+      return ["content", "style", "cellMetadata", "rangeMetadata"];
     }
     return include;
   }
@@ -61,7 +65,7 @@ export class CopyManager {
    */
   private shouldInclude(
     options: CopyCellsOptions,
-    part: "content" | "style" | "metadata"
+    part: CopyCellsIncludePart
   ): boolean {
     const normalized = this.normalizeInclude(options.include);
     return normalized.includes(part);
@@ -105,9 +109,26 @@ export class CopyManager {
 
     // 1. Snapshot source cells (with styles)
     const snapshot = this.snapshotCellsWithStyles(source);
+    const rangeMetadataCopies = this.shouldInclude(options, "rangeMetadata")
+      ? this.collectRangeMetadataCopies(
+          source,
+          topLeft,
+          target,
+          rowOffset,
+          colOffset
+        )
+      : [];
+    const sourceRange = this.getBoundingBox(source);
+    const targetRange = this.adjustRange(sourceRange, rowOffset, colOffset);
 
     // 2. Remove source cells (content) and punch holes in styles
     this.clearSourceCells(source);
+
+    if (this.shouldInclude(options, "cellMetadata")) {
+      for (const cell of source) {
+        this.workbookManager.setCellMetadata(cell, undefined);
+      }
+    }
 
     // Punch holes in style areas for each cut cell
     if (this.shouldInclude(options, "style")) {
@@ -125,6 +146,15 @@ export class CopyManager {
         };
         this.styleManager.clearCellStylesInRange(cellRange);
       }
+    }
+
+    if (this.shouldInclude(options, "rangeMetadata")) {
+      this.rangeMetadataManager.clearRangeMetadataInRange(
+        this.getRangeAddressFromBoundingBox(topLeft, sourceRange)
+      );
+      this.rangeMetadataManager.clearRangeMetadataInRange(
+        this.getRangeAddressFromBoundingBox(target, targetRange)
+      );
     }
 
     // 3. Update references in OTHER cells (not in moved set)
@@ -180,8 +210,8 @@ export class CopyManager {
         this.workbookManager.setCellContent(targetCell, targetContent);
       }
 
-      // Apply metadata
-      if (this.shouldInclude(options, "metadata")) {
+      // Apply cell metadata
+      if (this.shouldInclude(options, "cellMetadata")) {
         if (snap.metadata) {
           this.workbookManager.setCellMetadata(targetCell, {
             ...snap.metadata,
@@ -195,6 +225,10 @@ export class CopyManager {
       if (this.shouldInclude(options, "style")) {
         this.applyStylesFromSnapshot(snap, targetCell);
       }
+    }
+
+    if (this.shouldInclude(options, "rangeMetadata")) {
+      this.applyRangeMetadataCopies(rangeMetadataCopies);
     }
   }
 
@@ -235,9 +269,30 @@ export class CopyManager {
       }
     }
 
+    // Copy cell metadata if requested
+    if (this.shouldInclude(options, "cellMetadata")) {
+      for (let i = 0; i < source.length; i++) {
+        const sourceCell = source[i]!;
+        const cellSnapshot = snapshot[i]!;
+        const targetCell: CellAddress = {
+          workbookName: target.workbookName,
+          sheetName: target.sheetName,
+          colIndex: sourceCell.colIndex + colOffset,
+          rowIndex: sourceCell.rowIndex + rowOffset,
+        };
+
+        this.copyCellMetadataFromSnapshot(cellSnapshot, targetCell);
+      }
+    }
+
     // Copy formatting if requested
     if (this.shouldInclude(options, "style")) {
       this.copyFormatting(source, topLeft, target, rowOffset, colOffset);
+    }
+
+    // Copy range metadata if requested
+    if (this.shouldInclude(options, "rangeMetadata")) {
+      this.copyRangeMetadata(source, topLeft, target, rowOffset, colOffset);
     }
   }
 
@@ -468,16 +523,18 @@ export class CopyManager {
       targetSheet.content.set(targetKey, targetContent);
     }
 
-    // Copy metadata if requested
-    if (this.shouldInclude(options, "metadata")) {
-      if (snapshot.metadata) {
-        this.workbookManager.setCellMetadata(targetCell, {
-          ...snapshot.metadata,
-        });
-      } else {
-        // Clear target metadata if source has none
-        this.workbookManager.setCellMetadata(targetCell, undefined);
-      }
+  }
+
+  private copyCellMetadataFromSnapshot(
+    snapshot: CellSnapshot,
+    targetCell: CellAddress
+  ): void {
+    if (snapshot.metadata) {
+      this.workbookManager.setCellMetadata(targetCell, {
+        ...snapshot.metadata,
+      });
+    } else {
+      this.workbookManager.setCellMetadata(targetCell, undefined);
     }
   }
 
@@ -571,8 +628,8 @@ export class CopyManager {
       targetSheet.content.set(targetKey, targetContent);
     }
 
-    // Copy metadata if requested
-    if (this.shouldInclude(options, "metadata")) {
+    // Copy cell metadata if requested
+    if (this.shouldInclude(options, "cellMetadata")) {
       const sourceMetadata = this.workbookManager.getCellMetadata(sourceCell);
       if (sourceMetadata) {
         this.workbookManager.setCellMetadata(targetCell, { ...sourceMetadata });
@@ -739,6 +796,98 @@ export class CopyManager {
     }
   }
 
+  private cloneMetadataValue(metadata: unknown): unknown {
+    if (!metadata || typeof metadata !== "object") {
+      return metadata;
+    }
+
+    try {
+      return structuredClone(metadata);
+    } catch {
+      return Array.isArray(metadata) ? [...metadata] : { ...metadata };
+    }
+  }
+
+  private getRangeAddressFromBoundingBox(
+    base: Pick<CellAddress, "workbookName" | "sheetName">,
+    range: SpreadsheetRange
+  ): RangeAddress {
+    return {
+      workbookName: base.workbookName,
+      sheetName: base.sheetName,
+      range,
+    };
+  }
+
+  private collectRangeMetadataCopies(
+    sourceCells: CellAddress[],
+    sourceTopLeft: CellAddress,
+    target: CellAddress,
+    rowOffset: number,
+    colOffset: number
+  ): RangeMetadataInput[] {
+    const sourceRange = this.getBoundingBox(sourceCells);
+    const copies: RangeMetadataInput[] = [];
+
+    for (const entry of this.rangeMetadataManager.getAllRangeMetadata()) {
+      for (const area of entry.areas) {
+        if (
+          area.workbookName !== sourceTopLeft.workbookName ||
+          area.sheetName !== sourceTopLeft.sheetName
+        ) {
+          continue;
+        }
+
+        const intersection = intersectRanges(area.range, sourceRange);
+        if (!intersection) {
+          continue;
+        }
+
+        copies.push({
+          areas: [
+            {
+              workbookName: target.workbookName,
+              sheetName: target.sheetName,
+              range: this.adjustRange(intersection, rowOffset, colOffset),
+            },
+          ],
+          metadata: this.cloneMetadataValue(entry.metadata),
+        });
+      }
+    }
+
+    return copies;
+  }
+
+  private applyRangeMetadataCopies(copies: RangeMetadataInput[]): void {
+    for (const copy of copies) {
+      this.rangeMetadataManager.addRangeMetadata(copy);
+    }
+  }
+
+  private copyRangeMetadata(
+    sourceCells: CellAddress[],
+    sourceTopLeft: CellAddress,
+    target: CellAddress,
+    rowOffset: number,
+    colOffset: number
+  ): void {
+    const sourceRange = this.getBoundingBox(sourceCells);
+    const targetRange = this.adjustRange(sourceRange, rowOffset, colOffset);
+    const copies = this.collectRangeMetadataCopies(
+      sourceCells,
+      sourceTopLeft,
+      target,
+      rowOffset,
+      colOffset
+    );
+
+    this.rangeMetadataManager.clearRangeMetadataInRange(
+      this.getRangeAddressFromBoundingBox(target, targetRange)
+    );
+    this.applyRangeMetadataCopies(copies);
+  }
+
   /**
    * Get bounding box for a set of cells
    */
@@ -815,6 +964,8 @@ export class CopyManager {
       this.fillRangeWithSeed(seedRange, targetRange, {
         copyContent: this.shouldInclude(options, "content"),
         copyStyles: this.shouldInclude(options, "style"),
+        copyCellMetadata: this.shouldInclude(options, "cellMetadata"),
+        copyRangeMetadata: this.shouldInclude(options, "rangeMetadata"),
         contentType: options.type ?? "formula",
         adjustFormulas: true,
       });
@@ -839,6 +990,8 @@ export class CopyManager {
     options: {
       copyContent: boolean;
       copyStyles: boolean;
+      copyCellMetadata: boolean;
+      copyRangeMetadata: boolean;
       contentType: "value" | "formula";
       adjustFormulas: boolean;
     }
@@ -846,6 +999,9 @@ export class CopyManager {
     // Step 0: Clear existing cell styles in target range (Excel-like replacement)
     if (options.copyStyles) {
       this.styleManager.clearCellStylesInRange(targetRange);
+    }
+    if (options.copyRangeMetadata) {
+      this.rangeMetadataManager.clearRangeMetadataInRange(targetRange);
     }
 
     const seedCells = this.expandRangeToCells(seedRange);
@@ -896,6 +1052,14 @@ export class CopyManager {
 
           if (options.copyStyles) {
             this.copyCellFormatting(seedCell, targetCell);
+          }
+
+          if (options.copyCellMetadata) {
+            this.copyCellMetadata(seedCell, targetCell);
+          }
+
+          if (options.copyRangeMetadata) {
+            this.copyCellRangeMetadata(seedCell, targetCell);
           }
 
           // Store filled column for horizontal replication
@@ -951,6 +1115,14 @@ export class CopyManager {
 
           if (options.copyStyles) {
             this.copyCellFormatting(sourceCell, targetCell);
+          }
+
+          if (options.copyCellMetadata) {
+            this.copyCellMetadata(sourceCell, targetCell);
+          }
+
+          if (options.copyRangeMetadata) {
+            this.copyCellRangeMetadata(sourceCell, targetCell);
           }
         }
       }
@@ -1113,8 +1285,8 @@ export class CopyManager {
       targetSheet.content.set(targetKey, targetContent);
     }
 
-    // Copy metadata if requested
-    if (this.shouldInclude(options, "metadata")) {
+    // Copy cell metadata if requested
+    if (this.shouldInclude(options, "cellMetadata")) {
       const sourceMetadata = this.workbookManager.getCellMetadata(sourceCell);
       if (sourceMetadata) {
         this.workbookManager.setCellMetadata(targetCell, { ...sourceMetadata });
@@ -1194,6 +1366,66 @@ export class CopyManager {
       // If parsing fails, return the original formula
       console.warn("Failed to adjust formula with offset:", error);
       return formula;
+    }
+  }
+
+  private copyCellMetadata(
+    sourceCell: CellAddress,
+    targetCell: CellAddress
+  ): void {
+    const sourceMetadata = this.workbookManager.getCellMetadata(sourceCell);
+    if (sourceMetadata) {
+      this.workbookManager.setCellMetadata(targetCell, { ...sourceMetadata });
+    } else {
+      this.workbookManager.setCellMetadata(targetCell, undefined);
+    }
+  }
+
+  private copyCellRangeMetadata(
+    sourceCell: CellAddress,
+    targetCell: CellAddress
+  ): void {
+    const targetCellRange: RangeAddress = {
+      workbookName: targetCell.workbookName,
+      sheetName: targetCell.sheetName,
+      range: {
+        start: { col: targetCell.colIndex, row: targetCell.rowIndex },
+        end: {
+          col: { type: "number", value: targetCell.colIndex },
+          row: { type: "number", value: targetCell.rowIndex },
+        },
+      },
+    };
+
+    this.rangeMetadataManager.clearRangeMetadataInRange(targetCellRange);
+
+    const sourceCellRange: SpreadsheetRange = {
+      start: { col: sourceCell.colIndex, row: sourceCell.rowIndex },
+      end: {
+        col: { type: "number", value: sourceCell.colIndex },
+        row: { type: "number", value: sourceCell.rowIndex },
+      },
+    };
+
+    for (const entry of this.rangeMetadataManager.getAllRangeMetadata()) {
+      for (const area of entry.areas) {
+        if (
+          area.workbookName !== sourceCell.workbookName ||
+          area.sheetName !== sourceCell.sheetName
+        ) {
+          continue;
+        }
+
+        const intersection = intersectRanges(area.range, sourceCellRange);
+        if (!intersection) {
+          continue;
+        }
+
+        this.rangeMetadataManager.addRangeMetadata({
+          areas: [targetCellRange],
+          metadata: this.cloneMetadataValue(entry.metadata),
+        });
+      }
     }
   }
 

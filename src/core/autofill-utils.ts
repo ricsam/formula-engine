@@ -20,12 +20,14 @@ import type { ReferenceNode, RangeNode } from "../parser/ast";
 import { getCellReference } from "./utils";
 import type { WorkbookManager } from "./managers/workbook-manager";
 import type { StyleManager } from "./managers/style-manager";
+import type { RangeMetadataManager } from "./managers/range-metadata-manager";
 import { intersectRanges } from "./utils/range-utils";
 
 export class AutoFill {
   constructor(
     private workbookManager: WorkbookManager,
-    private styleManager: StyleManager
+    private styleManager: StyleManager,
+    private rangeMetadataManager: RangeMetadataManager
   ) {}
 
   /**
@@ -131,6 +133,9 @@ export class AutoFill {
 
     // Copy metadata from seed to fill range
     this.fillMetadata(opts, finiteSeedRange, finiteFillRange, direction);
+
+    // Copy range metadata from seed to fill range
+    this.fillRangeMetadata(opts, finiteSeedRange, finiteFillRange, direction);
   }
 
   private getSeedCells(
@@ -698,6 +703,90 @@ export class AutoFill {
         const sourceMetadata = this.workbookManager.getCellMetadata(sourceCellAddress);
         if (sourceMetadata) {
           this.workbookManager.setCellMetadata(targetCellAddress, { ...sourceMetadata });
+        }
+      }
+    }
+  }
+
+  /**
+   * Copy range metadata from seed range to fill range with pattern repetition.
+   */
+  private fillRangeMetadata(
+    opts: { sheetName: string; workbookName: string },
+    seedRange: FiniteSpreadsheetRange,
+    fillRange: FiniteSpreadsheetRange,
+    direction: FillDirection
+  ): void {
+    const fillRangeAddress: RangeAddress = {
+      workbookName: opts.workbookName,
+      sheetName: opts.sheetName,
+      range: {
+        start: { col: fillRange.start.col, row: fillRange.start.row },
+        end: {
+          col: { type: "number", value: fillRange.end.col },
+          row: { type: "number", value: fillRange.end.row },
+        },
+      },
+    };
+
+    this.rangeMetadataManager.clearRangeMetadataInRange(fillRangeAddress);
+
+    const seedWidth = seedRange.end.col - seedRange.start.col + 1;
+    const seedHeight = seedRange.end.row - seedRange.start.row + 1;
+    const allRangeMetadata = this.rangeMetadataManager.getAllRangeMetadata();
+
+    for (let row = fillRange.start.row; row <= fillRange.end.row; row++) {
+      for (let col = fillRange.start.col; col <= fillRange.end.col; col++) {
+        let seedCol: number;
+        let seedRow: number;
+
+        if (direction === "down" || direction === "up") {
+          seedCol = seedRange.start.col + (col - fillRange.start.col) % seedWidth;
+          seedRow = seedRange.start.row + (row - fillRange.start.row) % seedHeight;
+        } else {
+          seedRow = seedRange.start.row + (row - fillRange.start.row) % seedHeight;
+          seedCol = seedRange.start.col + (col - fillRange.start.col) % seedWidth;
+        }
+
+        const sourceCellRange: SpreadsheetRange = {
+          start: { col: seedCol, row: seedRow },
+          end: {
+            col: { type: "number", value: seedCol },
+            row: { type: "number", value: seedRow },
+          },
+        };
+
+        const targetCellRange: RangeAddress = {
+          workbookName: opts.workbookName,
+          sheetName: opts.sheetName,
+          range: {
+            start: { col, row },
+            end: {
+              col: { type: "number", value: col },
+              row: { type: "number", value: row },
+            },
+          },
+        };
+
+        for (const entry of allRangeMetadata) {
+          for (const area of entry.areas) {
+            if (
+              area.workbookName !== opts.workbookName ||
+              area.sheetName !== opts.sheetName
+            ) {
+              continue;
+            }
+
+            const intersection = intersectRanges(area.range, sourceCellRange);
+            if (!intersection) {
+              continue;
+            }
+
+            this.rangeMetadataManager.addRangeMetadata({
+              areas: [targetCellRange],
+              metadata: entry.metadata,
+            });
+          }
         }
       }
     }

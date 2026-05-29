@@ -436,6 +436,18 @@ export interface DirectCellStyle {
   style: CellStyle;
 }
 
+export interface RangeMetadata<TMetadata = unknown> {
+  id: string;
+  areas: RangeAddress[];
+  metadata: TMetadata;
+}
+
+export interface RangeMetadataInput<TMetadata = unknown> {
+  id?: string;
+  areas: RangeAddress[];
+  metadata: TMetadata;
+}
+
 export interface CellStyle {
   backgroundColor?: string; // Hex color format
   color?: string; // Text color in hex format
@@ -443,7 +455,14 @@ export interface CellStyle {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  wrapText?: boolean;
 }
+
+export type CopyCellsIncludePart =
+  | "content"
+  | "style"
+  | "cellMetadata"
+  | "rangeMetadata";
 
 export interface CopyCellsOptions {
   /**
@@ -453,18 +472,19 @@ export interface CopyCellsOptions {
   cut?: boolean;
   /**
    * What to include in the copy operation.
-   * - Use 'all' as shorthand for ['content', 'style', 'metadata']
+   * - Use 'all' as shorthand for ['content', 'style', 'cellMetadata', 'rangeMetadata']
    * - Use array for fine-grained control over what to copy:
    *   - ['content'] - copy only values/formulas
    *   - ['style'] - copy only formatting
-   *   - ['metadata'] - copy only metadata (rich text, links, etc.)
+   *   - ['cellMetadata'] - copy only cell metadata (rich text, links, etc.)
+   *   - ['rangeMetadata'] - copy only range metadata
    *   - ['content', 'style'] - copy content and formatting
-   *   - ['content', 'metadata'] - copy content and metadata
-   *   - ['style', 'metadata'] - copy formatting and metadata
-   *   - ['content', 'style', 'metadata'] - same as 'all'
+   *   - ['content', 'cellMetadata'] - copy content and cell metadata
+   *   - ['style', 'rangeMetadata'] - copy formatting and range metadata
+   *   - ['content', 'style', 'cellMetadata', 'rangeMetadata'] - same as 'all'
    * @default 'all'
    */
-  include?: "all" | ("content" | "style" | "metadata")[];
+  include?: "all" | CopyCellsIncludePart[];
   /**
    * The type of the content to copy
    * value: Copy the value from the source to the target,
