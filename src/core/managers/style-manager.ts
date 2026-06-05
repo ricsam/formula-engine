@@ -281,12 +281,34 @@ export class StyleManager {
   }
 
   /**
-   * Get the style for a specific cell
-   * Returns the first matching style (first match wins)
-   * Checks cellStyles first, then conditionalStyles
+   * Get the style for a specific cell.
+   * Direct cell styles compose in insertion order, with later styles overriding
+   * earlier styles for the same properties. Conditional styles then layer over
+   * direct styles for the properties they define.
    */
   getCellStyle(cellAddress: CellAddress): CellStyle | undefined {
-    // First check conditional styles
+    let resolvedStyle: CellStyle | undefined;
+
+    for (const cellStyle of this.cellStyles) {
+      if (!cellStyle || !cellStyle.areas) {
+        continue;
+      }
+
+      for (const area of cellStyle.areas) {
+        if (
+          area.workbookName === cellAddress.workbookName &&
+          area.sheetName === cellAddress.sheetName &&
+          isCellInRange(cellAddress, area.range)
+        ) {
+          resolvedStyle = {
+            ...resolvedStyle,
+            ...cellStyle.style,
+          };
+          break;
+        }
+      }
+    }
+
     for (const style of this.conditionalStyles) {
       if (!style || !style.areas) {
         continue;
@@ -308,32 +330,15 @@ export class StyleManager {
         // Cell is in area, evaluate condition
         if (style.condition.type === "formula") {
           const result = this.evaluateFormulaCondition(cellAddress, style, area);
-          if (result) return result;
+          if (result) return { ...resolvedStyle, ...result };
         } else {
           const result = this.evaluateGradientCondition(cellAddress, style, area);
-          if (result) return result;
+          if (result) return { ...resolvedStyle, ...result };
         }
       }
     }
 
-    // Then check direct cell styles
-    for (const cellStyle of this.cellStyles) {
-      if (!cellStyle || !cellStyle.areas) {
-        continue;
-      }
-      
-      for (const area of cellStyle.areas) {
-        if (
-          area.workbookName === cellAddress.workbookName &&
-          area.sheetName === cellAddress.sheetName &&
-          isCellInRange(cellAddress, area.range)
-        ) {
-          return cellStyle.style;
-        }
-      }
-    }
-
-    return undefined;
+    return resolvedStyle;
   }
 
   /**

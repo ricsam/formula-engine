@@ -153,14 +153,14 @@ describe("Range Metadata", () => {
   });
 });
 
-describe("Cell Style wrapText", () => {
-  it("is a typed cell style property that copies and serializes", () => {
+describe("Cell Style extensions", () => {
+  it("copies and serializes typed wrap and border style properties", () => {
     const engine = FormulaEngine.buildEmpty();
     engine.addWorkbook(workbookName);
     engine.addSheet({ workbookName, sheetName });
     engine.addCellStyle({
       areas: [range(0, 0, 0, 0)],
-      style: { wrapText: true },
+      style: { wrapText: true, borderColor: "#00FF00", borderSides: { left: true, top: true } },
     });
 
     engine.pasteCells(
@@ -173,5 +173,10 @@ describe("Cell Style wrapText", () => {
     restored.resetToSerializedEngine(engine.serializeEngine());
 
     expect(restored.getCellStyle({ workbookName, sheetName, colIndex: 1, rowIndex: 0 })?.wrapText).toBe(true);
+    expect(restored.getCellStyle({ workbookName, sheetName, colIndex: 1, rowIndex: 0 })?.borderColor).toBe("#00FF00");
+    expect(restored.getCellStyle({ workbookName, sheetName, colIndex: 1, rowIndex: 0 })?.borderSides).toEqual({
+      left: true,
+      top: true,
+    });
   });
 });

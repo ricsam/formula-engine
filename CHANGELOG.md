@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.2.13
+
+### Patch Changes
+
+- Improve cell styling
+
 ## 0.2.12
 
 ### Patch Changes

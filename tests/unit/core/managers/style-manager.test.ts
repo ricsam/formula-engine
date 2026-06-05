@@ -1380,6 +1380,107 @@ describe("StyleManager", () => {
       expect(result).toBeUndefined();
     });
 
+    test("composes overlapping direct cell styles", () => {
+      engine.addCellStyle({
+        areas: [{
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 2 },
+            },
+          },
+        }],
+        style: {
+          wrapText: true,
+          color: "#111111",
+          borderColor: "#00FF00",
+          borderSides: { top: true, bottom: true },
+        },
+      });
+
+      engine.addCellStyle({
+        areas: [{
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 2 },
+            },
+          },
+        }],
+        style: {
+          backgroundColor: "#FF0000",
+        },
+      });
+
+      const result = engine.getCellStyle({
+        workbookName,
+        sheetName,
+        colIndex: 1,
+        rowIndex: 1,
+      });
+
+      expect(result).toEqual({
+        wrapText: true,
+        color: "#111111",
+        borderColor: "#00FF00",
+        borderSides: { top: true, bottom: true },
+        backgroundColor: "#FF0000",
+      });
+    });
+
+    test("later direct cell styles override the same direct style properties", () => {
+      engine.addCellStyle({
+        areas: [{
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 2 },
+            },
+          },
+        }],
+        style: {
+          backgroundColor: "#FF0000",
+          wrapText: true,
+        },
+      });
+
+      engine.addCellStyle({
+        areas: [{
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 2 },
+            },
+          },
+        }],
+        style: {
+          backgroundColor: "#0000FF",
+        },
+      });
+
+      const result = engine.getCellStyle({
+        workbookName,
+        sheetName,
+        colIndex: 1,
+        rowIndex: 1,
+      });
+
+      expect(result?.backgroundColor).toBe("#0000FF");
+      expect(result?.wrapText).toBe(true);
+    });
+
     test("direct cell styles take precedence over conditional styles", () => {
       // Add a conditional style
       const conditionalStyle: ConditionalStyle = {

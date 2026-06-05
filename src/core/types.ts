@@ -451,6 +451,13 @@ export interface RangeMetadataInput<TMetadata = unknown> {
 export interface CellStyle {
   backgroundColor?: string; // Hex color format
   color?: string; // Text color in hex format
+  borderColor?: string; // Border color in hex format
+  borderSides?: {
+    top?: boolean;
+    right?: boolean;
+    bottom?: boolean;
+    left?: boolean;
+  };
   fontSize?: number; // Font size in pixels
   bold?: boolean;
   italic?: boolean;
