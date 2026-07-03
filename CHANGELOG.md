@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.2.14
+
+### Patch Changes
+
+- improve search performance
+
 ## 0.2.13
 
 ### Patch Changes

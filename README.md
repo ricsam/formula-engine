@@ -69,6 +69,10 @@ engine.setSheetContent(
 );
 
 const matches = engine.search("sum", { workbookName: "Workbook1" });
+const firstTenMatches = engine.search("sum", {
+  workbookName: "Workbook1",
+  maxResults: 10,
+});
 const oneChange = engine.replace("sum", "avg", {
   workbookName: "Workbook1",
   sheetName: "Sheet1",
@@ -80,6 +84,9 @@ const allChanges = engine.replaceAll("draft", "published", {
 });
 
 // Works on any stored string cell, including formulas and plain text
+// search() returns at most 1,000 matches by default to keep large UI searches
+// responsive. Pass maxResults to change the cap, or Number.POSITIVE_INFINITY
+// when a batch workflow really needs an unbounded result set.
 // [
 //   {
 //     workbookName: "Workbook1",

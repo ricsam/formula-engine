@@ -18,9 +18,9 @@ In the UI I interface with the formula-engine like this:
 
 
 * API surface: addSheet, setSheetContent, getSheetContent, getCellValue, search, replace, replaceAll, listenToSheetContentUpdate
-* `search(query, options?)` searches raw stored string content and returns one match per occurrence with workbook name, sheet name, A1 cell reference, offsets, and whether the source cell is formula or text.
+* `search(query, options?)` searches raw stored string content and returns one match per occurrence with workbook name, sheet name, A1 cell reference, offsets, and whether the source cell is formula or text. Results are capped at 1,000 by default for interactive UI safety; pass `maxResults` to change the cap or `Number.POSITIVE_INFINITY` for an unbounded search.
 * `replace(query, replacement, target, options?)` updates one specific occurrence in one addressed cell.
-* `replaceAll(query, replacement, options?)` updates all matching occurrences in scope and returns structured change results.
+* `replaceAll(query, replacement, options?)` updates all matching occurrences in scope and returns structured change results. It ignores `maxResults` and always replaces all matches in scope.
 * Keep a dependency DAG with both forward (precedents) and reverse (dependents) edges.
 * Maintain a dirty set and only reevaluate nodes whose inputs actually changed.
 * Spill results are modeled explicitly so that membership changes (shape/placement) propagate correctly.

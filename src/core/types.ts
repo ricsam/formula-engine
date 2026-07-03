@@ -102,10 +102,19 @@ export type CellValue = CellNumber | CellString | CellBoolean | CellInfinity;
  */
 export type SerializedCellValue = string | number | boolean | undefined;
 
+export const DEFAULT_SEARCH_MAX_RESULTS = 1000;
+
 export interface SearchOptions {
   workbookName?: string;
   sheetName?: string;
   caseSensitive?: boolean;
+  /**
+   * Maximum number of matches returned by search(). Defaults to
+   * DEFAULT_SEARCH_MAX_RESULTS to keep interactive UIs from materializing
+   * enormous result sets. Pass Number.POSITIVE_INFINITY for an unbounded search.
+   * replaceAll() ignores this option and always replaces all matches in scope.
+   */
+  maxResults?: number;
 }
 
 export interface SearchMatch {

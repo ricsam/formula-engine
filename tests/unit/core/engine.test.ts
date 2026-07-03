@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { FormulaEngine } from "../../../src/core/engine";
 import {
+  DEFAULT_SEARCH_MAX_RESULTS,
   FormulaError,
   type SerializedCellValue,
   type TableDefinition,
@@ -2669,6 +2670,40 @@ describe("FormulaEngine", () => {
       ]);
     });
 
+    test("should cap search results by default and allow explicit maxResults", () => {
+      const content = new Map<string, SerializedCellValue>();
+      for (let row = 1; row <= DEFAULT_SEARCH_MAX_RESULTS + 5; row++) {
+        content.set(`A${row}`, "needle");
+      }
+      engine.setSheetContent(sheetAddress, content);
+
+      const defaultResults = engine.search("needle", { workbookName, sheetName });
+      expect(defaultResults).toHaveLength(DEFAULT_SEARCH_MAX_RESULTS);
+      expect(defaultResults.at(-1)?.cellReference).toBe(
+        `A${DEFAULT_SEARCH_MAX_RESULTS}`
+      );
+
+      expect(
+        engine.search("needle", { workbookName, sheetName, maxResults: 3 })
+      ).toEqual([
+        expect.objectContaining({ cellReference: "A1" }),
+        expect.objectContaining({ cellReference: "A2" }),
+        expect.objectContaining({ cellReference: "A3" }),
+      ]);
+
+      expect(
+        engine.search("needle", {
+          workbookName,
+          sheetName,
+          maxResults: Number.POSITIVE_INFINITY,
+        })
+      ).toHaveLength(DEFAULT_SEARCH_MAX_RESULTS + 5);
+
+      expect(
+        engine.search("needle", { workbookName, sheetName, maxResults: 0 })
+      ).toEqual([]);
+    });
+
     test("should ignore non-string cells and empty values", () => {
       engine.setSheetContent(
         sheetAddress,
@@ -2963,6 +2998,28 @@ describe("FormulaEngine", () => {
           sheetName: secondSheetName,
         }).get("A1")
       ).toBe("sum");
+    });
+
+    test("should replace all matches even when search options include maxResults", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "draft"],
+          ["A2", "draft"],
+          ["A3", "draft"],
+        ])
+      );
+
+      expect(
+        engine.replaceAll("draft", "published", {
+          workbookName,
+          sheetName,
+          maxResults: 1,
+        })
+      ).toHaveLength(3);
+      expect(cellContent("A1")).toBe("published");
+      expect(cellContent("A2")).toBe("published");
+      expect(cellContent("A3")).toBe("published");
     });
 
     test("should reject empty replaceAll queries", () => {
