@@ -40,6 +40,20 @@ export type RangeMetadataManagerSnapshot = RangeMetadata[];
 
 export type ReferenceManagerSnapshot = Map<string, TrackedReference>;
 
+export type EngineHistorySnapshotManagers = {
+  workbook: WorkbookManagerSnapshot;
+  namedExpression: NamedExpressionManagerSnapshot;
+  table: TableManagerSnapshot;
+  style: StyleManagerSnapshot;
+  rangeMetadata: RangeMetadataManagerSnapshot;
+  reference: ReferenceManagerSnapshot;
+};
+
+export type EngineHistorySnapshot = {
+  version: typeof ENGINE_SNAPSHOT_VERSION;
+  managers: EngineHistorySnapshotManagers;
+};
+
 export type SerializedValueEvaluationResultSnapshot = {
   type: "value";
   result: CellValue;
@@ -181,13 +195,7 @@ export type CacheManagerSnapshot = {
   }>;
 };
 
-type EngineSnapshotManagers = {
-  workbook: WorkbookManagerSnapshot;
-  namedExpression: NamedExpressionManagerSnapshot;
-  table: TableManagerSnapshot;
-  style: StyleManagerSnapshot;
-  rangeMetadata: RangeMetadataManagerSnapshot;
-  reference: ReferenceManagerSnapshot;
+type EngineSnapshotManagers = EngineHistorySnapshotManagers & {
   dependency: DependencyManagerSnapshot;
   cache: CacheManagerSnapshot;
 };

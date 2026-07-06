@@ -9,6 +9,30 @@ import type { FunctionNode } from "../parser/ast";
 import type { DependencyNode } from "./managers/dependency-node";
 import type { LookupOrder } from "./managers/range-eval-order-builder";
 
+export interface UndoRedoOptions {
+  /**
+   * Maximum number of undo entries retained by the engine.
+   * @default 100
+   */
+  maxDepth?: number;
+}
+
+export interface FormulaEngineOptions {
+  /**
+   * Configure engine-level undo/redo history. History is always enabled.
+   */
+  undoRedo?: UndoRedoOptions;
+}
+
+export interface UndoRedoState {
+  enabled: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  undoDepth: number;
+  redoDepth: number;
+  maxDepth: number;
+}
+
 // Cell addressing types
 export interface CellAddress {
   sheetName: string;
