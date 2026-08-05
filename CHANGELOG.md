@@ -1,5 +1,12 @@
 # @ricsam/formula-engine
 
+## 0.2.16
+
+### Patch Changes
+
+- Add range-based General, Text, Number, and Boolean cell data types with snapshot, undo/redo, copy/paste, fill, and autofill support.
+- 7590825: Keep table column definitions and structured references synchronized when headers change, populate blank headers with unique default names, and reject duplicate table column names.
+
 ## 0.2.15
 
 ### Patch Changes

@@ -4,8 +4,10 @@
 
 import type {
   CellAddress,
+  CellDataType,
   CellStyle,
   ConditionalStyle,
+  DirectCellDataType,
   DirectCellStyle,
   RangeAddress,
   SerializedCellValue,
@@ -23,11 +25,13 @@ import {
   subtractRange,
   rangesIntersect,
   isRangeContained,
+  intersectRanges,
 } from "../utils/range-utils";
 
 export class StyleManager {
   private conditionalStyles: ConditionalStyle[] = [];
   private cellStyles: DirectCellStyle[] = [];
+  private cellDataTypes: DirectCellDataType[] = [];
 
   constructor(private evaluationManager: EvaluationManager) {}
 
@@ -84,6 +88,97 @@ export class StyleManager {
    */
   addCellStyle(style: DirectCellStyle): void {
     this.cellStyles.push(style);
+  }
+
+  addCellDataType(dataType: DirectCellDataType): void {
+    this.cellDataTypes.push(dataType);
+  }
+
+  getAllCellDataTypes(): DirectCellDataType[] {
+    return [...this.cellDataTypes];
+  }
+
+  getCellDataTypesIntersectingWithRange(
+    range: RangeAddress
+  ): DirectCellDataType[] {
+    return this.cellDataTypes.filter((rule) =>
+      rule.areas.some(
+        (area) =>
+          area.workbookName === range.workbookName &&
+          area.sheetName === range.sheetName &&
+          rangesIntersect(area.range, range.range)
+      )
+    );
+  }
+
+  getCellDataType(cellAddress: CellAddress): CellDataType {
+    for (let index = this.cellDataTypes.length - 1; index >= 0; index--) {
+      const rule = this.cellDataTypes[index];
+      if (
+        rule?.areas.some(
+          (area) =>
+            area.workbookName === cellAddress.workbookName &&
+            area.sheetName === cellAddress.sheetName &&
+            isCellInRange(cellAddress, area.range)
+        )
+      ) {
+        return rule.dataType;
+      }
+    }
+
+    return "general";
+  }
+
+  getDataTypeForRange(range: RangeAddress): CellDataType | undefined {
+    let unresolved = [range.range];
+    let resolvedType: CellDataType | undefined;
+
+    for (let index = this.cellDataTypes.length - 1; index >= 0; index--) {
+      const rule = this.cellDataTypes[index];
+      if (!rule) continue;
+
+      for (const area of rule.areas) {
+        if (
+          area.workbookName !== range.workbookName ||
+          area.sheetName !== range.sheetName
+        ) {
+          continue;
+        }
+
+        const nextUnresolved = [];
+        let covered = false;
+        for (const remaining of unresolved) {
+          const intersection = intersectRanges(remaining, area.range);
+          if (!intersection) {
+            nextUnresolved.push(remaining);
+            continue;
+          }
+
+          covered = true;
+          nextUnresolved.push(...subtractRange(remaining, intersection));
+        }
+
+        if (covered) {
+          if (resolvedType !== undefined && resolvedType !== rule.dataType) {
+            return undefined;
+          }
+          resolvedType = rule.dataType;
+          unresolved = nextUnresolved;
+          if (unresolved.length === 0) {
+            return resolvedType;
+          }
+        }
+      }
+    }
+
+    if (unresolved.length > 0) {
+      if (resolvedType !== undefined && resolvedType !== "general") {
+        return undefined;
+      }
+      return "general";
+    }
+
+    return resolvedType ?? "general";
   }
 
   /**
@@ -179,21 +274,28 @@ export class StyleManager {
    */
   resetStyles(
     conditionalStyles?: ConditionalStyle[],
-    cellStyles?: DirectCellStyle[]
+    cellStyles?: DirectCellStyle[],
+    cellDataTypes?: DirectCellDataType[]
   ): void {
     this.conditionalStyles = conditionalStyles ? [...conditionalStyles] : [];
     this.cellStyles = cellStyles ? [...cellStyles] : [];
+    this.cellDataTypes = cellDataTypes ? [...cellDataTypes] : [];
   }
 
   toSnapshot(): StyleManagerSnapshot {
     return {
       conditionalStyles: this.getAllConditionalStyles(),
       cellStyles: this.getAllCellStyles(),
+      cellDataTypes: this.getAllCellDataTypes(),
     };
   }
 
   restoreFromSnapshot(snapshot: StyleManagerSnapshot): void {
-    this.resetStyles(snapshot.conditionalStyles, snapshot.cellStyles);
+    this.resetStyles(
+      snapshot.conditionalStyles,
+      snapshot.cellStyles,
+      snapshot.cellDataTypes
+    );
   }
 
   /**
@@ -206,6 +308,14 @@ export class StyleManager {
     this.cellStyles = this.cellStyles.filter(
       (style) => !style.areas.some(area => area.workbookName === workbookName)
     );
+    this.cellDataTypes = this.cellDataTypes
+      .map((rule) => ({
+        ...rule,
+        areas: rule.areas.filter(
+          (area) => area.workbookName !== workbookName
+        ),
+      }))
+      .filter((rule) => rule.areas.length > 0);
   }
 
   /**
@@ -229,6 +339,14 @@ export class StyleManager {
           ? { ...area, workbookName: newName }
           : area
       )
+    }));
+    this.cellDataTypes = this.cellDataTypes.map((rule) => ({
+      ...rule,
+      areas: rule.areas.map((area) =>
+        area.workbookName === oldName
+          ? { ...area, workbookName: newName }
+          : area
+      ),
     }));
   }
 
@@ -258,6 +376,14 @@ export class StyleManager {
           : area
       )
     }));
+    this.cellDataTypes = this.cellDataTypes.map((rule) => ({
+      ...rule,
+      areas: rule.areas.map((area) =>
+        area.workbookName === workbookName && area.sheetName === oldSheetName
+          ? { ...area, sheetName: newSheetName }
+          : area
+      ),
+    }));
   }
 
   /**
@@ -278,6 +404,15 @@ export class StyleManager {
           area.sheetName === sheetName
         )
     );
+    this.cellDataTypes = this.cellDataTypes
+      .map((rule) => ({
+        ...rule,
+        areas: rule.areas.filter(
+          (area) =>
+            area.workbookName !== workbookName || area.sheetName !== sheetName
+        ),
+      }))
+      .filter((rule) => rule.areas.length > 0);
   }
 
   /**
@@ -711,5 +846,31 @@ export class StyleManager {
       
       return { ...style, areas: newAreas };
     }).filter(style => style.areas.length > 0); // Remove styles with no areas left
+  }
+
+  clearCellDataTypesInRange(range: RangeAddress): void {
+    this.cellDataTypes = this.cellDataTypes
+      .map((rule) => {
+        const areas = rule.areas.flatMap((area) => {
+          if (
+            area.workbookName !== range.workbookName ||
+            area.sheetName !== range.sheetName ||
+            !rangesIntersect(area.range, range.range)
+          ) {
+            return [area];
+          }
+
+          return subtractRange(area.range, range.range).map(
+            (remainingRange): RangeAddress => ({
+              workbookName: area.workbookName,
+              sheetName: area.sheetName,
+              range: remainingRange,
+            })
+          );
+        });
+
+        return { ...rule, areas };
+      })
+      .filter((rule) => rule.areas.length > 0);
   }
 }

@@ -5,9 +5,11 @@
 
 import {
   type CellAddress,
+  type CellDataType,
   type CellStyle,
   type ConditionalStyle,
   type CopyCellsOptions,
+  type DirectCellDataType,
   type DirectCellStyle,
   type FormulaEngineOptions,
   type NamedExpression,
@@ -56,8 +58,10 @@ import { RangeMetadataManager } from "./managers/range-metadata-manager";
 import { UndoRedoManager } from "./managers/undo-redo-manager";
 import {
   ENGINE_SNAPSHOT_VERSION,
+  LEGACY_ENGINE_SNAPSHOT_VERSION,
   type EngineHistorySnapshot,
   type EngineSnapshot,
+  type StyleManagerSnapshot,
 } from "./engine-snapshot";
 import {
   buildFormulaTouchedCells,
@@ -1175,6 +1179,32 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     return this.styleManager.getCellStyle(cellAddress);
   }
 
+  getCellDataType(cellAddress: CellAddress): CellDataType {
+    return this.styleManager.getCellDataType(cellAddress);
+  }
+
+  getDataTypeForRange(range: RangeAddress): CellDataType | undefined {
+    return this.styleManager.getDataTypeForRange(range);
+  }
+
+  getAllCellDataTypes(): DirectCellDataType[] {
+    return this.styleManager.getAllCellDataTypes();
+  }
+
+  addCellDataType(dataType: DirectCellDataType): void {
+    return this.withUndoRedoCheckpoint(() => {
+      this.styleManager.addCellDataType(dataType);
+      this.emitUpdate();
+    });
+  }
+
+  clearCellDataTypes(range: RangeAddress): void {
+    return this.withUndoRedoCheckpoint(() => {
+      this.styleManager.clearCellDataTypesInRange(range);
+      this.emitUpdate();
+    });
+  }
+
   /**
    * Get all cell styles (for testing and serialization)
    */
@@ -1983,6 +2013,18 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
         }
       }
 
+      for (const dataType of this.styleManager.getAllCellDataTypes()) {
+        const clonedAreas = dataType.areas
+          .filter((area) => area.workbookName === fromWorkbookName)
+          .map((area) => ({ ...area, workbookName: toWorkbookName }));
+        if (clonedAreas.length > 0) {
+          this.styleManager.addCellDataType({
+            ...dataType,
+            areas: clonedAreas,
+          });
+        }
+      }
+
       for (const metadata of this.rangeMetadataManager.getAllRangeMetadata()) {
         if (
           metadata.areas.some((area) => area.workbookName === fromWorkbookName)
@@ -2223,6 +2265,7 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
       tables: this.tableManager.tables,
       conditionalStyles: this.styleManager.getAllConditionalStyles(),
       cellStyles: this.styleManager.getAllCellStyles(),
+      cellDataTypes: this.styleManager.getAllCellDataTypes(),
       rangeMetadata: this.rangeMetadataManager.getAllRangeMetadata(),
       references: this.referenceManager.getAllReferences(),
     };
@@ -2313,20 +2356,50 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     return serialize(this.buildSerializedSnapshot());
   }
 
-  private assertSupportedSnapshot(
-    snapshot: Partial<EngineHistorySnapshot | EngineSnapshot>
-  ): asserts snapshot is EngineHistorySnapshot | EngineSnapshot {
+  private normalizeSupportedSnapshot(
+    snapshot: unknown
+  ): EngineHistorySnapshot | EngineSnapshot {
+    const candidate = snapshot as {
+      version?: unknown;
+      managers?: Record<string, unknown> & {
+        style?: Partial<StyleManagerSnapshot>;
+      };
+    };
+
     if (
-      !snapshot ||
-      typeof snapshot !== "object" ||
-      !("version" in snapshot) ||
-      snapshot.version !== ENGINE_SNAPSHOT_VERSION ||
-      !snapshot.managers
+      !candidate ||
+      typeof candidate !== "object" ||
+      (candidate.version !== ENGINE_SNAPSHOT_VERSION &&
+        candidate.version !== LEGACY_ENGINE_SNAPSHOT_VERSION) ||
+      !candidate.managers ||
+      !candidate.managers.style
     ) {
       throw new Error(
-        `Unsupported serialized engine format. Expected EngineSnapshot version ${ENGINE_SNAPSHOT_VERSION}.`
+        `Unsupported serialized engine format. Expected EngineSnapshot version ${LEGACY_ENGINE_SNAPSHOT_VERSION} or ${ENGINE_SNAPSHOT_VERSION}.`
       );
     }
+
+    const style = candidate.managers.style;
+    if (
+      candidate.version === ENGINE_SNAPSHOT_VERSION &&
+      !Array.isArray(style.cellDataTypes)
+    ) {
+      throw new Error(
+        `Unsupported serialized engine format. Expected EngineSnapshot version ${LEGACY_ENGINE_SNAPSHOT_VERSION} or ${ENGINE_SNAPSHOT_VERSION}.`
+      );
+    }
+
+    return {
+      ...candidate,
+      version: ENGINE_SNAPSHOT_VERSION,
+      managers: {
+        ...candidate.managers,
+        style: {
+          ...style,
+          cellDataTypes: style.cellDataTypes ?? [],
+        },
+      },
+    } as unknown as EngineHistorySnapshot | EngineSnapshot;
   }
 
   private restoreDataManagersFromSnapshot(
@@ -2353,15 +2426,15 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   }
 
   private restoreHistorySnapshot(data: string): void {
-    const deserialized = deserialize(data) as Partial<EngineHistorySnapshot>;
-    this.assertSupportedSnapshot(deserialized);
+    const deserialized = this.normalizeSupportedSnapshot(deserialize(data));
     this.restoreDataManagersFromSnapshot(deserialized.managers);
     this.evaluationManager.clearEvaluationCache();
   }
 
   resetToSerializedEngine(data: string) {
-    const deserialized = deserialize(data) as Partial<EngineSnapshot>;
-    this.assertSupportedSnapshot(deserialized);
+    const deserialized = this.normalizeSupportedSnapshot(
+      deserialize(data)
+    ) as EngineSnapshot;
     this.restoreDataManagersFromSnapshot(deserialized.managers);
     this.dependencyManager.restoreFromSnapshot(
       {

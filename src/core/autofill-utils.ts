@@ -533,6 +533,21 @@ export class AutoFill {
     fillRange: FiniteSpreadsheetRange,
     direction: FillDirection
   ): void {
+    const seedDataTypes = new Map<string, ReturnType<StyleManager["getCellDataType"]>>();
+    for (let row = seedRange.start.row; row <= seedRange.end.row; row++) {
+      for (let col = seedRange.start.col; col <= seedRange.end.col; col++) {
+        seedDataTypes.set(
+          `${col}:${row}`,
+          this.styleManager.getCellDataType({
+            workbookName: opts.workbookName,
+            sheetName: opts.sheetName,
+            colIndex: col,
+            rowIndex: row,
+          })
+        );
+      }
+    }
+
     // STEP 1: Clear existing cell styles in fill range (Excel-like replacement)
     const fillRangeAddress: RangeAddress = {
       workbookName: opts.workbookName,
@@ -547,6 +562,7 @@ export class AutoFill {
     };
     
     this.styleManager.clearCellStylesInRange(fillRangeAddress);
+    this.styleManager.clearCellDataTypesInRange(fillRangeAddress);
 
     const seedWidth = seedRange.end.col - seedRange.start.col + 1;
     const seedHeight = seedRange.end.row - seedRange.start.row + 1;
@@ -594,6 +610,26 @@ export class AutoFill {
           colIndex: col,
           rowIndex: row,
         };
+
+        const sourceDataType = seedDataTypes.get(`${seedCol}:${seedRow}`) ?? "general";
+        if (sourceDataType !== "general") {
+          this.styleManager.addCellDataType({
+            areas: [
+              {
+                workbookName: opts.workbookName,
+                sheetName: opts.sheetName,
+                range: {
+                  start: { col: targetCell.colIndex, row: targetCell.rowIndex },
+                  end: {
+                    col: { type: "number", value: targetCell.colIndex },
+                    row: { type: "number", value: targetCell.rowIndex },
+                  },
+                },
+              },
+            ],
+            dataType: sourceDataType,
+          });
+        }
 
         // Copy conditional styles
         for (const style of allConditionalStyles) {

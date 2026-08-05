@@ -469,6 +469,13 @@ export interface DirectCellStyle {
   style: CellStyle;
 }
 
+export type CellDataType = "general" | "text" | "number" | "boolean";
+
+export interface DirectCellDataType {
+  areas: RangeAddress[];
+  dataType: CellDataType;
+}
+
 export interface RangeMetadata<TMetadata = unknown> {
   id: string;
   areas: RangeAddress[];
@@ -515,7 +522,7 @@ export interface CopyCellsOptions {
    * - Use 'all' as shorthand for ['content', 'style', 'cellMetadata', 'rangeMetadata']
    * - Use array for fine-grained control over what to copy:
    *   - ['content'] - copy only values/formulas
-   *   - ['style'] - copy only formatting
+   *   - ['style'] - copy only formatting, including cell data types
    *   - ['cellMetadata'] - copy only cell metadata (rich text, links, etc.)
    *   - ['rangeMetadata'] - copy only range metadata
    *   - ['content', 'style'] - copy content and formatting
