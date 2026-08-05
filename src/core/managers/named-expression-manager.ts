@@ -199,7 +199,10 @@ export class NamedExpressionManager {
   }
 
   updateAllNamedExpressions(
-    updateCallback: (formula: string) => string
+    updateCallback: (
+      formula: string,
+      scope: { workbookName?: string; sheetName?: string }
+    ) => string
   ): string[] {
     const changed = new Set<string>();
 
@@ -209,7 +212,7 @@ export class NamedExpressionManager {
     ) => {
       map.forEach((namedExpr, name) => {
         // Don't update the expression we're renaming
-        const updatedExpression = updateCallback(namedExpr.expression);
+        const updatedExpression = updateCallback(namedExpr.expression, opts);
 
         if (updatedExpression !== namedExpr.expression) {
           map.set(name, {

@@ -453,7 +453,9 @@ export class WorkbookManager {
     return sheet;
   }
 
-  updateAllFormulas(updateCallback: (formula: string) => string): CellAddress[] {
+  updateAllFormulas(
+    updateCallback: (formula: string, address: CellAddress) => string
+  ): CellAddress[] {
     const changed: CellAddress[] = [];
 
     const update = (workbookName: string, map: Map<string, Sheet>) => {
@@ -461,18 +463,19 @@ export class WorkbookManager {
         sheet.content.forEach((cell, key) => {
           if (typeof cell === "string" && cell.startsWith("=")) {
             const formula = cell.slice(1);
-            const updatedFormula = updateCallback(formula);
+            const { colIndex, rowIndex } = parseCellReference(key);
+            const address = {
+              workbookName,
+              sheetName,
+              colIndex,
+              rowIndex,
+            };
+            const updatedFormula = updateCallback(formula, address);
 
             // Only update if the formula actually changed
             if (updatedFormula !== formula) {
               sheet.content.set(key, `=${updatedFormula}`);
-              const { colIndex, rowIndex } = parseCellReference(key);
-              changed.push({
-                workbookName,
-                sheetName,
-                colIndex,
-                rowIndex,
-              });
+              changed.push(address);
             }
           }
         });

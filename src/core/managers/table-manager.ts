@@ -13,6 +13,18 @@ import {
 } from "../utils";
 import type { WorkbookManager } from "./workbook-manager";
 
+export type TableHeaderUpdate = {
+  table: TableDefinition;
+  index: number;
+  oldName: string;
+  newName: string;
+};
+
+export type GeneratedTableHeader = {
+  address: CellAddress;
+  name: string;
+};
+
 export class TableManager {
   tables: Map<
     /**
@@ -38,6 +50,175 @@ export class TableManager {
     return this.tables.get(opts.workbookName)?.get(opts.name);
   }
 
+  private getDefaultHeaderName(index: number, usedNames: Set<string>): string {
+    let number = index + 1;
+    let name = `Column ${number}`;
+    while (usedNames.has(name)) {
+      number++;
+      name = `Column ${number}`;
+    }
+    return name;
+  }
+
+  private getHeaderName(
+    value: SerializedCellValue,
+    index: number,
+    usedNames: Set<string>
+  ): string {
+    if (value === undefined || value === "") {
+      return this.getDefaultHeaderName(index, usedNames);
+    }
+    return String(value);
+  }
+
+  private replaceHeader(
+    table: TableDefinition,
+    index: number,
+    newName: string
+  ): void {
+    const headers = new Map<string, { name: string; index: number }>();
+    for (const header of Array.from(table.headers.values()).sort(
+      (a, b) => a.index - b.index
+    )) {
+      const name = header.index === index ? newName : header.name;
+      headers.set(name, { name, index: header.index });
+    }
+    table.headers = headers;
+  }
+
+  prepareHeaderUpdate(
+    address: CellAddress,
+    value: SerializedCellValue
+  ): { content: SerializedCellValue; updates: TableHeaderUpdate[] } {
+    const updates: TableHeaderUpdate[] = [];
+
+    for (const table of this.getTables(address.workbookName).values()) {
+      if (
+        table.sheetName !== address.sheetName ||
+        address.rowIndex !== table.start.rowIndex
+      ) {
+        continue;
+      }
+
+      const index = address.colIndex - table.start.colIndex;
+      if (index < 0 || index >= table.headers.size) {
+        continue;
+      }
+
+      const oldHeader = Array.from(table.headers.values()).find(
+        (header) => header.index === index
+      );
+      if (!oldHeader) {
+        continue;
+      }
+
+      const usedNames = new Set(
+        Array.from(table.headers.values())
+          .filter((header) => header.index !== index)
+          .map((header) => header.name)
+      );
+      const newName = this.getHeaderName(value, index, usedNames);
+      if (usedNames.has(newName)) {
+        throw new Error(`Duplicate table header "${newName}"`);
+      }
+
+      updates.push({
+        table,
+        index,
+        oldName: oldHeader.name,
+        newName,
+      });
+    }
+
+    const generatedNames = new Set(
+      updates
+        .filter(() => value === undefined || value === "")
+        .map((update) => update.newName)
+    );
+    if (generatedNames.size > 1) {
+      throw new Error("Overlapping tables require the same header name");
+    }
+
+    return {
+      content:
+        value === undefined || value === ""
+          ? updates[0]?.newName ?? value
+          : value,
+      updates,
+    };
+  }
+
+  prepareHeaderUpdatesForSheet(options: {
+    workbookName: string;
+    sheetName: string;
+    getCellContent: (address: CellAddress) => SerializedCellValue;
+  }): {
+    updates: TableHeaderUpdate[];
+    generatedHeaders: GeneratedTableHeader[];
+  } {
+    const updates: TableHeaderUpdate[] = [];
+    const generatedHeaders = new Map<string, GeneratedTableHeader>();
+
+    for (const table of this.getTables(options.workbookName).values()) {
+      if (table.sheetName !== options.sheetName) {
+        continue;
+      }
+
+      const oldHeadersByIndex = new Map(
+        Array.from(table.headers.values()).map((header) => [
+          header.index,
+          header,
+        ])
+      );
+      const usedNames = new Set<string>();
+      for (let index = 0; index < table.headers.size; index++) {
+        const address = {
+          workbookName: table.workbookName,
+          sheetName: table.sheetName,
+          rowIndex: table.start.rowIndex,
+          colIndex: table.start.colIndex + index,
+        };
+        const value = options.getCellContent(address);
+        const newName = this.getHeaderName(value, index, usedNames);
+        if (usedNames.has(newName)) {
+          throw new Error(`Duplicate table header "${newName}"`);
+        }
+        usedNames.add(newName);
+
+        const oldHeader = oldHeadersByIndex.get(index);
+        if (!oldHeader) {
+          continue;
+        }
+        updates.push({
+          table,
+          index,
+          oldName: oldHeader.name,
+          newName,
+        });
+
+        if (value === undefined || value === "") {
+          const key = `${address.workbookName}:${address.sheetName}:${address.rowIndex}:${address.colIndex}`;
+          const existing = generatedHeaders.get(key);
+          if (existing && existing.name !== newName) {
+            throw new Error("Overlapping tables require the same header name");
+          }
+          generatedHeaders.set(key, { address, name: newName });
+        }
+      }
+    }
+
+    return {
+      updates,
+      generatedHeaders: Array.from(generatedHeaders.values()),
+    };
+  }
+
+  applyHeaderUpdates(updates: TableHeaderUpdate[]): void {
+    for (const update of updates) {
+      this.replaceHeader(update.table, update.index, update.newName);
+    }
+  }
+
   makeTable({
     tableName,
     sheetName,
@@ -58,6 +239,7 @@ export class TableManager {
     const { rowIndex, colIndex } = parseCellReference(start);
 
     const headers = new Map<string, { name: string; index: number }>();
+    const usedNames = new Set<string>();
     for (let i = 0; i < numCols; i++) {
       const header = getCellValue({
         rowIndex,
@@ -66,11 +248,12 @@ export class TableManager {
         workbookName,
       });
 
-      if (header) {
-        headers.set(String(header), { name: String(header), index: i });
-      } else {
-        headers.set(`Column ${i + 1}`, { name: `Column ${i + 1}`, index: i });
+      const name = this.getHeaderName(header, i, usedNames);
+      if (usedNames.has(name)) {
+        throw new Error(`Duplicate table header "${name}"`);
       }
+      usedNames.add(name);
+      headers.set(name, { name, index: i });
     }
 
     const endRow: SpreadsheetRangeEnd =

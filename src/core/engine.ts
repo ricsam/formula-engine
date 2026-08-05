@@ -34,12 +34,18 @@ import { WorkbookManager } from "./managers/workbook-manager";
 import { deserialize, serialize } from "./map-serializer";
 import { renameNamedExpressionInFormula } from "./named-expression-renamer";
 import { renameSheetInFormula } from "./sheet-renamer";
-import { renameTableInFormula } from "./table-renamer";
+import {
+  renameTableColumnsInFormula,
+  renameTableInFormula,
+} from "./table-renamer";
 import { renameWorkbookInFormula } from "./workbook-renamer";
 import { getCellReference, parseCellReference } from "./utils";
 import { CacheManager } from "./managers/cache-manager";
 import { NamedExpressionManager } from "./managers/named-expression-manager";
-import { TableManager } from "./managers/table-manager";
+import {
+  TableManager,
+  type TableHeaderUpdate,
+} from "./managers/table-manager";
 import { EventManager } from "./managers/event-manager";
 import { EvaluationManager } from "./managers/evaluation-manager";
 import { DependencyManager } from "./managers/dependency-manager";
@@ -268,6 +274,92 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   }): Map<string, SerializedCellValue> | undefined {
     const sheet = this.workbookManager.getSheet(opts);
     return sheet ? new Map(sheet.content) : undefined;
+  }
+
+  private materializeDefaultTableHeaders(
+    table: TableDefinition
+  ): MutationInvalidation["touchedCells"] {
+    const changes: Array<{
+      address: CellAddress;
+      before: SerializedCellValue;
+      after: SerializedCellValue;
+    }> = [];
+
+    for (const header of table.headers.values()) {
+      const address = {
+        workbookName: table.workbookName,
+        sheetName: table.sheetName,
+        rowIndex: table.start.rowIndex,
+        colIndex: table.start.colIndex + header.index,
+      };
+      const before = this.workbookManager.getCellContent(address);
+      if (before !== undefined && before !== "") {
+        continue;
+      }
+
+      this.workbookManager.setCellContent(address, header.name);
+      changes.push({ address, before, after: header.name });
+    }
+
+    return buildTouchedCells(changes);
+  }
+
+  private renameTableHeaderReferences(updates: TableHeaderUpdate[]): {
+    changedFormulaCells: CellAddress[];
+    resourceKeys: string[];
+  } {
+    const renamesByTable = new Map<
+      TableDefinition,
+      Map<string, string>
+    >();
+    for (const update of updates) {
+      if (update.oldName === update.newName) {
+        continue;
+      }
+      let renames = renamesByTable.get(update.table);
+      if (!renames) {
+        renames = new Map();
+        renamesByTable.set(update.table, renames);
+      }
+      renames.set(update.oldName, update.newName);
+    }
+
+    const changedFormulaCells: CellAddress[] = [];
+    const resourceKeys: string[] = [];
+    for (const [table, columnRenames] of renamesByTable) {
+      changedFormulaCells.push(
+        ...this.workbookManager.updateAllFormulas(
+          (formula, formulaAddress) =>
+            renameTableColumnsInFormula({
+              formula,
+              tableName: table.name,
+              tableWorkbookName: table.workbookName,
+              formulaWorkbookName: formulaAddress.workbookName,
+              columnRenames,
+              includeImplicitReferences:
+                this.tableManager.isCellInTable(formulaAddress) === table,
+            })
+        )
+      );
+      resourceKeys.push(
+        getTableResourceKey({
+          workbookName: table.workbookName,
+          tableName: table.name,
+        }),
+        ...this.namedExpressionManager.updateAllNamedExpressions(
+          (formula, scope) =>
+            renameTableColumnsInFormula({
+              formula,
+              tableName: table.name,
+              tableWorkbookName: table.workbookName,
+              formulaWorkbookName: scope.workbookName,
+              columnRenames,
+            })
+        )
+      );
+    }
+
+    return { changedFormulaCells, resourceKeys };
   }
 
   private getWorkbookResourceKeys(workbookName: string): string[] {
@@ -801,9 +893,13 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
         getCellValue: (cellAddress: CellAddress) =>
           this.getCellValue(cellAddress),
       });
+      const generatedHeaderCells = this.materializeDefaultTableHeaders(table);
 
       this.emitMutation({
-        touchedCells: buildTableTouchedCells(this.workbookManager, [table]),
+        touchedCells: mergeTouchedCells(
+          buildTableTouchedCells(this.workbookManager, [table]),
+          generatedHeaderCells
+        ),
         tableContextChangedCells: buildTableContextChangedCells(
           this.workbookManager,
           [table]
@@ -899,11 +995,15 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
         workbookName: opts.workbookName,
         name: opts.tableName,
       });
+      const generatedHeaderCells = newTable
+        ? this.materializeDefaultTableHeaders(newTable)
+        : [];
 
       this.emitMutation({
         touchedCells: mergeTouchedCells(
           buildTableTouchedCells(this.workbookManager, [oldTableSnapshot]),
-          buildTableTouchedCells(this.workbookManager, [newTable])
+          buildTableTouchedCells(this.workbookManager, [newTable]),
+          generatedHeaderCells
         ),
         tableContextChangedCells: buildTableContextChangedCells(
           this.workbookManager,
@@ -1971,15 +2071,36 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     content: Map<string, SerializedCellValue>
   ) {
     return this.withUndoRedoCheckpoint(() => {
+      const normalizedContent = new Map(content);
+      const preparedHeaderUpdates =
+        this.tableManager.prepareHeaderUpdatesForSheet({
+          ...opts,
+          getCellContent: (address) =>
+            normalizedContent.get(getCellReference(address)),
+        });
+      for (const generatedHeader of preparedHeaderUpdates.generatedHeaders) {
+        normalizedContent.set(
+          getCellReference(generatedHeader.address),
+          generatedHeader.name
+        );
+      }
+
       const previousContent = this.getExistingSheetContent(opts);
-      this.workbookManager.setSheetContent(opts, content);
+      this.workbookManager.setSheetContent(opts, normalizedContent);
+      this.tableManager.applyHeaderUpdates(preparedHeaderUpdates.updates);
+      const renamedReferences = this.renameTableHeaderReferences(
+        preparedHeaderUpdates.updates
+      );
       this.emitMutation({
-        touchedCells: buildSheetContentTouchedCells(
-          opts,
-          previousContent,
-          content
+        touchedCells: mergeTouchedCells(
+          buildSheetContentTouchedCells(
+            opts,
+            previousContent,
+            normalizedContent
+          ),
+          buildFormulaTouchedCells(renamedReferences.changedFormulaCells)
         ),
-        resourceKeys: [],
+        resourceKeys: Array.from(new Set(renamedReferences.resourceKeys)),
       });
     });
   }
@@ -1989,17 +2110,32 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
    */
   setCellContent(address: CellAddress, content: SerializedCellValue) {
     return this.withUndoRedoCheckpoint(() => {
+      const preparedHeaderUpdate = this.tableManager.prepareHeaderUpdate(
+        address,
+        content
+      );
       const previousValue = this.workbookManager.getCellContent(address);
-      this.workbookManager.setCellContent(address, content);
+      this.workbookManager.setCellContent(
+        address,
+        preparedHeaderUpdate.content
+      );
+      this.tableManager.applyHeaderUpdates(preparedHeaderUpdate.updates);
+      const renamedReferences = this.renameTableHeaderReferences(
+        preparedHeaderUpdate.updates
+      );
+
       this.emitMutation({
-        touchedCells: buildTouchedCells([
-          {
-            address,
-            before: previousValue,
-            after: content,
-          },
-        ]),
-        resourceKeys: [],
+        touchedCells: mergeTouchedCells(
+          buildTouchedCells([
+            {
+              address,
+              before: previousValue,
+              after: preparedHeaderUpdate.content,
+            },
+          ]),
+          buildFormulaTouchedCells(renamedReferences.changedFormulaCells)
+        ),
+        resourceKeys: Array.from(new Set(renamedReferences.resourceKeys)),
       });
     });
   }
