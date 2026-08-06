@@ -86,11 +86,12 @@ export class CopyManager {
       return;
     }
 
-    if (options.cut === true) {
-      return this.cutCells(source, target, options);
-    } else {
+    return this.workbookManager.batchDataChanges(() => {
+      if (options.cut === true) {
+        return this.cutCells(source, target, options);
+      }
       return this.copyOnlyCells(source, target, options);
-    }
+    });
   }
 
   /**
@@ -544,10 +545,9 @@ export class CopyManager {
     });
 
     if (targetSheet) {
-      const targetKey = `${String.fromCharCode(65 + targetCell.colIndex)}${
-        targetCell.rowIndex + 1
-      }`;
-      targetSheet.content.set(targetKey, targetContent);
+      this.workbookManager.setCellContent(targetCell, targetContent, {
+        sheet: targetSheet,
+      });
     }
 
   }
@@ -649,10 +649,9 @@ export class CopyManager {
     });
 
     if (targetSheet) {
-      const targetKey = `${String.fromCharCode(65 + targetCell.colIndex)}${
-        targetCell.rowIndex + 1
-      }`;
-      targetSheet.content.set(targetKey, targetContent);
+      this.workbookManager.setCellContent(targetCell, targetContent, {
+        sheet: targetSheet,
+      });
     }
 
     // Copy cell metadata if requested
@@ -1015,22 +1014,24 @@ export class CopyManager {
     targetRanges: RangeAddress[],
     options: CopyCellsOptions
   ): void {
-    for (const targetRange of targetRanges) {
-      this.fillRangeWithSeed(seedRange, targetRange, {
-        copyContent: this.shouldInclude(options, "content"),
-        copyStyles: this.shouldInclude(options, "style"),
-        copyCellMetadata: this.shouldInclude(options, "cellMetadata"),
-        copyRangeMetadata: this.shouldInclude(options, "rangeMetadata"),
-        contentType: options.type ?? "formula",
-        adjustFormulas: true,
-      });
-    }
+    this.workbookManager.batchDataChanges(() => {
+      for (const targetRange of targetRanges) {
+        this.fillRangeWithSeed(seedRange, targetRange, {
+          copyContent: this.shouldInclude(options, "content"),
+          copyStyles: this.shouldInclude(options, "style"),
+          copyCellMetadata: this.shouldInclude(options, "cellMetadata"),
+          copyRangeMetadata: this.shouldInclude(options, "rangeMetadata"),
+          contentType: options.type ?? "formula",
+          adjustFormulas: true,
+        });
+      }
 
-    // Clear seed range if cut operation
-    if (options.cut) {
-      const seedCells = this.expandRangeToCells(seedRange);
-      this.clearSourceCells(seedCells);
-    }
+      // Clear seed range if cut operation
+      if (options.cut) {
+        const seedCells = this.expandRangeToCells(seedRange);
+        this.clearSourceCells(seedCells);
+      }
+    });
   }
 
   /**
@@ -1280,10 +1281,9 @@ export class CopyManager {
         sheetName: targetCell.sheetName,
       });
       if (targetSheet) {
-        const targetKey = `${String.fromCharCode(65 + targetCell.colIndex)}${
-          targetCell.rowIndex + 1
-        }`;
-        targetSheet.content.delete(targetKey);
+        this.workbookManager.setCellContent(targetCell, undefined, {
+          sheet: targetSheet,
+        });
       }
       return;
     }
@@ -1335,10 +1335,9 @@ export class CopyManager {
     });
 
     if (targetSheet) {
-      const targetKey = `${String.fromCharCode(65 + targetCell.colIndex)}${
-        targetCell.rowIndex + 1
-      }`;
-      targetSheet.content.set(targetKey, targetContent);
+      this.workbookManager.setCellContent(targetCell, targetContent, {
+        sheet: targetSheet,
+      });
     }
 
     // Copy cell metadata if requested

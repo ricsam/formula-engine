@@ -73,6 +73,45 @@ type PreparedCellReplaceAll = {
   changes: ReplaceChange[];
 };
 
+export type CellContentDataChange = {
+  kind: "cell-content";
+  address: CellAddress;
+  before: SerializedCellValue;
+  after: SerializedCellValue;
+};
+
+export type CellMetadataDataChange = {
+  kind: "cell-metadata";
+  address: CellAddress;
+  before: unknown;
+  after: unknown;
+};
+
+export type SheetMetadataDataChange = {
+  kind: "sheet-metadata";
+  workbookName: string;
+  sheetName: string;
+  before: unknown;
+  after: unknown;
+};
+
+export type WorkbookMetadataDataChange = {
+  kind: "workbook-metadata";
+  workbookName: string;
+  before: unknown;
+  after: unknown;
+};
+
+export type WorkbookDataChange =
+  | CellContentDataChange
+  | CellMetadataDataChange
+  | SheetMetadataDataChange
+  | WorkbookMetadataDataChange;
+
+export type WorkbookMutationObserver = (
+  changes: readonly WorkbookDataChange[]
+) => void;
+
 /**
  * Utility class for binary search operations on IndexEntry arrays
  */
@@ -141,8 +180,53 @@ export class IndexEntryBinarySearch {
 export class WorkbookManager {
   private workbooks: Map<string, Workbook> = new Map();
 
+  private dataChangeBatchDepth = 0;
+  private pendingDataChanges: WorkbookDataChange[] = [];
+
   // Map from "workbookName|sheetName" to indexes
   private sheetIndexes: Map<string, SheetIndexes> = new Map();
+
+  constructor(private mutationObserver?: WorkbookMutationObserver) {}
+
+  /**
+   * Groups data-change notifications without delaying the underlying writes.
+   * Copy/fill operations use this to keep observer overhead proportional to
+   * the operation count rather than the number of affected cells.
+   */
+  batchDataChanges<T>(callback: () => T): T {
+    this.dataChangeBatchDepth++;
+    try {
+      return callback();
+    } finally {
+      this.dataChangeBatchDepth--;
+      if (this.dataChangeBatchDepth === 0) {
+        const changes = this.pendingDataChanges;
+        this.pendingDataChanges = [];
+        if (changes.length > 0) {
+          this.mutationObserver?.(changes);
+        }
+      }
+    }
+  }
+
+  private reportDataChanges(changes: readonly WorkbookDataChange[]): void {
+    if (!this.mutationObserver || changes.length === 0) {
+      return;
+    }
+
+    if (this.dataChangeBatchDepth > 0) {
+      this.pendingDataChanges.push(...changes);
+      return;
+    }
+
+    this.mutationObserver(changes);
+  }
+
+  private normalizeCellContent(
+    content: SerializedCellValue
+  ): SerializedCellValue {
+    return this.isContentEmpty(content) ? undefined : content;
+  }
 
   /**
    * Generate a key for the sheet indexes map
@@ -301,7 +385,7 @@ export class WorkbookManager {
         indexes.cellsSortedByCol = [];
 
         sheet.content.forEach((value, key) => {
-          this.setCellContent(
+          this.setCellContentInternal(
             {
               workbookName,
               sheetName: sheet.name,
@@ -312,7 +396,8 @@ export class WorkbookManager {
             {
               sheet,
               buildingFromScratch: true,
-            }
+            },
+            false
           );
         });
       });
@@ -474,7 +559,7 @@ export class WorkbookManager {
 
             // Only update if the formula actually changed
             if (updatedFormula !== formula) {
-              sheet.content.set(key, `=${updatedFormula}`);
+              this.setCellContent(address, `=${updatedFormula}`, { sheet });
               changed.push(address);
             }
           }
@@ -482,8 +567,10 @@ export class WorkbookManager {
       });
     };
 
-    this.workbooks.forEach((workbook, workbookName) => {
-      update(workbookName, workbook.sheets);
+    this.batchDataChanges(() => {
+      this.workbooks.forEach((workbook, workbookName) => {
+        update(workbookName, workbook.sheets);
+      });
     });
 
     return changed;
@@ -493,26 +580,32 @@ export class WorkbookManager {
     excludeCellsSet: Set<string>,
     updateCallback: (formula: string) => string
   ): void {
-    this.workbooks.forEach((workbook, workbookName) => {
-      workbook.sheets.forEach((sheet, sheetName) => {
-        sheet.content.forEach((cell, key) => {
-          if (typeof cell === "string" && cell.startsWith("=")) {
-            const { colIndex, rowIndex } = parseCellReference(key);
-            const cellKey = `${workbookName}:${sheetName}:${colIndex}:${rowIndex}`;
-            
-            // Skip if this cell is in the exclude set
-            if (excludeCellsSet.has(cellKey)) {
-              return;
-            }
+    this.batchDataChanges(() => {
+      this.workbooks.forEach((workbook, workbookName) => {
+        workbook.sheets.forEach((sheet, sheetName) => {
+          sheet.content.forEach((cell, key) => {
+            if (typeof cell === "string" && cell.startsWith("=")) {
+              const { colIndex, rowIndex } = parseCellReference(key);
+              const cellKey = `${workbookName}:${sheetName}:${colIndex}:${rowIndex}`;
 
-            const formula = cell.slice(1);
-            const updatedFormula = updateCallback(formula);
+              // Skip if this cell is in the exclude set
+              if (excludeCellsSet.has(cellKey)) {
+                return;
+              }
 
-            // Only update if the formula actually changed
-            if (updatedFormula !== formula) {
-              sheet.content.set(key, `=${updatedFormula}`);
+              const formula = cell.slice(1);
+              const updatedFormula = updateCallback(formula);
+
+              // Only update if the formula actually changed
+              if (updatedFormula !== formula) {
+                this.setCellContent(
+                  { workbookName, sheetName, colIndex, rowIndex },
+                  `=${updatedFormula}`,
+                  { sheet }
+                );
+              }
             }
-          }
+          });
         });
       });
     });
@@ -527,17 +620,24 @@ export class WorkbookManager {
       throw new WorkbookNotFoundError(workbookName);
     }
 
-    workbook.sheets.forEach((sheet) => {
-      sheet.content.forEach((cell, key) => {
-        if (typeof cell === "string" && cell.startsWith("=")) {
-          const formula = cell.slice(1);
-          const updatedFormula = updateCallback(formula);
+    this.batchDataChanges(() => {
+      workbook.sheets.forEach((sheet, sheetName) => {
+        sheet.content.forEach((cell, key) => {
+          if (typeof cell === "string" && cell.startsWith("=")) {
+            const formula = cell.slice(1);
+            const updatedFormula = updateCallback(formula);
 
-          // Only update if the formula actually changed
-          if (updatedFormula !== formula) {
-            sheet.content.set(key, `=${updatedFormula}`);
+            // Only update if the formula actually changed
+            if (updatedFormula !== formula) {
+              const { colIndex, rowIndex } = parseCellReference(key);
+              this.setCellContent(
+                { workbookName, sheetName, colIndex, rowIndex },
+                `=${updatedFormula}`,
+                { sheet }
+              );
+            }
           }
-        }
+        });
       });
     });
   }
@@ -1006,7 +1106,7 @@ export class WorkbookManager {
     array.splice(insertionPoint, 0, item);
   }
 
-  setCellContent(
+  private setCellContentInternal(
     address: CellAddress,
     content: SerializedCellValue,
     options?: {
@@ -1018,8 +1118,9 @@ export class WorkbookManager {
        * if the sheet is being built from scratch, we can skip some checks
        */
       buildingFromScratch?: boolean;
-    }
-  ): void {
+    },
+    reportChange = true
+  ): boolean {
     const sheet =
       options?.sheet ||
       this.getSheet({
@@ -1037,28 +1138,72 @@ export class WorkbookManager {
     });
     const adr = getCellReference(address);
 
-    if (this.isContentEmpty(content)) {
-      if (!options?.buildingFromScratch) {
+    const storedBefore = sheet.content.get(adr);
+    const before = this.normalizeCellContent(storedBefore);
+    const after = this.normalizeCellContent(content);
+    const changed = !Object.is(before, after);
+
+    if (after === undefined) {
+      // Delete even when the normalized values are equal so legacy/directly
+      // inserted empty-string entries are cleaned up.
+      if (sheet.content.has(adr)) {
         sheet.content.delete(adr);
-        // Remove from all indexes
-        this.removeCellFromGroups(
-          indexes,
-          address.rowIndex,
-          address.colIndex,
-          adr
-        );
+        if (!options?.buildingFromScratch && before !== undefined) {
+          this.removeCellFromGroups(
+            indexes,
+            address.rowIndex,
+            address.colIndex,
+            adr
+          );
+        }
       }
     } else {
-      sheet.content.set(adr, content);
-      // Add to all indexes
-      this.addCellToGroups(indexes, address.rowIndex, address.colIndex, adr);
+      sheet.content.set(adr, after);
+      // Updating one non-empty value to another does not change membership in
+      // any index. Avoid the previous duplicate scans on this hot path.
+      if (options?.buildingFromScratch || before === undefined) {
+        this.addCellToGroups(indexes, address.rowIndex, address.colIndex, adr);
+      }
     }
+
+    if (changed && reportChange && this.mutationObserver) {
+      this.reportDataChanges([
+        {
+          kind: "cell-content",
+          address: { ...address },
+          before,
+          after,
+        },
+      ]);
+    }
+
+    return changed;
+  }
+
+  setCellContent(
+    address: CellAddress,
+    content: SerializedCellValue,
+    options?: {
+      /**
+       * for extra performance, if the sheet is already known, it can be passed in
+       */
+      sheet?: Sheet;
+      /**
+       * if the sheet is being built from scratch, we can skip some checks
+       */
+      buildingFromScratch?: boolean;
+    }
+  ): void {
+    this.setCellContentInternal(address, content, options);
   }
 
   /**
    * Set metadata for a cell
    */
-  setCellMetadata<TMetadata = unknown>(address: CellAddress, metadata: TMetadata | undefined): void {
+  setCellMetadata<TMetadata = unknown>(
+    address: CellAddress,
+    metadata: TMetadata | undefined
+  ): void {
     const sheet = this.getSheet({
       workbookName: address.workbookName,
       sheetName: address.sheetName,
@@ -1068,10 +1213,26 @@ export class WorkbookManager {
     }
 
     const key = getCellReference(address);
+    const before = sheet.metadata.get(key);
+    if (Object.is(before, metadata)) {
+      return;
+    }
+
     if (metadata === undefined) {
       sheet.metadata.delete(key);
     } else {
       sheet.metadata.set(key, metadata);
+    }
+
+    if (this.mutationObserver) {
+      this.reportDataChanges([
+        {
+          kind: "cell-metadata",
+          address: { ...address },
+          before,
+          after: metadata,
+        },
+      ]);
     }
   }
 
@@ -1113,7 +1274,22 @@ export class WorkbookManager {
     if (!sheet) {
       throw new SheetNotFoundError(opts.sheetName);
     }
+    const before = sheet.sheetMetadata;
+    if (Object.is(before, metadata)) {
+      return;
+    }
+
     sheet.sheetMetadata = metadata;
+    if (this.mutationObserver) {
+      this.reportDataChanges([
+        {
+          kind: "sheet-metadata",
+          ...opts,
+          before,
+          after: metadata,
+        },
+      ]);
+    }
   }
 
   /**
@@ -1140,7 +1316,23 @@ export class WorkbookManager {
     if (!workbook) {
       throw new Error(`Workbook "${workbookName}" not found`);
     }
+
+    const before = workbook.workbookMetadata;
+    if (Object.is(before, metadata)) {
+      return;
+    }
+
     workbook.workbookMetadata = metadata;
+    if (this.mutationObserver) {
+      this.reportDataChanges([
+        {
+          kind: "workbook-metadata",
+          workbookName,
+          before,
+          after: metadata,
+        },
+      ]);
+    }
   }
 
   /**
@@ -1168,6 +1360,55 @@ export class WorkbookManager {
     if (!sheet) {
       throw new SheetNotFoundError(opts.sheetName);
     }
+    const replacementContent =
+      newContent === sheet.content ? new Map(newContent) : newContent;
+
+    // Only pay the diffing cost when a consumer needs mutation data. The
+    // replacement itself remains a clear-and-rebuild operation so index
+    // construction stays linear and does not degrade into repeated removals.
+    const changes: CellContentDataChange[] = [];
+    if (this.mutationObserver) {
+      for (const [cellReference, storedBefore] of sheet.content) {
+        const before = this.normalizeCellContent(storedBefore);
+        const after = this.normalizeCellContent(
+          replacementContent.get(cellReference)
+        );
+        if (Object.is(before, after)) {
+          continue;
+        }
+
+        changes.push({
+          kind: "cell-content",
+          address: {
+            ...opts,
+            ...parseCellReference(cellReference),
+          },
+          before,
+          after,
+        });
+      }
+
+      for (const [cellReference, storedAfter] of replacementContent) {
+        const after = this.normalizeCellContent(storedAfter);
+        if (after === undefined) {
+          continue;
+        }
+
+        if (sheet.content.has(cellReference)) {
+          continue;
+        }
+
+        changes.push({
+          kind: "cell-content",
+          address: {
+            ...opts,
+            ...parseCellReference(cellReference),
+          },
+          before: undefined,
+          after,
+        });
+      }
+    }
 
     // Clear existing content without breaking the Map reference
     sheet.content.clear();
@@ -1177,21 +1418,25 @@ export class WorkbookManager {
     this.sheetIndexes.delete(key);
 
     // Repopulate with new content
-    newContent.forEach((value, key) => {
-      this.setCellContent(
+    replacementContent.forEach((value, key) => {
+      const { colIndex, rowIndex } = parseCellReference(key);
+      this.setCellContentInternal(
         {
           workbookName: opts.workbookName,
           sheetName: opts.sheetName,
-          colIndex: parseCellReference(key).colIndex,
-          rowIndex: parseCellReference(key).rowIndex,
+          colIndex,
+          rowIndex,
         },
         value,
         {
           sheet,
           buildingFromScratch: true,
-        }
+        },
+        false
       );
     });
+
+    this.reportDataChanges(changes);
   }
 
   /**
@@ -1210,6 +1455,8 @@ export class WorkbookManager {
     const newContent = new Map(sheet.content);
     const newMetadata = new Map(sheet.metadata);
 
+    const metadataChanges: CellMetadataDataChange[] = [];
+
     // Use iterateCellsInRange to only process cells that actually exist
     // This handles both finite and infinite ranges efficiently
     for (const cellAddress of this.iterateCellsInRange(address)) {
@@ -1217,14 +1464,26 @@ export class WorkbookManager {
 
       // Remove from content and metadata
       newContent.delete(cellRef);
+      const beforeMetadata = sheet.metadata.get(cellRef);
       newMetadata.delete(cellRef);
+      if (this.mutationObserver && beforeMetadata !== undefined) {
+        metadataChanges.push({
+          kind: "cell-metadata",
+          address: { ...cellAddress },
+          before: beforeMetadata,
+          after: undefined,
+        });
+      }
     }
 
-    // Update content
-    this.setSheetContent(address, newContent);
-    
-    // Update metadata
-    sheet.metadata = newMetadata;
+    this.batchDataChanges(() => {
+      // Update content
+      this.setSheetContent(address, newContent);
+
+      // Update metadata
+      sheet.metadata = newMetadata;
+      this.reportDataChanges(metadataChanges);
+    });
   }
 
   /**
