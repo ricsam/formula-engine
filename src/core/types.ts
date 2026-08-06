@@ -14,7 +14,14 @@ export interface UndoRedoOptions {
    * Maximum number of undo entries retained by the engine.
    * @default 100
    */
-  maxDepth?: number;
+  maxEntries?: number;
+
+  /**
+   * Maximum estimated bytes retained by undo/redo history. Mutations larger
+   * than this limit create a history barrier and are not themselves undoable.
+   * @default 67108864 (64 MiB)
+   */
+  maxBytes?: number;
 }
 
 export interface FormulaEngineOptions {
@@ -25,12 +32,22 @@ export interface FormulaEngineOptions {
 }
 
 export interface UndoRedoState {
+  /** Undo/redo history is always enabled. */
   enabled: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  /** Number of retained undo entries. */
   undoDepth: number;
+  /** Number of retained redo entries. */
   redoDepth: number;
-  maxDepth: number;
+  /** Configured entry-count budget. */
+  maxEntries: number;
+  /** Configured estimated-memory budget in bytes. */
+  maxBytes: number;
+  /** Estimated bytes currently retained by undo entries. */
+  undoBytes: number;
+  /** Estimated bytes currently retained by redo entries. */
+  redoBytes: number;
 }
 
 // Cell addressing types

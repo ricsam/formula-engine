@@ -43,8 +43,11 @@ function range(start: string, end = start): RangeAddress {
 
 function setupObservedWorkbook() {
   const batches: WorkbookDataChange[][] = [];
-  const manager = new WorkbookManager((changes) => {
-    batches.push([...changes]);
+  const manager = new WorkbookManager((patches) => {
+    const changes = patches.flatMap((patch) => [...patch.changes]);
+    if (changes.length > 0) {
+      batches.push(changes);
+    }
   });
   manager.addWorkbook(workbookName);
   manager.addSheet({ workbookName, sheetName });
@@ -67,6 +70,7 @@ describe("WorkbookManager mutation observer", () => {
           address: address("A1"),
           before: undefined,
           after: 1,
+          afterIndex: 0,
         },
       ],
     ]);
@@ -81,6 +85,7 @@ describe("WorkbookManager mutation observer", () => {
         address: address("A1"),
         before: 1,
         after: undefined,
+        beforeIndex: 0,
       },
     ]);
     expect(
@@ -115,18 +120,22 @@ describe("WorkbookManager mutation observer", () => {
         address: address("B1"),
         before: 2,
         after: 20,
+        beforeIndex: 1,
+        afterIndex: 1,
       },
       {
         kind: "cell-content",
         address: address("C1"),
         before: 3,
         after: undefined,
+        beforeIndex: 2,
       },
       {
         kind: "cell-content",
         address: address("D1"),
         before: undefined,
         after: 4,
+        afterIndex: 2,
       },
     ]);
     expect(
@@ -219,6 +228,7 @@ describe("WorkbookManager mutation observer", () => {
           address: address("A1"),
           before: undefined,
           after: cellMetadata,
+          afterIndex: 0,
         },
       ],
       [
@@ -246,6 +256,7 @@ describe("WorkbookManager mutation observer", () => {
       kind: "cell-metadata",
       before: cellMetadata,
       after: undefined,
+      beforeIndex: 0,
     });
   });
 
@@ -286,6 +297,7 @@ describe("WorkbookManager mutation observer", () => {
         address: address("D1"),
         before: undefined,
         after: 7,
+        afterIndex: 2,
       },
     ]);
 
@@ -303,6 +315,7 @@ describe("WorkbookManager mutation observer", () => {
         address: address("A1"),
         before: 7,
         after: undefined,
+        beforeIndex: 0,
       },
       {
         kind: "cell-content",
@@ -315,6 +328,7 @@ describe("WorkbookManager mutation observer", () => {
         address: address("E1"),
         before: undefined,
         after: 7,
+        afterIndex: 3,
       },
     ]);
 

@@ -21,13 +21,13 @@ bun install
 ## Quick Start
 
 ```typescript
-import { FormulaEngine } from 'formula-engine';
+import { FormulaEngine } from "formula-engine";
 
 // Create a new engine
 const engine = FormulaEngine.buildEmpty();
 
 // Add a sheet
-const sheetName = engine.addSheet('Sheet1');
+const sheetName = engine.addSheet("Sheet1");
 const sheetId = engine.getSheetId(sheetName);
 
 // Set cell values
@@ -35,7 +35,7 @@ engine.setCellContent({ sheet: sheetId, col: 0, row: 0 }, 42);
 engine.setCellContent({ sheet: sheetId, col: 1, row: 0 }, 58);
 
 // Set a formula (evaluation not yet implemented)
-engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, '=A1+B1');
+engine.setCellContent({ sheet: sheetId, col: 2, row: 0 }, "=A1+B1");
 
 // Get cell value
 const value = engine.getCellValue({ sheet: sheetId, col: 0, row: 0 }); // 42
@@ -44,13 +44,13 @@ const value = engine.getCellValue({ sheet: sheetId, col: 0, row: 0 }); // 42
 engine.setCellContent({ sheet: sheetId, col: 0, row: 2 }, [
   [1, 2, 3],
   [4, 5, 6],
-  [7, 8, 9]
+  [7, 8, 9],
 ]);
 
 // Get range values
 const range = {
   start: { sheet: sheetId, col: 0, row: 2 },
-  end: { sheet: sheetId, col: 2, row: 4 }
+  end: { sheet: sheetId, col: 2, row: 4 },
 };
 const values = engine.getRangeValues(range); // [[1,2,3],[4,5,6],[7,8,9]]
 ```
@@ -102,9 +102,67 @@ const allChanges = engine.replaceAll("draft", "published", {
 // ]
 ```
 
+## Undo And Redo
+
+Undo/redo history stores incremental reversible changes rather than copies of
+the complete engine. Retention is bounded by both entry count and estimated
+memory usage:
+
+```typescript
+const engine = FormulaEngine.buildEmpty({
+  undoRedo: {
+    maxEntries: 100,
+    maxBytes: 64 * 1024 * 1024,
+  },
+});
+
+engine.undo();
+engine.redo();
+
+const history = engine.getUndoRedoState();
+console.log(history.undoDepth, history.undoBytes);
+console.log(history.redoDepth, history.redoBytes);
+
+engine.transact(() => {
+  // Synchronous only: grouped into one atomic history entry and one update.
+  engine.setCellContent(
+    { workbookName: "Book", sheetName: "Sheet1", rowIndex: 0, colIndex: 0 },
+    1
+  );
+  engine.setCellContent(
+    { workbookName: "Book", sheetName: "Sheet1", rowIndex: 0, colIndex: 1 },
+    2
+  );
+});
+```
+
+The defaults are 100 entries and 64 MiB. If one mutation is larger than the
+configured byte budget, the engine clears the existing history and does not
+retain that mutation. This history barrier prevents a later undo from crossing
+an operation that could not be recorded safely.
+
+History detaches and accounts for primitives, plain objects, arrays, ordered
+`Map` values with primitive keys, `Set` values with primitive elements, dates,
+regular expressions, errors, and binary buffers. Object identity inside
+metadata is intentionally not preserved across undo/redo.
+Metadata containing functions, accessors, weak collections, promises, custom
+class instances, arbitrary-precision `bigint` values, extremely deep/large
+plain arrays, or opaque host objects is stored normally but is not retained for
+undo. Writing such metadata creates the same history barrier, because its
+reachable memory cannot be cloned and bounded reliably.
+
+`transact` callbacks must be synchronous. Promise-returning callbacks are
+rejected and their captured mutations are rolled back.
+
+Explicit transactions are atomic within the configured history budget. If a
+transaction would exceed `maxBytes` or write unsupported metadata, it throws
+and restores its starting state. The same oversized mutation performed as a
+normal single engine operation succeeds and creates a non-undoable barrier.
+
 ## Development Status
 
 ### ✅ Completed
+
 - Core type system and interfaces
 - Basic engine structure with sheet management
 - Cell addressing system (A1 notation)
@@ -113,12 +171,14 @@ const allChanges = engine.replaceAll("draft", "published", {
 - Named expressions (storage only)
 
 ### 🚧 In Progress
+
 - Formula parser and lexer
 - Formula evaluation engine
 - Dependency tracking system
 - Array formula support
 
 ### 📋 Planned
+
 - Function library (SUM, AVERAGE, etc.)
 - Array formulas with broadcasting
 - Comprehensive error handling

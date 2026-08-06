@@ -1,5 +1,26 @@
 # @ricsam/formula-engine
 
+## 0.2.17
+
+### Patch Changes
+
+- Implemented incremental, memory-bounded undo/redo
+
+## Unreleased
+
+### Changed
+
+- Replace full-engine undo/redo snapshots with incremental reversible history
+  entries, bounded by both entry count and estimated retained bytes.
+- Rename the undo/redo `maxDepth` option and state field to `maxEntries`, add
+  `maxBytes`, and report `undoBytes` and `redoBytes` in history state.
+- Stream large workbook deltas in bounded fragments, preserve ordered
+  collection state exactly, and use a history barrier for metadata whose
+  reachable memory cannot be safely cloned and measured.
+- Make synchronous transactions atomic against the history byte budget, and
+  keep in-place sparse edits, imports, and bulk append/delete replay from
+  repeatedly rebuilding unrelated workbook state.
+
 ## 0.2.16
 
 ### Patch Changes

@@ -32,7 +32,10 @@ import {
 import type { FillDirection } from "@ricsam/selection-manager";
 import { FormulaEvaluator } from "../evaluator/formula-evaluator";
 import { AutoFill } from "./autofill-utils";
-import { WorkbookManager } from "./managers/workbook-manager";
+import {
+  WorkbookManager,
+  type WorkbookDataChange,
+} from "./managers/workbook-manager";
 import { deserialize, serialize } from "./map-serializer";
 import { renameNamedExpressionInFormula } from "./named-expression-renamer";
 import { renameSheetInFormula } from "./sheet-renamer";
@@ -43,19 +46,42 @@ import {
 import { renameWorkbookInFormula } from "./workbook-renamer";
 import { getCellReference, parseCellReference } from "./utils";
 import { CacheManager } from "./managers/cache-manager";
-import { NamedExpressionManager } from "./managers/named-expression-manager";
+import {
+  NamedExpressionManager,
+  type NamedExpressionMutation,
+} from "./managers/named-expression-manager";
 import {
   TableManager,
   type TableHeaderUpdate,
+  type TableMutation,
 } from "./managers/table-manager";
 import { EventManager } from "./managers/event-manager";
 import { EvaluationManager } from "./managers/evaluation-manager";
 import { DependencyManager } from "./managers/dependency-manager";
-import { StyleManager } from "./managers/style-manager";
+import { StyleManager, type StyleDataChange } from "./managers/style-manager";
 import { CopyManager } from "./managers/copy-manager";
-import { ReferenceManager } from "./managers/reference-manager";
-import { RangeMetadataManager } from "./managers/range-metadata-manager";
+import {
+  ReferenceManager,
+  type ReferenceDataChange,
+} from "./managers/reference-manager";
+import {
+  RangeMetadataManager,
+  type RangeMetadataDataChange,
+} from "./managers/range-metadata-manager";
 import { UndoRedoManager } from "./managers/undo-redo-manager";
+import {
+  createHistoryEntry,
+  estimateHistoryValueBytes,
+  isHistoryValueSafelyRetainable,
+  type HistoryEntry,
+} from "./history";
+import {
+  cloneHistoryValue,
+  historyValuesEqual,
+  type EngineHistoryStep,
+  type SheetScopeState,
+  type WorkbookScopeState,
+} from "./engine-history";
 import {
   ENGINE_SNAPSHOT_VERSION,
   LEGACY_ENGINE_SNAPSHOT_VERSION,
@@ -65,13 +91,9 @@ import {
 } from "./engine-snapshot";
 import {
   buildFormulaTouchedCells,
-  buildSheetContentTouchedCells,
   buildTableContextChangedCells,
   buildTableTouchedCells,
   buildTouchedCells,
-  captureCellContents,
-  getFiniteRangeAddresses,
-  getMutationAddressKey,
   getNamedExpressionScopeResourceKeys,
   mergeTouchedCells,
   type MutationInvalidation,
@@ -95,8 +117,33 @@ type MetadataType<
   TKey extends keyof Metadata
 > = TMetadata[TKey];
 
- /**
-  * Main FormulaEngine class
+const MAX_OBSERVER_INVALIDATION_KEYS = 4_096;
+
+function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
+  if (
+    (typeof value !== "object" || value === null) &&
+    typeof value !== "function"
+  ) {
+    return false;
+  }
+  try {
+    return typeof (value as { then?: unknown }).then === "function";
+  } catch {
+    return true;
+  }
+}
+
+class HistoryTransactionCapacityError extends Error {
+  constructor() {
+    super(
+      "FormulaEngine.transact exceeded undoRedo.maxBytes or used metadata that cannot be retained safely"
+    );
+    this.name = "HistoryTransactionCapacityError";
+  }
+}
+
+/**
+ * Main FormulaEngine class
  * @template TMetadata - Consumer-defined metadata shape with optional cell, sheet, and workbook entries.
  */
 export class FormulaEngine<TMetadata extends Metadata = Metadata> {
@@ -108,11 +155,29 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   private autoFillManager: AutoFill;
   private dependencyManager: DependencyManager;
   private styleManager: StyleManager;
-  private rangeMetadataManager: RangeMetadataManager<MetadataType<TMetadata, "range">>;
+  private rangeMetadataManager: RangeMetadataManager<
+    MetadataType<TMetadata, "range">
+  >;
   private copyManager: CopyManager;
   private referenceManager: ReferenceManager;
-  private undoRedoManager: UndoRedoManager;
-  private historyCheckpointDepth = 0;
+  private undoRedoManager: UndoRedoManager<
+    EngineHistoryStep<MetadataType<TMetadata, "range">>
+  >;
+  private historyTransactionDepth = 0;
+  private pendingHistorySteps: EngineHistoryStep<
+    MetadataType<TMetadata, "range">
+  >[] = [];
+  private pendingWorkbookChanges = new Map<string, WorkbookDataChange>();
+  private pendingWorkbookChangeBytes = new Map<string, number>();
+  private pendingHistoryEstimatedBytes = 0;
+  private pendingHistoryOversized = false;
+  private observerInvalidatedCellKeys = new Set<string>();
+  private observerInvalidationDeduplicationDisabled = false;
+  private pendingUpdate = false;
+  private isReplayingHistory = false;
+  private workbookHistoryCaptureSuppressionDepth = 0;
+  private workbookObserverInvalidationSuppressionDepth = 0;
+  private explicitTransactionDepth = 0;
 
   /**
    * Public access to the store manager for testing
@@ -125,14 +190,43 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   public _autoFillManager: AutoFill;
   public _dependencyManager: DependencyManager;
   public _styleManager: StyleManager;
-  public _rangeMetadataManager: RangeMetadataManager<MetadataType<TMetadata, "range">>;
+  public _rangeMetadataManager: RangeMetadataManager<
+    MetadataType<TMetadata, "range">
+  >;
 
   constructor(options: FormulaEngineOptions = {}) {
     this.undoRedoManager = new UndoRedoManager(options.undoRedo);
     this.eventManager = new EventManager();
-    this.workbookManager = new WorkbookManager();
-    this.namedExpressionManager = new NamedExpressionManager();
-    this.tableManager = new TableManager(this.workbookManager);
+    this.workbookManager = new WorkbookManager(
+      (patches) => {
+        for (const patch of patches) {
+          if (patch.committed && patch.atomicGroupId !== undefined) {
+            this.commitPendingWorkbookDataGroup(patch.atomicGroupId);
+          } else {
+            this.captureWorkbookDataChanges(patch.changes, patch.atomicGroupId);
+          }
+        }
+      },
+      () => this.shouldObserveWorkbookMutations(),
+      () => this.shouldBatchMutationNotifications()
+    );
+    this.namedExpressionManager = new NamedExpressionManager(
+      (changes) => {
+        this.captureNamedExpressionDataChanges(changes);
+      },
+      () => this.shouldCaptureAncillaryHistory(),
+      false,
+      () => this.shouldBatchMutationNotifications()
+    );
+    this.tableManager = new TableManager(
+      this.workbookManager,
+      (changes) => {
+        this.captureTableDataChanges(changes);
+      },
+      () => this.shouldCaptureAncillaryHistory(),
+      false,
+      () => this.shouldBatchMutationNotifications()
+    );
     const cacheManager = new CacheManager();
     this.dependencyManager = new DependencyManager(
       cacheManager,
@@ -152,10 +246,23 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
       this.dependencyManager
     );
 
-    this.styleManager = new StyleManager(this.evaluationManager);
+    this.styleManager = new StyleManager(
+      this.evaluationManager,
+      (changes) => {
+        this.captureStyleDataChanges(changes);
+      },
+      () => this.shouldCaptureAncillaryHistory(),
+      false
+    );
     this.rangeMetadataManager = new RangeMetadataManager<
       MetadataType<TMetadata, "range">
-    >();
+    >(
+      (changes) => {
+        this.captureRangeMetadataDataChanges(changes);
+      },
+      () => this.shouldCaptureAncillaryHistory(),
+      false
+    );
     this.copyManager = new CopyManager(
       this.workbookManager,
       this.evaluationManager,
@@ -169,7 +276,13 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
       this.rangeMetadataManager
     );
 
-    this.referenceManager = new ReferenceManager();
+    this.referenceManager = new ReferenceManager(
+      (changes) => {
+        this.captureReferenceDataChanges(changes);
+      },
+      () => this.shouldCaptureAncillaryHistory(),
+      false
+    );
 
     this._workbookManager = this.workbookManager;
     this._namedExpressionManager = this.namedExpressionManager;
@@ -193,36 +306,46 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   }
 
   undo(): boolean {
+    this.assertHistoryControlAllowed("undo");
     if (!this.undoRedoManager.canUndo()) {
       return false;
     }
 
-    const target = this.undoRedoManager.popUndo();
-    if (!target) {
+    const entry = this.undoRedoManager.popUndo();
+    if (!entry) {
       return false;
     }
 
-    const current = this.serializeHistorySnapshot();
-    this.restoreHistorySnapshot(target);
-    this.undoRedoManager.pushRedo(current);
-    this.emitUpdate();
+    try {
+      this.replayHistoryEntry(entry, "undo");
+    } catch (error) {
+      this.undoRedoManager.pushUndoFromReplay(entry);
+      throw error;
+    }
+    this.undoRedoManager.pushRedoFromReplay(entry);
+    this.eventManager.emitUpdate();
     return true;
   }
 
   redo(): boolean {
+    this.assertHistoryControlAllowed("redo");
     if (!this.undoRedoManager.canRedo()) {
       return false;
     }
 
-    const target = this.undoRedoManager.popRedo();
-    if (!target) {
+    const entry = this.undoRedoManager.popRedo();
+    if (!entry) {
       return false;
     }
 
-    const current = this.serializeHistorySnapshot();
-    this.restoreHistorySnapshot(target);
-    this.undoRedoManager.pushUndo(current);
-    this.emitUpdate();
+    try {
+      this.replayHistoryEntry(entry, "redo");
+    } catch (error) {
+      this.undoRedoManager.pushRedoFromReplay(entry);
+      throw error;
+    }
+    this.undoRedoManager.pushUndoFromReplay(entry);
+    this.eventManager.emitUpdate();
     return true;
   }
 
@@ -239,45 +362,1174 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   }
 
   clearUndoRedoHistory(): void {
+    this.assertHistoryControlAllowed("clear undo/redo history");
     this.undoRedoManager.clear();
   }
 
-  transact<T>(callback: () => T): T {
-    return this.withUndoRedoCheckpoint(callback);
+  /** Groups synchronous mutations into one atomic undo entry and update. */
+  transact<TCallback extends () => unknown>(
+    callback: [ReturnType<TCallback>] extends [never]
+      ? TCallback
+      : ReturnType<TCallback> extends PromiseLike<unknown>
+      ? never
+      : TCallback
+  ): ReturnType<TCallback> {
+    this.explicitTransactionDepth++;
+    let result: ReturnType<TCallback>;
+    try {
+      result = this.withUndoRedoCheckpoint(() =>
+        this.styleManager.batchMutations(() =>
+          this.rangeMetadataManager.batchMutations(() =>
+            this.referenceManager.batchMutations(callback)
+          )
+        )
+      ) as ReturnType<TCallback>;
+    } catch (error) {
+      this.explicitTransactionDepth--;
+      throw error;
+    }
+
+    if (isPromiseLike(result)) {
+      return Promise.resolve(result).finally(() => {
+        this.explicitTransactionDepth--;
+      }) as ReturnType<TCallback>;
+    }
+    this.explicitTransactionDepth--;
+    return result;
   }
 
   private emitMutation(footprint: MutationInvalidation): void {
-    this.evaluationManager.invalidateFromMutation(footprint);
-    this.eventManager.emitUpdate();
+    const touchedCells = this.observerInvalidationDeduplicationDisabled
+      ? footprint.touchedCells
+      : footprint.touchedCells.filter(
+          ({ address }) =>
+            !this.observerInvalidatedCellKeys.has(
+              this.getHistoryAddressKey(address)
+            )
+        );
+    if (
+      touchedCells.length > 0 ||
+      footprint.resourceKeys.length > 0 ||
+      (footprint.tableContextChangedCells?.length ?? 0) > 0 ||
+      (footprint.removedScopes?.length ?? 0) > 0
+    ) {
+      this.evaluationManager.invalidateFromMutation({
+        ...footprint,
+        touchedCells,
+      });
+    }
+    this.observerInvalidatedCellKeys.clear();
+    this.observerInvalidationDeduplicationDisabled = false;
+    this.requestUpdate();
   }
 
   private emitUpdate(): void {
-    this.eventManager.emitUpdate();
+    this.requestUpdate();
   }
 
   private withUndoRedoCheckpoint<T>(callback: () => T): T {
-    if (this.historyCheckpointDepth > 0) {
+    if (this.isReplayingHistory) {
       return callback();
     }
 
-    const before = this.serializeHistorySnapshot();
-    this.historyCheckpointDepth++;
+    const isOuterTransaction = this.historyTransactionDepth === 0;
+    if (isOuterTransaction) {
+      this.pendingHistorySteps = [];
+      this.pendingWorkbookChanges.clear();
+      this.pendingWorkbookChangeBytes.clear();
+      this.pendingHistoryEstimatedBytes = 0;
+      this.pendingHistoryOversized = false;
+      this.observerInvalidatedCellKeys.clear();
+      this.observerInvalidationDeduplicationDisabled = false;
+      this.pendingUpdate = false;
+    }
+
+    this.historyTransactionDepth++;
+    let result: T;
     try {
-      const result = callback();
-      const after = this.serializeHistorySnapshot();
-      this.undoRedoManager.recordMutation(before, after);
-      return result;
-    } finally {
-      this.historyCheckpointDepth--;
+      result = callback();
+    } catch (error) {
+      this.abortUndoRedoCheckpoint(isOuterTransaction);
+      throw error;
+    }
+
+    if (isPromiseLike(result)) {
+      return Promise.resolve(result).then(
+        () => {
+          this.abortUndoRedoCheckpoint(isOuterTransaction);
+          throw new Error(
+            "FormulaEngine.transact callback must be synchronous"
+          );
+        },
+        (error) => {
+          this.abortUndoRedoCheckpoint(isOuterTransaction);
+          throw error;
+        }
+      ) as T;
+    }
+
+    this.historyTransactionDepth--;
+    if (isOuterTransaction) {
+      this.flushPendingWorkbookChanges();
+      if (this.pendingHistoryOversized) {
+        this.undoRedoManager.recordBarrier();
+      } else if (this.pendingHistorySteps.length > 0) {
+        const entry = createHistoryEntry(this.pendingHistorySteps);
+        if (
+          this.explicitTransactionDepth > 0 &&
+          entry.estimatedBytes > this.undoRedoManager.maxBytes
+        ) {
+          try {
+            this.rollbackPendingHistory();
+          } finally {
+            this.resetPendingHistoryTransaction();
+          }
+          throw new HistoryTransactionCapacityError();
+        }
+        this.undoRedoManager.record(entry);
+      }
+      const shouldEmitUpdate = this.pendingUpdate;
+      this.resetPendingHistoryTransaction();
+      if (shouldEmitUpdate) {
+        this.eventManager.emitUpdate();
+      }
+    }
+
+    return result;
+  }
+
+  private abortUndoRedoCheckpoint(isOuterTransaction: boolean): void {
+    this.historyTransactionDepth--;
+    if (!isOuterTransaction) {
+      return;
+    }
+    this.flushPendingWorkbookChanges();
+    if (this.pendingHistoryOversized) {
+      // The inverse was intentionally discarded to honor the memory budget,
+      // so older history must not cross the committed mutation.
+      this.undoRedoManager.recordBarrier();
+    } else {
+      this.rollbackPendingHistory();
+    }
+    this.resetPendingHistoryTransaction();
+  }
+
+  private requestUpdate(): void {
+    if (this.historyTransactionDepth > 0 || this.isReplayingHistory) {
+      this.pendingUpdate = true;
+      return;
+    }
+    this.eventManager.emitUpdate();
+  }
+
+  private shouldCaptureAncillaryHistory(): boolean {
+    return (
+      !this.isReplayingHistory &&
+      this.historyTransactionDepth > 0 &&
+      !this.pendingHistoryOversized
+    );
+  }
+
+  private shouldObserveWorkbookMutations(): boolean {
+    return (
+      !this.isReplayingHistory &&
+      this.historyTransactionDepth > 0 &&
+      this.workbookHistoryCaptureSuppressionDepth === 0
+    );
+  }
+
+  private shouldBatchMutationNotifications(): boolean {
+    return this.explicitTransactionDepth === 0;
+  }
+
+  private assertHistoryControlAllowed(action: string): void {
+    if (this.historyTransactionDepth > 0) {
+      throw new Error(`Cannot ${action} during a transaction`);
     }
   }
 
-  private getExistingSheetContent(opts: {
-    workbookName: string;
-    sheetName: string;
-  }): Map<string, SerializedCellValue> | undefined {
-    const sheet = this.workbookManager.getSheet(opts);
-    return sheet ? new Map(sheet.content) : undefined;
+  private resetPendingHistoryTransaction(): void {
+    this.pendingHistorySteps = [];
+    this.pendingWorkbookChanges.clear();
+    this.pendingWorkbookChangeBytes.clear();
+    this.pendingHistoryEstimatedBytes = 0;
+    this.pendingHistoryOversized = false;
+    this.observerInvalidatedCellKeys.clear();
+    this.observerInvalidationDeduplicationDisabled = false;
+    this.pendingUpdate = false;
+  }
+
+  private markPendingHistoryOversized(): void {
+    this.pendingHistoryOversized = true;
+    this.pendingHistorySteps = [];
+    this.pendingWorkbookChanges.clear();
+    this.pendingWorkbookChangeBytes.clear();
+    this.pendingHistoryEstimatedBytes = 0;
+  }
+
+  private rejectExplicitTransactionOrMarkOversized(
+    appliedStep?: EngineHistoryStep<MetadataType<TMetadata, "range">>
+  ): void {
+    if (this.explicitTransactionDepth === 0) {
+      this.markPendingHistoryOversized();
+      return;
+    }
+
+    if (appliedStep) {
+      const wasReplaying = this.isReplayingHistory;
+      this.isReplayingHistory = true;
+      try {
+        this.applyHistoryStep(appliedStep, "undo");
+      } finally {
+        this.isReplayingHistory = wasReplaying;
+      }
+    }
+    throw new HistoryTransactionCapacityError();
+  }
+
+  private cloneMetadataHistoryValue(value: unknown): unknown {
+    if (value === null || typeof value !== "object") {
+      return value;
+    }
+    return cloneHistoryValue(value);
+  }
+
+  private cloneWorkbookDataChange(
+    change: WorkbookDataChange
+  ): WorkbookDataChange {
+    if (change.kind === "cell-content") {
+      return {
+        ...change,
+        address: { ...change.address },
+      };
+    }
+    if (change.kind === "cell-metadata") {
+      return {
+        ...change,
+        address: { ...change.address },
+        before: this.cloneMetadataHistoryValue(change.before),
+        after: this.cloneMetadataHistoryValue(change.after),
+      };
+    }
+    return {
+      ...change,
+      before: this.cloneMetadataHistoryValue(change.before),
+      after: this.cloneMetadataHistoryValue(change.after),
+    };
+  }
+
+  private getWorkbookDataChangeKey(change: WorkbookDataChange): string {
+    switch (change.kind) {
+      case "cell-content":
+      case "cell-metadata":
+        return JSON.stringify([
+          change.kind,
+          change.address.workbookName,
+          change.address.sheetName,
+          change.address.rowIndex,
+          change.address.colIndex,
+        ]);
+      case "sheet-metadata":
+        return JSON.stringify([
+          change.kind,
+          change.workbookName,
+          change.sheetName,
+        ]);
+      case "workbook-metadata":
+        return JSON.stringify([change.kind, change.workbookName]);
+    }
+  }
+
+  private getHistoryAddressKey(address: CellAddress): string {
+    return JSON.stringify([
+      address.workbookName,
+      address.sheetName,
+      address.rowIndex,
+      address.colIndex,
+    ]);
+  }
+
+  private workbookDataValuesEqual(
+    change: WorkbookDataChange,
+    before: unknown,
+    after: unknown
+  ): boolean {
+    if (change.kind === "cell-content") {
+      return (
+        Object.is(before, after) &&
+        Object.is(change.beforeIndex, change.afterIndex)
+      );
+    }
+    if (change.kind === "cell-metadata") {
+      return (
+        historyValuesEqual(before, after) &&
+        Object.is(change.beforeIndex, change.afterIndex)
+      );
+    }
+    return historyValuesEqual(before, after);
+  }
+
+  private isAppendOnlyCellContentPatch(
+    changes: readonly WorkbookDataChange[]
+  ): boolean {
+    return (
+      changes.length > 0 &&
+      changes.every(
+        (change) =>
+          change.kind === "cell-content" &&
+          change.before === undefined &&
+          change.after !== undefined &&
+          change.beforeIndex === undefined &&
+          change.afterIndex !== undefined
+      )
+    );
+  }
+
+  private isSequentialCellContentDeletionPatch(
+    changes: readonly WorkbookDataChange[]
+  ): boolean {
+    const change = changes[0];
+    return (
+      changes.length === 1 &&
+      change?.kind === "cell-content" &&
+      change.before !== undefined &&
+      change.after === undefined &&
+      change.beforeIndex !== undefined &&
+      change.afterIndex === undefined
+    );
+  }
+
+  private captureWorkbookDataChanges(
+    changes: readonly WorkbookDataChange[],
+    atomicGroupId?: number
+  ): void {
+    if (
+      this.isReplayingHistory ||
+      this.workbookHistoryCaptureSuppressionDepth > 0 ||
+      this.historyTransactionDepth === 0
+    ) {
+      return;
+    }
+
+    const contentChanges = changes.flatMap((change) =>
+      change.kind === "cell-content"
+        ? [
+            {
+              address: change.address,
+              before: change.before,
+              after: change.after,
+            },
+          ]
+        : []
+    );
+    if (
+      contentChanges.length > 0 &&
+      this.workbookObserverInvalidationSuppressionDepth === 0
+    ) {
+      if (!this.observerInvalidationDeduplicationDisabled) {
+        for (const { address } of contentChanges) {
+          if (
+            this.observerInvalidatedCellKeys.size >=
+            MAX_OBSERVER_INVALIDATION_KEYS
+          ) {
+            this.observerInvalidatedCellKeys.clear();
+            this.observerInvalidationDeduplicationDisabled = true;
+            break;
+          }
+          this.observerInvalidatedCellKeys.add(
+            this.getHistoryAddressKey(address)
+          );
+        }
+      }
+      this.evaluationManager.invalidateFromMutation({
+        touchedCells: buildTouchedCells(contentChanges),
+        resourceKeys: [],
+      });
+    }
+
+    if (this.pendingHistoryOversized) {
+      return;
+    }
+
+    const rawWorkbookStep: EngineHistoryStep<MetadataType<TMetadata, "range">> =
+      {
+        kind: "workbook-data",
+        patches: [[...changes]],
+      };
+    if (!isHistoryValueSafelyRetainable(changes)) {
+      this.rejectExplicitTransactionOrMarkOversized(
+        atomicGroupId === undefined ? rawWorkbookStep : undefined
+      );
+      return;
+    }
+
+    // Collection indexes are relative to one observer patch. Keep indexed
+    // patches atomic instead of coalescing them with later mutations: two
+    // sequential deletions can legitimately both report index zero.
+    if (
+      changes.some(
+        (change) =>
+          (change.kind === "cell-content" || change.kind === "cell-metadata") &&
+          (change.beforeIndex !== undefined || change.afterIndex !== undefined)
+      )
+    ) {
+      this.flushPendingWorkbookChanges();
+      const appendOnlyCellContent =
+        atomicGroupId === undefined &&
+        this.isAppendOnlyCellContentPatch(changes);
+      const sequentialCellContentDeletions =
+        atomicGroupId === undefined &&
+        this.isSequentialCellContentDeletionPatch(changes);
+      const previous = this.pendingHistorySteps.at(-1);
+      const canAppendToPrevious =
+        previous?.kind === "workbook-data" &&
+        ((appendOnlyCellContent && previous.appendOnlyCellContent) ||
+          (sequentialCellContentDeletions &&
+            previous.sequentialCellContentDeletions));
+      if (
+        !canAppendToPrevious &&
+        this.pendingHistoryEstimatedBytes +
+          estimateHistoryValueBytes({
+            kind: "workbook-data",
+            patches: [changes],
+            ...(appendOnlyCellContent
+              ? { appendOnlyCellContent: true as const }
+              : {}),
+            ...(sequentialCellContentDeletions
+              ? { sequentialCellContentDeletions: true as const }
+              : {}),
+          }) >
+          this.undoRedoManager.maxBytes
+      ) {
+        this.rejectExplicitTransactionOrMarkOversized(
+          atomicGroupId === undefined ? rawWorkbookStep : undefined
+        );
+        return;
+      }
+      const patch = changes.map((change) =>
+        this.cloneWorkbookDataChange(change)
+      );
+      if (atomicGroupId === undefined) {
+        if (canAppendToPrevious) {
+          // Account exactly for appending one element to the existing patches
+          // array without re-walking the growing step. Numeric array property
+          // keys add two bytes per decimal digit in the estimator.
+          const fragmentBytes =
+            estimateHistoryValueBytes([patch]) -
+            estimateHistoryValueBytes([]) +
+            (String(previous.patches.length).length - 1) * 2;
+          if (
+            this.pendingHistoryEstimatedBytes + fragmentBytes >
+            this.undoRedoManager.maxBytes
+          ) {
+            this.rejectExplicitTransactionOrMarkOversized(rawWorkbookStep);
+            return;
+          }
+          previous.patches.push(patch);
+          this.pendingHistoryEstimatedBytes += fragmentBytes;
+        } else {
+          this.recordHistoryStep({
+            kind: "workbook-data",
+            patches: [patch],
+            ...(appendOnlyCellContent
+              ? { appendOnlyCellContent: true as const }
+              : {}),
+            ...(sequentialCellContentDeletions
+              ? { sequentialCellContentDeletions: true as const }
+              : {}),
+          });
+        }
+      } else {
+        const fragmentBytes = estimateHistoryValueBytes({
+          kind: "workbook-data",
+          patches: [patch],
+        });
+        if (
+          this.pendingHistoryEstimatedBytes + fragmentBytes >
+          this.undoRedoManager.maxBytes
+        ) {
+          this.rejectExplicitTransactionOrMarkOversized();
+          return;
+        }
+
+        const previous = this.pendingHistorySteps.at(-1);
+        if (
+          previous?.kind === "workbook-data" &&
+          previous.atomicGroupId === atomicGroupId
+        ) {
+          previous.patches.push(patch);
+        } else {
+          this.pendingHistorySteps.push({
+            kind: "workbook-data",
+            patches: [patch],
+            atomicGroupId,
+            committed: false,
+          });
+        }
+        this.pendingHistoryEstimatedBytes += fragmentBytes;
+      }
+      return;
+    }
+
+    for (const rawChange of changes) {
+      const key = this.getWorkbookDataChangeKey(rawChange);
+      const existing = this.pendingWorkbookChanges.get(key);
+      const existingBytes = this.pendingWorkbookChangeBytes.get(key) ?? 0;
+      if (
+        this.pendingHistoryEstimatedBytes -
+          existingBytes +
+          estimateHistoryValueBytes(rawChange) >
+        this.undoRedoManager.maxBytes
+      ) {
+        this.rejectExplicitTransactionOrMarkOversized({
+          kind: "workbook-data",
+          patches: [[rawChange]],
+        });
+        return;
+      }
+
+      const change = this.cloneWorkbookDataChange(rawChange);
+      const before = existing ? existing.before : change.before;
+      let merged = { ...change, before } as WorkbookDataChange;
+      if (
+        (change.kind === "cell-content" || change.kind === "cell-metadata") &&
+        existing &&
+        (existing.kind === "cell-content" || existing.kind === "cell-metadata")
+      ) {
+        const beforeIndex = existing.beforeIndex ?? change.beforeIndex;
+        const afterIndex =
+          change.afterIndex ??
+          (change.after === undefined ? undefined : existing.afterIndex);
+        merged = {
+          ...change,
+          before,
+          ...(beforeIndex === undefined ? {} : { beforeIndex }),
+          ...(afterIndex === undefined ? {} : { afterIndex }),
+        } as WorkbookDataChange;
+      }
+      if (this.workbookDataValuesEqual(merged, before, merged.after)) {
+        this.pendingWorkbookChanges.delete(key);
+        this.pendingWorkbookChangeBytes.delete(key);
+        this.pendingHistoryEstimatedBytes -= existingBytes;
+      } else {
+        const mergedBytes = estimateHistoryValueBytes(merged);
+        const nextEstimatedBytes =
+          this.pendingHistoryEstimatedBytes - existingBytes + mergedBytes;
+        if (nextEstimatedBytes > this.undoRedoManager.maxBytes) {
+          this.rejectExplicitTransactionOrMarkOversized({
+            kind: "workbook-data",
+            patches: [[rawChange]],
+          });
+          return;
+        }
+        this.pendingWorkbookChanges.set(key, merged);
+        this.pendingWorkbookChangeBytes.set(key, mergedBytes);
+        this.pendingHistoryEstimatedBytes = nextEstimatedBytes;
+      }
+    }
+  }
+
+  private captureNamedExpressionDataChanges(
+    changes: readonly NamedExpressionMutation[]
+  ): void {
+    this.recordRawHistoryStep({
+      kind: "named-expression-data",
+      changes: [...changes],
+    });
+  }
+
+  private captureTableDataChanges(changes: readonly TableMutation[]): void {
+    this.recordRawHistoryStep({ kind: "table-data", changes: [...changes] });
+  }
+
+  private captureStyleDataChanges(changes: readonly StyleDataChange[]): void {
+    this.recordRawHistoryStep({ kind: "style-data", changes: [...changes] });
+  }
+
+  private captureRangeMetadataDataChanges(
+    changes: readonly RangeMetadataDataChange<
+      MetadataType<TMetadata, "range">
+    >[]
+  ): void {
+    this.recordRawHistoryStep({
+      kind: "range-metadata-data",
+      changes: [...changes],
+    });
+  }
+
+  private captureReferenceDataChanges(
+    changes: readonly ReferenceDataChange[]
+  ): void {
+    this.recordRawHistoryStep({
+      kind: "reference-data",
+      changes: [...changes],
+    });
+  }
+
+  private flushPendingWorkbookChanges(): void {
+    if (this.pendingWorkbookChanges.size === 0) {
+      return;
+    }
+    this.pendingHistorySteps.push({
+      kind: "workbook-data",
+      patches: [Array.from(this.pendingWorkbookChanges.values())],
+    });
+    this.pendingWorkbookChanges.clear();
+    this.pendingWorkbookChangeBytes.clear();
+  }
+
+  private commitPendingWorkbookDataGroup(atomicGroupId: number): void {
+    for (let index = this.pendingHistorySteps.length - 1; index >= 0; index--) {
+      const step = this.pendingHistorySteps[index];
+      if (
+        step?.kind === "workbook-data" &&
+        step.atomicGroupId === atomicGroupId
+      ) {
+        step.committed = true;
+        return;
+      }
+    }
+  }
+
+  private recordHistoryStep(
+    step: EngineHistoryStep<MetadataType<TMetadata, "range">>
+  ): void {
+    if (
+      this.isReplayingHistory ||
+      this.historyTransactionDepth === 0 ||
+      this.pendingHistoryOversized
+    ) {
+      return;
+    }
+    if (!isHistoryValueSafelyRetainable(step)) {
+      this.rejectExplicitTransactionOrMarkOversized(step);
+      return;
+    }
+    this.flushPendingWorkbookChanges();
+    const stepBytes = estimateHistoryValueBytes(step);
+    if (
+      this.pendingHistoryEstimatedBytes + stepBytes >
+      this.undoRedoManager.maxBytes
+    ) {
+      this.rejectExplicitTransactionOrMarkOversized(step);
+      return;
+    }
+    this.pendingHistoryEstimatedBytes += stepBytes;
+    this.pendingHistorySteps.push(step);
+  }
+
+  /** Estimate manager-owned raw deltas before paying to detach them. */
+  private recordRawHistoryStep(
+    step: EngineHistoryStep<MetadataType<TMetadata, "range">>
+  ): void {
+    if (
+      this.isReplayingHistory ||
+      this.historyTransactionDepth === 0 ||
+      this.pendingHistoryOversized
+    ) {
+      return;
+    }
+    if (!isHistoryValueSafelyRetainable(step)) {
+      this.rejectExplicitTransactionOrMarkOversized(step);
+      return;
+    }
+
+    this.flushPendingWorkbookChanges();
+    const stepBytes = estimateHistoryValueBytes(step);
+    if (
+      this.pendingHistoryEstimatedBytes + stepBytes >
+      this.undoRedoManager.maxBytes
+    ) {
+      this.rejectExplicitTransactionOrMarkOversized(step);
+      return;
+    }
+
+    const detached = cloneHistoryValue(step);
+    if (
+      typeof step === "object" &&
+      step !== null &&
+      Object.is(detached, step)
+    ) {
+      this.rejectExplicitTransactionOrMarkOversized(step);
+      return;
+    }
+    this.pendingHistoryEstimatedBytes += stepBytes;
+    this.pendingHistorySteps.push(detached);
+  }
+
+  private recordHistoryStepBeforePendingWorkbookChanges(
+    step: EngineHistoryStep<MetadataType<TMetadata, "range">>
+  ): void {
+    if (
+      this.isReplayingHistory ||
+      this.historyTransactionDepth === 0 ||
+      this.pendingHistoryOversized
+    ) {
+      return;
+    }
+    if (!isHistoryValueSafelyRetainable(step)) {
+      this.rejectExplicitTransactionOrMarkOversized(step);
+      return;
+    }
+    const stepBytes = estimateHistoryValueBytes(step);
+    if (
+      this.pendingHistoryEstimatedBytes + stepBytes >
+      this.undoRedoManager.maxBytes
+    ) {
+      this.rejectExplicitTransactionOrMarkOversized(step);
+      return;
+    }
+    this.pendingHistoryEstimatedBytes += stepBytes;
+    this.pendingHistorySteps.push(step);
+  }
+
+  private withoutWorkbookHistoryCapture<T>(callback: () => T): T {
+    this.flushPendingWorkbookChanges();
+    this.workbookHistoryCaptureSuppressionDepth++;
+    try {
+      return callback();
+    } finally {
+      this.workbookHistoryCaptureSuppressionDepth--;
+    }
+  }
+
+  private rollbackPendingHistory(): void {
+    if (this.pendingHistorySteps.length === 0) {
+      return;
+    }
+
+    this.isReplayingHistory = true;
+    try {
+      for (
+        let index = this.pendingHistorySteps.length - 1;
+        index >= 0;
+        index--
+      ) {
+        const step = this.pendingHistorySteps[index]!;
+        if (step.kind === "workbook-data" && step.committed === false) {
+          continue;
+        }
+        this.applyHistoryStep(step, "undo");
+      }
+      this.evaluationManager.clearEvaluationCache();
+    } finally {
+      this.isReplayingHistory = false;
+      this.pendingUpdate = false;
+    }
+  }
+
+  private replayHistoryEntry(
+    entry: HistoryEntry<EngineHistoryStep<MetadataType<TMetadata, "range">>>,
+    direction: "undo" | "redo"
+  ): void {
+    this.isReplayingHistory = true;
+    let requiresFullInvalidation = false;
+    try {
+      const steps =
+        direction === "undo" ? [...entry.steps].reverse() : entry.steps;
+      for (const step of steps) {
+        requiresFullInvalidation =
+          this.applyHistoryStep(step, direction) || requiresFullInvalidation;
+      }
+      if (requiresFullInvalidation) {
+        this.evaluationManager.clearEvaluationCache();
+      }
+    } finally {
+      this.isReplayingHistory = false;
+      this.pendingUpdate = false;
+    }
+  }
+
+  private applyHistoryStep(
+    step: EngineHistoryStep<MetadataType<TMetadata, "range">>,
+    direction: "undo" | "redo"
+  ): boolean {
+    const useAfter = direction === "redo";
+    switch (step.kind) {
+      case "workbook-data": {
+        const contentDataChanges = function* (): Generator<
+          Extract<WorkbookDataChange, { kind: "cell-content" }>
+        > {
+          for (const patch of step.patches) {
+            for (const change of patch) {
+              if (change.kind === "cell-content") {
+                yield change;
+              }
+            }
+          }
+        };
+        if (step.sequentialCellContentDeletions && step.patches.length > 1) {
+          this.workbookManager.applySequentialCellContentDeletionsForHistory(
+            step.patches,
+            direction
+          );
+        } else {
+          this.workbookManager.applyCellContentChangesForHistory(
+            contentDataChanges(),
+            direction
+          );
+        }
+        const cellMetadataChanges = function* (): Generator<
+          Extract<WorkbookDataChange, { kind: "cell-metadata" }>
+        > {
+          for (const patch of step.patches) {
+            for (const change of patch) {
+              if (change.kind === "cell-metadata") {
+                yield change;
+              }
+            }
+          }
+        };
+        this.workbookManager.applyCellMetadataChangesForHistory(
+          cellMetadataChanges(),
+          direction,
+          (value) => this.cloneMetadataHistoryValue(value)
+        );
+
+        const patches =
+          direction === "undo" ? [...step.patches].reverse() : step.patches;
+        for (const patch of patches) {
+          const changes = direction === "undo" ? [...patch].reverse() : patch;
+          for (const change of changes) {
+            switch (change.kind) {
+              case "cell-content":
+              case "cell-metadata":
+                break;
+              case "sheet-metadata": {
+                const value = this.cloneMetadataHistoryValue(
+                  useAfter ? change.after : change.before
+                );
+                this.workbookManager.setSheetMetadata(
+                  {
+                    workbookName: change.workbookName,
+                    sheetName: change.sheetName,
+                  },
+                  value
+                );
+                break;
+              }
+              case "workbook-metadata": {
+                const value = this.cloneMetadataHistoryValue(
+                  useAfter ? change.after : change.before
+                );
+                this.workbookManager.setWorkbookMetadata(
+                  change.workbookName,
+                  value
+                );
+                break;
+              }
+            }
+          }
+        }
+
+        for (const patch of step.patches) {
+          const contentChanges = patch.flatMap((change) => {
+            if (change.kind !== "cell-content") {
+              return [];
+            }
+            const value = useAfter ? change.after : change.before;
+            return [
+              {
+                address: change.address,
+                before: useAfter ? change.before : change.after,
+                after: value,
+              },
+            ];
+          });
+          if (contentChanges.length > 0) {
+            this.evaluationManager.invalidateFromMutation({
+              touchedCells: buildTouchedCells(contentChanges),
+              resourceKeys: [],
+            });
+          }
+        }
+        return false;
+      }
+      case "named-expression-data":
+        this.namedExpressionManager.applyHistoryChanges(
+          step.changes,
+          direction
+        );
+        this.invalidateNamedExpressionHistoryChanges(step.changes);
+        return false;
+      case "table-data": {
+        this.tableManager.applyHistoryChanges(step.changes, direction);
+        const tables = step.changes.flatMap((change) =>
+          change.kind === "table"
+            ? [change.before?.table, change.after?.table]
+            : []
+        );
+        const resourceKeys = new Set<string>();
+        for (const change of step.changes) {
+          if (change.kind !== "table") {
+            continue;
+          }
+          for (const state of [change.before, change.after]) {
+            if (state) {
+              resourceKeys.add(
+                getTableResourceKey({
+                  workbookName: state.workbookName,
+                  tableName: state.tableName,
+                })
+              );
+            }
+          }
+        }
+        this.evaluationManager.invalidateFromMutation({
+          touchedCells: buildTableTouchedCells(this.workbookManager, tables),
+          tableContextChangedCells: buildTableContextChangedCells(
+            this.workbookManager,
+            tables
+          ),
+          resourceKeys: Array.from(resourceKeys),
+        });
+        return false;
+      }
+      case "style-data":
+        this.styleManager.applyHistoryChanges(step.changes, direction);
+        return false;
+      case "range-metadata-data":
+        this.rangeMetadataManager.applyHistoryChanges(step.changes, direction);
+        return false;
+      case "reference-data":
+        this.referenceManager.applyHistoryChanges(step.changes, direction);
+        return false;
+      case "rename-sheet":
+        this.workbookManager.renameSheet({
+          workbookName: step.workbookName,
+          sheetName: useAfter ? step.before : step.after,
+          newSheetName: useAfter ? step.after : step.before,
+        });
+        return true;
+      case "rename-workbook":
+        this.workbookManager.renameWorkbook({
+          workbookName: useAfter ? step.before : step.after,
+          newWorkbookName: useAfter ? step.after : step.before,
+        });
+        return true;
+      case "workbook-scope":
+        this.restoreWorkbookScopeState(useAfter ? step.after : step.before);
+        return true;
+      case "sheet-scope":
+        this.restoreSheetScopeState(useAfter ? step.after : step.before);
+        return true;
+    }
+  }
+
+  private invalidateNamedExpressionHistoryChanges(
+    changes: readonly NamedExpressionMutation[]
+  ): void {
+    const resourceKeys = new Set<string>();
+    for (const change of changes) {
+      if (change.kind !== "named-expression") {
+        continue;
+      }
+      for (const state of [change.before, change.after]) {
+        if (!state) {
+          continue;
+        }
+        const scope =
+          state.scope.type === "global"
+            ? {}
+            : state.scope.type === "workbook"
+            ? { workbookName: state.scope.workbookName }
+            : {
+                workbookName: state.scope.workbookName,
+                sheetName: state.scope.sheetName,
+              };
+        resourceKeys.add(
+          getNamedExpressionResourceKey({
+            expressionName: state.expressionName,
+            ...scope,
+          })
+        );
+      }
+    }
+    if (resourceKeys.size > 0) {
+      this.evaluationManager.invalidateFromMutation({
+        touchedCells: [],
+        resourceKeys: Array.from(resourceKeys),
+      });
+    }
+  }
+
+  private captureWorkbookScopeState(
+    workbookName: string,
+    detach = true
+  ): WorkbookScopeState {
+    const workbooks = this.workbookManager.getWorkbooks();
+    const workbook = workbooks.get(workbookName);
+    return {
+      workbookName,
+      workbookOrder: Array.from(workbooks.keys()),
+      ...(workbook === undefined
+        ? {}
+        : { workbook: detach ? cloneHistoryValue(workbook) : workbook }),
+    };
+  }
+
+  private captureSheetScopeState(
+    workbookName: string,
+    sheetName: string,
+    detach = true
+  ): SheetScopeState {
+    const sheets = this.workbookManager.getSheets(workbookName);
+    const sheet = sheets.get(sheetName);
+    return {
+      workbookName,
+      sheetName,
+      sheetOrder: Array.from(sheets.keys()),
+      ...(sheet === undefined
+        ? {}
+        : { sheet: detach ? cloneHistoryValue(sheet) : sheet }),
+    };
+  }
+
+  private restoreWorkbookScopeState(state: WorkbookScopeState): void {
+    this.workbookManager.restoreWorkbookForHistory({
+      workbookName: state.workbookName,
+      workbookOrder: state.workbookOrder,
+      workbook:
+        state.workbook === undefined
+          ? undefined
+          : cloneHistoryValue(state.workbook),
+    });
+  }
+
+  private restoreSheetScopeState(state: SheetScopeState): void {
+    this.workbookManager.restoreSheetForHistory({
+      workbookName: state.workbookName,
+      sheetName: state.sheetName,
+      sheetOrder: state.sheetOrder,
+      sheet:
+        state.sheet === undefined ? undefined : cloneHistoryValue(state.sheet),
+    });
+  }
+
+  private withWorkbookScopeHistory<T>(
+    workbookName: string,
+    callback: () => T
+  ): T {
+    const beforeView = this.captureWorkbookScopeState(workbookName, false);
+    const minimumStep = {
+      kind: "workbook-scope" as const,
+      before: beforeView,
+      after: {
+        workbookName,
+        workbookOrder: beforeView.workbookOrder,
+      },
+    };
+    if (
+      !isHistoryValueSafelyRetainable(beforeView) ||
+      this.pendingHistoryEstimatedBytes +
+        estimateHistoryValueBytes(minimumStep) >
+        this.undoRedoManager.maxBytes
+    ) {
+      this.rejectExplicitTransactionOrMarkOversized();
+      return this.withoutWorkbookHistoryCapture(callback);
+    }
+
+    const before = cloneHistoryValue(beforeView);
+    try {
+      return this.withoutWorkbookHistoryCapture(callback);
+    } finally {
+      if (!this.pendingHistoryOversized) {
+        const afterView = this.captureWorkbookScopeState(workbookName, false);
+        if (!isHistoryValueSafelyRetainable(afterView)) {
+          this.rejectExplicitTransactionOrMarkOversized({
+            kind: "workbook-scope",
+            before,
+            after: afterView,
+          });
+        } else if (!historyValuesEqual(before, afterView)) {
+          const candidate = {
+            kind: "workbook-scope" as const,
+            before,
+            after: afterView,
+          };
+          if (
+            this.pendingHistoryEstimatedBytes +
+              estimateHistoryValueBytes(candidate) >
+            this.undoRedoManager.maxBytes
+          ) {
+            this.rejectExplicitTransactionOrMarkOversized(candidate);
+          } else {
+            this.recordHistoryStep({
+              ...candidate,
+              after: cloneHistoryValue(afterView),
+            });
+          }
+        }
+      }
+    }
+  }
+
+  private withSheetScopeHistory<T>(
+    workbookName: string,
+    sheetName: string,
+    callback: () => T
+  ): T {
+    const beforeView = this.captureSheetScopeState(
+      workbookName,
+      sheetName,
+      false
+    );
+    const minimumStep = {
+      kind: "sheet-scope" as const,
+      before: beforeView,
+      after: {
+        workbookName,
+        sheetName,
+        sheetOrder: beforeView.sheetOrder,
+      },
+    };
+    if (
+      !isHistoryValueSafelyRetainable(beforeView) ||
+      this.pendingHistoryEstimatedBytes +
+        estimateHistoryValueBytes(minimumStep) >
+        this.undoRedoManager.maxBytes
+    ) {
+      this.rejectExplicitTransactionOrMarkOversized();
+      return this.withoutWorkbookHistoryCapture(callback);
+    }
+
+    const before = cloneHistoryValue(beforeView);
+    try {
+      return this.withoutWorkbookHistoryCapture(callback);
+    } finally {
+      if (!this.pendingHistoryOversized) {
+        const afterView = this.captureSheetScopeState(
+          workbookName,
+          sheetName,
+          false
+        );
+        if (!isHistoryValueSafelyRetainable(afterView)) {
+          this.rejectExplicitTransactionOrMarkOversized({
+            kind: "sheet-scope",
+            before,
+            after: afterView,
+          });
+        } else if (!historyValuesEqual(before, afterView)) {
+          const candidate = {
+            kind: "sheet-scope" as const,
+            before,
+            after: afterView,
+          };
+          if (
+            this.pendingHistoryEstimatedBytes +
+              estimateHistoryValueBytes(candidate) >
+            this.undoRedoManager.maxBytes
+          ) {
+            this.rejectExplicitTransactionOrMarkOversized(candidate);
+          } else {
+            this.recordHistoryStep({
+              ...candidate,
+              after: cloneHistoryValue(afterView),
+            });
+          }
+        }
+      }
+    }
   }
 
   private materializeDefaultTableHeaders(
@@ -312,10 +1564,7 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     changedFormulaCells: CellAddress[];
     resourceKeys: string[];
   } {
-    const renamesByTable = new Map<
-      TableDefinition,
-      Map<string, string>
-    >();
+    const renamesByTable = new Map<TableDefinition, Map<string, string>>();
     for (const update of updates) {
       if (update.oldName === update.newName) {
         continue;
@@ -332,17 +1581,16 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     const resourceKeys: string[] = [];
     for (const [table, columnRenames] of renamesByTable) {
       changedFormulaCells.push(
-        ...this.workbookManager.updateAllFormulas(
-          (formula, formulaAddress) =>
-            renameTableColumnsInFormula({
-              formula,
-              tableName: table.name,
-              tableWorkbookName: table.workbookName,
-              formulaWorkbookName: formulaAddress.workbookName,
-              columnRenames,
-              includeImplicitReferences:
-                this.tableManager.isCellInTable(formulaAddress) === table,
-            })
+        ...this.workbookManager.updateAllFormulas((formula, formulaAddress) =>
+          renameTableColumnsInFormula({
+            formula,
+            tableName: table.name,
+            tableWorkbookName: table.workbookName,
+            formulaWorkbookName: formulaAddress.workbookName,
+            columnRenames,
+            includeImplicitReferences:
+              this.tableManager.isCellInTable(formulaAddress) === table,
+          })
         )
       );
       resourceKeys.push(
@@ -367,7 +1615,9 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   }
 
   private getWorkbookResourceKeys(workbookName: string): string[] {
-    const resourceKeys = new Set<string>([getWorkbookResourceKey(workbookName)]);
+    const resourceKeys = new Set<string>([
+      getWorkbookResourceKey(workbookName),
+    ]);
 
     for (const sheetName of this.workbookManager
       .getWorkbooks()
@@ -388,9 +1638,10 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
         getNamedExpressionResourceKey({ expressionName: name, workbookName })
       );
     }
-    for (const [sheetName, expressions] of namedExpressions.sheetExpressions.get(
-      workbookName
-    ) ?? []) {
+    for (const [
+      sheetName,
+      expressions,
+    ] of namedExpressions.sheetExpressions.get(workbookName) ?? []) {
       resourceKeys.add(getSheetResourceKey({ workbookName, sheetName }));
       for (const name of expressions.keys()) {
         resourceKeys.add(
@@ -875,7 +2126,10 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
             previousExpressions.keys(),
             scope
           ),
-          ...getNamedExpressionScopeResourceKeys(opts.expressions.keys(), scope),
+          ...getNamedExpressionScopeResourceKeys(
+            opts.expressions.keys(),
+            scope
+          ),
         ],
       });
     });
@@ -1281,48 +2535,11 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   //#endregion
 
   //#region Copy/Paste
-  private getTopLeftCell(cells: CellAddress[]): CellAddress {
-    let topLeft = cells[0]!;
-    for (const cell of cells) {
-      if (
-        cell.rowIndex < topLeft.rowIndex ||
-        (cell.rowIndex === topLeft.rowIndex &&
-          cell.colIndex < topLeft.colIndex)
-      ) {
-        topLeft = cell;
-      }
-    }
-    return topLeft;
-  }
-
-  private dedupeAddresses(addresses: CellAddress[]): CellAddress[] {
-    return Array.from(
-      new Map(addresses.map((address) => [getMutationAddressKey(address), address]))
-        .values()
-    );
-  }
-
-  private getPasteTouchedAddresses(
-    source: CellAddress[],
-    target: CellAddress,
-    options: CopyCellsOptions
-  ): CellAddress[] {
-    if (source.length === 0) {
-      return [];
-    }
-
-    const topLeft = this.getTopLeftCell(source);
-    const colOffset = target.colIndex - topLeft.colIndex;
-    const rowOffset = target.rowIndex - topLeft.rowIndex;
-    const targetCells = source.map((sourceCell) => ({
-      workbookName: target.workbookName,
-      sheetName: target.sheetName,
-      colIndex: sourceCell.colIndex + colOffset,
-      rowIndex: sourceCell.rowIndex + rowOffset,
-    }));
-
-    return this.dedupeAddresses(
-      options.cut ? [...source, ...targetCells] : targetCells
+  private batchCopyAncillaryMutations<TResult>(
+    callback: () => TResult
+  ): TResult {
+    return this.styleManager.batchMutations(() =>
+      this.rangeMetadataManager.batchMutations(callback)
     );
   }
 
@@ -1339,24 +2556,12 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
         return;
       }
 
-      const touchedAddresses = this.getPasteTouchedAddresses(
-        source,
-        target,
-        options
+      this.batchCopyAncillaryMutations(() =>
+        this.copyManager.pasteCells(source, target, options)
       );
-      const before = captureCellContents(this.workbookManager, touchedAddresses);
 
-      this.copyManager.pasteCells(source, target, options);
-
-      const after = captureCellContents(this.workbookManager, touchedAddresses);
       this.emitMutation({
-        touchedCells: buildTouchedCells(
-          touchedAddresses.map((address) => ({
-            address,
-            before: before.get(getMutationAddressKey(address)),
-            after: after.get(getMutationAddressKey(address)),
-          }))
-        ),
+        touchedCells: [],
         resourceKeys: [],
       });
     });
@@ -1399,25 +2604,12 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     options: CopyCellsOptions
   ): void {
     return this.withUndoRedoCheckpoint(() => {
-      const touchedAddresses = this.dedupeAddresses([
-        ...targetRanges.flatMap((targetRange) =>
-          getFiniteRangeAddresses(targetRange)
-        ),
-        ...(options.cut ? getFiniteRangeAddresses(seedRange) : []),
-      ]);
-      const before = captureCellContents(this.workbookManager, touchedAddresses);
+      this.batchCopyAncillaryMutations(() =>
+        this.copyManager.fillAreas(seedRange, targetRanges, options)
+      );
 
-      this.copyManager.fillAreas(seedRange, targetRanges, options);
-
-      const after = captureCellContents(this.workbookManager, touchedAddresses);
       this.emitMutation({
-        touchedCells: buildTouchedCells(
-          touchedAddresses.map((address) => ({
-            address,
-            before: before.get(getMutationAddressKey(address)),
-            after: after.get(getMutationAddressKey(address)),
-          }))
-        ),
+        touchedCells: [],
         resourceKeys: [],
       });
     });
@@ -1630,13 +2822,19 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   //#region Sheets
   addSheet(opts: { workbookName: string; sheetName: string }): Sheet {
     return this.withUndoRedoCheckpoint(() => {
-      const sheet = this.workbookManager.addSheet(opts);
-      this.namedExpressionManager.addSheet(opts);
-      this.emitMutation({
-        touchedCells: [],
-        resourceKeys: [getSheetResourceKey(opts)],
-      });
-      return sheet;
+      return this.withSheetScopeHistory(
+        opts.workbookName,
+        opts.sheetName,
+        () => {
+          const sheet = this.workbookManager.addSheet(opts);
+          this.namedExpressionManager.addSheet(opts);
+          this.emitMutation({
+            touchedCells: [],
+            resourceKeys: [getSheetResourceKey(opts)],
+          });
+          return sheet;
+        }
+      );
     });
   }
 
@@ -1662,20 +2860,25 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
 
   removeSheet(opts: { workbookName: string; sheetName: string }): void {
     return this.withUndoRedoCheckpoint(() => {
-      const resourceKeys = this.getSheetResourceKeys(opts);
-      this.workbookManager.removeSheet(opts);
-      this.namedExpressionManager.removeSheet(opts);
-      this.tableManager.removeSheet(opts);
-      this.styleManager.removeSheetStyles(opts.workbookName, opts.sheetName);
-      this.rangeMetadataManager.removeSheetRangeMetadata(
-        opts.workbookName,
-        opts.sheetName
-      );
-      this.referenceManager.invalidateSheet(opts.workbookName, opts.sheetName);
-      this.emitMutation({
-        touchedCells: [],
-        resourceKeys,
-        removedScopes: [{ type: "sheet", ...opts }],
+      this.withSheetScopeHistory(opts.workbookName, opts.sheetName, () => {
+        const resourceKeys = this.getSheetResourceKeys(opts);
+        this.workbookManager.removeSheet(opts);
+        this.namedExpressionManager.removeSheet(opts);
+        this.tableManager.removeSheet(opts);
+        this.styleManager.removeSheetStyles(opts.workbookName, opts.sheetName);
+        this.rangeMetadataManager.removeSheetRangeMetadata(
+          opts.workbookName,
+          opts.sheetName
+        );
+        this.referenceManager.invalidateSheet(
+          opts.workbookName,
+          opts.sheetName
+        );
+        this.emitMutation({
+          touchedCells: [],
+          resourceKeys,
+          removedScopes: [{ type: "sheet", ...opts }],
+        });
       });
     });
   }
@@ -1686,9 +2889,16 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     workbookName: string;
   }): void {
     return this.withUndoRedoCheckpoint(() => {
+      this.flushPendingWorkbookChanges();
       const oldResourceKeys = this.getSheetResourceKeys(opts);
 
       this.workbookManager.renameSheet(opts);
+      this.recordHistoryStepBeforePendingWorkbookChanges({
+        kind: "rename-sheet",
+        workbookName: opts.workbookName,
+        before: opts.sheetName,
+        after: opts.newSheetName,
+      });
       this.namedExpressionManager.renameSheet(opts);
       this.tableManager.updateTablesForSheetRename(opts);
       this.styleManager.updateSheetName(
@@ -1775,10 +2985,7 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   /**
    * Search raw stored string content without evaluating cell values.
    */
-  search(
-    query: string,
-    options?: SearchOptions
-  ): SearchMatch[] {
+  search(query: string, options?: SearchOptions): SearchMatch[] {
     return this.workbookManager.search(query, options);
   }
 
@@ -1864,29 +3071,33 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   //#region Workbook
   addWorkbook(workbookName: string): void {
     return this.withUndoRedoCheckpoint(() => {
-      this.workbookManager.addWorkbook(workbookName);
-      this.namedExpressionManager.addWorkbook(workbookName);
-      this.tableManager.addWorkbook(workbookName);
-      this.emitMutation({
-        touchedCells: [],
-        resourceKeys: [getWorkbookResourceKey(workbookName)],
+      this.withWorkbookScopeHistory(workbookName, () => {
+        this.workbookManager.addWorkbook(workbookName);
+        this.namedExpressionManager.addWorkbook(workbookName);
+        this.tableManager.addWorkbook(workbookName);
+        this.emitMutation({
+          touchedCells: [],
+          resourceKeys: [getWorkbookResourceKey(workbookName)],
+        });
       });
     });
   }
 
   removeWorkbook(workbookName: string): void {
     return this.withUndoRedoCheckpoint(() => {
-      const resourceKeys = this.getWorkbookResourceKeys(workbookName);
-      this.workbookManager.removeWorkbook(workbookName);
-      this.namedExpressionManager.removeWorkbook(workbookName);
-      this.tableManager.removeWorkbook(workbookName);
-      this.styleManager.removeWorkbookStyles(workbookName);
-      this.rangeMetadataManager.removeWorkbookRangeMetadata(workbookName);
-      this.referenceManager.invalidateWorkbook(workbookName);
-      this.emitMutation({
-        touchedCells: [],
-        resourceKeys,
-        removedScopes: [{ type: "workbook", workbookName }],
+      this.withWorkbookScopeHistory(workbookName, () => {
+        const resourceKeys = this.getWorkbookResourceKeys(workbookName);
+        this.workbookManager.removeWorkbook(workbookName);
+        this.namedExpressionManager.removeWorkbook(workbookName);
+        this.tableManager.removeWorkbook(workbookName);
+        this.styleManager.removeWorkbookStyles(workbookName);
+        this.rangeMetadataManager.removeWorkbookRangeMetadata(workbookName);
+        this.referenceManager.invalidateWorkbook(workbookName);
+        this.emitMutation({
+          touchedCells: [],
+          resourceKeys,
+          removedScopes: [{ type: "workbook", workbookName }],
+        });
       });
     });
   }
@@ -1900,168 +3111,186 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
 
   cloneWorkbook(fromWorkbookName: string, toWorkbookName: string): void {
     return this.withUndoRedoCheckpoint(() => {
-      const sourceWorkbook = this.workbookManager
-        .getWorkbooks()
-        .get(fromWorkbookName);
-      if (!sourceWorkbook) {
-        throw new Error(`Source workbook "${fromWorkbookName}" not found`);
-      }
-      if (this.workbookManager.getWorkbooks().has(toWorkbookName)) {
-        throw new Error(`Target workbook "${toWorkbookName}" already exists`);
-      }
+      this.withWorkbookScopeHistory(toWorkbookName, () => {
+        const sourceWorkbook = this.workbookManager
+          .getWorkbooks()
+          .get(fromWorkbookName);
+        if (!sourceWorkbook) {
+          throw new Error(`Source workbook "${fromWorkbookName}" not found`);
+        }
+        if (this.workbookManager.getWorkbooks().has(toWorkbookName)) {
+          throw new Error(`Target workbook "${toWorkbookName}" already exists`);
+        }
 
-      this.workbookManager.addWorkbook(toWorkbookName);
-      this.namedExpressionManager.addWorkbook(toWorkbookName);
-      this.tableManager.addWorkbook(toWorkbookName);
+        this.workbookManager.addWorkbook(toWorkbookName);
+        this.namedExpressionManager.addWorkbook(toWorkbookName);
+        this.tableManager.addWorkbook(toWorkbookName);
 
-      for (const [sheetName, sheet] of sourceWorkbook.sheets) {
-        this.workbookManager.addSheet({
-          workbookName: toWorkbookName,
-          sheetName,
-        });
-        this.namedExpressionManager.addSheet({
-          workbookName: toWorkbookName,
-          sheetName,
-        });
-        this.workbookManager.setSheetContent(
-          { workbookName: toWorkbookName, sheetName },
-          new Map(sheet.content)
-        );
+        for (const [sheetName, sheet] of sourceWorkbook.sheets) {
+          this.workbookManager.addSheet({
+            workbookName: toWorkbookName,
+            sheetName,
+          });
+          this.namedExpressionManager.addSheet({
+            workbookName: toWorkbookName,
+            sheetName,
+          });
+          this.workbookManager.setSheetContent(
+            { workbookName: toWorkbookName, sheetName },
+            new Map(sheet.content)
+          );
 
-        const targetSheet = this.workbookManager.getSheet({
-          workbookName: toWorkbookName,
-          sheetName,
-        });
-        if (targetSheet) {
-          targetSheet.metadata = new Map(sheet.metadata);
-          if (sheet.sheetMetadata !== undefined) {
-            targetSheet.sheetMetadata = structuredClone(sheet.sheetMetadata);
+          const targetSheet = this.workbookManager.getSheet({
+            workbookName: toWorkbookName,
+            sheetName,
+          });
+          if (targetSheet) {
+            targetSheet.metadata = new Map(sheet.metadata);
+            if (sheet.sheetMetadata !== undefined) {
+              targetSheet.sheetMetadata = structuredClone(sheet.sheetMetadata);
+            }
           }
         }
-      }
 
-      const targetWorkbook = this.workbookManager
-        .getWorkbooks()
-        .get(toWorkbookName);
-      if (targetWorkbook && sourceWorkbook.workbookMetadata !== undefined) {
-        targetWorkbook.workbookMetadata = structuredClone(
-          sourceWorkbook.workbookMetadata
-        );
-      }
-
-      const namedExpressions = this.namedExpressionManager.getNamedExpressions();
-      const sourceWorkbookExpressions =
-        namedExpressions.workbookExpressions.get(fromWorkbookName);
-      if (sourceWorkbookExpressions) {
-        for (const [expressionName, expression] of sourceWorkbookExpressions) {
-          this.namedExpressionManager.addNamedExpression({
-            expressionName,
-            expression: expression.expression,
-            workbookName: toWorkbookName,
-          });
+        const targetWorkbook = this.workbookManager
+          .getWorkbooks()
+          .get(toWorkbookName);
+        if (targetWorkbook && sourceWorkbook.workbookMetadata !== undefined) {
+          targetWorkbook.workbookMetadata = structuredClone(
+            sourceWorkbook.workbookMetadata
+          );
         }
-      }
 
-      const sourceSheetExpressions =
-        namedExpressions.sheetExpressions.get(fromWorkbookName);
-      if (sourceSheetExpressions) {
-        for (const [sheetName, expressions] of sourceSheetExpressions) {
-          for (const [expressionName, expression] of expressions) {
+        const namedExpressions =
+          this.namedExpressionManager.getNamedExpressions();
+        const sourceWorkbookExpressions =
+          namedExpressions.workbookExpressions.get(fromWorkbookName);
+        if (sourceWorkbookExpressions) {
+          for (const [
+            expressionName,
+            expression,
+          ] of sourceWorkbookExpressions) {
             this.namedExpressionManager.addNamedExpression({
               expressionName,
               expression: expression.expression,
               workbookName: toWorkbookName,
-              sheetName,
             });
           }
         }
-      }
 
-      const sourceTables = this.tableManager.tables.get(fromWorkbookName);
-      if (sourceTables) {
-        for (const [tableName] of sourceTables) {
-          this.tableManager.copyTable(
-            { workbookName: fromWorkbookName, tableName },
-            { workbookName: toWorkbookName, tableName }
-          );
+        const sourceSheetExpressions =
+          namedExpressions.sheetExpressions.get(fromWorkbookName);
+        if (sourceSheetExpressions) {
+          for (const [sheetName, expressions] of sourceSheetExpressions) {
+            for (const [expressionName, expression] of expressions) {
+              this.namedExpressionManager.addNamedExpression({
+                expressionName,
+                expression: expression.expression,
+                workbookName: toWorkbookName,
+                sheetName,
+              });
+            }
+          }
         }
-      }
 
-      for (const style of this.styleManager.getAllConditionalStyles()) {
-        if (style.areas.some((area) => area.workbookName === fromWorkbookName)) {
-          this.styleManager.addConditionalStyle({
-            ...style,
-            areas: style.areas.map((area) =>
-              area.workbookName === fromWorkbookName
-                ? { ...area, workbookName: toWorkbookName }
-                : area
-            ),
-          });
+        const sourceTables = this.tableManager.tables.get(fromWorkbookName);
+        if (sourceTables) {
+          for (const [tableName] of sourceTables) {
+            this.tableManager.copyTable(
+              { workbookName: fromWorkbookName, tableName },
+              { workbookName: toWorkbookName, tableName }
+            );
+          }
         }
-      }
 
-      for (const style of this.styleManager.getAllCellStyles()) {
-        if (style.areas.some((area) => area.workbookName === fromWorkbookName)) {
-          this.styleManager.addCellStyle({
-            ...style,
-            areas: style.areas.map((area) =>
-              area.workbookName === fromWorkbookName
-                ? { ...area, workbookName: toWorkbookName }
-                : area
-            ),
-          });
+        for (const style of this.styleManager.getAllConditionalStyles()) {
+          if (
+            style.areas.some((area) => area.workbookName === fromWorkbookName)
+          ) {
+            this.styleManager.addConditionalStyle({
+              ...style,
+              areas: style.areas.map((area) =>
+                area.workbookName === fromWorkbookName
+                  ? { ...area, workbookName: toWorkbookName }
+                  : area
+              ),
+            });
+          }
         }
-      }
 
-      for (const dataType of this.styleManager.getAllCellDataTypes()) {
-        const clonedAreas = dataType.areas
-          .filter((area) => area.workbookName === fromWorkbookName)
-          .map((area) => ({ ...area, workbookName: toWorkbookName }));
-        if (clonedAreas.length > 0) {
-          this.styleManager.addCellDataType({
-            ...dataType,
-            areas: clonedAreas,
-          });
+        for (const style of this.styleManager.getAllCellStyles()) {
+          if (
+            style.areas.some((area) => area.workbookName === fromWorkbookName)
+          ) {
+            this.styleManager.addCellStyle({
+              ...style,
+              areas: style.areas.map((area) =>
+                area.workbookName === fromWorkbookName
+                  ? { ...area, workbookName: toWorkbookName }
+                  : area
+              ),
+            });
+          }
         }
-      }
 
-      for (const metadata of this.rangeMetadataManager.getAllRangeMetadata()) {
-        if (
-          metadata.areas.some((area) => area.workbookName === fromWorkbookName)
-        ) {
-          this.rangeMetadataManager.addRangeMetadata({
-            metadata: metadata.metadata,
-            areas: metadata.areas.map((area) =>
-              area.workbookName === fromWorkbookName
-                ? { ...area, workbookName: toWorkbookName }
-                : area
-            ),
-          });
+        for (const dataType of this.styleManager.getAllCellDataTypes()) {
+          const clonedAreas = dataType.areas
+            .filter((area) => area.workbookName === fromWorkbookName)
+            .map((area) => ({ ...area, workbookName: toWorkbookName }));
+          if (clonedAreas.length > 0) {
+            this.styleManager.addCellDataType({
+              ...dataType,
+              areas: clonedAreas,
+            });
+          }
         }
-      }
 
-      this.workbookManager.updateFormulasForWorkbook(
-        toWorkbookName,
-        (formula) =>
-          renameWorkbookInFormula({
-            formula,
-            oldWorkbookName: fromWorkbookName,
-            newWorkbookName: toWorkbookName,
-          })
-      );
+        for (const metadata of this.rangeMetadataManager.getAllRangeMetadata()) {
+          if (
+            metadata.areas.some(
+              (area) => area.workbookName === fromWorkbookName
+            )
+          ) {
+            this.rangeMetadataManager.addRangeMetadata({
+              metadata: metadata.metadata,
+              areas: metadata.areas.map((area) =>
+                area.workbookName === fromWorkbookName
+                  ? { ...area, workbookName: toWorkbookName }
+                  : area
+              ),
+            });
+          }
+        }
 
-      this.emitMutation({
-        touchedCells: [],
-        resourceKeys: [getWorkbookResourceKey(toWorkbookName)],
+        this.workbookManager.updateFormulasForWorkbook(
+          toWorkbookName,
+          (formula) =>
+            renameWorkbookInFormula({
+              formula,
+              oldWorkbookName: fromWorkbookName,
+              newWorkbookName: toWorkbookName,
+            })
+        );
+
+        this.emitMutation({
+          touchedCells: [],
+          resourceKeys: [getWorkbookResourceKey(toWorkbookName)],
+        });
       });
     });
   }
 
   renameWorkbook(opts: { workbookName: string; newWorkbookName: string }) {
     return this.withUndoRedoCheckpoint(() => {
+      this.flushPendingWorkbookChanges();
       const oldResourceKeys = this.getWorkbookResourceKeys(opts.workbookName);
 
       this.workbookManager.renameWorkbook(opts);
+      this.recordHistoryStepBeforePendingWorkbookChanges({
+        kind: "rename-workbook",
+        before: opts.workbookName,
+        after: opts.newWorkbookName,
+      });
       this.namedExpressionManager.renameWorkbook(opts);
       this.tableManager.updateTablesForWorkbookRename(opts);
       this.styleManager.updateWorkbookName(
@@ -2113,37 +3342,45 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     content: Map<string, SerializedCellValue>
   ) {
     return this.withUndoRedoCheckpoint(() => {
-      const normalizedContent = new Map(content);
       const preparedHeaderUpdates =
         this.tableManager.prepareHeaderUpdatesForSheet({
           ...opts,
-          getCellContent: (address) =>
-            normalizedContent.get(getCellReference(address)),
+          getCellContent: (address) => content.get(getCellReference(address)),
         });
-      for (const generatedHeader of preparedHeaderUpdates.generatedHeaders) {
-        normalizedContent.set(
-          getCellReference(generatedHeader.address),
-          generatedHeader.name
-        );
+      let replacementContent = content;
+      if (preparedHeaderUpdates.generatedHeaders.length > 0) {
+        replacementContent = new Map(content);
+        for (const generatedHeader of preparedHeaderUpdates.generatedHeaders) {
+          replacementContent.set(
+            getCellReference(generatedHeader.address),
+            generatedHeader.name
+          );
+        }
       }
 
-      const previousContent = this.getExistingSheetContent(opts);
-      this.workbookManager.setSheetContent(opts, normalizedContent);
-      this.tableManager.applyHeaderUpdates(preparedHeaderUpdates.updates);
-      const renamedReferences = this.renameTableHeaderReferences(
-        preparedHeaderUpdates.updates
-      );
-      this.emitMutation({
-        touchedCells: mergeTouchedCells(
-          buildSheetContentTouchedCells(
-            opts,
-            previousContent,
-            normalizedContent
-          ),
-          buildFormulaTouchedCells(renamedReferences.changedFormulaCells)
-        ),
-        resourceKeys: Array.from(new Set(renamedReferences.resourceKeys)),
-      });
+      const applyContent = () => {
+        this.workbookObserverInvalidationSuppressionDepth++;
+        try {
+          this.workbookManager.setSheetContent(opts, replacementContent);
+        } finally {
+          this.workbookObserverInvalidationSuppressionDepth--;
+        }
+        this.tableManager.applyHeaderUpdates(preparedHeaderUpdates.updates);
+        const renamedReferences = this.renameTableHeaderReferences(
+          preparedHeaderUpdates.updates
+        );
+        // Rebuilding a sheet can change formula/spill evaluation precedence
+        // even when every serialized cell value is identical. A cache reset is
+        // both correct for that operation and avoids allocating a second
+        // sheet-sized invalidation footprint.
+        this.evaluationManager.clearEvaluationCache();
+        this.emitMutation({
+          touchedCells: [],
+          resourceKeys: Array.from(new Set(renamedReferences.resourceKeys)),
+        });
+      };
+
+      applyContent();
     });
   }
 
@@ -2156,29 +3393,33 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
         address,
         content
       );
-      const previousValue = this.workbookManager.getCellContent(address);
-      this.workbookManager.setCellContent(
-        address,
-        preparedHeaderUpdate.content
-      );
-      this.tableManager.applyHeaderUpdates(preparedHeaderUpdate.updates);
-      const renamedReferences = this.renameTableHeaderReferences(
-        preparedHeaderUpdate.updates
-      );
+      const applyContent = () => {
+        const previousValue = this.workbookManager.getCellContent(address);
+        this.workbookManager.setCellContent(
+          address,
+          preparedHeaderUpdate.content
+        );
+        this.tableManager.applyHeaderUpdates(preparedHeaderUpdate.updates);
+        const renamedReferences = this.renameTableHeaderReferences(
+          preparedHeaderUpdate.updates
+        );
 
-      this.emitMutation({
-        touchedCells: mergeTouchedCells(
-          buildTouchedCells([
-            {
-              address,
-              before: previousValue,
-              after: preparedHeaderUpdate.content,
-            },
-          ]),
-          buildFormulaTouchedCells(renamedReferences.changedFormulaCells)
-        ),
-        resourceKeys: Array.from(new Set(renamedReferences.resourceKeys)),
-      });
+        this.emitMutation({
+          touchedCells: mergeTouchedCells(
+            buildTouchedCells([
+              {
+                address,
+                before: previousValue,
+                after: preparedHeaderUpdate.content,
+              },
+            ]),
+            buildFormulaTouchedCells(renamedReferences.changedFormulaCells)
+          ),
+          resourceKeys: Array.from(new Set(renamedReferences.resourceKeys)),
+        });
+      };
+
+      applyContent();
     });
   }
   //#endregion
@@ -2204,28 +3445,12 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     direction: FillDirection
   ): void {
     return this.withUndoRedoCheckpoint(() => {
-      const touchedAddresses = this.dedupeAddresses(
-        fillRanges.flatMap((range) =>
-          getFiniteRangeAddresses({
-            workbookName: opts.workbookName,
-            sheetName: opts.sheetName,
-            range,
-          })
-        )
-      );
-      const before = captureCellContents(this.workbookManager, touchedAddresses);
+      this.batchCopyAncillaryMutations(() => {
+        this.autoFillManager.fill(opts, seedRange, fillRanges, direction);
+      });
 
-      this.autoFillManager.fill(opts, seedRange, fillRanges, direction);
-
-      const after = captureCellContents(this.workbookManager, touchedAddresses);
       this.emitMutation({
-        touchedCells: buildTouchedCells(
-          touchedAddresses.map((address) => ({
-            address,
-            before: before.get(getMutationAddressKey(address)),
-            after: after.get(getMutationAddressKey(address)),
-          }))
-        ),
+        touchedCells: [],
         resourceKeys: [],
       });
     });
@@ -2236,21 +3461,10 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
    */
   clearSpreadsheetRange(address: RangeAddress) {
     return this.withUndoRedoCheckpoint(() => {
-      const clearedCells = Array.from(
-        this.workbookManager.iterateCellsInRange(address)
-      );
-      const before = captureCellContents(this.workbookManager, clearedCells);
-
       this.workbookManager.clearSpreadsheetRange(address);
 
       this.emitMutation({
-        touchedCells: buildTouchedCells(
-          clearedCells.map((cellAddress) => ({
-            address: cellAddress,
-            before: before.get(getMutationAddressKey(cellAddress)),
-            after: undefined,
-          }))
-        ),
+        touchedCells: [],
         resourceKeys: [],
       });
     });
@@ -2307,10 +3521,6 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     };
   }
 
-  private serializeHistorySnapshot(): string {
-    return serialize(this.buildHistorySnapshot());
-  }
-
   private buildNamedExpressionSnapshot(
     workbookSnapshot: EngineSnapshot["managers"]["workbook"]
   ): EngineSnapshot["managers"]["namedExpression"] {
@@ -2329,9 +3539,7 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
         new Map(sourceWorkbookExpressions ?? [])
       );
 
-      const sourceSheets = namedExpressions.sheetExpressions.get(
-        workbook.name
-      );
+      const sourceSheets = namedExpressions.sheetExpressions.get(workbook.name);
       const workbookSheetExpressions = new Map<
         string,
         Map<string, NamedExpression>
@@ -2425,13 +3633,8 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     this.referenceManager.restoreFromSnapshot(managers.reference);
   }
 
-  private restoreHistorySnapshot(data: string): void {
-    const deserialized = this.normalizeSupportedSnapshot(deserialize(data));
-    this.restoreDataManagersFromSnapshot(deserialized.managers);
-    this.evaluationManager.clearEvaluationCache();
-  }
-
   resetToSerializedEngine(data: string) {
+    this.assertHistoryControlAllowed("reset serialized engine state");
     const deserialized = this.normalizeSupportedSnapshot(
       deserialize(data)
     ) as EngineSnapshot;
