@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.2.18
+
+### Patch Changes
+
+- Preserve existing style properties when overlapping cell style rules contain undefined values, including after clearing part of a styled range.
+
 ## 0.2.17
 
 ### Patch Changes

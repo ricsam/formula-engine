@@ -1434,6 +1434,95 @@ describe("StyleManager", () => {
       });
     });
 
+    test("ignores undefined properties when composing overlapping direct cell styles", () => {
+      engine.addCellStyle({
+        areas: [{
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 1 },
+              row: { type: "number", value: 1 },
+            },
+          },
+        }],
+        style: {
+          borderColor: "#000000",
+          borderSides: { top: true, right: true, bottom: true, left: true },
+        },
+      });
+
+      engine.addCellStyle({
+        areas: [{
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 1 },
+            end: {
+              col: { type: "number", value: 1 },
+              row: { type: "number", value: 2 },
+            },
+          },
+        }],
+        style: {
+          backgroundColor: undefined,
+          color: "#EA0B0B",
+          borderColor: undefined,
+          borderSides: undefined,
+          fontSize: undefined,
+          bold: undefined,
+          italic: undefined,
+          underline: undefined,
+          wrapText: undefined,
+        },
+      });
+
+      expect(
+        engine.getCellStyle({
+          workbookName,
+          sheetName,
+          colIndex: 0,
+          rowIndex: 1,
+        })
+      ).toEqual({
+        color: "#EA0B0B",
+        borderColor: "#000000",
+        borderSides: { top: true, right: true, bottom: true, left: true },
+      });
+      expect(engine.getAllCellStyles()[1]!.style).toEqual({
+        color: "#EA0B0B",
+      });
+
+      engine.clearCellStyles({
+        workbookName,
+        sheetName,
+        range: {
+          start: { col: 0, row: 0 },
+          end: {
+            col: { type: "number", value: 0 },
+            row: { type: "number", value: 1 },
+          },
+        },
+      });
+
+      const remainingStyles = engine.getAllCellStyles();
+      expect(remainingStyles).toHaveLength(2);
+      expect(remainingStyles.map((style) => style.areas.length)).toEqual([1, 2]);
+      expect(
+        engine.getCellStyle({
+          workbookName,
+          sheetName,
+          colIndex: 1,
+          rowIndex: 1,
+        })
+      ).toEqual({
+        color: "#EA0B0B",
+        borderColor: "#000000",
+        borderSides: { top: true, right: true, bottom: true, left: true },
+      });
+    });
+
     test("later direct cell styles override the same direct style properties", () => {
       engine.addCellStyle({
         areas: [{

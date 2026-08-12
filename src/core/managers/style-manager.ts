@@ -63,6 +63,16 @@ export type StyleMutationObserver = (
 
 type StyleCollectionKind = StyleDataChange["kind"];
 
+const normalizeCellStyle = (style: CellStyle): CellStyle =>
+  Object.fromEntries(
+    Object.entries(style).filter(([, value]) => value !== undefined)
+  ) as CellStyle;
+
+const normalizeDirectCellStyle = (style: DirectCellStyle): DirectCellStyle => ({
+  ...style,
+  style: normalizeCellStyle(style.style),
+});
+
 export class StyleManager {
   private conditionalStyles: ConditionalStyle[] = [];
   private cellStyles: DirectCellStyle[] = [];
@@ -231,11 +241,12 @@ export class StyleManager {
    * Add a direct cell style rule
    */
   addCellStyle(style: DirectCellStyle): void {
+    const normalizedStyle = normalizeDirectCellStyle(style);
     const index = this.cellStyles.length;
     const after = this.mutationDispatcher.observed
-      ? this.mutationDispatcher.retain(style)
+      ? this.mutationDispatcher.retain(normalizedStyle)
       : undefined;
-    this.cellStyles.push(style);
+    this.cellStyles.push(normalizedStyle);
     if (after) {
       this.mutationDispatcher.report([
         { kind: "cell-style", after: { index, value: after } },
@@ -462,7 +473,9 @@ export class StyleManager {
         this.conditionalStyles = conditionalStyles
           ? [...conditionalStyles]
           : [];
-        this.cellStyles = cellStyles ? [...cellStyles] : [];
+        this.cellStyles = cellStyles
+          ? cellStyles.map(normalizeDirectCellStyle)
+          : [];
         this.cellDataTypes = cellDataTypes ? [...cellDataTypes] : [];
       }
     );
