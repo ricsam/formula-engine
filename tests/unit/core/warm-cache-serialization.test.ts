@@ -490,7 +490,7 @@ describe("Warm-cache serialization", () => {
     const hydratedEngine = FormulaEngine.buildEmpty();
 
     expect(() => hydratedEngine.resetToSerializedEngine(legacyPayload)).toThrow(
-      `Unsupported serialized engine format. Expected EngineSnapshot version 5 or ${ENGINE_SNAPSHOT_VERSION}.`
+      `Unsupported serialized engine format. Expected EngineSnapshot version ${ENGINE_SNAPSHOT_VERSION}.`
     );
   });
 

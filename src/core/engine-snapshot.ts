@@ -5,7 +5,6 @@ import type {
   CellInRangeResult,
   CellValue,
   ConditionalStyle,
-  DirectCellDataType,
   DirectCellStyle,
   FormulaError,
   NamedExpression,
@@ -18,8 +17,7 @@ import type {
   Workbook,
 } from "./types";
 
-export const ENGINE_SNAPSHOT_VERSION = 6 as const;
-export const LEGACY_ENGINE_SNAPSHOT_VERSION = 5 as const;
+export const ENGINE_SNAPSHOT_VERSION = 5 as const;
 
 export type NodeSnapshotId = string;
 
@@ -36,7 +34,6 @@ export type TableManagerSnapshot = Map<string, Map<string, TableDefinition>>;
 export type StyleManagerSnapshot = {
   conditionalStyles: ConditionalStyle[];
   cellStyles: DirectCellStyle[];
-  cellDataTypes: DirectCellDataType[];
 };
 
 export type RangeMetadataManagerSnapshot = RangeMetadata[];

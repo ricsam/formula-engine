@@ -7,7 +7,6 @@ import type {
   CopyCellsOptions,
   CopyCellsIncludePart,
   ConditionalStyle,
-  DirectCellDataType,
   DirectCellStyle,
   LocalCellAddress,
   RangeAddress,
@@ -39,7 +38,6 @@ interface CellSnapshot {
   metadata: unknown | undefined;
   matchingCellStyles?: DirectCellStyle[];
   matchingConditionalStyles?: ConditionalStyle[];
-  dataType?: DirectCellDataType["dataType"];
 }
 
 export class CopyManager {
@@ -86,12 +84,11 @@ export class CopyManager {
       return;
     }
 
-    return this.workbookManager.batchDataChanges(() => {
-      if (options.cut === true) {
-        return this.cutCells(source, target, options);
-      }
+    if (options.cut === true) {
+      return this.cutCells(source, target, options);
+    } else {
       return this.copyOnlyCells(source, target, options);
-    });
+    }
   }
 
   /**
@@ -148,7 +145,6 @@ export class CopyManager {
           },
         };
         this.styleManager.clearCellStylesInRange(cellRange);
-        this.styleManager.clearCellDataTypesInRange(cellRange);
       }
     }
 
@@ -192,10 +188,7 @@ export class CopyManager {
       };
 
       // Apply content (with formula adjustment)
-      if (
-        this.shouldInclude(options, "content") &&
-        snap.content !== undefined
-      ) {
+      if (this.shouldInclude(options, "content") && snap.content) {
         let targetContent = snap.content;
 
         if (typeof snap.content === "string" && snap.content.startsWith("=")) {
@@ -394,7 +387,6 @@ export class CopyManager {
         metadata,
         matchingCellStyles,
         matchingConditionalStyles,
-        dataType: this.styleManager.getCellDataType(cell),
       };
     });
   }
@@ -407,26 +399,6 @@ export class CopyManager {
     snapshot: CellSnapshot,
     targetCell: CellAddress
   ): void {
-    const targetCellRange: RangeAddress = {
-      workbookName: targetCell.workbookName,
-      sheetName: targetCell.sheetName,
-      range: {
-        start: { col: targetCell.colIndex, row: targetCell.rowIndex },
-        end: {
-          col: { type: "number", value: targetCell.colIndex },
-          row: { type: "number", value: targetCell.rowIndex },
-        },
-      },
-    };
-
-    this.styleManager.clearCellDataTypesInRange(targetCellRange);
-    if (snapshot.dataType && snapshot.dataType !== "general") {
-      this.styleManager.addCellDataType({
-        areas: [targetCellRange],
-        dataType: snapshot.dataType,
-      });
-    }
-
     // Apply cell styles
     if (snapshot.matchingCellStyles) {
       for (const style of snapshot.matchingCellStyles) {
@@ -483,7 +455,7 @@ export class CopyManager {
     sourceTopLeft: CellAddress,
     options: CopyCellsOptions
   ): void {
-    if (snapshot.content === undefined) {
+    if (!snapshot.content) {
       // Source cell was empty
       return;
     }
@@ -545,9 +517,10 @@ export class CopyManager {
     });
 
     if (targetSheet) {
-      this.workbookManager.setCellContent(targetCell, targetContent, {
-        sheet: targetSheet,
-      });
+      const targetKey = `${String.fromCharCode(65 + targetCell.colIndex)}${
+        targetCell.rowIndex + 1
+      }`;
+      targetSheet.content.set(targetKey, targetContent);
     }
 
   }
@@ -591,7 +564,7 @@ export class CopyManager {
     }`;
     const cellContent = sheet.content.get(key);
 
-    if (cellContent === undefined) {
+    if (!cellContent) {
       // Source cell is empty
       return;
     }
@@ -649,9 +622,10 @@ export class CopyManager {
     });
 
     if (targetSheet) {
-      this.workbookManager.setCellContent(targetCell, targetContent, {
-        sheet: targetSheet,
-      });
+      const targetKey = `${String.fromCharCode(65 + targetCell.colIndex)}${
+        targetCell.rowIndex + 1
+      }`;
+      targetSheet.content.set(targetKey, targetContent);
     }
 
     // Copy cell metadata if requested
@@ -761,10 +735,7 @@ export class CopyManager {
       range: this.adjustRange(sourceRange, rowOffset, colOffset),
     };
 
-    const allCellDataTypes = this.styleManager.getAllCellDataTypes();
-
     this.styleManager.clearCellStylesInRange(targetRange);
-    this.styleManager.clearCellDataTypesInRange(targetRange);
 
     // Get all styles for the source workbook
     const allConditionalStyles = this.styleManager.getAllConditionalStyles();
@@ -820,31 +791,6 @@ export class CopyManager {
             };
             this.styleManager.addCellStyle(newStyle);
           }
-        }
-      }
-    }
-
-    for (const dataType of allCellDataTypes) {
-      for (const area of dataType.areas) {
-        if (
-          area.workbookName !== sourceTopLeft.workbookName ||
-          area.sheetName !== sourceTopLeft.sheetName
-        ) {
-          continue;
-        }
-
-        const intersection = intersectRanges(area.range, sourceRange);
-        if (intersection) {
-          this.styleManager.addCellDataType({
-            areas: [
-              {
-                workbookName: target.workbookName,
-                sheetName: target.sheetName,
-                range: this.adjustRange(intersection, rowOffset, colOffset),
-              },
-            ],
-            dataType: dataType.dataType,
-          });
         }
       }
     }
@@ -1014,24 +960,22 @@ export class CopyManager {
     targetRanges: RangeAddress[],
     options: CopyCellsOptions
   ): void {
-    this.workbookManager.batchDataChanges(() => {
-      for (const targetRange of targetRanges) {
-        this.fillRangeWithSeed(seedRange, targetRange, {
-          copyContent: this.shouldInclude(options, "content"),
-          copyStyles: this.shouldInclude(options, "style"),
-          copyCellMetadata: this.shouldInclude(options, "cellMetadata"),
-          copyRangeMetadata: this.shouldInclude(options, "rangeMetadata"),
-          contentType: options.type ?? "formula",
-          adjustFormulas: true,
-        });
-      }
+    for (const targetRange of targetRanges) {
+      this.fillRangeWithSeed(seedRange, targetRange, {
+        copyContent: this.shouldInclude(options, "content"),
+        copyStyles: this.shouldInclude(options, "style"),
+        copyCellMetadata: this.shouldInclude(options, "cellMetadata"),
+        copyRangeMetadata: this.shouldInclude(options, "rangeMetadata"),
+        contentType: options.type ?? "formula",
+        adjustFormulas: true,
+      });
+    }
 
-      // Clear seed range if cut operation
-      if (options.cut) {
-        const seedCells = this.expandRangeToCells(seedRange);
-        this.clearSourceCells(seedCells);
-      }
-    });
+    // Clear seed range if cut operation
+    if (options.cut) {
+      const seedCells = this.expandRangeToCells(seedRange);
+      this.clearSourceCells(seedCells);
+    }
   }
 
   /**
@@ -1055,7 +999,6 @@ export class CopyManager {
     // Step 0: Clear existing cell styles in target range (Excel-like replacement)
     if (options.copyStyles) {
       this.styleManager.clearCellStylesInRange(targetRange);
-      this.styleManager.clearCellDataTypesInRange(targetRange);
     }
     if (options.copyRangeMetadata) {
       this.rangeMetadataManager.clearRangeMetadataInRange(targetRange);
@@ -1128,7 +1071,7 @@ export class CopyManager {
           const cellKey = `${String.fromCharCode(65 + targetCell.colIndex)}${
             targetCell.rowIndex + 1
           }`;
-          const content = sheet?.content.get(cellKey) ?? "";
+          const content = sheet?.content.get(cellKey) || "";
           filledColumns.set(key, { cell: targetCell, content });
         }
       }
@@ -1274,16 +1217,17 @@ export class CopyManager {
     }`;
     const cellContent = sheet.content.get(key);
 
-    if (cellContent === undefined) {
+    if (!cellContent) {
       // Source cell is empty - clear target
       const targetSheet = this.workbookManager.getSheet({
         workbookName: targetCell.workbookName,
         sheetName: targetCell.sheetName,
       });
       if (targetSheet) {
-        this.workbookManager.setCellContent(targetCell, undefined, {
-          sheet: targetSheet,
-        });
+        const targetKey = `${String.fromCharCode(65 + targetCell.colIndex)}${
+          targetCell.rowIndex + 1
+        }`;
+        targetSheet.content.delete(targetKey);
       }
       return;
     }
@@ -1335,9 +1279,10 @@ export class CopyManager {
     });
 
     if (targetSheet) {
-      this.workbookManager.setCellContent(targetCell, targetContent, {
-        sheet: targetSheet,
-      });
+      const targetKey = `${String.fromCharCode(65 + targetCell.colIndex)}${
+        targetCell.rowIndex + 1
+      }`;
+      targetSheet.content.set(targetKey, targetContent);
     }
 
     // Copy cell metadata if requested
@@ -1492,7 +1437,6 @@ export class CopyManager {
     sourceCell: CellAddress,
     targetCell: CellAddress
   ): void {
-    const sourceDataType = this.styleManager.getCellDataType(sourceCell);
     // STEP 1: Clear existing cell styles at target cell (Excel-like replacement)
     const targetCellRange: RangeAddress = {
       workbookName: targetCell.workbookName,
@@ -1507,13 +1451,6 @@ export class CopyManager {
     };
 
     this.styleManager.clearCellStylesInRange(targetCellRange);
-    this.styleManager.clearCellDataTypesInRange(targetCellRange);
-    if (sourceDataType !== "general") {
-      this.styleManager.addCellDataType({
-        areas: [targetCellRange],
-        dataType: sourceDataType,
-      });
-    }
 
     // Get all styles that intersect with the source cell
     const allConditionalStyles = this.styleManager.getAllConditionalStyles();

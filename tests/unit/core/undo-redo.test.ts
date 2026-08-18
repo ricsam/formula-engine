@@ -26,11 +26,7 @@ function sheetCell(targetSheetName: string, ref: string) {
   };
 }
 
-function range(
-  targetSheetName: string,
-  start: string,
-  end = start
-): RangeAddress {
+function range(targetSheetName: string, start: string, end = start): RangeAddress {
   const startAddress = parseCellReference(start);
   const endAddress = parseCellReference(end);
   return {
@@ -78,10 +74,8 @@ describe("FormulaEngine undo/redo", () => {
     expect(engine.getCellValue(cell("A1"))).toBe("");
   });
 
-  test("retains configurable entry and byte limits while always enabled", () => {
-    const engine = FormulaEngine.buildEmpty({
-      undoRedo: { maxEntries: 1, maxBytes: 1_024 },
-    });
+  test("retains configurable max depth while always enabled", () => {
+    const engine = FormulaEngine.buildEmpty({ undoRedo: { maxDepth: 1 } });
     engine.addWorkbook(workbookName);
     engine.addSheet({ workbookName, sheetName });
     engine.clearUndoRedoHistory();
@@ -91,11 +85,9 @@ describe("FormulaEngine undo/redo", () => {
 
     expect(engine.getUndoRedoState()).toMatchObject({
       enabled: true,
-      maxEntries: 1,
-      maxBytes: 1_024,
+      maxDepth: 1,
       undoDepth: 1,
     });
-    expect(engine.getUndoRedoState().undoBytes).toBeGreaterThan(0);
     expect(engine.undo()).toBe(true);
     expect(engine.getCellValue(cell("A1"))).toBe(1);
     expect(engine.getCellValue(cell("A2"))).toBe("");
