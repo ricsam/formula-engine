@@ -1,0 +1,144 @@
+---
+title: "Workbooks and sheets"
+description: "Cross-sheet and cross-workbook formulas, lifecycle operations, and current 3D-reference limits."
+---
+
+One `FormulaEngine` can hold multiple workbooks, and each workbook can hold
+multiple ordered sheets.
+
+## Create the hierarchy
+
+```typescript
+const engine = FormulaEngine.buildEmpty();
+
+engine.addWorkbook("Budget");
+engine.addSheet({ workbookName: "Budget", sheetName: "Inputs" });
+engine.addSheet({ workbookName: "Budget", sheetName: "Summary" });
+```
+
+A workbook must exist before you add a sheet. A sheet must exist before you set
+its content.
+
+## Cross-sheet references
+
+```typescript
+engine.setSheetContent(
+  { workbookName: "Budget", sheetName: "Inputs" },
+  new Map([["A1", 10], ["A2", 20]]),
+);
+
+engine.setSheetContent(
+  { workbookName: "Budget", sheetName: "Summary" },
+  new Map([
+    ["A1", "=Inputs!A1"],
+    ["A2", "=SUM(Inputs!A1:A2)"],
+    ["A3", "=Inputs!A1:A2"], // spills 10,20
+  ]),
+);
+```
+
+Cross-sheet cells, ranges and spills all participate in the dependency graph.
+When an input changes, readers of the dependent formula receive the new value.
+
+Sheet names with spaces are quoted:
+
+```typescript
+"='Raw Data'!A1*2"
+```
+
+## Cross-workbook references
+
+The engine also resolves workbook-qualified references:
+
+```typescript
+"=[Rates]Sheet1!A1"
+"=SUM([Actuals]January!B2:B10)"
+```
+
+Both workbooks must be loaded into the **same** `FormulaEngine` instance.
+There is no external-file loader; names inside square brackets select another
+in-memory workbook.
+
+## Sheet ordering
+
+```typescript
+engine.getOrderedSheetNames("Budget");
+// ["Inputs", "Summary"]
+
+engine.getOrderedSheets("Budget");
+engine.getSheets("Budget");
+engine.getNextAvailableSheetName("Budget"); // e.g. "Sheet2"
+```
+
+Sheets carry an index. `createSheet` lets you position a new sheet explicitly;
+`addSheet` appends one.
+
+## Rename a sheet
+
+```typescript
+engine.renameSheet({
+  workbookName: "Budget",
+  sheetName: "Inputs",
+  newSheetName: "Assumptions",
+});
+```
+
+A rename rewrites formulas that refer to the old name. It is safe and undoable.
+
+## Remove and recreate
+
+```typescript
+engine.removeSheet({ workbookName: "Budget", sheetName: "Inputs" });
+```
+
+References to the deleted sheet keep their stored formula text but compute as
+`#ERROR!`. Recreating a sheet with the same name reconnects those formulas:
+
+```typescript
+engine.addSheet({ workbookName: "Budget", sheetName: "Inputs" });
+engine.setSheetContent(
+  { workbookName: "Budget", sheetName: "Inputs" },
+  new Map([["A1", 99]]),
+);
+// a preserved "=Inputs!A1" now evaluates to 99
+```
+
+## Clone and rename a workbook
+
+```typescript
+engine.cloneWorkbook("Template", "April");
+engine.renameWorkbook({ workbookName: "April", newWorkbookName: "May" });
+engine.removeWorkbook("Template");
+```
+
+Workbook renames update qualified references. `getWorkbooks()` returns the
+loaded workbook map.
+
+## Current 3D-reference limitation
+
+<Warning>
+  Excel-style sheet ranges such as `=SUM(Sheet1:Sheet3!A1)` are not supported.
+  Verified 3D formulas returned `0` or `#ERROR!`. Write the references explicitly
+  instead:
+</Warning>
+
+```typescript
+// unsupported
+"=SUM(January:March!A1)"
+
+// supported
+"=SUM(January!A1,February!A1,March!A1)"
+```
+
+Ordinary cross-sheet ranges such as `=SUM(Data!A1:A10)` work normally.
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Sheets API" icon="layer-group" href="/api/sheets">
+    Lifecycle and ordering methods.
+  </Card>
+  <Card title="Tables" icon="table" href="/concepts/tables">
+    Workbook-scoped structured references.
+  </Card>
+</CardGroup>

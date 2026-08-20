@@ -1,0 +1,179 @@
+---
+title: "Tables"
+description: "Define tabular regions and refer to their columns by name."
+---
+
+Tables attach a name and column headers to a rectangular sheet region. Formulas
+can use structured references such as `Sales[Qty]` instead of fixed A1 ranges.
+
+## Define a table
+
+The first row is the header row. Header names are read from computed cell
+values when the table is added.
+
+```typescript
+engine.setSheetContent(
+  sheet,
+  new Map([
+    ["A1", "Product"], ["B1", "Qty"], ["C1", "Price"],
+    ["A2", "Widget"],  ["B2", 2],     ["C2", 5],
+    ["A3", "Gadget"],  ["B3", 3],     ["C3", 7],
+  ]),
+);
+
+engine.addTable({
+  tableName: "Sales",
+  workbookName: "Budget",
+  sheetName: "Q1",
+  start: "A1",
+  numRows: { type: "number", value: 3 }, // header + 2 data rows
+  numCols: 3,
+});
+```
+
+<Note>
+  `start` is an A1 string such as `"A1"` or `"C3"`, not a `CellAddress`.
+  `numRows` uses the tagged `SpreadsheetRangeEnd` type; `numCols` is a number.
+</Note>
+
+## Structured references
+
+```typescript
+engine.setCellContent(e1, "=SUM(Sales[Qty])");
+read("E1"); // 5
+```
+
+The engine supports the forms used most often by spreadsheet applications:
+
+| Syntax | Meaning |
+| --- | --- |
+| `Sales[Qty]` | all data cells in the `Qty` column |
+| `[@Qty]` | `Qty` in the current table row |
+| `Sales[@Qty]` | same, with an explicit table name |
+| `Sales[#Headers]` | header area |
+| `Sales[#Data]` | data area |
+| `Sales[[#Headers],[Qty]]` | `Qty` header cell |
+
+A current-row formula can be repeated down a table:
+
+```typescript
+// In C2 and C3, inside a table with columns Qty and Price:
+"=[@Qty]*[@Price]"
+```
+
+## Tables can be anywhere
+
+The table does not have to start at `A1`.
+
+```typescript
+engine.addTable({
+  tableName: "Forecast",
+  workbookName: "Budget",
+  sheetName: "Q1",
+  start: "C3",
+  numRows: { type: "number", value: 10 },
+  numCols: 4,
+});
+```
+
+## Open-ended rows
+
+A table can have an infinite row end. New populated rows then participate in
+structured references without resizing the definition.
+
+```typescript
+engine.addTable({
+  tableName: "Log",
+  workbookName: "Budget",
+  sheetName: "Q1",
+  start: "A1",
+  numRows: { type: "infinity" },
+  numCols: 2,
+});
+```
+
+In verified behavior, `=SUM(Log[Amount])` changed from `60` to `100` when a new
+value was added farther down the column.
+
+## Read a definition
+
+```typescript
+const table = engine.getTable({
+  tableName: "Sales",
+  workbookName: "Budget",
+});
+
+engine.hasTable({ tableName: "Sales", workbookName: "Budget" }); // true
+engine.isCellInTable(b2); // the Sales definition
+engine.getTables("Budget"); // Map of table names to definitions
+```
+
+A definition includes the resolved `start`, row extent, column count and a map
+of header names to column indexes.
+
+## Rename, resize and remove
+
+### Rename
+
+A table rename rewrites stored formulas:
+
+```typescript
+engine.renameTable("Budget", {
+  oldName: "Sales",
+  newName: "Orders",
+});
+
+// "=SUM(Sales[Qty])" becomes "=SUM(Orders[Qty])"
+```
+
+### Resize
+
+```typescript
+engine.updateTable({
+  workbookName: "Budget",
+  tableName: "Orders",
+  numRows: { type: "number", value: 20 },
+  numCols: 4,
+});
+```
+
+Changing the size invalidates formulas that use the table.
+
+### Remove
+
+```typescript
+engine.removeTable({ tableName: "Orders", workbookName: "Budget" });
+```
+
+Removing a table invalidates its structured references. In a verified
+`SUM(Table[Column])` case the result became `0` after removal.
+
+## Cross-sheet use
+
+A formula can use a table defined on another sheet without prefixing the sheet
+name — tables are workbook resources.
+
+```typescript
+// Table Sales is on Data; formula is on Summary
+"=SUM(Sales[Qty])"
+```
+
+## Edge behavior
+
+<Warning>
+  A missing table or missing column used inside an aggregate currently behaves
+  like an empty range. For example, `SUM(NoTable[Qty])` and
+  `SUM(Sales[NoColumn])` both returned `0`, not `#NAME?`. Validate imported
+  models when silent emptiness would be dangerous.
+</Warning>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Table API" icon="table" href="/api/tables">
+    Complete method signatures.
+  </Card>
+  <Card title="Lookup functions" icon="magnifying-glass" href="/functions/lookup">
+    `INDEX`, `MATCH`, `XLOOKUP`, and criteria functions.
+  </Card>
+</CardGroup>

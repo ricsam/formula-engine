@@ -1,0 +1,118 @@
+---
+title: "Architecture"
+description: "How FormulaEngine stores data and separates parsing, dependency tracking and evaluation."
+---
+
+FormulaEngine splits work into three stages that can change independently:
+**parsing**, **dependency management**, and **evaluation**.
+
+## Sparse storage
+
+A sheet is a `Map<string, SerializedCellValue>` keyed by A1 reference. Nothing
+is allocated for empty cells, so the cost of a sheet tracks the number of
+populated cells rather than the addressable area.
+
+```typescript
+engine.setSheetContent(
+  sheet,
+  new Map([
+    ["A1", 1],
+    ["ZZ100000", 2], // no intervening cells are materialized
+  ]),
+);
+```
+
+Cell values are deliberately primitive:
+
+```typescript
+type SerializedCellValue = string | number | boolean | undefined;
+```
+
+`undefined` means empty. Formulas are stored as their source string (`"=SUM(A1:A2)"`)
+and parsed on demand.
+
+## Stored content vs. computed value
+
+This distinction matters throughout the API.
+
+| Concept | Method | Returns for `"=SUM(A1:A2)"` |
+| --- | --- | --- |
+| Stored content | `getSheetSerialized()` | `"=SUM(A1:A2)"` |
+| Computed value | `getCellValue()` | `30` |
+
+Persist the serialized form; render the computed form.
+
+## The pipeline
+
+<Steps>
+  <Step title="Parse">
+    On edit, each formula is lexed and parsed into an AST by a recursive-descent
+    parser. References — cells, ranges, named expressions, table areas — are
+    extracted as the formula's dependencies.
+  </Step>
+  <Step title="Update the graph">
+    The engine computes a delta between the cell's old and new dependencies and
+    applies just that change to the dependency graph, then marks the cell dirty.
+  </Step>
+  <Step title="Evaluate on demand">
+    Nothing is computed at edit time. When a reader calls `getCellValue()`, the
+    engine evaluates that cell's prerequisites in dependency order and caches
+    the results.
+  </Step>
+</Steps>
+
+Because step 3 is driven by readers, a workbook with expensive formulas costs
+nothing until something actually asks for a value.
+
+## Addressing
+
+Internally the engine is zero-based; A1 notation is the external format.
+
+```typescript
+import {
+  indexToColumn,
+  columnToIndex,
+  getCellReference,
+  parseCellReference,
+} from "@ricsam/formula-engine";
+
+indexToColumn(0);   // "A"
+indexToColumn(26);  // "AA"
+columnToIndex("AA"); // 26
+
+getCellReference({ rowIndex: 0, colIndex: 0 }); // "A1"
+parseCellReference("D5"); // { colIndex: 3, rowIndex: 4 }
+```
+
+A full address also carries its workbook and sheet:
+
+```typescript
+type CellAddress = {
+  workbookName: string;
+  sheetName: string;
+  colIndex: number;
+  rowIndex: number;
+};
+```
+
+## Identity
+
+Sheets, tables and named expressions are keyed by **name**. Renames are strong
+renames: the engine rewrites references inside affected formulas rather than
+leaving them dangling.
+
+```typescript
+engine.renameTable("Workbook1", { oldName: "Table1", newName: "Sales" });
+// formulas referencing Table1[...] are rewritten to Sales[...]
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Evaluation" icon="bolt" href="/concepts/evaluation">
+    Demand-driven recomputation.
+  </Card>
+  <Card title="Dependencies" icon="diagram-project" href="/concepts/dependencies">
+    The graph and its current limits.
+  </Card>
+</CardGroup>

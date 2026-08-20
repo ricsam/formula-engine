@@ -1,0 +1,77 @@
+---
+title: "Function reference"
+description: "The exact 39 functions registered by FormulaEngine."
+---
+
+FormulaEngine currently registers **39 function names** across seven categories.
+Function names are case-insensitive in formulas.
+
+| Category | Functions |
+| --- | --- |
+| [Math](/functions/math) | `SUM`, `SUMIF`, `SUMIFS`, `AVERAGE`, `AVERAGEIF`, `AVERAGEIFS`, `MIN`, `MINIF`, `MINIFS`, `MAX`, `MAXIF`, `MAXIFS`, `CEILING` |
+| [Logical](/functions/logical) | `IF`, `IFERROR`, `AND`, `OR` |
+| [Text](/functions/text) | `CONCATENATE`, `CONCAT`, `EXACT`, `FIND`, `LEFT`, `RIGHT`, `MID`, `LEN`, `TEXTJOIN` |
+| [Lookup](/functions/lookup) | `COUNT`, `COUNTIF`, `COUNTIFS`, `INDEX`, `MATCH`, `XLOOKUP` |
+| [Array](/functions/array) | `SEQUENCE` |
+| [Information](/functions/information) | `CELL`, `COLUMN`, `ROW` |
+| [Reference](/functions/reference) | `ADDRESS`, `INDIRECT`, `OFFSET` |
+
+## Formula syntax
+
+Cell formulas begin with `=`:
+
+```typescript
+engine.setCellContent(address, "=SUM(A1:A10)");
+```
+
+Function arguments use commas. Strings use double quotes inside formula source:
+
+```typescript
+engine.setCellContent(address, '=IF(A1>10,"large","small")');
+```
+
+Named-expression definitions are the exception: their `expression` omits the
+leading `=`.
+
+## Values and ranges
+
+Most aggregate functions accept any mix of scalars and ranges:
+
+```excel
+=SUM(1, 2, A1:A10)
+=MAX(A:A)
+=AVERAGE(Sheet2!B2:B20)
+```
+
+Whole-column and whole-row ranges are sparse; the engine visits populated cells,
+not every possible address.
+
+## Criteria syntax
+
+The `*IF` and `*IFS` families use spreadsheet criteria strings:
+
+```excel
+=SUMIF(A2:A10,"North",B2:B10)
+=COUNTIF(B2:B10,">=100")
+=AVERAGEIFS(C2:C10,A2:A10,"North",B2:B10,">0")
+```
+
+Criteria can be literals or comparison strings. Multi-criteria functions use
+`criteria_range, criteria` pairs.
+
+## Array results
+
+`SEQUENCE`, range references and range arithmetic may spill into neighbouring
+cells. A blocked output area produces `#SPILL!`. See [Spilling](/concepts/spilling).
+
+## Errors
+
+Unknown function names return `#NAME?`. `IFERROR` catches error values, with one
+important exception: division by zero currently returns the string `"INFINITY"`
+rather than an error, so it is not caught. See [Errors](/concepts/errors).
+
+<Note>
+  Functions familiar from Excel but absent from the table above are not
+  registered. For example, `VLOOKUP`, `SQRT`, `NA` and `UPPER` currently return
+  `#NAME?`.
+</Note>

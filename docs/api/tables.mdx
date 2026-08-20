@@ -1,0 +1,111 @@
+---
+title: "Tables"
+description: "Create and manage workbook tables and structured references."
+---
+
+## Add
+
+```typescript
+addTable(props: {
+  tableName: string;
+  workbookName: string;
+  sheetName: string;
+  start: string;
+  numRows: SpreadsheetRangeEnd;
+  numCols: number;
+}): void
+```
+
+```typescript
+engine.addTable({
+  tableName: "Sales",
+  workbookName: "Budget",
+  sheetName: "Q1",
+  start: "A1",
+  numRows: { type: "number", value: 20 },
+  numCols: 4,
+});
+```
+
+`start` is A1 text. The first row supplies column headers. `numRows` can be
+finite or `{ type: "infinity" }`.
+
+## Read
+
+```typescript
+hasTable(opts: { tableName: string; workbookName: string }): boolean
+getTable(opts: { tableName: string; workbookName: string }): TableDefinition | undefined
+getTables(workbookName: string): Map<string, TableDefinition>
+isCellInTable(address: CellAddress): TableDefinition | undefined
+```
+
+```typescript
+interface TableDefinition {
+  name: string;
+  start: { rowIndex: number; colIndex: number };
+  headers: Map<string, { name: string; index: number }>;
+  endRow: SpreadsheetRangeEnd;
+  sheetName: string;
+  workbookName: string;
+}
+```
+
+## Rename
+
+```typescript
+renameTable(
+  workbookName: string,
+  names: { oldName: string; newName: string },
+): void
+```
+
+Rewrites structured references in formulas and named expressions.
+
+## Update
+
+```typescript
+updateTable(opts: {
+  tableName: string;
+  workbookName: string;
+  sheetName?: string;
+  start?: string;
+  numRows?: SpreadsheetRangeEnd;
+  numCols?: number;
+}): void
+```
+
+Moves or resizes an existing definition and invalidates dependent formulas.
+Header names are re-read from cell values.
+
+## Remove
+
+```typescript
+removeTable(opts: { tableName: string; workbookName: string }): void
+```
+
+Removes the definition. Stored formulas are not rewritten to A1 ranges.
+Aggregates over the missing table currently behave like empty ranges in common
+cases.
+
+## Reset all tables
+
+```typescript
+resetTables(tables: Map<string, Map<string, TableDefinition>>): void
+```
+
+Replaces the engine's complete table registry. The outer map is keyed by
+workbook; the inner map by table name. Useful during custom deserialization,
+but `resetToSerializedEngine` is easier for whole-engine persistence.
+
+## Structured reference syntax
+
+```excel
+=SUM(Sales[Qty])
+=[@Qty]*[@Price]
+=Sales[@Qty]
+=Sales[#Headers]
+=Sales[#Data]
+```
+
+See [Tables](/concepts/tables) for current-row behavior, infinite tables and
+edge cases.

@@ -1,0 +1,175 @@
+---
+title: "FormulaEngine"
+description: "Constructor, state, transactions, persistence, and direct formula evaluation."
+---
+
+## Create an engine
+
+```typescript
+import { FormulaEngine } from "@ricsam/formula-engine";
+
+const engine = FormulaEngine.buildEmpty();
+```
+
+`buildEmpty()` is the usual entry point. The constructor accepts history
+configuration:
+
+```typescript
+const engine = new FormulaEngine({
+  undoRedo: { maxDepth: 200 }, // default 100
+});
+```
+
+History is always enabled.
+
+## FormulaEngine options
+
+```typescript
+interface FormulaEngineOptions {
+  undoRedo?: {
+    maxDepth?: number;
+  };
+}
+```
+
+## State and persistence
+
+### `getState()`
+
+Returns the live engine state, including workbooks, names, tables, styles,
+metadata and reference records.
+
+```typescript
+const state = engine.getState();
+// keys: workbooks, namedExpressions, tables, conditionalStyles,
+//       cellStyles, rangeMetadata, references
+```
+
+Treat this as read-only. Use the mutation methods to make changes.
+
+### `serializeEngine()`
+
+```typescript
+serializeEngine(): string
+```
+
+Serializes all workbook data and engine-managed resources to a JSON string.
+Verified top-level keys are `version` and `managers`.
+
+```typescript
+localStorage.setItem("model", engine.serializeEngine());
+```
+
+### `resetToSerializedEngine(data)`
+
+```typescript
+resetToSerializedEngine(data: string): void
+```
+
+Replaces engine state with a string returned by `serializeEngine`.
+
+```typescript
+const restored = FormulaEngine.buildEmpty();
+restored.resetToSerializedEngine(localStorage.getItem("model")!);
+```
+
+<Note>
+  Serialization persists workbook state, but not the undo/redo stack.
+</Note>
+
+## Transactions and history
+
+| Method | Signature | Purpose |
+| --- | --- | --- |
+| `transact` | `<T>(callback: () => T) => T` | group mutations into one undo checkpoint |
+| `undo` | `() => boolean` | restore the previous checkpoint |
+| `redo` | `() => boolean` | reapply an undone checkpoint |
+| `canUndo` | `() => boolean` | whether undo is available |
+| `canRedo` | `() => boolean` | whether redo is available |
+| `getUndoRedoState` | `() => UndoRedoState` | depths, booleans and max depth |
+| `clearUndoRedoHistory` | `() => void` | discard history without changing data |
+
+```typescript
+engine.transact(() => {
+  engine.setCellContent(a1, 10);
+  engine.setCellContent(a2, 20);
+});
+engine.undo(); // reverses both
+```
+
+See [Undo and redo](/guides/undo-redo).
+
+## Evaluate a formula without storing it
+
+```typescript
+evaluateFormula(formula: string, cellAddress: CellAddress): SerializedCellValue
+```
+
+The address supplies workbook, sheet and relative-reference context.
+
+```typescript
+engine.evaluateFormula("=SUM(A1:A2)", {
+  workbookName: "Budget",
+  sheetName: "Q1",
+  colIndex: 25,
+  rowIndex: 0,
+}); // 5
+```
+
+<Warning>
+  Despite the method's source JSDoc, verified behavior requires a leading `=`.
+  Without it, `"SUM(A1:A2)"` is returned as literal text. Pass a complete
+  `CellAddress`, including `colIndex` and `rowIndex`.
+</Warning>
+
+Array-producing formulas need a valid, writable anchor cell to spill from. For
+one-off scalar calculations, choose an empty address in an existing sheet.
+
+## Reference handles
+
+Reference handles track ranges across moves and renames.
+
+| Method | Signature |
+| --- | --- |
+| `createRef` | `(address: RangeAddress) => string` |
+| `getRefAddress` | `(refId: string) => RangeAddress \| undefined` |
+| `deleteRef` | `(refId: string) => boolean` |
+| `getInvalidRefs` | `() => string[]` |
+
+```typescript
+const refId = engine.createRef(rangeAddress);
+engine.moveRange(rangeAddress, destination);
+engine.getRefAddress(refId); // updated address
+```
+
+## Dependency inspection
+
+```typescript
+getCellDependents(address): never
+getCellPrecedents(address): never
+```
+
+<Warning>
+  Both methods currently throw `Error("Not implemented")`. They are declared on
+  the class, but are not usable yet.
+</Warning>
+
+## Workbooks
+
+| Method | Signature |
+| --- | --- |
+| `addWorkbook` | `(workbookName: string) => void` |
+| `removeWorkbook` | `(workbookName: string) => void` |
+| `hasWorkbook` | `(workbookName: string) => boolean` |
+| `cloneWorkbook` | `(fromWorkbookName: string, toWorkbookName: string) => void` |
+| `renameWorkbook` | `({ workbookName, newWorkbookName }) => void` |
+| `getWorkbooks` | `() => Map<string, Workbook>` |
+
+Workbook and sheet names are identity. Strong rename operations rewrite formula
+references; deleting a referenced resource leaves formula text intact and
+causes evaluation errors.
+
+## Events
+
+`onUpdate(listener)` returns an unsubscribe function. See
+[Events and state](/api/events).

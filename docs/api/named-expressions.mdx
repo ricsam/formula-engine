@@ -1,0 +1,117 @@
+---
+title: "Named expressions"
+description: "API signatures for global, workbook, and sheet-scoped names."
+---
+
+## Add
+
+```typescript
+addNamedExpression(opts: {
+  expressionName: string;
+  expression: string;
+  workbookName?: string;
+  sheetName?: string;
+}): void
+```
+
+```typescript
+engine.addNamedExpression({
+  expressionName: "TaxRate",
+  expression: "0.25",
+  workbookName: "Budget",
+});
+```
+
+<Warning>
+  `expression` does not take a leading `=`. `"SUM(A1:A3)"` is correct;
+  `"=SUM(A1:A3)"` evaluates to `#ERROR!` when used.
+</Warning>
+
+## Scope rules
+
+| Fields supplied | Scope |
+| --- | --- |
+| neither | global |
+| `workbookName` | workbook |
+| `workbookName` + `sheetName` | sheet |
+
+Supplying `sheetName` without `workbookName` throws. The referenced workbook or
+sheet must already exist.
+
+Resolution order is sheet, workbook, global.
+
+## Update
+
+```typescript
+updateNamedExpression(opts: {
+  expressionName: string;
+  expression: string;
+  workbookName?: string;
+  sheetName?: string;
+}): void
+```
+
+Changes the expression within the addressed scope and invalidates dependents.
+
+## Rename
+
+```typescript
+renameNamedExpression(opts: {
+  expressionName: string;
+  newName: string;
+  workbookName?: string;
+  sheetName?: string;
+}): void
+```
+
+Rewrites formula references from the old name to the new one.
+
+## Remove
+
+```typescript
+removeNamedExpression(opts: {
+  expressionName: string;
+  workbookName?: string;
+  sheetName?: string;
+}): void
+```
+
+Formulas are left unchanged and evaluate to `#NAME?` if no less-specific name
+is available.
+
+## Check
+
+```typescript
+hasNamedExpression(opts: {
+  expressionName: string;
+  workbookName?: string;
+  sheetName?: string;
+}): boolean
+```
+
+Tests the exact selected scope; it does not ask whether a name would resolve
+through fallback.
+
+## Replace a whole scope
+
+```typescript
+setNamedExpressions(
+  opts: (
+    | { type: "global" }
+    | { type: "workbook"; workbookName: string }
+    | { type: "sheet"; workbookName: string; sheetName: string }
+  ) & {
+    expressions: Map<string, NamedExpression>;
+  },
+): void
+```
+
+```typescript
+interface NamedExpression {
+  name: string;
+  expression: string;
+}
+```
+
+This is one undoable operation. See the [named expressions concept guide](/concepts/named-expressions)
+for formulas, range names and shadowing examples.

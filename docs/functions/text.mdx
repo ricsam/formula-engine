@@ -1,0 +1,100 @@
+---
+title: "Text functions"
+description: "Join, compare, find, slice, and measure text."
+---
+
+Every result below was verified against the engine.
+
+## Join text
+
+### `CONCATENATE` / `CONCAT`
+
+`CONCAT` is an alias of `CONCATENATE`.
+
+```excel
+=CONCATENATE(text1, [text2], ...)
+=CONCAT(text1, [text2], ...)
+```
+
+```excel
+=CONCATENATE("North","-","South") // "North-South"
+=CONCAT("North","/","South")     // "North/South"
+```
+
+### `TEXTJOIN`
+
+```excel
+=TEXTJOIN(delimiter, ignore_empty, text1, [text2], ...)
+```
+
+```excel
+=TEXTJOIN(", ",TRUE,A2:A4) // "North, South, North"
+```
+
+When `ignore_empty` is `TRUE`, empty cells do not create extra delimiters.
+
+## Compare and locate
+
+### `EXACT`
+
+Case-sensitive equality:
+
+```excel
+=EXACT("North","North") // TRUE
+=EXACT("North","north") // FALSE
+```
+
+### `FIND`
+
+```excel
+=FIND(find_text, within_text, [start_num])
+```
+
+Returns a **1-based** position and is case-sensitive.
+
+```excel
+=FIND("o","North") // 2
+```
+
+Use `start_num` to begin later in the string. Missing text returns a formula
+error.
+
+## Slice text
+
+### `LEFT`
+
+```excel
+=LEFT(text, [num_chars])
+=LEFT("North",3) // "Nor"
+```
+
+### `RIGHT`
+
+```excel
+=RIGHT(text, [num_chars])
+=RIGHT("North",3) // "rth"
+```
+
+### `MID`
+
+```excel
+=MID(text, start_num, num_chars)
+=MID("North",2,3) // "ort"
+```
+
+`start_num` is 1-based.
+
+## Measure text
+
+### `LEN`
+
+```excel
+=LEN(text)
+=LEN("North") // 5
+```
+
+## Coercion
+
+Text functions accept cell references and literals. To retain leading zeroes in
+input data, store them as strings (`"007"`) rather than numbers. The companion
+React grid's `coerceCellInput` helper deliberately preserves leading-zero text.

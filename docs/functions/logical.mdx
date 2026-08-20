@@ -1,0 +1,72 @@
+---
+title: "Logical functions"
+description: "IF, IFERROR, AND, and OR."
+---
+
+## `IF`
+
+```excel
+=IF(condition, value_if_true, [value_if_false])
+```
+
+Only the selected branch is evaluated.
+
+```excel
+=IF(B2>5,"big","small") // "big" when B2 is 10
+=IF(A1=0,0,B1/A1)       // safely guard division
+```
+
+## `IFERROR`
+
+```excel
+=IFERROR(value, fallback)
+```
+
+Returns `fallback` when `value` evaluates to a formula error.
+
+```excel
+=IFERROR(NOSUCHFN(1),"fallback") // "fallback"
+```
+
+<Warning>
+  Division by zero is currently the string `"INFINITY"`, not a formula error.
+  Therefore `=IFERROR(10/0,"fallback")` returns `"INFINITY"`.
+</Warning>
+
+Use an explicit condition instead:
+
+```excel
+=IF(B1=0,"fallback",A1/B1)
+```
+
+## `AND`
+
+```excel
+=AND(condition1, [condition2], ...)
+```
+
+Returns `TRUE` only when every argument is truthy.
+
+```excel
+=AND(B2>5,C2>1) // TRUE when B2=10 and C2=5
+```
+
+Arguments can include ranges. The result is a boolean, not the text `"TRUE"`.
+
+## `OR`
+
+```excel
+=OR(condition1, [condition2], ...)
+```
+
+Returns `TRUE` when at least one argument is truthy.
+
+```excel
+=OR(B2>100,C2>1) // TRUE when B2=10 and C2=5
+```
+
+## Errors
+
+Errors in evaluated conditions propagate unless wrapped in `IFERROR`. Unknown
+function and named-expression errors are `#NAME?`; incompatible arithmetic is
+`#VALUE!`. See [Errors](/concepts/errors).

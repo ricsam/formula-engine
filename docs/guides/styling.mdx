@@ -1,0 +1,163 @@
+---
+title: "Styles and metadata"
+description: "Attach presentation, conditional formatting, and application metadata without coupling the engine to a UI."
+---
+
+FormulaEngine stores presentation as data. It never renders styles itself; your
+UI reads `getCellStyle()` and decides how to display the result.
+
+## Direct cell styles
+
+A direct style targets a range:
+
+```typescript
+engine.addCellStyle({
+  areas: [{
+    workbookName: "Budget",
+    sheetName: "Q1",
+    range: {
+      start: { col: 0, row: 0 },
+      end: {
+        col: { type: "number", value: 1 },
+        row: { type: "number", value: 2 },
+      },
+    },
+  }],
+  style: {
+    bold: true,
+    backgroundColor: "#ffeeaa",
+    fontSize: 14,
+  },
+});
+```
+
+Read the merged style for a cell:
+
+```typescript
+engine.getCellStyle(a1);
+// { bold: true, backgroundColor: "#ffeeaa", fontSize: 14 }
+```
+
+The style vocabulary includes typography, foreground/background colors, text wrapping and border sides.
+
+## Query and remove styles
+
+```typescript
+engine.getCellStyleCount("Budget");
+engine.getAllCellStyles();
+engine.getStylesIntersectingWithRange(range);
+engine.getStyleForRange(range);
+engine.clearCellStyles(range);
+engine.removeCellStyle("Budget", index);
+```
+
+Indexes refer to insertion order within the workbook's style collection.
+
+## Conditional styles
+
+A conditional style carries a condition and a style. The gradient mode is fully
+engine-resolved:
+
+```typescript
+engine.addConditionalStyle({
+  areas: [range],
+  condition: {
+    type: "gradient",
+    min: {
+      type: "lowest_value",
+      color: { l: 90, c: 10, h: 200 },
+    },
+    max: {
+      type: "highest_value",
+      color: { l: 40, c: 60, h: 20 },
+    },
+  },
+});
+```
+
+With values `5`, `50`, `100`, verified backgrounds were light teal, a midpoint
+olive, and dark red respectively.
+
+Formula conditions and direct styles are composed; conditional properties win
+where both provide the same key.
+
+<Warning>
+  Relative formula-based conditional styles currently have limitations. In
+  verified runs, a condition such as `=A1>10` did not style individual cells as
+  expected, while an absolute condition such as `=$C$1>10` applied correctly.
+  Test formula conditions against your range, or compute conditional styling in
+  the renderer.
+</Warning>
+
+```typescript
+engine.getConditionalStyleCount("Budget");
+engine.getAllConditionalStyles();
+engine.getConditionalStylesIntersectingWithRange(range);
+engine.removeConditionalStyle("Budget", index);
+```
+
+## Application metadata
+
+Metadata is generic and does not affect formulas. It is useful for comments,
+frozen panes, validation rules and application-specific state.
+
+```typescript
+engine.setCellMetadata(a1, { note: "Check with finance" });
+engine.getCellMetadata(a1); // { note: "Check with finance" }
+
+engine.setSheetMetadata(sheet, { frozenRows: 2 });
+engine.getSheetMetadata(sheet); // { frozenRows: 2 }
+
+engine.setWorkbookMetadata("Budget", { theme: "dark" });
+engine.getWorkbookMetadata("Budget"); // { theme: "dark" }
+```
+
+Set metadata to `undefined` to remove it.
+
+## Range metadata
+
+Range metadata gets a stable ID so it can be removed later.
+
+```typescript
+const id = engine.addRangeMetadata({
+  range,
+  metadata: { tag: "important" },
+});
+
+engine.getRangeMetadataForCell(a1);
+engine.getRangeMetadataIntersectingWithRange(range);
+engine.getAllRangeMetadata();
+
+engine.removeRangeMetadata(id);
+// or remove all intersecting records:
+engine.clearRangeMetadata(range);
+```
+
+## Rendering styles in React
+
+The companion grid resolves engine styles automatically through
+`FormulaSheet` and `FormulaWorkbook`. You can layer application styles on top:
+
+```tsx
+<FormulaWorkbook
+  engine={engine}
+  workbookName="Budget"
+  customCellStyle={(cell, internalStyle) => ({
+    ...internalStyle,
+    ...(cell.columnIndex === 0 ? { fontWeight: 600 } : {}),
+  })}
+  isSelected
+/>
+```
+
+The component package itself is themed with `--rsp-*` CSS custom properties;
+those control grid chrome, while engine cell styles control workbook content.
+
+<CardGroup cols={2}>
+  <Card title="Styles API" icon="palette" href="/api/styles">
+    Full style and metadata method list.
+  </Card>
+  <Card title="React guide" icon="react" href="/guides/react">
+    Render the engine with the companion grid.
+  </Card>
+</CardGroup>

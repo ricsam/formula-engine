@@ -1,0 +1,191 @@
+---
+title: "React integration"
+description: "Subscribe to a FormulaEngine from React, or use the companion spreadsheet components."
+---
+
+The engine has no React dependency. You can connect it to any renderer with its
+`onUpdate` subscription, or use `@ricsam/react-spreadsheets` for a ready-made,
+virtualized grid.
+
+## Option 1: use the companion grid
+
+```bash
+bun add @ricsam/formula-engine @ricsam/react-spreadsheets @ricsam/selection-manager
+```
+
+Import the stylesheet once near your application root:
+
+```tsx
+import "@ricsam/react-spreadsheets/styles.css";
+```
+
+Create the engine once — not during every render — then pass it to
+`FormulaWorkbook`.
+
+```tsx
+import { useState } from "react";
+import { FormulaEngine } from "@ricsam/formula-engine";
+import { FormulaWorkbook } from "@ricsam/react-spreadsheets";
+
+function createBudget() {
+  const engine = FormulaEngine.buildEmpty();
+  engine.addWorkbook("Budget");
+  engine.addSheet({ workbookName: "Budget", sheetName: "Sheet1" });
+  engine.setSheetContent(
+    { workbookName: "Budget", sheetName: "Sheet1" },
+    new Map([
+      ["A1", "Item"], ["B1", "Price"],
+      ["A2", "Hosting"], ["B2", 20],
+      ["A3", "Domain"], ["B3", 12],
+      ["B4", "=SUM(B2:B3)"],
+    ]),
+  );
+  return engine;
+}
+
+export function BudgetGrid() {
+  const [engine] = useState(createBudget);
+
+  return (
+    <div style={{ height: 520 }}>
+      <FormulaWorkbook
+        engine={engine}
+        workbookName="Budget"
+        isSelected
+      />
+    </div>
+  );
+}
+```
+
+`FormulaWorkbook` supplies sheet tabs and add/rename/delete sheet actions.
+`FormulaSheet` renders one specific sheet when your app owns the surrounding UI.
+
+```tsx
+import { FormulaSheet } from "@ricsam/react-spreadsheets";
+
+<FormulaSheet
+  engine={engine}
+  workbookName="Budget"
+  sheetName="Sheet1"
+  isSelected
+/>;
+```
+
+The companion library uses `@ricsam/selection-manager` as an external peer
+package; it does not duplicate that API.
+
+## Option 2: subscribe from your own renderer
+
+`onUpdate` is compatible with `useSyncExternalStore`.
+
+```tsx
+import { useSyncExternalStore } from "react";
+import type { FormulaEngine } from "@ricsam/formula-engine";
+
+function useFormulaEngine(engine: FormulaEngine) {
+  return useSyncExternalStore(
+    (notify) => engine.onUpdate(notify),
+    () => engine.getState(),
+    () => engine.getState(),
+  );
+}
+```
+
+Use the hook wherever you read values:
+
+```tsx
+function Cell({ engine, address }: { engine: FormulaEngine; address: CellAddress }) {
+  useFormulaEngine(engine);
+  const value = engine.getCellValue(address);
+  return <span>{value ?? ""}</span>;
+}
+```
+
+<Note>
+  `getState()` is a snapshot of manager state. Call it again after `onUpdate`;
+  do not mutate it. Read display values with `getCellValue()`.
+</Note>
+
+## Keep the engine stable
+
+Use one of these patterns:
+
+```tsx
+const [engine] = useState(() => createEngine());
+// or
+const engineRef = useRef<FormulaEngine>();
+```
+
+Do not call `FormulaEngine.buildEmpty()` in the component body. A render would
+otherwise throw away workbook state, subscriptions and undo history.
+
+## Controlled workbook state
+
+`FormulaWorkbook` can own the current tab, or you can control it:
+
+```tsx
+const [activeSheet, setActiveSheet] = useState("Sheet1");
+
+<FormulaWorkbook
+  engine={engine}
+  workbookName="Budget"
+  activeSheet={activeSheet}
+  onActiveSheetChange={setActiveSheet}
+  isSelected
+/>;
+```
+
+Per-sheet column widths, row heights and floating overlay children can also be
+controlled. This lets the grid stay generic while your application persists
+layout state elsewhere.
+
+## Styling
+
+The grid is MUI-free and exposes CSS custom properties:
+
+```css
+.budget-grid {
+  --rsp-accent: #2563eb;
+  --rsp-gridline: #dbe3ee;
+  --rsp-cell-background: #ffffff;
+  --rsp-header-background: #f8fafc;
+  --rsp-text: #0f172a;
+}
+```
+
+```tsx
+<div className="budget-grid" style={{ height: 520 }}>
+  <FormulaWorkbook engine={engine} workbookName="Budget" isSelected />
+</div>
+```
+
+See [Styling](/guides/styling) for engine-side cell styles and grid theming.
+
+## Error handling
+
+Cell edit failures can be observed globally:
+
+```tsx
+import { onCellEditError } from "@ricsam/react-spreadsheets";
+
+useEffect(() => {
+  return onCellEditError(({ error }) => {
+    console.error("Cell edit failed", error);
+  });
+}, []);
+```
+
+Set `verboseErrors` on `FormulaSheet` or `FormulaWorkbook` while debugging to
+surface rejected edits.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Grid package" icon="table-cells" href="https://github.com/ricsam/react-spreadsheets">
+    Source and package README.
+  </Card>
+  <Card title="Engine events" icon="signal" href="/api/events">
+    `onUpdate`, state and persistence.
+  </Card>
+</CardGroup>

@@ -1,0 +1,83 @@
+---
+title: "Reference functions"
+description: "Build, resolve, and offset cell references."
+---
+
+## `ADDRESS`
+
+Builds A1 reference text from 1-based row and column numbers.
+
+```excel
+=ADDRESS(row_num, column_num, [abs_num], [a1], [sheet_text])
+```
+
+`abs_num` controls dollar signs:
+
+| Value | Form |
+| --- | --- |
+| `1` or omitted | `$A$1` |
+| `2` | `A$1` |
+| `3` | `$A1` |
+| `4` | `A1` |
+
+```excel
+=ADDRESS(2,3)                  // "$C$2"
+=ADDRESS(2,3,4)                // "C2"
+=ADDRESS(2,3,1,TRUE,"Sheet2") // "Sheet2!$C$2"
+```
+
+<Warning>
+  R1C1 output (`a1 = FALSE`) is not implemented and returns `#VALUE!`.
+</Warning>
+
+## `INDIRECT`
+
+Resolves A1 text into a reference.
+
+```excel
+=INDIRECT(ref_text, [a1])
+```
+
+```excel
+=INDIRECT("B3") // value of B3
+```
+
+The text may be produced by another formula:
+
+```excel
+=INDIRECT(ADDRESS(ROW(),COLUMN()-1))
+```
+
+R1C1 addressing is not implemented. Because the reference is produced at
+runtime, prefer direct references when static dependency analysis matters.
+
+## `OFFSET`
+
+Returns a reference displaced from an origin.
+
+```excel
+=OFFSET(reference, rows, cols, [height], [width])
+```
+
+```excel
+=OFFSET(A1,1,1)          // reference B2
+=SUM(OFFSET(A1,1,1,3,1)) // sum B2:B4
+```
+
+Verified with `B2:B4 = 10,20,30`, the second formula returned `60`.
+
+A multi-cell offset is an array/reference and can be consumed by aggregates or
+spill from a cell.
+
+## Address helper APIs
+
+For application code, prefer exported TypeScript helpers over formula text:
+
+```typescript
+parseCellReference("C5"); // { colIndex: 2, rowIndex: 4 }
+getCellReference({ colIndex: 2, rowIndex: 4 }); // "C5"
+columnToIndex("AA"); // 26
+indexToColumn(26);    // "AA"
+```
+
+See [Types and utilities](/api/types).

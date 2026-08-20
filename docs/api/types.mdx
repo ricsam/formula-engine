@@ -1,0 +1,199 @@
+---
+title: "Types and utilities"
+description: "Core address, range, value, error, search, table and helper exports."
+---
+
+Everything on this page is exported from `@ricsam/formula-engine`.
+
+## Values
+
+```typescript
+type SerializedCellValue = string | number | boolean | undefined;
+```
+
+`undefined` and `""` are empty; empty content is removed from sparse storage.
+`getCellValue` normalizes a missing cell to `""`.
+
+Formula errors are represented by the `FormulaError` enum:
+
+```typescript
+enum FormulaError {
+  DIV0 = "#DIV/0!",
+  NA = "#N/A",
+  NAME = "#NAME?",
+  NUM = "#NUM!",
+  REF = "#REF!",
+  VALUE = "#VALUE!",
+  CYCLE = "#CYCLE!",
+  ERROR = "#ERROR!",
+  SPILL = "#SPILL!",
+}
+```
+
+<Note>
+  The enum contains `#DIV/0!`, but current division-by-zero evaluation returns
+  `"INFINITY"` instead.
+</Note>
+
+## Addresses
+
+```typescript
+interface CellAddress {
+  workbookName: string;
+  sheetName: string;
+  colIndex: number;
+  rowIndex: number;
+}
+
+interface LocalCellAddress {
+  colIndex: number;
+  rowIndex: number;
+}
+
+interface RangeAddress {
+  workbookName: string;
+  sheetName: string;
+  range: SpreadsheetRange;
+}
+```
+
+Indexes are zero-based.
+
+## Ranges
+
+```typescript
+type SpreadsheetRangeEnd =
+  | { type: "number"; value: number }
+  | { type: "infinity"; sign: "positive" };
+
+type SpreadsheetRange = {
+  start: { col: number; row: number };
+  end: {
+    col: SpreadsheetRangeEnd;
+    row: SpreadsheetRangeEnd;
+  };
+};
+```
+
+Finite `A1:C5`:
+
+```typescript
+const range: SpreadsheetRange = {
+  start: { col: 0, row: 0 },
+  end: {
+    col: { type: "number", value: 2 },
+    row: { type: "number", value: 4 },
+  },
+};
+```
+
+Whole column `A:A`:
+
+```typescript
+const wholeA: SpreadsheetRange = {
+  start: { col: 0, row: 0 },
+  end: {
+    col: { type: "number", value: 0 },
+    row: { type: "infinity", sign: "positive" },
+  },
+};
+```
+
+## A1 helpers
+
+```typescript
+columnToIndex("A");       // 0
+columnToIndex("AA");      // 26
+indexToColumn(0);          // "A"
+indexToColumn(26);         // "AA"
+
+getCellReference({ colIndex: 2, rowIndex: 4 }); // "C5"
+parseCellReference("C5"); // { colIndex: 2, rowIndex: 4 }
+```
+
+<Warning>
+  `parseCellReference` here returns `colIndex`. The companion
+  `@ricsam/react-spreadsheets` helper returns `columnIndex` plus additional
+  fields. Import deliberately when using both packages.
+</Warning>
+
+Range and key helpers include:
+
+```typescript
+serializeRange(range);          // "A1:C5"
+getRangeKey(range);             // "A1:C5"
+isRangeOneCell(range);          // boolean
+isCellInRange(address, range);  // boolean
+cellAddressToKey(address);      // stable engine resource key
+rangeAddressToKey(address);     // stable engine resource key
+```
+
+## Search types
+
+```typescript
+interface SearchOptions {
+  workbookName?: string;
+  sheetName?: string;
+  caseSensitive?: boolean;
+  maxResults?: number;
+}
+
+interface SearchMatch {
+  workbookName: string;
+  sheetName: string;
+  cellReference: string;
+  cellContent: string;
+  contentKind: "formula" | "text";
+  occurrenceIndex: number;
+  startIndex: number;
+  endIndexExclusive: number;
+  matchedText: string;
+}
+
+interface ReplaceTarget {
+  workbookName: string;
+  sheetName: string;
+  cellReference: string;
+  occurrenceIndex: number;
+}
+```
+
+`DEFAULT_SEARCH_MAX_RESULTS` is `1000`.
+
+## Tables
+
+```typescript
+interface TableDefinition {
+  name: string;
+  start: { rowIndex: number; colIndex: number };
+  headers: Map<string, { name: string; index: number }>;
+  endRow: SpreadsheetRangeEnd;
+  sheetName: string;
+  workbookName: string;
+}
+```
+
+## History
+
+```typescript
+interface UndoRedoState {
+  enabled: boolean;
+  canUndo: boolean;
+  canRedo: boolean;
+  undoDepth: number;
+  redoDepth: number;
+  maxDepth: number;
+}
+```
+
+## Colors
+
+```typescript
+interface LCHColor { l: number; c: number; h: number }
+
+lchToHex({ l: 60, c: 50, h: 30 }); // "#e06f67"
+hexToLch("#ff0000");                // LCHColor
+```
+
+Style, copy/paste and metadata shapes are documented under
+[Styles](/api/styles) and [Cells](/api/cells).

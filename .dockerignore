@@ -1,0 +1,13 @@
+.git
+node_modules
+web/node_modules
+web/src
+web/public
+docs
+src
+tests
+demo
+e2e
+*.md
+deploy/docs-static/*.bat
+deploy/docs-static/*.command

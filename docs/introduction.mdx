@@ -1,0 +1,100 @@
+---
+title: "Introduction"
+description: "A headless TypeScript spreadsheet formula engine built for sparse data, dynamic arrays and demand-driven evaluation."
+---
+
+FormulaEngine is a TypeScript library that evaluates spreadsheet formulas. It has
+no UI and no DOM dependency: you give it cell content, it gives you computed
+values, and it keeps everything consistent as edits arrive.
+
+```typescript
+import { FormulaEngine } from "@ricsam/formula-engine";
+
+const engine = FormulaEngine.buildEmpty();
+engine.addWorkbook("Workbook1");
+engine.addSheet({ workbookName: "Workbook1", sheetName: "Sheet1" });
+
+engine.setSheetContent(
+  { workbookName: "Workbook1", sheetName: "Sheet1" },
+  new Map([
+    ["A1", 10],
+    ["A2", 20],
+    ["A3", "=SUM(A1:A2)"],
+  ]),
+);
+
+engine.getCellValue({
+  workbookName: "Workbook1",
+  sheetName: "Sheet1",
+  colIndex: 0,
+  rowIndex: 2,
+}); // 30
+```
+
+## Why it exists
+
+Most formula libraries either bundle a grid you have to adopt wholesale, or they
+recalculate the entire workbook on every keystroke. FormulaEngine does neither.
+
+<CardGroup cols={2}>
+  <Card title="Sparse by default" icon="grid">
+    Cells live in a `Map` keyed by A1 reference. Empty cells cost nothing, so a
+    sheet with `A1` and `ZZ100000` populated stores exactly two cells.
+  </Card>
+  <Card title="Demand-driven" icon="bolt">
+    `getCellValue()` computes only what that value needs. Internal caches and
+    value versions keep repeat reads and unrelated edits cheap.
+  </Card>
+  <Card title="Dynamic arrays" icon="table-cells">
+    Array results spill into neighbouring cells, truncate at obstructions, and
+    report `#SPILL!` when they cannot be placed.
+  </Card>
+  <Card title="Headless" icon="code">
+    No React, no DOM, no styling opinions. Pair it with any renderer, or use
+    the companion grid components.
+  </Card>
+</CardGroup>
+
+## What is included
+
+- **39 functions** across math, logical, text, lookup, array, information and
+  reference categories. See the [function reference](/functions/overview).
+- **Multi-sheet workbooks** with cross-sheet references such as `=Sheet2!A1*2`.
+- **Named expressions** with workbook and sheet scope.
+- **Tables** with structured references such as `=SUM(Sales[Qty])`.
+- **Search and replace** across raw stored content, including formulas.
+- **Undo/redo** with a bounded, incremental history.
+- **Cell styles and metadata**, including conditional styles.
+
+## What is not included
+
+FormulaEngine is honest about its edges. The following are **not** currently
+supported, and are verified against the test suite:
+
+<Warning>
+  - `getCellPrecedents()` and `getCellDependents()` are declared but throw
+    `Error("Not implemented")`. The dependency graph exists internally, but it is
+    not yet exposed through these methods.
+  - Division by zero returns the string `"INFINITY"` rather than `#DIV/0!`, and
+    `IFERROR` does not intercept it. See [Errors](/concepts/errors).
+  - R1C1 addressing is unimplemented for `INDIRECT` and `ADDRESS`.
+  - Some 3D/cross-sheet range aggregations (for example `SUM` over a sheet
+    range) are still skipped in the test suite.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Add the package to your project.
+  </Card>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Build a working sheet in a few minutes.
+  </Card>
+  <Card title="Core concepts" icon="book" href="/concepts/architecture">
+    Understand the evaluation model.
+  </Card>
+  <Card title="API reference" icon="terminal" href="/api/engine">
+    Every documented method, verified against source.
+  </Card>
+</CardGroup>

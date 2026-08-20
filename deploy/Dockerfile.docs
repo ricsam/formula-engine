@@ -1,0 +1,5 @@
+FROM nginxinc/nginx-unprivileged:1.27-alpine
+COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
+COPY deploy/docs-static/ /usr/share/nginx/html/
+USER 101
+EXPOSE 8080

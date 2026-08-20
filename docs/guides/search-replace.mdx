@@ -1,0 +1,138 @@
+---
+title: "Search and replace"
+description: "Find text in stored values and formulas, then replace one occurrence or every match."
+---
+
+Search works on **stored cell content**. It can find ordinary text and formula
+source, but not a formula's computed result.
+
+## Search
+
+```typescript
+const matches = engine.search("total");
+```
+
+Scope the query when needed:
+
+```typescript
+engine.search("total", {
+  workbookName: "Budget",
+  sheetName: "Q1",
+  caseSensitive: false,
+  maxResults: 50,
+});
+```
+
+Verified matching behavior:
+
+| Cell content | Query | Match? |
+| --- | --- | --- |
+| `"Quarter total"` | `total` | yes |
+| `"=SUM(B2:B10)"` | `SUM` | yes, kind `formula` |
+| `"=A1*10"` (computed as `30`) | `30` | no |
+| numeric `30` | `30` | no |
+
+<Warning>
+  Search does not inspect computed values or numeric literals. Convert those to
+  text or traverse the cells and call `getCellValue()` yourself.
+</Warning>
+
+A match describes the occurrence precisely:
+
+```typescript
+{
+  workbookName: "Budget",
+  sheetName: "Q1",
+  cellReference: "B3",
+  cellContent: "find me here",
+  contentKind: "text",       // "text" | "formula"
+  occurrenceIndex: 0,
+  start: 0,
+  end: 4,
+}
+```
+
+## Replace one occurrence
+
+Pass the match returned by `search`:
+
+```typescript
+const [match] = engine.search("foo");
+const change = engine.replace("foo", "bar", match);
+```
+
+For a cell containing `"foo foo foo"`, replacing the second match produced:
+
+```typescript
+{
+  before: "foo foo foo",
+  after: "foo bar foo",
+  idx: 1,
+  start: 4,
+}
+```
+
+The operation is undoable.
+
+## Replace all
+
+```typescript
+const changes = engine.replaceAll("Draft", "Final", {
+  workbookName: "Budget",
+  caseSensitive: true,
+});
+```
+
+Each returned change records the address and before/after content. Formula
+source is rewritten too:
+
+```typescript
+// Before: =MIN(A1:A2)
+engine.replaceAll("MIN", "MAX");
+// After:  =MAX(A1:A2)
+```
+
+The rewritten formula is reparsed and its dependency edges are updated.
+
+<Note>
+  `maxResults` limits `search`, but verified `replaceAll` behavior did not honor
+  that limit — all matches were replaced. Scope by workbook and sheet when you
+  need a bounded replacement.
+</Note>
+
+## Case sensitivity
+
+Search is case-insensitive by default:
+
+```typescript
+engine.search("foo"); // matches foo, Foo, FOO
+engine.search("foo", { caseSensitive: true }); // exact case only
+```
+
+## Safe replace workflow
+
+For user-facing tools, show a preview before mutation:
+
+```typescript
+const preview = engine.search(query, {
+  workbookName,
+  sheetName,
+});
+
+// render preview; when confirmed:
+engine.transact(() => {
+  engine.replaceAll(query, replacement, { workbookName, sheetName });
+});
+```
+
+`replaceAll` is already recorded as an undoable mutation; `transact` is useful
+when you pair it with additional edits.
+
+<CardGroup cols={2}>
+  <Card title="Cells API" icon="table-cells" href="/api/cells">
+    Search, replace and content methods.
+  </Card>
+  <Card title="Undo and redo" icon="rotate-left" href="/guides/undo-redo">
+    Recover from a replacement.
+  </Card>
+</CardGroup>

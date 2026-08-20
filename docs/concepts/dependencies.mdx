@@ -1,0 +1,126 @@
+---
+title: "Dependencies"
+description: "How the dependency graph is built, invalidated, and where it is currently opaque."
+---
+
+Every formula declares its inputs. The engine turns those into edges in a
+directed graph, and uses that graph to decide what to recompute.
+
+## What counts as a dependency
+
+When a formula is parsed, its references are extracted:
+
+| Reference kind | Example | Tracked as |
+| --- | --- | --- |
+| Cell | `=A1*2` | a single cell node |
+| Range | `=SUM(A1:A10)` | a range node |
+| Infinite range | `=SUM(A:A)` | an open-ended range node |
+| Cross-sheet | `=Sheet2!B1` | a cell node in another sheet |
+| Cross-workbook | `=[Book2]Sheet1!A1` | a cell node in another workbook |
+| Named expression | `=TaxRate` | the named expression's own graph |
+| Structured | `=SUM(Sales[Qty])` | the table's resolved area |
+
+Ranges are stored as ranges, not expanded into their members. `=SUM(A:A)` adds
+one edge, not a million.
+
+## Edits patch the graph, they do not rebuild it
+
+On every edit the engine diffs the cell's previous dependency set against its
+new one and applies only the difference.
+
+```typescript
+engine.setCellContent(a1, "=SUM(B1:B10)"); // adds edge -> B1:B10
+engine.setCellContent(a1, "=SUM(B1:B20)"); // removes B1:B10, adds B1:B20
+engine.setCellContent(a1, 42);             // removes all outgoing edges
+```
+
+## Invalidation stops when a value stops changing
+
+Dirty marking propagates forward through dependents, but recomputation compares
+the new value with the old one. When they match, propagation halts.
+
+```typescript
+engine.setSheetContent(
+  sheet,
+  new Map([
+    ["A1", 10],
+    ["B1", "=ROUND(A1/10)"],
+    ["C1", "=B1*100"],
+  ]),
+);
+
+// A1: 10 -> 14 changes B1's input but not its output (both round to 1),
+// so C1 is never recomputed.
+```
+
+This is why wide, shallow models stay fast: a change deep in the graph often
+dies out after one or two levels.
+
+## Cycles
+
+A cycle is detected during evaluation and reported as `#CYCLE!` on every cell
+that participates in it. The engine does not hang, and it does not iterate.
+
+```typescript
+engine.setSheetContent(
+  sheet,
+  new Map([
+    ["A1", "=A2"],
+    ["A2", "=A1"],
+  ]),
+);
+
+read("A1"); // "#CYCLE!"
+read("A2"); // "#CYCLE!"
+```
+
+There is no iterative-calculation mode. Break the cycle to recover.
+
+## Deleting a dependency target
+
+Removing a sheet that other formulas point at does not rewrite those formulas.
+The stored text is preserved; the computed value becomes an error.
+
+```typescript
+engine.removeSheet({ workbookName: "W", sheetName: "Data" });
+
+read("Main!A1");            // "#ERROR!"
+// stored content is untouched:
+[...engine.getSheetSerialized({ workbookName: "W", sheetName: "Main" })];
+// [["A1", "=Data!A1"]]
+```
+
+Recreating a sheet with the same name restores evaluation, because sheets are
+keyed by name.
+
+<Note>
+  Renames behave differently from deletes. `renameSheet`, `renameTable` and
+  `renameNamedExpression` **rewrite** the referring formulas so nothing breaks.
+</Note>
+
+## Current limitation: the graph is not readable
+
+`getCellPrecedents()` and `getCellDependents()` exist on the class but are not
+implemented.
+
+```typescript
+engine.getCellDependents(address); // throws Error("Not implemented")
+engine.getCellPrecedents(address); // throws Error("Not implemented")
+```
+
+<Warning>
+  Do not build features on these two methods. If you need to visualise a
+  dependency graph today, parse the serialized formula text yourself with
+  `getSheetSerialized()`.
+</Warning>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Evaluation" icon="bolt" href="/concepts/evaluation">
+    When the graph is actually walked.
+  </Card>
+  <Card title="Errors" icon="triangle-exclamation" href="/concepts/errors">
+    Every error value the engine can produce.
+  </Card>
+</CardGroup>

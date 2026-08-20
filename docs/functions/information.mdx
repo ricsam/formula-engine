@@ -1,0 +1,61 @@
+---
+title: "Information functions"
+description: "Inspect cell contents, row numbers, and column numbers."
+---
+
+## `ROW`
+
+Returns a 1-based row number.
+
+```excel
+=ROW([reference])
+```
+
+```excel
+=ROW()    // row of the formula cell
+=ROW(B4)  // 4
+```
+
+When no reference is supplied, context matters. A formula in `E36` returned
+`36`.
+
+## `COLUMN`
+
+Returns a 1-based column number.
+
+```excel
+=COLUMN([reference])
+```
+
+```excel
+=COLUMN()    // column of the formula cell
+=COLUMN(C1)  // 3
+```
+
+A formula in column E returned `5`.
+
+## `CELL`
+
+Returns information about a reference.
+
+```excel
+=CELL(info_type, reference)
+```
+
+Supported, verified info types include:
+
+| Formula | Result for `B2 = 10` |
+| --- | --- |
+| `=CELL("address",B2)` | `"$B$2"` |
+| `=CELL("row",B2)` | `2` |
+| `=CELL("col",B2)` | `2` |
+| `=CELL("contents",B2)` | `10` |
+| `=CELL("type",B2)` | type code |
+
+Verified text returned type code `"l"` (label). Numeric, boolean, empty and error
+inputs use their engine-defined codes.
+
+<Note>
+  `CELL` is a compact compatibility function, not a general metadata API. Use
+  `getCellMetadata()` for consumer-defined comments, links or rich content.
+</Note>

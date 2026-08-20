@@ -1,0 +1,191 @@
+---
+title: "Cells and ranges"
+description: "Read, write, search, paste, fill, move, and clear spreadsheet content."
+---
+
+## Read and write
+
+### `getCellValue`
+
+```typescript
+getCellValue(address: CellAddress, debug?: boolean): SerializedCellValue
+```
+
+Evaluates lazily and returns a primitive. An empty or missing cell returns `""`.
+Formula errors are returned as strings such as `"#VALUE!"`.
+
+### `getCellEvaluationResult`
+
+```typescript
+getCellEvaluationResult(address: CellAddress): SingleEvaluationResult | undefined
+```
+
+Returns the engine's structured internal result. Most consumers should prefer
+`getCellValue`.
+
+### `setCellContent`
+
+```typescript
+setCellContent(address: CellAddress, content: SerializedCellValue): void
+```
+
+Set one cell. Strings beginning with `=` are formulas. `undefined` or `""`
+clears the stored content.
+
+### `setSheetContent`
+
+```typescript
+setSheetContent(
+  sheet: { workbookName: string; sheetName: string },
+  content: Map<string, SerializedCellValue>,
+): void
+```
+
+Replaces the entire sheet. Keys use A1 notation.
+
+### `getSheetSerialized`
+
+```typescript
+getSheetSerialized(sheet): Map<string, SerializedCellValue>
+```
+
+Returns stored content — formulas remain source strings rather than computed
+values.
+
+## Clear a range
+
+```typescript
+clearSpreadsheetRange(address: RangeAddress): void
+```
+
+Clears every populated cell intersecting a finite or infinite range.
+
+## Copy and paste
+
+```typescript
+pasteCells(
+  source: CellAddress[],
+  target: CellAddress,
+  options: CopyCellsOptions,
+): void
+```
+
+The target is the top-left destination. Formula references adjust relative to
+the move.
+
+```typescript
+interface CopyCellsOptions {
+  cut?: boolean; // default false
+  type?: "value" | "formula"; // default "formula"
+  include?: "all" | Array<
+    "content" | "style" | "cellMetadata" | "rangeMetadata"
+  >;
+}
+```
+
+Verified examples:
+
+- copying `=A1*10` one column right produced `=B1*10`
+- `cut: true` cleared the source
+- `include: ["style"]` copied formatting without content
+- `include: ["content"]` left styles behind
+
+## Fill
+
+### `fillAreas`
+
+```typescript
+fillAreas(
+  seedRange: RangeAddress,
+  targetRanges: RangeAddress[],
+  options: CopyCellsOptions,
+): void
+```
+
+Tiles the first target region's pattern into the supplied areas.
+
+### `smartPaste`
+
+```typescript
+smartPaste(
+  sourceCells: CellAddress[],
+  pasteSelection: { workbookName: string; sheetName: string; areas: SpreadsheetRange[] },
+  options: CopyCellsOptions,
+): void
+```
+
+Chooses copy or fill behavior from source and destination shape.
+
+### `autoFill`
+
+```typescript
+autoFill(
+  sheet: { workbookName: string; sheetName: string },
+  seedRange: SpreadsheetRange,
+  fillRanges: SpreadsheetRange[],
+  direction: FillDirection,
+): void
+```
+
+Detects series and adjusts formulas. A numeric seed `1, 2` filled downward
+produced `3, 4, 5, 6`; a formula seed `=A1*10` became `=A2*10`, `=A3*10`, and
+so on.
+
+## Move
+
+```typescript
+moveCell(source: CellAddress, target: CellAddress): void
+moveRange(source: RangeAddress, target: CellAddress): void
+```
+
+These are cut operations that also rewrite formulas pointing into the moved
+area.
+
+```typescript
+engine.moveRange(a1d5, f10);
+// =SUM(A1:D5) is rewritten to =SUM(F10:I14)
+```
+
+## Search and replace
+
+```typescript
+search(query: string, options?: SearchOptions): SearchMatch[]
+replace(
+  query: string,
+  replacement: string,
+  target: ReplaceTarget,
+  options?: { caseSensitive?: boolean },
+): ReplaceChange
+replaceAll(
+  query: string,
+  replacement: string,
+  options?: SearchOptions,
+): ReplaceChange[]
+```
+
+```typescript
+interface SearchOptions {
+  workbookName?: string;
+  sheetName?: string;
+  caseSensitive?: boolean;
+  maxResults?: number; // search default 1000
+}
+```
+
+`replaceAll` intentionally ignores `maxResults`. Search inspects stored text and
+formula source, not computed values or numeric cells. See the
+[search and replace guide](/guides/search-replace).
+
+## Addresses
+
+```typescript
+interface CellAddress {
+  workbookName: string;
+  sheetName: string;
+  colIndex: number; // zero based
+  rowIndex: number; // zero based
+}
+```
+
+Use `parseCellReference`, `getCellReference`, `columnToIndex` and
+`indexToColumn` to bridge A1 notation. See [Types and utilities](/api/types).

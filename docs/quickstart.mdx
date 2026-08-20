@@ -1,0 +1,139 @@
+---
+title: "Quickstart"
+description: "Build a working spreadsheet model in a few minutes."
+---
+
+Every output on this page was produced by running the code against the engine.
+
+## 1. Create an engine
+
+An engine holds workbooks; a workbook holds sheets. Create all three before
+writing content.
+
+```typescript
+import { FormulaEngine } from "@ricsam/formula-engine";
+
+const engine = FormulaEngine.buildEmpty();
+
+engine.addWorkbook("Budget");
+engine.addSheet({ workbookName: "Budget", sheetName: "Q1" });
+
+const sheet = { workbookName: "Budget", sheetName: "Q1" };
+```
+
+## 2. Write cells
+
+`setSheetContent` takes a `Map` keyed by A1 reference. Values are numbers,
+strings, booleans, or formula strings beginning with `=`.
+
+```typescript
+engine.setSheetContent(
+  sheet,
+  new Map([
+    ["A1", "Item"],    ["B1", "Cost"],   ["C1", "Qty"],
+    ["A2", "Laptop"],  ["B2", 1200],     ["C2", 3],
+    ["A3", "Monitor"], ["B3", 350],      ["C3", 6],
+    ["A4", "Desk"],    ["B4", 500],      ["C4", 4],
+
+    ["D2", "=B2*C2"],
+    ["D3", "=B3*C3"],
+    ["D4", "=B4*C4"],
+    ["D5", "=SUM(D2:D4)"],
+    ["D6", "=AVERAGE(D2:D4)"],
+    ["D7", "=MAX(D2:D4)"],
+    ["D8", '=COUNTIF(C2:C4,">3")'],
+  ]),
+);
+```
+
+<Note>
+  `setSheetContent` replaces the sheet's contents. To change a single cell
+  without touching the rest, use `setCellContent`.
+</Note>
+
+## 3. Read values
+
+Addresses are zero-based `colIndex` / `rowIndex`, so `D5` is
+`{ colIndex: 3, rowIndex: 4 }`. The exported helpers convert for you.
+
+```typescript
+import { parseCellReference } from "@ricsam/formula-engine";
+
+function read(ref: string) {
+  const { colIndex, rowIndex } = parseCellReference(ref);
+  return engine.getCellValue({ ...sheet, colIndex, rowIndex });
+}
+
+read("D2"); // 3600
+read("D5"); // 7700
+read("D6"); // 2566.6666666666665
+read("D7"); // 3600
+read("D8"); // 2
+```
+
+<Warning>
+  `parseCellReference` returns `{ colIndex, rowIndex }`. The similarly named
+  helper in `@ricsam/react-spreadsheets` returns `{ columnIndex, rowIndex }`
+  plus `column` and `row`. Check which one you imported.
+</Warning>
+
+## 4. Spill an array
+
+Array-producing formulas write into their own cell and spill downward or
+rightward. Only `F1` holds a formula; `F2` and `F3` are spilled members.
+
+```typescript
+engine.setCellContent(
+  { ...sheet, colIndex: 5, rowIndex: 0 },
+  "=SEQUENCE(3,1,10,10)",
+);
+
+read("F1"); // 10
+read("F2"); // 20
+read("F3"); // 30
+```
+
+See [Spilling](/concepts/spilling) for obstruction and `#SPILL!` behaviour.
+
+## 5. React to changes
+
+`onUpdate` fires after a recalculation cycle and returns an unsubscribe
+function.
+
+```typescript
+const unsubscribe = engine.onUpdate(() => {
+  console.log("recalculated");
+});
+
+engine.setCellContent({ ...sheet, colIndex: 1, rowIndex: 1 }, 1500);
+read("D5"); // 8600 — dependents update automatically
+
+unsubscribe();
+```
+
+## 6. Read the whole sheet back
+
+`getSheetSerialized` returns the raw stored content — formulas as text, not
+computed values. This is what you persist.
+
+```typescript
+[...engine.getSheetSerialized(sheet)];
+// [["A1","Item"], ["B1","Cost"], ..., ["D5","=SUM(D2:D4)"], ...]
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Evaluation model" icon="bolt" href="/concepts/evaluation">
+    How lazy recomputation works.
+  </Card>
+  <Card title="Functions" icon="function" href="/functions/overview">
+    All 39 built-in functions.
+  </Card>
+  <Card title="React" icon="react" href="/guides/react">
+    Wire the engine into a component.
+  </Card>
+  <Card title="API reference" icon="terminal" href="/api/engine">
+    Full method list.
+  </Card>
+</CardGroup>

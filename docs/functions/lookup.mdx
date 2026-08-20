@@ -1,0 +1,102 @@
+---
+title: "Lookup and count functions"
+description: "COUNT, criteria counts, INDEX, MATCH, and XLOOKUP."
+---
+
+## Count
+
+### `COUNT`
+
+Counts numeric values.
+
+```excel
+=COUNT(value1, [value2], ...)
+=COUNT(B2:B6) // 5 for five numeric cells
+```
+
+### `COUNTIF`
+
+```excel
+=COUNTIF(criteria_range, criteria)
+```
+
+```excel
+=COUNTIF(A2:A6,"North") // 2
+=COUNTIF(B2:B6,">30")   // 2
+```
+
+### `COUNTIFS`
+
+```excel
+=COUNTIFS(criteria_range1, criteria1, [criteria_range2, criteria2], ...)
+```
+
+```excel
+=COUNTIFS(A2:A6,"South",B2:B6,">30") // 1
+```
+
+All criteria must match the same row/position.
+
+## `INDEX`
+
+Returns the value at a position in a range.
+
+```excel
+=INDEX(array, row_num, [column_num])
+```
+
+```excel
+=INDEX(B2:B6,3) // 30
+```
+
+Row and column numbers are 1-based within the supplied array.
+
+## `MATCH`
+
+Returns the 1-based position of a value in a lookup range.
+
+```excel
+=MATCH(lookup_value, lookup_array, [match_type])
+```
+
+```excel
+=MATCH("East",A2:A6,0) // 4
+```
+
+Use match type `0` for an exact match.
+
+## `XLOOKUP`
+
+```excel
+=XLOOKUP(
+  lookup_value,
+  lookup_array,
+  return_array,
+  [if_not_found],
+  [match_mode],
+  [search_mode]
+)
+```
+
+```excel
+=XLOOKUP("East",A2:A6,B2:B6)        // 40
+=XLOOKUP("West",A2:A6,B2:B6,"none") // "none"
+```
+
+Lookup and return arrays should have corresponding shapes.
+
+## Structured ranges
+
+Lookup and count functions accept table columns:
+
+```excel
+=COUNT(Sales[Qty])
+=XLOOKUP("Widget",Sales[Product],Sales[Price],"not found")
+```
+
+## Not registered
+
+<Note>
+  `VLOOKUP` and `HLOOKUP` are not registered and return `#NAME?`. Use `XLOOKUP`
+  or an `INDEX` + `MATCH` combination.
+</Note>

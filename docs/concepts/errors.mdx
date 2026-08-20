@@ -1,0 +1,154 @@
+---
+title: "Errors"
+description: "Every error value the engine produces, what triggers it, and what IFERROR does and does not catch."
+---
+
+Errors are ordinary cell values: strings beginning with `#`. They propagate
+through dependent formulas like any other value, and you read them with
+`getCellValue()`.
+
+Every result on this page was produced by running the code against the engine.
+
+## Error values
+
+| Value | Meaning | Typical trigger |
+| --- | --- | --- |
+| `#CYCLE!` | Circular reference | `A1: =A2`, `A2: =A1` |
+| `#NAME?` | Unknown function or name | `=NOSUCHFN(1)`, `=UnknownName` |
+| `#VALUE!` | Wrong argument type | `=1+"abc"` |
+| `#NUM!` | Numerically invalid | `=CEILING(-7.3,1)` |
+| `#SPILL!` | Array cannot be placed | a blocked spill area |
+| `#REF!` | Invalid reference | a reference the engine cannot resolve |
+| `#ERROR!` | Evaluation failed | a formula pointing at a deleted sheet |
+
+```typescript
+engine.setSheetContent(
+  sheet,
+  new Map([
+    ["A1", "=B1"], ["B1", "=A1"],
+    ["C1", "=NOSUCHFN(1)"],
+    ["D1", '=1+"abc"'],
+    ["H1", "=UnknownName"],
+    ["I1", "=CEILING(-7.3,1)"],
+  ]),
+);
+
+read("A1"); // "#CYCLE!"
+read("B1"); // "#CYCLE!"
+read("C1"); // "#NAME?"
+read("D1"); // "#VALUE!"
+read("H1"); // "#NAME?"
+read("I1"); // "#NUM!"
+```
+
+## Division by zero is not an error
+
+<Warning>
+  `=10/0` evaluates to the **string `"INFINITY"`**, not `#DIV/0!`. Because it is
+  not an error value, `IFERROR` does not intercept it.
+</Warning>
+
+```typescript
+engine.setSheetContent(
+  sheet,
+  new Map([
+    ["E1", "=10/0"],
+    ["F1", '=IFERROR(10/0,"caught")'],
+  ]),
+);
+
+read("E1"); // "INFINITY"
+read("F1"); // "INFINITY"  — IFERROR did not catch it
+```
+
+Guard explicitly when a denominator can be zero:
+
+```typescript
+'=IF(B1=0, "n/a", A1/B1)'
+```
+
+## What `IFERROR` does catch
+
+`IFERROR` intercepts genuine error values.
+
+```typescript
+engine.setSheetContent(
+  sheet,
+  new Map([["G1", '=IFERROR(NOSUCHFN(1),"caught")']]),
+);
+
+read("G1"); // "caught"
+```
+
+| Expression | Result |
+| --- | --- |
+| `=IFERROR(NOSUCHFN(1),"caught")` | `"caught"` |
+| `=IFERROR(10/0,"caught")` | `"INFINITY"` |
+
+## Deleting a referenced sheet
+
+The stored formula text is preserved; only the computed value degrades.
+
+```typescript
+// Main!A1 holds "=Data!A1", Data!A1 holds 7
+read("Main!A1"); // 7
+
+engine.removeSheet({ workbookName: "W", sheetName: "Data" });
+read("Main!A1"); // "#ERROR!"
+
+[...engine.getSheetSerialized({ workbookName: "W", sheetName: "Main" })];
+// [["A1", "=Data!A1"]]  — text intact
+```
+
+Recreate the sheet and evaluation resumes:
+
+```typescript
+engine.addSheet({ workbookName: "W", sheetName: "Data" });
+engine.setSheetContent({ workbookName: "W", sheetName: "Data" },
+  new Map([["A1", 99]]));
+
+read("Main!A1"); // 99
+```
+
+## Named expressions and the leading `=`
+
+A named expression's `expression` is stored **without** a leading `=`. Including
+one yields `#ERROR!` at every use site.
+
+```typescript
+engine.addNamedExpression({ expressionName: "TaxRate", expression: "0.25" });   // correct
+engine.addNamedExpression({ expressionName: "Bad",     expression: "=0.25" });  // -> "#ERROR!"
+```
+
+See [Named expressions](/concepts/named-expressions).
+
+## Detecting errors in application code
+
+Values are plain strings, so a small helper is enough:
+
+```typescript
+const ERROR_VALUES = new Set([
+  "#CYCLE!", "#NAME?", "#VALUE!", "#NUM!",
+  "#SPILL!", "#REF!", "#ERROR!", "#DIV/0!", "#N/A",
+]);
+
+function isFormulaError(value: unknown): value is string {
+  return typeof value === "string" && ERROR_VALUES.has(value);
+}
+```
+
+<Note>
+  `"INFINITY"` is deliberately absent from that set — it is a value, not an
+  error. Add it if your UI should flag it.
+</Note>
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Spilling" icon="table-cells" href="/concepts/spilling">
+    Where `#SPILL!` comes from and how to clear it.
+  </Card>
+  <Card title="Dependencies" icon="diagram-project" href="/concepts/dependencies">
+    Cycle detection and invalidation.
+  </Card>
+</CardGroup>

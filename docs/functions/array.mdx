@@ -1,0 +1,49 @@
+---
+title: "Array functions"
+description: "Generate dynamic arrays with SEQUENCE."
+---
+
+## `SEQUENCE`
+
+Generates a rectangular array of sequential numbers.
+
+```excel
+=SEQUENCE(rows, [columns], [start], [step])
+```
+
+| Argument | Meaning | Default |
+| --- | --- | --- |
+| `rows` | output height | required |
+| `columns` | output width | `1` |
+| `start` | first number | `1` |
+| `step` | increment | `1` |
+
+```excel
+=SEQUENCE(3)          // spills 1,2,3 downward
+=SEQUENCE(3,2,1,1)   // 3 × 2 grid
+=SEQUENCE(4,1,10,10) // 10,20,30,40
+```
+
+`=SEQUENCE(3,2,1,1)` spills row-major:
+
+| | |
+| --- | --- |
+| 1 | 2 |
+| 3 | 4 |
+| 5 | 6 |
+
+Only the top-left anchor stores the formula. The neighbouring values are spill
+members and can be referenced normally.
+
+## Spill obstruction
+
+Any content in the target area causes the anchor to return `#SPILL!`.
+
+<Warning>
+  Clearing the blocker does not currently invalidate the failed spill by itself.
+  Rewrite the anchor formula, or call `setSheetContent` with the unblocked
+  content, to restore it.
+</Warning>
+
+See [Spilling](/concepts/spilling) for array arithmetic, references, obstruction
+and recovery.

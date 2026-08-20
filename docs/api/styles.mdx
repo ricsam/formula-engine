@@ -1,0 +1,137 @@
+---
+title: "Styles and metadata"
+description: "Direct styles, conditional styles, and generic metadata methods."
+---
+
+## Cell style shape
+
+```typescript
+interface CellStyle {
+  backgroundColor?: string;
+  color?: string;
+  borderColor?: string;
+  borderSides?: {
+    top?: boolean;
+    right?: boolean;
+    bottom?: boolean;
+    left?: boolean;
+  };
+  fontSize?: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  wrapText?: boolean;
+}
+```
+
+Colors are hex strings.
+
+## Direct styles
+
+```typescript
+interface DirectCellStyle {
+  areas: RangeAddress[];
+  style: CellStyle;
+}
+```
+
+| Method | Signature |
+| --- | --- |
+| `addCellStyle` | `(style: DirectCellStyle) => void` |
+| `removeCellStyle` | `(workbookName: string, index: number) => void` |
+| `getCellStyle` | `(address: CellAddress) => CellStyle \| undefined` |
+| `getCellStyleCount` | `(workbookName: string) => number` |
+| `getAllCellStyles` | `() => DirectCellStyle[]` |
+| `getStylesIntersectingWithRange` | `(range: RangeAddress) => DirectCellStyle[]` |
+| `getStyleForRange` | `(range: RangeAddress) => DirectCellStyle \| undefined` |
+| `clearCellStyles` | `(range: RangeAddress) => void` |
+
+`getCellStyle` returns the computed composition for one cell.
+`clearCellStyles` clips existing areas around the cleared range and also clears
+conditional style coverage there.
+
+## Conditional styles
+
+```typescript
+interface ConditionalStyle {
+  areas: RangeAddress[];
+  condition: FormulaStyleCondition | GradientStyleCondition;
+}
+
+interface FormulaStyleCondition {
+  type: "formula";
+  formula: string;
+  color: LCHColor;
+}
+
+interface GradientStyleCondition {
+  type: "gradient";
+  min:
+    | { type: "lowest_value"; color: LCHColor }
+    | { type: "number"; color: LCHColor; valueFormula: string };
+  max:
+    | { type: "highest_value"; color: LCHColor }
+    | { type: "number"; color: LCHColor; valueFormula: string };
+}
+```
+
+```typescript
+interface LCHColor {
+  l: number;
+  c: number;
+  h: number;
+}
+```
+
+| Method | Signature |
+| --- | --- |
+| `addConditionalStyle` | `(style: ConditionalStyle) => void` |
+| `removeConditionalStyle` | `(workbookName: string, index: number) => void` |
+| `getConditionalStyleCount` | `(workbookName: string) => number` |
+| `getAllConditionalStyles` | `() => ConditionalStyle[]` |
+| `getConditionalStylesIntersectingWithRange` | `(range: RangeAddress) => ConditionalStyle[]` |
+
+Use `lchToHex` and `hexToLch` for conversion.
+
+## Typed metadata
+
+FormulaEngine is generic over consumer metadata. Cell, sheet, workbook and range
+metadata are stored but never interpreted during formula evaluation.
+
+| Method | Purpose |
+| --- | --- |
+| `setCellMetadata(address, metadata \| undefined)` | set/remove cell metadata |
+| `getCellMetadata(address)` | read cell metadata |
+| `getSheetMetadataSerialized(sheet)` | read the sheet's serialized metadata map |
+| `setSheetMetadata(sheet, metadata \| undefined)` | set/remove sheet metadata |
+| `getSheetMetadata(sheet)` | read sheet metadata |
+| `setWorkbookMetadata(workbookName, metadata \| undefined)` | set/remove workbook metadata |
+| `getWorkbookMetadata(workbookName)` | read workbook metadata |
+
+## Range metadata
+
+```typescript
+interface RangeMetadataInput<T = unknown> {
+  id?: string;
+  areas: RangeAddress[];
+  metadata: T;
+}
+
+interface RangeMetadata<T = unknown> {
+  id: string;
+  areas: RangeAddress[];
+  metadata: T;
+}
+```
+
+| Method | Signature |
+| --- | --- |
+| `addRangeMetadata` | `(input: RangeMetadataInput) => string` |
+| `removeRangeMetadata` | `(id: string) => void` |
+| `getAllRangeMetadata` | `() => RangeMetadata[]` |
+| `getRangeMetadataForCell` | `(address: CellAddress) => RangeMetadata[]` |
+| `getRangeMetadataIntersectingWithRange` | `(range: RangeAddress) => RangeMetadata[]` |
+| `clearRangeMetadata` | `(range: RangeAddress) => void` |
+
+See [Styles and metadata](/guides/styling) for rendering examples and current
+formula-condition caveats.

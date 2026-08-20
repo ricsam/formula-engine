@@ -1,0 +1,94 @@
+---
+title: "Math functions"
+description: "SUM, AVERAGE, MIN, MAX, criteria variants, and CEILING."
+---
+
+Every result below was verified against the engine.
+
+## Aggregates
+
+| Function | Syntax | Description |
+| --- | --- | --- |
+| `SUM` | `SUM(value1, [value2], ...)` | sum numbers and ranges |
+| `AVERAGE` | `AVERAGE(value1, [value2], ...)` | arithmetic mean |
+| `MIN` | `MIN(value1, [value2], ...)` | smallest numeric value |
+| `MAX` | `MAX(value1, [value2], ...)` | largest numeric value |
+
+Given `B2:B6 = 10,20,30,40,50`:
+
+```excel
+=SUM(B2:B6)      // 150
+=AVERAGE(B2:B6)  // 30
+=MIN(B2:B6)      // 10
+=MAX(B2:B6)      // 50
+```
+
+Ranges, literals and multiple arguments can be mixed:
+
+```excel
+=SUM(B2:B6, 100) // 250
+```
+
+## Single-criteria aggregates
+
+| Function | Syntax |
+| --- | --- |
+| `SUMIF` | `SUMIF(criteria_range, criteria, [sum_range])` |
+| `AVERAGEIF` | `AVERAGEIF(criteria_range, criteria, [average_range])` |
+| `MINIF` | `MINIF(criteria_range, criteria, [min_range])` |
+| `MAXIF` | `MAXIF(criteria_range, criteria, [max_range])` |
+
+Given regions `North, South, North, East, South` in `A2:A6` and units
+`10,20,30,40,50` in `B2:B6`:
+
+```excel
+=SUMIF(A2:A6,"North",B2:B6)      // 40
+=AVERAGEIF(A2:A6,"North",B2:B6)  // 20
+=MINIF(A2:A6,"North",B2:B6)      // 10
+=MAXIF(A2:A6,"North",B2:B6)      // 30
+```
+
+When the result range is omitted, values from the criteria range are aggregated.
+
+## Multi-criteria aggregates
+
+| Function | Syntax |
+| --- | --- |
+| `SUMIFS` | `SUMIFS(sum_range, criteria_range1, criteria1, ...)` |
+| `AVERAGEIFS` | `AVERAGEIFS(average_range, criteria_range1, criteria1, ...)` |
+| `MINIFS` | `MINIFS(min_range, criteria_range1, criteria1, ...)` |
+| `MAXIFS` | `MAXIFS(max_range, criteria_range1, criteria1, ...)` |
+
+```excel
+=SUMIFS(B2:B6,A2:A6,"South",C2:C6,">1")       // 70
+=AVERAGEIFS(B2:B6,A2:A6,"North",C2:C6,">4")  // 10
+=MINIFS(B2:B6,A2:A6,"South")                   // 20
+=MAXIFS(B2:B6,A2:A6,"South")                   // 50
+```
+
+Criteria use strings for operators: `">10"`, `"<=100"`, `"<>East"`.
+
+## `CEILING`
+
+Rounds a number away from zero to a multiple of `significance`.
+
+```excel
+=CEILING(number, significance)
+```
+
+```excel
+=CEILING(7.3,0.5)  // 7.5
+```
+
+<Warning>
+  A negative number with a positive significance is rejected:
+  `=CEILING(-7.3,1)` returns `#NUM!`.
+</Warning>
+
+## Range behavior
+
+- text inside referenced ranges is ignored by numeric aggregates
+- whole-column ranges such as `SUM(B:B)` are supported
+- structured references such as `SUM(Sales[Qty])` are supported
+- a missing table/column inside `SUM` currently behaves like an empty range and
+  returns `0`

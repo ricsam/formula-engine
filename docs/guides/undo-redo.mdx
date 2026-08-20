@@ -1,0 +1,147 @@
+---
+title: "Undo and redo"
+description: "Record reversible engine mutations and group related edits into transactions."
+---
+
+FormulaEngine records mutations in an incremental history. Undo restores the
+changed resources; it does not snapshot the entire workbook after every edit.
+
+## Basic use
+
+```typescript
+engine.setCellContent(a1, 1);
+engine.setCellContent(a1, 5);
+
+engine.canUndo(); // true
+engine.undo();    // true; A1 is 1 again
+engine.canRedo(); // true
+engine.redo();    // true; A1 is 5 again
+```
+
+Both methods return `false` when no action is available.
+
+Dependent formulas follow the restored input automatically:
+
+```typescript
+// A1=1; B1="=A1*10"
+engine.setCellContent(a1, 5);
+read("B1"); // 50
+
+engine.undo();
+read("A1"); // 1
+read("B1"); // 10
+```
+
+## Inspect history state
+
+```typescript
+engine.getUndoRedoState();
+```
+
+The returned shape:
+
+```typescript
+{
+  enabled: true,
+  canUndo: true,
+  canRedo: false,
+  undoDepth: 4,
+  redoDepth: 0,
+  maxDepth: 100,
+}
+```
+
+The default history limit is 100 checkpoints.
+
+## Group edits with `transact`
+
+`transact` makes any number of mutations one undo step.
+
+```typescript
+engine.clearUndoRedoHistory();
+
+engine.transact(() => {
+  engine.setCellContent(a1, 100);
+  engine.setCellContent(a2, 200);
+  engine.setCellContent(a3, 300);
+});
+
+engine.undo(); // restores all three cells together
+```
+
+It returns the callback's value:
+
+```typescript
+const result = engine.transact(() => {
+  engine.setCellContent(a1, 42);
+  return "saved";
+});
+// result === "saved"
+```
+
+Use transactions for paste, imports, multi-cell forms, and operations that must
+feel atomic to a user.
+
+## Clear history
+
+```typescript
+engine.clearUndoRedoHistory();
+engine.canUndo(); // false
+engine.canRedo(); // false
+```
+
+Clearing history does not change workbook data.
+
+## What is undoable
+
+The engine wraps data and resource mutations, including:
+
+- cell and sheet content changes
+- add, remove and rename sheet/workbook operations
+- named-expression changes
+- table changes
+- styles and metadata
+- search and replace
+- paste, fill and move operations
+
+A new mutation after `undo()` clears the redo branch, as users expect.
+
+## UI wiring
+
+```tsx
+function HistoryButtons({ engine }: { engine: FormulaEngine }) {
+  const [, render] = useReducer((x) => x + 1, 0);
+
+  useEffect(() => engine.onUpdate(render), [engine]);
+  const state = engine.getUndoRedoState();
+
+  return (
+    <>
+      <button disabled={!state.canUndo} onClick={() => engine.undo()}>
+        Undo
+      </button>
+      <button disabled={!state.canRedo} onClick={() => engine.redo()}>
+        Redo
+      </button>
+    </>
+  );
+}
+```
+
+For keyboard shortcuts, map <kbd>Ctrl</kbd>/<kbd>Cmd</kbd> + <kbd>Z</kbd> to
+`undo` and the platform redo chord to `redo`.
+
+## Persistence and history
+
+`serializeEngine()` persists workbook state, not the undo stack. Loading with
+`resetToSerializedEngine()` starts from the serialized data; do not depend on
+past history surviving application restarts.
+
+<CardGroup cols={2}>
+  <Card title="Engine API" icon="terminal" href="/api/engine">
+    History and transaction signatures.
+  </Card>
+  <Card title="Events" icon="signal" href="/api/events">
+    Keep buttons in sync with mutations.
+  </Card>
+</CardGroup>

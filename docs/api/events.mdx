@@ -1,0 +1,116 @@
+---
+title: "Events and state"
+description: "Subscribe to mutations, read engine state, and keep user interfaces synchronized."
+---
+
+## `onUpdate`
+
+```typescript
+onUpdate(listener: () => void): () => void
+```
+
+Registers a listener and returns an unsubscribe function.
+
+```typescript
+const unsubscribe = engine.onUpdate(() => {
+  console.log("engine changed");
+});
+
+engine.setCellContent(a1, 42); // listener fires
+unsubscribe();
+```
+
+Listeners fire after mutations, including undo and redo. The callback receives
+no payload; read the cells or state your view needs.
+
+<Note>
+  Evaluation is lazy. The update means model state changed; call
+  `getCellValue()` to compute and retrieve a new display value.
+</Note>
+
+## `getState`
+
+```typescript
+getState(): {
+  workbooks: Map<string, Workbook>;
+  namedExpressions: unknown;
+  tables: Map<string, Map<string, TableDefinition>>;
+  conditionalStyles: ConditionalStyle[];
+  cellStyles: DirectCellStyle[];
+  rangeMetadata: RangeMetadata[];
+  references: unknown;
+}
+```
+
+The exact inferred generic types depend on your engine metadata type. Treat the
+result as a snapshot for observation, not a mutation surface.
+
+## React
+
+`onUpdate` maps directly to `useSyncExternalStore`:
+
+```tsx
+function useFormulaEngine(engine: FormulaEngine) {
+  return useSyncExternalStore(
+    (notify) => engine.onUpdate(notify),
+    () => engine.getState(),
+    () => engine.getState(),
+  );
+}
+```
+
+The companion `FormulaSheet` and `FormulaWorkbook` components already subscribe
+internally.
+
+## Persist on change
+
+For small models, serialize on every update:
+
+```typescript
+const unsubscribe = engine.onUpdate(() => {
+  localStorage.setItem("model", engine.serializeEngine());
+});
+```
+
+For large workbooks, debounce the write:
+
+```typescript
+let timer: ReturnType<typeof setTimeout>;
+const unsubscribe = engine.onUpdate(() => {
+  clearTimeout(timer);
+  timer = setTimeout(() => save(engine.serializeEngine()), 500);
+});
+```
+
+## History state
+
+`getUndoRedoState()` is separate from `getState()`:
+
+```typescript
+const {
+  canUndo,
+  canRedo,
+  undoDepth,
+  redoDepth,
+  maxDepth,
+} = engine.getUndoRedoState();
+```
+
+Call it in an update listener to keep toolbar controls current.
+
+## Listener lifecycle
+
+- keep the returned unsubscribe function
+- unsubscribe when a component unmounts
+- avoid registering the same callback repeatedly
+- do not mutate the engine from a listener unless you explicitly want a second
+  update cycle
+
+<CardGroup cols={2}>
+  <Card title="React guide" icon="react" href="/guides/react">
+    Grid and custom-renderer integration.
+  </Card>
+  <Card title="Engine API" icon="terminal" href="/api/engine">
+    State, persistence and transactions.
+  </Card>
+</CardGroup>

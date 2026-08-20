@@ -1,0 +1,198 @@
+---
+title: "Named expressions"
+description: "Reusable constants and formulas with global, workbook, and sheet scope."
+---
+
+Named expressions give a readable name to a constant, formula or range. A
+formula can then use `TaxRate` instead of a hard-coded value or address.
+
+## Create and use a name
+
+```typescript
+engine.addNamedExpression({
+  expressionName: "TaxRate",
+  expression: "0.25",
+});
+
+engine.setSheetContent(
+  sheet,
+  new Map([
+    ["A1", 200],
+    ["B1", "=A1*TaxRate"],
+  ]),
+);
+
+read("B1"); // 50
+```
+
+<Warning>
+  The `expression` property must **not** begin with `=`. Use `"0.25"`,
+  `"SUM(A1:A3)"` or `"A1:A3"`. Passing `"=0.25"` creates a name that evaluates
+  to `#ERROR!`.
+</Warning>
+
+## Three scopes
+
+<Tabs>
+  <Tab title="Global">
+    Visible in every workbook and sheet.
+
+    ```typescript
+    engine.addNamedExpression({
+      expressionName: "CurrencyRate",
+      expression: "1.08",
+    });
+    ```
+  </Tab>
+  <Tab title="Workbook">
+    Visible only inside one workbook.
+
+    ```typescript
+    engine.addNamedExpression({
+      expressionName: "TaxRate",
+      expression: "0.25",
+      workbookName: "Budget",
+    });
+    ```
+  </Tab>
+  <Tab title="Sheet">
+    Visible only inside one sheet. Both names are required.
+
+    ```typescript
+    engine.addNamedExpression({
+      expressionName: "LocalTarget",
+      expression: "1000",
+      workbookName: "Budget",
+      sheetName: "Q1",
+    });
+    ```
+  </Tab>
+</Tabs>
+
+Resolution is from most specific to least specific:
+
+1. sheet
+2. workbook
+3. global
+
+A sheet-scoped name shadows a workbook or global name with the same spelling.
+Verified behavior:
+
+```typescript
+// Global Rate = 1; Sheet1 Rate = 99
+read("Sheet1!A1"); // 99 — sheet scope wins
+read("Sheet2!A1"); // 1  — falls back to global
+```
+
+Names outside their scope evaluate to `#NAME?`.
+
+## Expressions can be formulas or ranges
+
+```typescript
+engine.addNamedExpression({
+  expressionName: "Numbers",
+  expression: "A1:A3",
+  workbookName: "Budget",
+  sheetName: "Q1",
+});
+
+engine.addNamedExpression({
+  expressionName: "Total",
+  expression: "SUM(Numbers)",
+  workbookName: "Budget",
+  sheetName: "Q1",
+});
+
+// With A1:A3 = 1,2,3:
+// =Total        -> 6
+// =SUM(Numbers) -> 6
+// =Numbers      -> spills 1,2,3
+```
+
+## Update, rename and remove
+
+```typescript
+engine.updateNamedExpression({
+  expressionName: "TaxRate",
+  expression: "0.5",
+});
+```
+
+Changing a name invalidates formulas that depend on it. A rename additionally
+rewrites the stored formula text:
+
+```typescript
+engine.renameNamedExpression({
+  expressionName: "TaxRate",
+  newName: "VatRate",
+});
+
+// "=A1*TaxRate" becomes "=A1*VatRate"
+```
+
+Removal leaves formulas intact but unresolved:
+
+```typescript
+engine.removeNamedExpression({ expressionName: "VatRate" });
+read("B1"); // "#NAME?"
+```
+
+## Check for a name
+
+Pass the same scope fields you used when creating it.
+
+```typescript
+engine.hasNamedExpression({ expressionName: "TaxRate" });
+engine.hasNamedExpression({
+  expressionName: "TaxRate",
+  workbookName: "Budget",
+});
+engine.hasNamedExpression({
+  expressionName: "LocalTarget",
+  workbookName: "Budget",
+  sheetName: "Q1",
+});
+```
+
+## Replace all names in a scope
+
+`setNamedExpressions` accepts a scope plus a map. It is useful when loading an
+external model.
+
+```typescript
+engine.setNamedExpressions({
+  type: "workbook",
+  workbookName: "Budget",
+  expressions: new Map([
+    ["TaxRate", { expression: "0.25" }],
+    ["Target", { expression: "1000" }],
+  ]),
+});
+```
+
+<Note>
+  `setNamedExpressions` replaces the selected scope as one undoable operation.
+</Note>
+
+## Naming advice
+
+- Prefer business names (`GrossMargin`, `TaxRate`) over address aliases
+  (`InputA1`).
+- Use global scope sparingly; workbook scope avoids accidental collisions.
+- Use sheet scope for assumptions that intentionally vary by sheet.
+- Store expressions without `=` — formula cells need it, named expressions do
+  not.
+
+## API summary
+
+| Method | Purpose |
+| --- | --- |
+| `addNamedExpression` | Create a name |
+| `updateNamedExpression` | Change its expression |
+| `renameNamedExpression` | Rename and rewrite formula references |
+| `removeNamedExpression` | Delete it |
+| `hasNamedExpression` | Test a specific scope |
+| `setNamedExpressions` | Replace all names in one scope |
+
+See the [named-expression API reference](/api/named-expressions) for full
+signatures.

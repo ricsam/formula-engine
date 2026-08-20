@@ -1,0 +1,108 @@
+---
+title: "Installation"
+description: "Add FormulaEngine to a TypeScript or JavaScript project."
+---
+
+## Install
+
+<CodeGroup>
+
+```bash bun
+bun add @ricsam/formula-engine
+```
+
+```bash npm
+npm install @ricsam/formula-engine
+```
+
+```bash pnpm
+pnpm add @ricsam/formula-engine
+```
+
+```bash yarn
+yarn add @ricsam/formula-engine
+```
+
+</CodeGroup>
+
+## Requirements
+
+| Requirement | Notes |
+| --- | --- |
+| TypeScript | `^5` — declared as a peer dependency. |
+| Runtime | Any modern JS runtime. The package targets browsers and Node/Bun alike; it has no DOM dependency. |
+| React | Only needed for the optional `useSerializedSheet` hook. |
+
+The package ships ESM, CommonJS and type declarations:
+
+```json
+{
+  "exports": {
+    ".": {
+      "types": "./dist/types/lib.d.ts",
+      "require": "./dist/cjs/lib.cjs",
+      "import": "./dist/mjs/lib.mjs"
+    }
+  }
+}
+```
+
+## Import
+
+Everything is exported from the package root:
+
+```typescript
+import {
+  FormulaEngine,
+  type SerializedCellValue,
+  type CellAddress,
+  indexToColumn,
+  parseCellReference,
+  getCellReference,
+} from "@ricsam/formula-engine";
+```
+
+<Note>
+  The React hook is exported as `useSerializedSheet`. It is a thin subscription
+  wrapper — see the [React guide](/guides/react).
+</Note>
+
+## Optional: grid components
+
+To render an actual spreadsheet UI, pair the engine with the companion
+component library:
+
+```bash
+bun add @ricsam/react-spreadsheets @ricsam/selection-manager
+```
+
+```tsx
+import { FormulaSheet } from "@ricsam/react-spreadsheets";
+import "@ricsam/react-spreadsheets/styles.css";
+```
+
+## Verify the install
+
+```typescript
+import { FormulaEngine } from "@ricsam/formula-engine";
+
+const engine = FormulaEngine.buildEmpty();
+engine.addWorkbook("Workbook1");
+engine.addSheet({ workbookName: "Workbook1", sheetName: "Sheet1" });
+
+engine.setSheetContent(
+  { workbookName: "Workbook1", sheetName: "Sheet1" },
+  new Map([["A1", 2], ["A2", 3], ["A3", "=A1*A2"]]),
+);
+
+console.log(
+  engine.getCellValue({
+    workbookName: "Workbook1",
+    sheetName: "Sheet1",
+    colIndex: 0,
+    rowIndex: 2,
+  }),
+); // 6
+```
+
+Next: the [quickstart](/quickstart).

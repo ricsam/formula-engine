@@ -1,0 +1,153 @@
+---
+title: "Workbooks and sheets"
+description: "Create, order, rename, clone, remove, and inspect workbook resources."
+---
+
+## Workbooks
+
+### Add and remove
+
+```typescript
+engine.addWorkbook("Budget");
+engine.hasWorkbook("Budget"); // true
+engine.removeWorkbook("Budget");
+```
+
+```typescript
+addWorkbook(workbookName: string): void
+removeWorkbook(workbookName: string): void
+hasWorkbook(workbookName: string): boolean
+```
+
+### Clone and rename
+
+```typescript
+engine.cloneWorkbook("Template", "April");
+engine.renameWorkbook({
+  workbookName: "April",
+  newWorkbookName: "May",
+});
+```
+
+```typescript
+cloneWorkbook(fromWorkbookName: string, toWorkbookName: string): void
+renameWorkbook(opts: { workbookName: string; newWorkbookName: string }): void
+```
+
+Both operations carry engine-managed resources. Rename rewrites qualified
+formula references.
+
+### List
+
+```typescript
+getWorkbooks(): Map<string, Workbook>
+```
+
+## Sheets
+
+### Add with an explicit name
+
+```typescript
+engine.addSheet({ workbookName: "Budget", sheetName: "Q1" });
+```
+
+```typescript
+addSheet(opts: { workbookName: string; sheetName: string }): Sheet
+```
+
+### Create with automatic naming
+
+```typescript
+engine.createSheet({ workbookName: "Budget" });
+// "Sheet1" or the next available name
+
+engine.createSheet({ workbookName: "Budget", baseName: "Forecast" });
+// "Forecast", then "Forecast2", ...
+```
+
+```typescript
+createSheet(opts: {
+  workbookName: string;
+  sheetName?: string;
+  baseName?: string;
+}): Sheet
+```
+
+### Read
+
+| Method | Returns |
+| --- | --- |
+| `getSheet({ workbookName, sheetName })` | `Sheet \| undefined` |
+| `hasSheet({ workbookName, sheetName })` | `boolean` |
+| `getSheets(workbookName)` | map of sheets |
+| `getOrderedSheets(workbookName)` | array sorted by sheet index |
+| `getOrderedSheetNames(workbookName)` | ordered names |
+| `getNextAvailableSheetName(workbookName, baseName?)` | unique name string |
+| `getSheetSerialized({ workbookName, sheetName })` | raw A1-keyed content map |
+
+A `Sheet` exposes `name`, zero-based `index`, `content`, `metadata` and
+`sheetMetadata`. Treat manager-owned maps as read-only.
+
+### Rename
+
+```typescript
+engine.renameSheet({
+  workbookName: "Budget",
+  sheetName: "Q1",
+  newSheetName: "January–March",
+});
+```
+
+```typescript
+renameSheet(opts: {
+  workbookName: string;
+  sheetName: string;
+  newSheetName: string;
+}): void
+```
+
+Rename updates sheet-scoped names, tables, styles, range metadata, reference
+handles and formula text throughout the engine.
+
+### Remove
+
+```typescript
+engine.removeSheet({ workbookName: "Budget", sheetName: "Q1" });
+```
+
+```typescript
+removeSheet(opts: { workbookName: string; sheetName: string }): void
+```
+
+Deleting removes sheet-scoped resources and invalidates handles. Formula text
+in other sheets is preserved; evaluation yields an error until a matching sheet
+is recreated.
+
+## Sheet content
+
+```typescript
+engine.setSheetContent(
+  { workbookName: "Budget", sheetName: "Q1" },
+  new Map([
+    ["A1", 10],
+    ["A2", "=A1*2"],
+  ]),
+);
+
+engine.getSheetSerialized({ workbookName: "Budget", sheetName: "Q1" });
+```
+
+`setSheetContent` replaces, rather than merges, the sheet. Use
+`setCellContent` for a single edit.
+
+## Cross-resource formula syntax
+
+```excel
+=Inputs!A1
+='Raw Data'!A1
+=SUM(Data!A1:A10)
+=[Rates]Sheet1!B2
+```
+
+3D references such as `Sheet1:Sheet3!A1` are not supported. See
+[Workbooks and sheets](/concepts/multi-sheet).

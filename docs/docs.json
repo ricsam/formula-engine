@@ -1,0 +1,105 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "FormulaEngine",
+  "description": "A headless TypeScript spreadsheet formula engine with lazy evaluation, dynamic arrays and spill semantics.",
+  "colors": {
+    "primary": "#2563eb",
+    "light": "#60a5fa",
+    "dark": "#1d4ed8"
+  },
+  "favicon": "/favicon.svg",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get started",
+            "pages": [
+              "introduction",
+              "installation",
+              "quickstart"
+            ]
+          },
+          {
+            "group": "Core concepts",
+            "pages": [
+              "concepts/architecture",
+              "concepts/evaluation",
+              "concepts/dependencies",
+              "concepts/spilling",
+              "concepts/named-expressions",
+              "concepts/tables",
+              "concepts/multi-sheet",
+              "concepts/errors"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/react",
+              "guides/search-replace",
+              "guides/undo-redo",
+              "guides/styling"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API reference",
+        "groups": [
+          {
+            "group": "Engine",
+            "pages": [
+              "api/engine",
+              "api/cells",
+              "api/sheets",
+              "api/named-expressions",
+              "api/tables",
+              "api/styles",
+              "api/events"
+            ]
+          },
+          {
+            "group": "Types",
+            "pages": [
+              "api/types"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Functions",
+        "groups": [
+          {
+            "group": "Reference",
+            "pages": [
+              "functions/overview",
+              "functions/math",
+              "functions/logical",
+              "functions/text",
+              "functions/lookup",
+              "functions/array",
+              "functions/information",
+              "functions/reference"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "navbar": {
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/ricsam/formula-engine"
+      }
+    ]
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/ricsam/formula-engine"
+    }
+  }
+}

@@ -1,0 +1,178 @@
+---
+title: "Spilling"
+description: "How array results occupy neighbouring cells, what blocks them, and how to recover."
+---
+
+A formula that produces an array writes into its own cell and **spills** the
+remaining values into the cells below and to the right. Only the anchor cell
+holds a formula; the rest are spilled members.
+
+Every output on this page was produced by running the code.
+
+## A basic spill
+
+```typescript
+engine.setSheetContent(
+  sheet,
+  new Map([
+    ["A1", 1],
+    ["A2", 2],
+    ["A3", 3],
+    ["C1", "=A1:A3"], // a range reference is an array
+  ]),
+);
+
+read("C1"); // 1
+read("C2"); // 2
+read("C3"); // 3
+```
+
+`SEQUENCE` spills in two dimensions:
+
+```typescript
+engine.setCellContent(h1, "=SEQUENCE(3,2,1,1)");
+
+// H1=1  I1=2
+// H2=3  I2=4
+// H3=5  I3=6
+```
+
+## Spilled values are ordinary values
+
+Anything can reference a spilled cell — it behaves like a normal value.
+
+```typescript
+engine.setSheetContent(
+  sheet,
+  new Map([
+    ["A1", 1], ["A2", 2], ["A3", 3],
+    ["C1", "=A1:A3*2"], // spills 2,4,6
+    ["E1", "=SUM(C1:C3)"],
+  ]),
+);
+```
+
+## Scalar broadcast
+
+A scalar combined with a range broadcasts across the whole range.
+
+```typescript
+engine.setSheetContent(
+  sheet,
+  new Map([
+    ["A1", 1], ["A2", 2], ["A3", 3],
+    ["C1", "=A1:A3*10"],
+  ]),
+);
+
+read("C1"); // 10
+read("C2"); // 20
+read("C3"); // 30
+```
+
+## Obstruction produces `#SPILL!`
+
+If any cell in the target area holds content, the spill cannot be placed and the
+anchor reports `#SPILL!`.
+
+```typescript
+engine.setSheetContent(
+  sheet,
+  new Map([
+    ["A1", 1], ["A2", 2], ["A3", 3],
+    ["C1", "=A1:A3"],
+    ["C2", "block"], // in the way
+  ]),
+);
+
+read("C1"); // "#SPILL!"
+read("C2"); // "block"
+```
+
+An **empty** cell never blocks a spill — only actual content does.
+
+## Recovering from `#SPILL!`
+
+<Warning>
+  Clearing the blocking cell does **not**, on its own, restore the spill. The
+  anchor stays `#SPILL!` until the spilling formula is re-established.
+</Warning>
+
+```typescript
+engine.setCellContent(c2, undefined);
+read("C1"); // still "#SPILL!"
+```
+
+This holds for `setCellContent(undefined)`, `setCellContent("")` and
+`clearSpreadsheetRange()`. Two reliable recovery paths:
+
+<Tabs>
+  <Tab title="Rewrite the anchor">
+    ```typescript
+    engine.setCellContent(c2, undefined);      // remove the blocker
+    engine.setCellContent(c1, "=A1:A3");       // re-write the formula
+    read("C1"); // 1
+    read("C2"); // 2
+    read("C3"); // 3
+    ```
+  </Tab>
+  <Tab title="Re-set the whole sheet">
+    ```typescript
+    engine.setSheetContent(
+      sheet,
+      new Map([
+        ["A1", 1], ["A2", 2], ["A3", 3],
+        ["C1", "=A1:A3"],
+      ]),
+    );
+    read("C1"); // 1
+    read("C2"); // 2
+    read("C3"); // 3
+    ```
+  </Tab>
+</Tabs>
+
+In a UI, the natural fix is free: when the user deletes the blocking cell and
+the grid re-renders, re-committing the anchor formula restores the spill. If you
+control the editing loop, re-issue the anchor's stored content after clearing an
+obstruction.
+
+## Blocking an established spill
+
+Writing into a live spill area also produces `#SPILL!`, and the same recovery
+rule applies.
+
+```typescript
+// C1:C3 currently spills 1,2,3
+engine.setCellContent(c2, "block");
+read("C1"); // "#SPILL!"
+
+engine.setCellContent(c2, undefined);
+read("C1"); // still "#SPILL!" — rewrite C1 to recover
+```
+
+## Infinite ranges
+
+Whole-column and whole-row ranges work as aggregate inputs.
+
+```typescript
+engine.setSheetContent(
+  sheet,
+  new Map([
+    ["A1", 1], ["A2", 2], ["A3", 3],
+    ["C1", "=SUM(A:A)"],   // 6
+    ["C2", "=COUNT(A:A)"], // 3
+  ]),
+);
+```
+
+## Related
+
+<CardGroup cols={2}>
+  <Card title="Errors" icon="triangle-exclamation" href="/concepts/errors">
+    `#SPILL!` alongside every other error value.
+  </Card>
+  <Card title="SEQUENCE" icon="table-cells" href="/functions/array">
+    The array function reference.
+  </Card>
+</CardGroup>
