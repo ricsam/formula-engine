@@ -1,5 +1,6 @@
 import {
   FormulaError,
+  type CellInRangeResult,
   type CellValue,
   type EvaluateAllCellsResult,
   type FunctionDefinition,
@@ -17,6 +18,43 @@ import type { EvaluationContext } from "../../../evaluator/evaluation-context";
  * - lookup_array: array of strings or numbers only
  * - match_type: number only (must be -1, 0, or 1)
  */
+
+function compareMatchValues(left: CellValue, right: CellValue): number | null {
+  // MATCH does not coerce between value types. Values of a different type in a
+  // mixed lookup array therefore cannot be candidates for this lookup.
+  if (left.type !== right.type) {
+    return null;
+  }
+
+  if (left.type === "number" && right.type === "number") {
+    return left.value - right.value;
+  }
+
+  if (left.type === "string" && right.type === "string") {
+    const normalizedLeft = left.value.toLowerCase();
+    const normalizedRight = right.value.toLowerCase();
+
+    if (normalizedLeft < normalizedRight) return -1;
+    if (normalizedLeft > normalizedRight) return 1;
+    return 0;
+  }
+
+  return null;
+}
+
+function matchPosition(
+  value: CellInRangeResult,
+  isHorizontal: boolean
+): FunctionEvaluationResult {
+  const position = isHorizontal
+    ? value.relativePos.x + 1
+    : value.relativePos.y + 1;
+
+  return {
+    type: "value",
+    result: { type: "number", value: position },
+  };
+}
 
 // Helper function to perform MATCH operation
 function matchOperation(
@@ -52,6 +90,9 @@ function matchOperation(
     return lookupArray;
   }
 
+  let bestApproximateMatch: CellInRangeResult | undefined;
+  let previousComparableValue: CellValue | undefined;
+
   for (const value of lookupArray.values) {
     if (value.result.type === "value") {
       if (matchType === 0) {
@@ -65,24 +106,53 @@ function matchOperation(
             : arrayValue.value === lookupValue.value);
 
         if (isMatch) {
-          // For horizontal arrays (single row), use x position (column index)
-          // For vertical arrays (single/multiple columns), use y position (row index)
-          const position = isHorizontal
-            ? value.relativePos.x + 1
-            : value.relativePos.y + 1;
-
-          return {
-            type: "value",
-            result: { type: "number", value: position },
-          }; // 1-based index
+          return matchPosition(value, isHorizontal);
         }
       } else {
-        // Approximate match (1 or -1) - requires sorted array
-        // For now, throw an error until we add sorting validation
-        // TODO: Add proper approximate match logic with sorted array validation
-        throw new Error("MATCH: approximate match not fully implemented");
+        const arrayValue = value.result.result;
+        const lookupComparison = compareMatchValues(arrayValue, lookupValue);
+
+        // Ignore values of a different type, just as exact MATCH does when
+        // strict type checking prevents them from matching lookupValue.
+        if (lookupComparison === null) continue;
+
+        if (previousComparableValue !== undefined) {
+          const orderComparison = compareMatchValues(
+            arrayValue,
+            previousComparableValue
+          )!;
+          const isOutOfOrder =
+            matchType === 1 ? orderComparison < 0 : orderComparison > 0;
+
+          if (isOutOfOrder) {
+            return {
+              type: "error",
+              err: FormulaError.NA,
+              message:
+                matchType === 1
+                  ? "MATCH lookup_array must be sorted in ascending order for match_type 1"
+                  : "MATCH lookup_array must be sorted in descending order for match_type -1",
+              errAddress: context.dependencyNode,
+            };
+          }
+        }
+
+        previousComparableValue = arrayValue;
+
+        // Updating on equality intentionally returns the last duplicate, which
+        // is the boundary value selected by approximate MATCH.
+        if (
+          (matchType === 1 && lookupComparison <= 0) ||
+          (matchType === -1 && lookupComparison >= 0)
+        ) {
+          bestApproximateMatch = value;
+        }
       }
     }
+  }
+
+  if (bestApproximateMatch !== undefined) {
+    return matchPosition(bestApproximateMatch, isHorizontal);
   }
 
   return {

@@ -145,7 +145,7 @@ describe("MATCH function", () => {
       // Use SerializedCellValue to set numeric values properly
       engine.setSheetContent(
         sheetAddress,
-        new Map([
+        new Map<string, SerializedCellValue>([
           ["A1", 10],
           ["A2", 20],
           ["A3", 30],
@@ -162,7 +162,112 @@ describe("MATCH function", () => {
       setCellContent("A3", "Cherry");
       setCellContent("B1", '=MATCH("Banana", A1:A3)');
 
-      expect(cell("B1", true)).toInclude("approximate match not fully implemented");
+      expect(cell("B1")).toBe(2);
+    });
+
+    test("should find the largest value less than lookup_value for match_type 1", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          ["A2", 20],
+          ["A3", 30],
+          ["A4", 40],
+          ["B1", "=MATCH(25, A1:A4, 1)"],
+        ])
+      );
+
+      expect(cell("B1")).toBe(2);
+    });
+
+    test("should find the smallest value greater than lookup_value for match_type -1", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 40],
+          ["A2", 30],
+          ["A3", 20],
+          ["A4", 10],
+          ["B1", "=MATCH(25, A1:A4, -1)"],
+        ])
+      );
+
+      expect(cell("B1")).toBe(2);
+    });
+
+    test("should return the last duplicate for approximate matches", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          ["A2", 20],
+          ["A3", 20],
+          ["A4", 30],
+          ["B1", "=MATCH(20, A1:A4, 1)"],
+          ["C1", 30],
+          ["C2", 20],
+          ["C3", 20],
+          ["C4", 10],
+          ["D1", "=MATCH(20, C1:C4, -1)"],
+        ])
+      );
+
+      expect(cell("B1")).toBe(3);
+      expect(cell("D1")).toBe(3);
+    });
+
+    test("should return #N/A when no approximate candidate exists", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          ["A2", 20],
+          ["B1", "=MATCH(5, A1:A2, 1)"],
+          ["C1", 20],
+          ["C2", 10],
+          ["D1", "=MATCH(25, C1:C2, -1)"],
+        ])
+      );
+
+      expect(cell("B1")).toBe(FormulaError.NA);
+      expect(cell("D1")).toBe(FormulaError.NA);
+    });
+
+    test("should return #N/A when approximate lookup_array is not sorted", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          ["A2", 30],
+          ["A3", 20],
+          ["B1", "=MATCH(25, A1:A3, 1)"],
+          ["C1", 30],
+          ["C2", 10],
+          ["C3", 20],
+          ["D1", "=MATCH(25, C1:C3, -1)"],
+        ])
+      );
+
+      expect(cell("B1")).toBe(FormulaError.NA);
+      expect(cell("D1")).toBe(FormulaError.NA);
+    });
+
+    test("should perform case-insensitive approximate text matching", () => {
+      setCellContent("A1", "apple");
+      setCellContent("A2", "Banana");
+      setCellContent("A3", "cherry");
+      setCellContent("B1", '=MATCH("Blueberry", A1:A3, 1)');
+
+      expect(cell("B1")).toBe(2);
+    });
+
+    test("should return a column position for a horizontal approximate match", () => {
+      setCellContent("A1", 10);
+      setCellContent("B1", 20);
+      setCellContent("C1", 30);
+      setCellContent("D1", "=MATCH(25, A1:C1, 1)");
+
+      expect(cell("D1")).toBe(2);
     });
 
     test("should return #N/A when not found", () => {
