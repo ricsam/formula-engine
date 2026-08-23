@@ -6,7 +6,7 @@
       "name": "formula-engine-web",
       "dependencies": {
         "@ricsam/formula-engine": "0.2.15",
-        "@ricsam/react-spreadsheets": "^0.0.4",
+        "@ricsam/react-spreadsheets": "^0.0.6",
         "@ricsam/selection-manager": "^0.0.25",
         "react": "^19.1.1",
         "react-dom": "^19.1.1",
@@ -65,7 +65,7 @@
 
     "@ricsam/formula-engine": ["@ricsam/formula-engine@0.2.15", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-WDKr0yCdLwdO3ySBYV405jS2Elh/JggHpMRgAO5SesNOUw5y74+BoevGfZDmQJlqeMjVeBFLLMTYR51uJ9yDrA=="],
 
-    "@ricsam/react-spreadsheets": ["@ricsam/react-spreadsheets@0.0.4", "", { "peerDependencies": { "@ricsam/formula-engine": ">=0.2.0", "@ricsam/selection-manager": ">=0.0.25", "react": "^18 || ^19", "react-dom": "^18 || ^19" }, "optionalPeers": ["@ricsam/formula-engine"] }, "sha512-j2w+W913Lzmh3d3+e9tKr8w0O+0qtVRQwiZIES6Em04cQsSsib/C7TjHtUZ8WfL2/qAlIOSBzf5W4mJmZVw9Tg=="],
+    "@ricsam/react-spreadsheets": ["@ricsam/react-spreadsheets@0.0.6", "", { "peerDependencies": { "@ricsam/formula-engine": ">=0.2.0", "@ricsam/selection-manager": ">=0.0.25", "react": "^18 || ^19", "react-dom": "^18 || ^19" }, "optionalPeers": ["@ricsam/formula-engine"] }, "sha512-Or3Mn4PH7s0++fKoyC8N2dsW90jxclo17MOWo6uAQ03npTi8mG8dZs1iWvblk5sYSWfflFWtpWlb/G1alxPzog=="],
 
     "@ricsam/selection-manager": ["@ricsam/selection-manager@0.0.25", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-Oddw4g1oTJrbL8Of9vqTzKYCA20FqR9KQKCLF5pS5NOdgzIkU6tCmcJwEMbHZ6RKFVTMfw++Z6NX1b43H+5Crw=="],
 
