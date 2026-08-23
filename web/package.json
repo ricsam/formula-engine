@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@ricsam/formula-engine": "0.2.15",
-    "@ricsam/react-spreadsheets": "^0.0.3",
+    "@ricsam/react-spreadsheets": "^0.0.4",
     "@ricsam/selection-manager": "^0.0.25",
     "react": "^19.1.1",
     "react-dom": "^19.1.1"
