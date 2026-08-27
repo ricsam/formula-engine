@@ -1,5 +1,13 @@
 # @ricsam/formula-engine
 
+## 0.2.20
+
+### Patch Changes
+
+- Restore the version 6 engine implementation, including cell data types,
+  incremental undo/redo history, mutation observers, and version 5 snapshot
+  migration, while retaining the updated documentation and demo site.
+
 ## 0.2.19
 
 ### Patch Changes
