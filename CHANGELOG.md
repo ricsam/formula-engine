@@ -1,10 +1,44 @@
 # @ricsam/formula-engine
 
-## 0.2.16
+## 0.2.19
 
 ### Patch Changes
 
 - 63084eb: Implement approximate `MATCH` modes for ascending and descending lookup arrays.
+
+## 0.2.18
+
+### Patch Changes
+
+- Preserve existing style properties when overlapping cell style rules contain undefined values, including after clearing part of a styled range.
+
+## 0.2.17
+
+### Patch Changes
+
+- Implemented incremental, memory-bounded undo/redo
+
+## Unreleased
+
+### Changed
+
+- Replace full-engine undo/redo snapshots with incremental reversible history
+  entries, bounded by both entry count and estimated retained bytes.
+- Rename the undo/redo `maxDepth` option and state field to `maxEntries`, add
+  `maxBytes`, and report `undoBytes` and `redoBytes` in history state.
+- Stream large workbook deltas in bounded fragments, preserve ordered
+  collection state exactly, and use a history barrier for metadata whose
+  reachable memory cannot be safely cloned and measured.
+- Make synchronous transactions atomic against the history byte budget, and
+  keep in-place sparse edits, imports, and bulk append/delete replay from
+  repeatedly rebuilding unrelated workbook state.
+
+## 0.2.16
+
+### Patch Changes
+
+- Add range-based General, Text, Number, and Boolean cell data types with snapshot, undo/redo, copy/paste, fill, and autofill support.
+- 7590825: Keep table column definitions and structured references synchronized when headers change, populate blank headers with unique default names, and reject duplicate table column names.
 
 ## 0.2.15
 
