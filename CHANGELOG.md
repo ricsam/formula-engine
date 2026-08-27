@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.2.16
+
+### Patch Changes
+
+- 63084eb: Implement approximate `MATCH` modes for ascending and descending lookup arrays.
+
 ## 0.2.15
 
 ### Patch Changes
