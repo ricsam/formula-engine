@@ -14,7 +14,14 @@ export interface UndoRedoOptions {
    * Maximum number of undo entries retained by the engine.
    * @default 100
    */
-  maxDepth?: number;
+  maxEntries?: number;
+
+  /**
+   * Maximum estimated bytes retained by undo/redo history. Mutations larger
+   * than this limit create a history barrier and are not themselves undoable.
+   * @default 67108864 (64 MiB)
+   */
+  maxBytes?: number;
 }
 
 export interface FormulaEngineOptions {
@@ -25,12 +32,22 @@ export interface FormulaEngineOptions {
 }
 
 export interface UndoRedoState {
+  /** Undo/redo history is always enabled. */
   enabled: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  /** Number of retained undo entries. */
   undoDepth: number;
+  /** Number of retained redo entries. */
   redoDepth: number;
-  maxDepth: number;
+  /** Configured entry-count budget. */
+  maxEntries: number;
+  /** Configured estimated-memory budget in bytes. */
+  maxBytes: number;
+  /** Estimated bytes currently retained by undo entries. */
+  undoBytes: number;
+  /** Estimated bytes currently retained by redo entries. */
+  redoBytes: number;
 }
 
 // Cell addressing types
@@ -469,6 +486,13 @@ export interface DirectCellStyle {
   style: CellStyle;
 }
 
+export type CellDataType = "general" | "text" | "number" | "boolean";
+
+export interface DirectCellDataType {
+  areas: RangeAddress[];
+  dataType: CellDataType;
+}
+
 export interface RangeMetadata<TMetadata = unknown> {
   id: string;
   areas: RangeAddress[];
@@ -515,7 +539,7 @@ export interface CopyCellsOptions {
    * - Use 'all' as shorthand for ['content', 'style', 'cellMetadata', 'rangeMetadata']
    * - Use array for fine-grained control over what to copy:
    *   - ['content'] - copy only values/formulas
-   *   - ['style'] - copy only formatting
+   *   - ['style'] - copy only formatting, including cell data types
    *   - ['cellMetadata'] - copy only cell metadata (rich text, links, etc.)
    *   - ['rangeMetadata'] - copy only range metadata
    *   - ['content', 'style'] - copy content and formatting
