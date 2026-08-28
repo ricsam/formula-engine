@@ -2241,6 +2241,215 @@ describe("FormulaEngine", () => {
       expect(cell("G7")).toBe(4);
     });
 
+    test("should move a table contained in a larger range", () => {
+      engine.setSheetContent(
+        { workbookName, sheetName },
+        new Map<string, SerializedCellValue>([
+          ["A2", "Item"],
+          ["B2", "Amount"],
+          ["A3", "First"],
+          ["B3", 10],
+          ["A4", "Second"],
+          ["B4", 20],
+          ["K1", "=SUM(Items[Amount])"],
+        ])
+      );
+      engine.addTable({
+        workbookName,
+        sheetName,
+        tableName: "Items",
+        start: "A2",
+        numRows: { type: "number", value: 2 },
+        numCols: 2,
+      });
+      expect(cell("K1")).toBe(30);
+
+      engine.moveRange(
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "number", value: 4 },
+            },
+          },
+        },
+        { workbookName, sheetName, colIndex: 4, rowIndex: 5 }
+      );
+
+      expect(
+        engine.getTable({ workbookName, tableName: "Items" })
+      ).toMatchObject({
+        sheetName,
+        start: { colIndex: 4, rowIndex: 6 },
+        endRow: { type: "number", value: 8 },
+      });
+      expect(
+        engine.isCellInTable({
+          workbookName,
+          sheetName,
+          colIndex: 0,
+          rowIndex: 1,
+        })
+      ).toBeUndefined();
+      expect(cell("E7")).toBe("Item");
+      expect(cell("F9")).toBe(20);
+      expect(cell("K1")).toBe(30);
+    });
+
+    test("should move an infinite-row table with an infinite selection", () => {
+      engine.setSheetContent(
+        { workbookName, sheetName },
+        new Map<string, SerializedCellValue>([
+          ["A1", "Item"],
+          ["B1", "Amount"],
+          ["A2", "First"],
+          ["B2", 10],
+        ])
+      );
+      engine.addTable({
+        workbookName,
+        sheetName,
+        tableName: "Items",
+        start: "A1",
+        numRows: { type: "infinity", sign: "positive" },
+        numCols: 2,
+      });
+
+      engine.moveRange(
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 2 },
+              row: { type: "infinity", sign: "positive" },
+            },
+          },
+        },
+        { workbookName, sheetName, colIndex: 4, rowIndex: 5 }
+      );
+
+      expect(
+        engine.getTable({ workbookName, tableName: "Items" })
+      ).toMatchObject({
+        sheetName,
+        start: { colIndex: 4, rowIndex: 5 },
+        endRow: { type: "infinity", sign: "positive" },
+      });
+      expect(cell("E6")).toBe("Item");
+      expect(cell("F7")).toBe(10);
+      expect(
+        engine.isCellInTable({
+          workbookName,
+          sheetName,
+          colIndex: 4,
+          rowIndex: 1_000,
+        })?.name
+      ).toBe("Items");
+    });
+
+    test("should move a contained table across sheets on cut-paste", () => {
+      const targetSheetName = "Sheet2";
+      engine.addSheet({ workbookName, sheetName: targetSheetName });
+      engine.setSheetContent(
+        { workbookName, sheetName },
+        new Map<string, SerializedCellValue>([
+          ["A1", "Item"],
+          ["B1", "Amount"],
+          ["A2", "First"],
+          ["B2", 10],
+          ["D1", "=SUM(Items[Amount])"],
+        ])
+      );
+      engine.addTable({
+        workbookName,
+        sheetName,
+        tableName: "Items",
+        start: "A1",
+        numRows: { type: "number", value: 1 },
+        numCols: 2,
+      });
+
+      engine.pasteCells(
+        ["A1", "B1", "A2", "B2"].map((ref) => ({
+          workbookName,
+          sheetName,
+          ...parseCellReference(ref),
+        })),
+        {
+          workbookName,
+          sheetName: targetSheetName,
+          colIndex: 3,
+          rowIndex: 3,
+        },
+        { cut: true, type: "formula", include: "all" }
+      );
+
+      expect(
+        engine.getTable({ workbookName, tableName: "Items" })
+      ).toMatchObject({
+        sheetName: targetSheetName,
+        start: { colIndex: 3, rowIndex: 3 },
+        endRow: { type: "number", value: 4 },
+      });
+      expect(
+        engine.isCellInTable({
+          workbookName,
+          sheetName: targetSheetName,
+          colIndex: 3,
+          rowIndex: 3,
+        })?.name
+      ).toBe("Items");
+      expect(cell("D1")).toBe(10);
+    });
+
+    test("should leave a partially selected table in place", () => {
+      engine.setSheetContent(
+        { workbookName, sheetName },
+        new Map<string, SerializedCellValue>([
+          ["A1", "Item"],
+          ["B1", "Amount"],
+          ["A2", "First"],
+          ["B2", 10],
+        ])
+      );
+      engine.addTable({
+        workbookName,
+        sheetName,
+        tableName: "Items",
+        start: "A1",
+        numRows: { type: "number", value: 1 },
+        numCols: 2,
+      });
+
+      engine.moveRange(
+        {
+          workbookName,
+          sheetName,
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 0 },
+              row: { type: "number", value: 1 },
+            },
+          },
+        },
+        { workbookName, sheetName, colIndex: 3, rowIndex: 0 }
+      );
+
+      expect(
+        engine.getTable({ workbookName, tableName: "Items" })
+      ).toMatchObject({
+        sheetName,
+        start: { colIndex: 0, rowIndex: 0 },
+        endRow: { type: "number", value: 1 },
+      });
+    });
+
     test("should update range references when entire range is moved", () => {
       // Set up range A1:B2
       setCellContent("A1", 10);

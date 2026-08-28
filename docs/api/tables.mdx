@@ -75,7 +75,9 @@ updateTable(opts: {
 ```
 
 Moves or resizes an existing definition and invalidates dependent formulas.
-Header names are re-read from cell values.
+Header names are re-read from cell values. Existing cell contents in newly
+included rows or columns are preserved and become part of the table. A resize
+is rejected if the resulting table would overlap another table.
 
 ## Remove
 

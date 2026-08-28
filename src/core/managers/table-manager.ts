@@ -1,5 +1,6 @@
 import type {
   CellAddress,
+  RangeAddress,
   SerializedCellValue,
   SpreadsheetRange,
   SpreadsheetRangeEnd,
@@ -54,6 +55,34 @@ function cloneTableDefinition(table: TableDefinition): TableDefinition {
       Array.from(table.headers, ([name, header]) => [name, { ...header }])
     ),
   };
+}
+
+function getTableRange(table: TableDefinition): SpreadsheetRange {
+  return {
+    start: {
+      col: table.start.colIndex,
+      row: table.start.rowIndex,
+    },
+    end: {
+      col: {
+        type: "number",
+        value: table.start.colIndex + table.headers.size - 1,
+      },
+      row: table.endRow,
+    },
+  };
+}
+
+function tablesIntersect(
+  left: TableDefinition,
+  right: TableDefinition
+): boolean {
+  return (
+    left.sheetName === right.sheetName &&
+    left.headers.size > 0 &&
+    right.headers.size > 0 &&
+    checkRangeIntersection(getTableRange(left), getTableRange(right))
+  );
 }
 
 function cloneTableEntryState(
@@ -207,6 +236,35 @@ export class TableManager {
   private mutationBatchDepth = 0;
   private pendingMutationPatches: TableMutation[][] = [];
   private mutationReportingSuppressionDepth = 0;
+
+  private assertTableDoesNotCollide(
+    table: TableDefinition,
+    existingTables: ReadonlyMap<string, TableDefinition>,
+    ignoredTableName?: string
+  ): void {
+    for (const [existingTableName, existingTable] of existingTables) {
+      if (existingTableName === ignoredTableName) {
+        continue;
+      }
+      if (tablesIntersect(table, existingTable)) {
+        throw new Error(
+          `Table "${table.name}" cannot overlap table "${existingTable.name}"`
+        );
+      }
+    }
+  }
+
+  private assertTablesDoNotCollide(
+    tables: ReadonlyMap<string, ReadonlyMap<string, TableDefinition>>
+  ): void {
+    for (const workbookTables of tables.values()) {
+      const validatedTables = new Map<string, TableDefinition>();
+      for (const [tableName, table] of workbookTables) {
+        this.assertTableDoesNotCollide(table, validatedTables);
+        validatedTables.set(tableName, table);
+      }
+    }
+  }
 
   constructor(
     workbookManager: WorkbookManager,
@@ -542,6 +600,168 @@ export class TableManager {
     return this.tables.get(opts.workbookName)?.get(opts.name);
   }
 
+  getTablesContainedInCells(source: CellAddress[]): TableDefinition[] {
+    if (source.length === 0) {
+      return [];
+    }
+
+    let topLeft = source[0]!;
+    for (const cell of source) {
+      if (
+        cell.rowIndex < topLeft.rowIndex ||
+        (cell.rowIndex === topLeft.rowIndex &&
+          cell.colIndex < topLeft.colIndex)
+      ) {
+        topLeft = cell;
+      }
+    }
+
+    const sourceCells = new Set(
+      source.map(
+        (cell) =>
+          `${cell.workbookName}:${cell.sheetName}:${cell.rowIndex}:${cell.colIndex}`
+      )
+    );
+    const containedTables: TableDefinition[] = [];
+
+    for (const table of this.getTables(topLeft.workbookName).values()) {
+      if (
+        table.sheetName !== topLeft.sheetName ||
+        table.endRow.type !== "number" ||
+        table.headers.size === 0
+      ) {
+        continue;
+      }
+
+      const endColIndex = table.start.colIndex + table.headers.size - 1;
+      let contained = true;
+      for (
+        let rowIndex = table.start.rowIndex;
+        rowIndex <= table.endRow.value && contained;
+        rowIndex++
+      ) {
+        for (
+          let colIndex = table.start.colIndex;
+          colIndex <= endColIndex;
+          colIndex++
+        ) {
+          if (
+            !sourceCells.has(
+              `${table.workbookName}:${table.sheetName}:${rowIndex}:${colIndex}`
+            )
+          ) {
+            contained = false;
+            break;
+          }
+        }
+      }
+
+      if (contained) {
+        containedTables.push(cloneTableDefinition(table));
+      }
+    }
+
+    return containedTables;
+  }
+
+  getTablesContainedInRange(source: RangeAddress): TableDefinition[] {
+    const containedTables: TableDefinition[] = [];
+
+    for (const table of this.getTables(source.workbookName).values()) {
+      if (table.sheetName !== source.sheetName || table.headers.size === 0) {
+        continue;
+      }
+
+      const tableEndCol = table.start.colIndex + table.headers.size - 1;
+      const containsColumns =
+        source.range.start.col <= table.start.colIndex &&
+        (source.range.end.col.type === "infinity" ||
+          source.range.end.col.value >= tableEndCol);
+      const containsRows =
+        source.range.start.row <= table.start.rowIndex &&
+        (source.range.end.row.type === "infinity" ||
+          (table.endRow.type === "number" &&
+            source.range.end.row.value >= table.endRow.value));
+
+      if (containsColumns && containsRows) {
+        containedTables.push(cloneTableDefinition(table));
+      }
+    }
+
+    return containedTables;
+  }
+
+  moveTable({
+    tableName,
+    workbookName,
+    target,
+  }: {
+    tableName: string;
+    workbookName: string;
+    target: CellAddress;
+  }): TableDefinition {
+    const sourceTables = this.tables.get(workbookName);
+    if (!sourceTables) {
+      throw new Error("Workbook not found");
+    }
+
+    const table = sourceTables.get(tableName);
+    if (!table) {
+      throw new Error("Table not found");
+    }
+
+    const targetTables = this.tables.get(target.workbookName);
+    if (!targetTables) {
+      throw new Error("Workbook not found");
+    }
+    if (target.workbookName !== workbookName && targetTables.has(tableName)) {
+      throw new Error(`Table "${tableName}" already exists in target workbook`);
+    }
+
+    const affectedWorkbooks = new Set([workbookName, target.workbookName]);
+    const before = this.observingMutations
+      ? this.captureWorkbookState(affectedWorkbooks)
+      : undefined;
+    const rowOffset = target.rowIndex - table.start.rowIndex;
+    const movedTable: TableDefinition = {
+      ...table,
+      workbookName: target.workbookName,
+      sheetName: target.sheetName,
+      start: {
+        rowIndex: target.rowIndex,
+        colIndex: target.colIndex,
+      },
+      endRow:
+        table.endRow.type === "number"
+          ? { type: "number", value: table.endRow.value + rowOffset }
+          : { ...table.endRow },
+      headers: new Map(
+        Array.from(table.headers, ([name, header]) => [
+          name,
+          { ...header },
+        ])
+      ),
+    };
+
+    this.assertTableDoesNotCollide(
+      movedTable,
+      targetTables,
+      target.workbookName === workbookName ? tableName : undefined
+    );
+
+    if (target.workbookName !== workbookName) {
+      sourceTables.delete(tableName);
+    }
+    targetTables.set(tableName, movedTable);
+
+    if (before) {
+      const after = this.captureWorkbookState(affectedWorkbooks);
+      this.reportMutations(this.buildStateMutations(before, after));
+    }
+
+    return movedTable;
+  }
+
   private getDefaultHeaderName(index: number, usedNames: Set<string>): string {
     let number = index + 1;
     let name = `Column ${number}`;
@@ -825,6 +1045,7 @@ export class TableManager {
       ...fromTable,
       workbookName: to.workbookName,
     };
+    this.assertTableDoesNotCollide(newTable, wb, to.tableName);
     wb.set(to.tableName, newTable);
     if (this.observingMutations) {
       const after: TableEntryState = {
@@ -861,6 +1082,7 @@ export class TableManager {
       this.tables.set(props.workbookName, wb);
     }
 
+    this.assertTableDoesNotCollide(table, wb, tableName);
     wb.set(tableName, table);
 
     if (this.observingMutations) {
@@ -991,6 +1213,7 @@ export class TableManager {
       getCellValue,
     });
 
+    this.assertTableDoesNotCollide(newTable, wb, tableName);
     wb.set(tableName, newTable);
     if (before) {
       const after: TableEntryState = {
@@ -1104,6 +1327,7 @@ export class TableManager {
   }
 
   resetTables(newTables: Map<string, Map<string, TableDefinition>>): void {
+    this.assertTablesDoNotCollide(newTables);
     return this.batchMutations(() =>
       this.mutateWithStateDiff(() => {
         this.tables.clear();

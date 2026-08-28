@@ -138,6 +138,9 @@ engine.updateTable({
 ```
 
 Changing the size invalidates formulas that use the table.
+Existing values and formulas in newly included cells are preserved and become
+table data. Tables may be adjacent, but resizing a table so that it overlaps
+another table throws an error.
 
 ### Remove
 

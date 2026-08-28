@@ -412,6 +412,40 @@ describe("incremental history persistent-state parity", () => {
     );
   });
 
+  test("moving a range with a table preserves undo/redo parity", () => {
+    const engine = buildEngine();
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map<string, SerializedCellValue>([
+        ["A1", "Name"],
+        ["B1", "Value"],
+        ["A2", "alpha"],
+        ["B2", 10],
+        ["A3", "beta"],
+        ["B3", 20],
+      ])
+    );
+    engine.addTable({
+      workbookName,
+      sheetName,
+      tableName: "Data",
+      start: "A1",
+      numRows: { type: "number", value: 2 },
+      numCols: 2,
+    });
+
+    expectUndoRedoParity(engine, () =>
+      engine.moveRange(finiteRange("A1", "B3"), cell("F6"))
+    );
+
+    expect(engine.getTable({ workbookName, tableName: "Data" })).toMatchObject({
+      sheetName,
+      start: { colIndex: 5, rowIndex: 5 },
+      endRow: { type: "number", value: 7 },
+    });
+    expect(engine.getCellValue(cell("G8"))).toBe(20);
+  });
+
   test("conditional/direct styles and cell data types", () => {
     const engine = buildEngine();
     const conditional: ConditionalStyle = {

@@ -1,5 +1,12 @@
 # @ricsam/formula-engine
 
+## 0.2.21
+
+### Patch Changes
+
+- Preserve existing cell contents when tables expand into populated rows or columns, while rejecting table-to-table overlaps.
+- Move contained table definitions along with cut-pasted ranges, including infinite-row tables moved by open-ended selections.
+
 ## 0.2.20
 
 ### Patch Changes

@@ -2552,18 +2552,64 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     options: CopyCellsOptions
   ): void {
     return this.withUndoRedoCheckpoint(() => {
-      if (source.length === 0) {
-        return;
-      }
+      const movedTables =
+        options.cut === true
+          ? this.tableManager.getTablesContainedInCells(source)
+          : [];
+      this.pasteCellsWithTables(source, target, options, movedTables);
+    });
+  }
 
-      this.batchCopyAncillaryMutations(() =>
-        this.copyManager.pasteCells(source, target, options)
+  private pasteCellsWithTables(
+    source: CellAddress[],
+    target: CellAddress,
+    options: CopyCellsOptions,
+    movedTables: TableDefinition[]
+  ): void {
+    if (source.length === 0) {
+      return;
+    }
+
+    const sourceBounds = this.getBoundsFromCells(source);
+    const rowOffset = target.rowIndex - sourceBounds.minRow;
+    const colOffset = target.colIndex - sourceBounds.minCol;
+
+    this.batchCopyAncillaryMutations(() =>
+      this.copyManager.pasteCells(source, target, options)
+    );
+
+    const relocatedTables = movedTables.map((table) =>
+      this.tableManager.moveTable({
+        workbookName: table.workbookName,
+        tableName: table.name,
+        target: {
+          workbookName: target.workbookName,
+          sheetName: target.sheetName,
+          rowIndex: table.start.rowIndex + rowOffset,
+          colIndex: table.start.colIndex + colOffset,
+        },
+      })
+    );
+    const tableResourceKeys = new Set<string>();
+    for (const table of [...movedTables, ...relocatedTables]) {
+      tableResourceKeys.add(
+        getTableResourceKey({
+          workbookName: table.workbookName,
+          tableName: table.name,
+        })
       );
+    }
 
-      this.emitMutation({
-        touchedCells: [],
-        resourceKeys: [],
-      });
+    this.emitMutation({
+      touchedCells: mergeTouchedCells(
+        buildTableTouchedCells(this.workbookManager, movedTables),
+        buildTableTouchedCells(this.workbookManager, relocatedTables)
+      ),
+      tableContextChangedCells: buildTableContextChangedCells(
+        this.workbookManager,
+        [...movedTables, ...relocatedTables]
+      ),
+      resourceKeys: Array.from(tableResourceKeys),
     });
   }
 
@@ -2810,11 +2856,18 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   moveRange(sourceRange: RangeAddress, target: CellAddress): void {
     return this.withUndoRedoCheckpoint(() => {
       const cells = this.copyManager.expandRangeToCells(sourceRange);
-      this.pasteCells(cells, target, {
-        cut: true,
-        type: "formula",
-        include: "all",
-      });
+      const movedTables =
+        this.tableManager.getTablesContainedInRange(sourceRange);
+      this.pasteCellsWithTables(
+        cells,
+        target,
+        {
+          cut: true,
+          type: "formula",
+          include: "all",
+        },
+        movedTables
+      );
     });
   }
   //#endregion

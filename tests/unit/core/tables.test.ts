@@ -966,6 +966,190 @@ describe("Tables", () => {
     expect(cell("D2")).toBe(8); // 5 + 3
   });
 
+  test("should absorb existing cell data when expanding rows and columns", () => {
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map<string, SerializedCellValue>([
+        ["A1", "Product"],
+        ["B1", "Price"],
+        ["C1", "Quantity"],
+        ["A2", "Widget"],
+        ["B2", 10],
+        ["C2", 5],
+        ["A3", "Gadget"],
+        ["B3", 20],
+        ["C3", 3],
+        ["A4", "Tool"],
+        ["B4", 30],
+        ["C4", 2],
+      ])
+    );
+    engine.addTable({
+      tableName: "Products",
+      sheetName,
+      workbookName,
+      start: "A1",
+      numRows: { type: "number", value: 1 },
+      numCols: 2,
+    });
+
+    expect(() =>
+      engine.updateTable({
+        tableName: "Products",
+        workbookName,
+        numRows: { type: "number", value: 3 },
+        numCols: 3,
+      })
+    ).not.toThrow();
+
+    const table = engine.getTable({ tableName: "Products", workbookName })!;
+    expect(table.endRow).toEqual({ type: "number", value: 3 });
+    expect(Array.from(table.headers.keys())).toEqual([
+      "Product",
+      "Price",
+      "Quantity",
+    ]);
+    expect(cell("A4")).toBe("Tool");
+    expect(cell("B4")).toBe(30);
+    expect(cell("C4")).toBe(2);
+
+    setCellContent("E1", "=SUM(Products[Price])");
+    setCellContent("E2", "=SUM(Products[Quantity])");
+    expect(cell("E1")).toBe(60);
+    expect(cell("E2")).toBe(10);
+  });
+
+  test("should reject row expansion into another table", () => {
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map<string, SerializedCellValue>([
+        ["A1", "Product"],
+        ["B1", "Price"],
+        ["A2", "Widget"],
+        ["B2", 10],
+        ["A4", "Item"],
+        ["B4", "Amount"],
+        ["A5", "Tool"],
+        ["B5", 20],
+      ])
+    );
+    engine.addTable({
+      tableName: "Products",
+      sheetName,
+      workbookName,
+      start: "A1",
+      numRows: { type: "number", value: 1 },
+      numCols: 2,
+    });
+    engine.addTable({
+      tableName: "Inventory",
+      sheetName,
+      workbookName,
+      start: "A4",
+      numRows: { type: "number", value: 1 },
+      numCols: 2,
+    });
+
+    expect(() =>
+      engine.updateTable({
+        tableName: "Products",
+        workbookName,
+        numRows: { type: "number", value: 3 },
+      })
+    ).toThrow('Table "Products" cannot overlap table "Inventory"');
+
+    expect(
+      engine.getTable({ tableName: "Products", workbookName })?.endRow
+    ).toEqual({ type: "number", value: 1 });
+    expect(cell("A4")).toBe("Item");
+    expect(cell("B5")).toBe(20);
+  });
+
+  test("should reject column expansion into another table", () => {
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map<string, SerializedCellValue>([
+        ["A1", "Product"],
+        ["B1", "Price"],
+        ["A2", "Widget"],
+        ["B2", 10],
+        ["C1", "Quantity"],
+        ["C2", 5],
+        ["D1", "Item"],
+        ["E1", "Amount"],
+        ["D2", "Tool"],
+        ["E2", 20],
+      ])
+    );
+    engine.addTable({
+      tableName: "Products",
+      sheetName,
+      workbookName,
+      start: "A1",
+      numRows: { type: "number", value: 1 },
+      numCols: 2,
+    });
+    engine.addTable({
+      tableName: "Inventory",
+      sheetName,
+      workbookName,
+      start: "D1",
+      numRows: { type: "number", value: 1 },
+      numCols: 2,
+    });
+
+    expect(() =>
+      engine.updateTable({
+        tableName: "Products",
+        workbookName,
+        numCols: 4,
+      })
+    ).toThrow('Table "Products" cannot overlap table "Inventory"');
+
+    expect(
+      engine.getTable({ tableName: "Products", workbookName })?.headers.size
+    ).toBe(2);
+    expect(cell("C1")).toBe("Quantity");
+    expect(cell("D2")).toBe("Tool");
+  });
+
+  test("should reject creating a table that overlaps another table", () => {
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map<string, SerializedCellValue>([
+        ["A1", "Product"],
+        ["B1", "Price"],
+        ["A2", "Widget"],
+        ["B2", 10],
+        ["C2", "Quantity"],
+      ])
+    );
+    engine.addTable({
+      tableName: "Products",
+      sheetName,
+      workbookName,
+      start: "A1",
+      numRows: { type: "number", value: 1 },
+      numCols: 2,
+    });
+
+    expect(() =>
+      engine.addTable({
+        tableName: "Inventory",
+        sheetName,
+        workbookName,
+        start: "B2",
+        numRows: { type: "number", value: 1 },
+        numCols: 2,
+      })
+    ).toThrow('Table "Inventory" cannot overlap table "Products"');
+
+    expect(engine.hasTable({ tableName: "Inventory", workbookName })).toBe(
+      false
+    );
+    expect(cell("C2")).toBe("Quantity");
+  });
+
   test("should update multiple table properties at once", () => {
     // Set up initial data
     engine.setSheetContent(
