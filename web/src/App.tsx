@@ -4,7 +4,7 @@ import { FormulaWorkbook } from '@ricsam/react-spreadsheets'
 import '@ricsam/react-spreadsheets/styles.css'
 import './App.css'
 
-const DOCS_URL = 'https://formula-docs-gnbiqmk095bb.r5d.app'
+const DOCS_URL = 'https://formula-engine.mintlify.site'
 const GITHUB_URL = 'https://github.com/ricsam/formula-engine'
 const GRID_URL = 'https://github.com/ricsam/react-spreadsheets'
 const WORKBOOK = 'Studio'
