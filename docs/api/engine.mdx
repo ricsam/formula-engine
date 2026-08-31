@@ -171,5 +171,8 @@ causes evaluation errors.
 
 ## Events
 
-`onUpdate(listener)` returns an unsubscribe function. See
+`onUpdate(listener)`, `onWorkbookRename(workbookName, listener)`, and
+`onSheetRename({ workbookName, sheetName }, listener)` return unsubscribe
+functions. Resource deletion is exposed through `onWorkbookDelete` and
+`onSheetDelete`. See
 [Events and state](/api/events).

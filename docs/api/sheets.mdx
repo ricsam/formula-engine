@@ -109,6 +109,10 @@ renameSheet(opts: {
 Rename updates sheet-scoped names, tables, styles, range metadata, reference
 handles and formula text throughout the engine.
 
+Consumers that retain names in local state can subscribe with
+`onWorkbookRename` and `onSheetRename`. See
+[Events and state](/api/events#rename-events).
+
 ### Remove
 
 ```typescript
@@ -121,7 +125,8 @@ removeSheet(opts: { workbookName: string; sheetName: string }): void
 
 Deleting removes sheet-scoped resources and invalidates handles. Formula text
 in other sheets is preserved; evaluation yields an error until a matching sheet
-is recreated.
+is recreated. Consumers can observe removal with `onWorkbookDelete` and
+`onSheetDelete`; see [Delete events](/api/events#delete-events).
 
 ## Sheet content
 

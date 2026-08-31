@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.2.22
+
+### Patch Changes
+
+- Add identity-aware workbook and sheet rename and deletion subscriptions, including transaction and undo/redo support.
+
 ## 0.2.21
 
 ### Patch Changes

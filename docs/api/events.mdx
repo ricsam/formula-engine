@@ -28,6 +28,69 @@ no payload; read the cells or state your view needs.
   `getCellValue()` to compute and retrieve a new display value.
 </Note>
 
+## Rename events
+
+Use resource-specific rename listeners when a consumer keeps a workbook or
+sheet name as part of its local state:
+
+```typescript
+onWorkbookRename(
+  workbookName: string,
+  listener: (newWorkbookName: string) => void,
+): () => void
+
+onSheetRename(
+  opts: { workbookName: string; sheetName: string },
+  listener: (newSheetName: string) => void,
+): () => void
+```
+
+Both rename methods return an unsubscribe function. A subscription follows the
+same resource across later renames until it is unsubscribed. Sheet
+subscriptions also follow renames of their containing workbook.
+
+```typescript
+const unsubscribeWorkbook = engine.onWorkbookRename(
+  "Budget",
+  (newWorkbookName) => console.log(newWorkbookName),
+);
+
+const unsubscribeSheet = engine.onSheetRename(
+  { workbookName: "Budget", sheetName: "Q1" },
+  (newSheetName) => console.log(newSheetName),
+);
+```
+
+Callbacks run after a successful mutation commits, including undo and redo. If
+a transaction performs multiple renames, listeners receive them in mutation
+order after the transaction commits. Rolled-back renames do not notify.
+
+## Delete events
+
+Use the matching deletion listeners when a view needs to close or clear local
+state after its resource disappears:
+
+```typescript
+onWorkbookDelete(
+  workbookName: string,
+  listener: () => void,
+): () => void
+
+onSheetDelete(
+  opts: { workbookName: string; sheetName: string },
+  listener: () => void,
+): () => void
+```
+
+Delete subscriptions follow workbook and sheet renames just like rename
+subscriptions. Deleting a workbook notifies both its workbook listener and the
+sheet listeners for every sheet it contained.
+
+Callbacks run after commit whenever a resource is removed. This includes a
+direct remove, redoing a remove, and undoing an add. Restoring a deleted
+resource does not fire a delete callback, and rolled-back deletes do not
+notify.
+
 ## `getState`
 
 ```typescript
@@ -61,6 +124,38 @@ function useFormulaEngine(engine: FormulaEngine) {
 
 The companion `FormulaSheet` and `FormulaWorkbook` components already subscribe
 internally.
+
+For a component that stores resource names directly, subscribe to the rename
+events as well:
+
+```tsx
+const [workbookName, setWorkbookName] = useState("Budget");
+const [sheetName, setSheetName] = useState("Q1");
+const [sheetDeleted, setSheetDeleted] = useState(false);
+
+useEffect(
+  () => engine.onWorkbookRename(workbookName, setWorkbookName),
+  [engine, workbookName],
+);
+
+useEffect(
+  () =>
+    engine.onSheetRename(
+      { workbookName, sheetName },
+      setSheetName,
+    ),
+  [engine, workbookName, sheetName],
+);
+
+useEffect(
+  () =>
+    engine.onSheetDelete(
+      { workbookName, sheetName },
+      () => setSheetDeleted(true),
+    ),
+  [engine, workbookName, sheetName],
+);
+```
 
 ## Persist on change
 

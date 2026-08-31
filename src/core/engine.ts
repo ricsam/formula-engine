@@ -55,7 +55,10 @@ import {
   type TableHeaderUpdate,
   type TableMutation,
 } from "./managers/table-manager";
-import { EventManager } from "./managers/event-manager";
+import {
+  EventManager,
+  type ResourceEvent,
+} from "./managers/event-manager";
 import { EvaluationManager } from "./managers/evaluation-manager";
 import { DependencyManager } from "./managers/dependency-manager";
 import { StyleManager, type StyleDataChange } from "./managers/style-manager";
@@ -171,6 +174,7 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   private pendingWorkbookChangeBytes = new Map<string, number>();
   private pendingHistoryEstimatedBytes = 0;
   private pendingHistoryOversized = false;
+  private pendingResourceEvents: ResourceEvent[] = [];
   private observerInvalidatedCellKeys = new Set<string>();
   private observerInvalidationDeduplicationDisabled = false;
   private pendingUpdate = false;
@@ -316,13 +320,15 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
       return false;
     }
 
+    let resourceEvents: ResourceEvent[];
     try {
-      this.replayHistoryEntry(entry, "undo");
+      resourceEvents = this.replayHistoryEntry(entry, "undo");
     } catch (error) {
       this.undoRedoManager.pushUndoFromReplay(entry);
       throw error;
     }
     this.undoRedoManager.pushRedoFromReplay(entry);
+    this.eventManager.emitResourceEvents(resourceEvents);
     this.eventManager.emitUpdate();
     return true;
   }
@@ -338,13 +344,15 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
       return false;
     }
 
+    let resourceEvents: ResourceEvent[];
     try {
-      this.replayHistoryEntry(entry, "redo");
+      resourceEvents = this.replayHistoryEntry(entry, "redo");
     } catch (error) {
       this.undoRedoManager.pushRedoFromReplay(entry);
       throw error;
     }
     this.undoRedoManager.pushUndoFromReplay(entry);
+    this.eventManager.emitResourceEvents(resourceEvents);
     this.eventManager.emitUpdate();
     return true;
   }
@@ -439,6 +447,7 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
       this.pendingWorkbookChangeBytes.clear();
       this.pendingHistoryEstimatedBytes = 0;
       this.pendingHistoryOversized = false;
+      this.pendingResourceEvents = [];
       this.observerInvalidatedCellKeys.clear();
       this.observerInvalidationDeduplicationDisabled = false;
       this.pendingUpdate = false;
@@ -488,8 +497,10 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
         }
         this.undoRedoManager.record(entry);
       }
+      const resourceEvents = this.pendingResourceEvents;
       const shouldEmitUpdate = this.pendingUpdate;
       this.resetPendingHistoryTransaction();
+      this.eventManager.emitResourceEvents(resourceEvents);
       if (shouldEmitUpdate) {
         this.eventManager.emitUpdate();
       }
@@ -554,6 +565,7 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     this.pendingWorkbookChangeBytes.clear();
     this.pendingHistoryEstimatedBytes = 0;
     this.pendingHistoryOversized = false;
+    this.pendingResourceEvents = [];
     this.observerInvalidatedCellKeys.clear();
     this.observerInvalidationDeduplicationDisabled = false;
     this.pendingUpdate = false;
@@ -1121,23 +1133,85 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   private replayHistoryEntry(
     entry: HistoryEntry<EngineHistoryStep<MetadataType<TMetadata, "range">>>,
     direction: "undo" | "redo"
-  ): void {
+  ): ResourceEvent[] {
     this.isReplayingHistory = true;
     let requiresFullInvalidation = false;
+    const resourceEvents: ResourceEvent[] = [];
     try {
       const steps =
         direction === "undo" ? [...entry.steps].reverse() : entry.steps;
       for (const step of steps) {
         requiresFullInvalidation =
           this.applyHistoryStep(step, direction) || requiresFullInvalidation;
+        resourceEvents.push(
+          ...this.getHistoryResourceEvents(step, direction)
+        );
       }
       if (requiresFullInvalidation) {
         this.evaluationManager.clearEvaluationCache();
       }
+      return resourceEvents;
     } finally {
       this.isReplayingHistory = false;
       this.pendingUpdate = false;
     }
+  }
+
+  private getHistoryResourceEvents(
+    step: EngineHistoryStep<MetadataType<TMetadata, "range">>,
+    direction: "undo" | "redo"
+  ): ResourceEvent[] {
+    const useAfter = direction === "redo";
+    if (step.kind === "rename-sheet") {
+      return [
+        {
+          type: "sheet-rename",
+          workbookName: step.workbookName,
+          sheetName: useAfter ? step.before : step.after,
+          newSheetName: useAfter ? step.after : step.before,
+        },
+      ];
+    }
+    if (step.kind === "rename-workbook") {
+      return [
+        {
+          type: "workbook-rename",
+          workbookName: useAfter ? step.before : step.after,
+          newWorkbookName: useAfter ? step.after : step.before,
+        },
+      ];
+    }
+    if (step.kind === "workbook-scope") {
+      const source = useAfter ? step.before : step.after;
+      const target = useAfter ? step.after : step.before;
+      if (source.workbook !== undefined && target.workbook === undefined) {
+        return [
+          ...Array.from(source.workbook.sheets.keys(), (sheetName) => ({
+            type: "sheet-delete" as const,
+            workbookName: source.workbookName,
+            sheetName,
+          })),
+          {
+            type: "workbook-delete",
+            workbookName: source.workbookName,
+          },
+        ];
+      }
+    }
+    if (step.kind === "sheet-scope") {
+      const source = useAfter ? step.before : step.after;
+      const target = useAfter ? step.after : step.before;
+      if (source.sheet !== undefined && target.sheet === undefined) {
+        return [
+          {
+            type: "sheet-delete",
+            workbookName: source.workbookName,
+            sheetName: source.sheetName,
+          },
+        ];
+      }
+    }
+    return [];
   }
 
   private applyHistoryStep(
@@ -2932,6 +3006,10 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
           resourceKeys,
           removedScopes: [{ type: "sheet", ...opts }],
         });
+        this.pendingResourceEvents.push({
+          type: "sheet-delete",
+          ...opts,
+        });
       });
     });
   }
@@ -2988,6 +3066,12 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
             }),
           ])
         ),
+      });
+      this.pendingResourceEvents.push({
+        type: "sheet-rename",
+        workbookName: opts.workbookName,
+        sheetName: opts.sheetName,
+        newSheetName: opts.newSheetName,
       });
     });
   }
@@ -3140,6 +3224,9 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     return this.withUndoRedoCheckpoint(() => {
       this.withWorkbookScopeHistory(workbookName, () => {
         const resourceKeys = this.getWorkbookResourceKeys(workbookName);
+        const sheetNames = Array.from(
+          this.workbookManager.getSheets(workbookName).keys()
+        );
         this.workbookManager.removeWorkbook(workbookName);
         this.namedExpressionManager.removeWorkbook(workbookName);
         this.tableManager.removeWorkbook(workbookName);
@@ -3151,6 +3238,14 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
           resourceKeys,
           removedScopes: [{ type: "workbook", workbookName }],
         });
+        this.pendingResourceEvents.push(
+          ...sheetNames.map((sheetName) => ({
+            type: "sheet-delete" as const,
+            workbookName,
+            sheetName,
+          })),
+          { type: "workbook-delete", workbookName }
+        );
       });
     });
   }
@@ -3375,6 +3470,11 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
           ])
         ),
       });
+      this.pendingResourceEvents.push({
+        type: "workbook-rename",
+        workbookName: opts.workbookName,
+        newWorkbookName: opts.newWorkbookName,
+      });
     });
   }
 
@@ -3540,6 +3640,31 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
 
   onUpdate(listener: () => void) {
     return this.eventManager.onUpdate(listener);
+  }
+
+  onWorkbookRename(
+    workbookName: string,
+    listener: (newWorkbookName: string) => void
+  ): () => void {
+    return this.eventManager.onWorkbookRename(workbookName, listener);
+  }
+
+  onSheetRename(
+    opts: { workbookName: string; sheetName: string },
+    listener: (newSheetName: string) => void
+  ): () => void {
+    return this.eventManager.onSheetRename(opts, listener);
+  }
+
+  onWorkbookDelete(workbookName: string, listener: () => void): () => void {
+    return this.eventManager.onWorkbookDelete(workbookName, listener);
+  }
+
+  onSheetDelete(
+    opts: { workbookName: string; sheetName: string },
+    listener: () => void
+  ): () => void {
+    return this.eventManager.onSheetDelete(opts, listener);
   }
 
   private buildSerializedSnapshot(): EngineSnapshot {
