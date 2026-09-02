@@ -11,6 +11,8 @@ A TypeScript-based spreadsheet formula evaluation library designed for high-perf
 - **Named expressions** with global and sheet-level scoping
 - **Copy/paste operations** with clipboard support
 - **TypeScript-first** design with comprehensive type safety
+- **Editor-neutral formula analysis** with semantic tokens, diagnostics, and
+  cell/range targets for syntax highlighting and spreadsheet overlays
 
 ## Installation
 

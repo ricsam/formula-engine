@@ -1,0 +1,110 @@
+---
+title: "Formula analysis"
+description: "Editor-neutral syntax tokens, diagnostics, and spreadsheet reference targets."
+---
+
+Formula analysis lets an editor integration highlight the formula language and
+connect formula references to cells or ranges in a spreadsheet UI. The core
+package does not depend on an editor.
+
+```typescript
+const analysis = engine.analyzeFormula({
+  formula: "=SUM(A2, Sheet2!$B$3:C4)",
+  origin: {
+    workbookName: "Book",
+    sheetName: "Sheet1",
+    colIndex: 3,
+    rowIndex: 9,
+  },
+});
+```
+
+`formula` may include or omit its leading `=`. Every span is a half-open UTF-16
+offset into the exact input string, including the leading `=` when present.
+These offsets match the string and position APIs used by browser editors.
+
+## Result
+
+```typescript
+interface FormulaAnalysis {
+  formula: string;
+  tokens: readonly FormulaToken[];
+  references: readonly FormulaReference[];
+  diagnostics: readonly FormulaDiagnostic[];
+}
+```
+
+- `tokens` describe syntax and semantics without prescribing colors.
+- `references` resolve formula text to directly highlightable cells, ranges,
+  tables, or named expressions.
+- `diagnostics` contain syntax errors and unresolved-resource warnings.
+
+Analysis is tolerant and does not throw for incomplete editor input. For
+example, `=SUM(A2,` still returns the token and resolved target for `A2`, plus a
+syntax diagnostic for the unfinished function call.
+
+## Highlight the reference at the caret
+
+```typescript
+import { findFormulaReferenceAt } from "@ricsam/formula-engine";
+
+const reference = findFormulaReferenceAt(analysis, editorOffset);
+if (reference?.resolution.status === "resolved") {
+  for (const target of reference.resolution.targets) {
+    if (target.type === "cell") {
+      grid.highlightCell(target.address);
+    } else if (target.type === "range") {
+      grid.highlightRange(target.address);
+    } else if (target.type === "table") {
+      grid.highlightRange({
+        workbookName: target.workbookName,
+        sheetName: target.sheetName,
+        range: target.range,
+      });
+    }
+  }
+}
+```
+
+At a boundary, `findFormulaReferenceAt` prefers the reference immediately to
+the left. This keeps a reference active when the caret sits just after `A2`.
+
+Each semantic token that belongs to a reference carries its `referenceId`.
+Applications can use that ID to give formula text and its spreadsheet outline
+the same color.
+
+## Resolution
+
+`engine.analyzeFormula` validates workbook, sheet, table, table-column, and
+named-expression resources against current engine state. Unqualified cells use
+`origin.workbookName` and `origin.sheetName`. Current-row structured references
+also use the origin row.
+
+A resolved cell or range is returned in the same `CellAddress` and
+`RangeAddress` shapes used elsewhere by the engine. A 3D reference produces one
+target per sheet in the referenced sheet interval.
+
+Unresolved references identify one of these reasons:
+
+```typescript
+type UnresolvedReason =
+  | "missing-origin"
+  | "missing-workbook"
+  | "missing-sheet"
+  | "missing-table"
+  | "missing-column"
+  | "missing-name";
+```
+
+For syntax-only integrations, the standalone `analyzeFormula(options)` export
+does not require an engine. It can resolve ordinary cell/range references when
+an origin is supplied, but engine-owned resources such as tables and names
+remain unresolved.
+
+## Token kinds
+
+Token kinds include formula markers, functions, literals, operators,
+delimiters, workbook and sheet names, cell references, table names and columns,
+named expressions, keywords, and invalid tokens. Optional modifiers mark
+absolute, external, current-row, and unknown semantics. An editor adapter maps
+these stable, editor-neutral values to its own theme and token API.

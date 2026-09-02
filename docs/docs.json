@@ -53,6 +53,7 @@
             "group": "Engine",
             "pages": [
               "api/engine",
+              "api/formula-analysis",
               "api/cells",
               "api/sheets",
               "api/named-expressions",

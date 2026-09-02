@@ -107,6 +107,12 @@ import {
   getTableResourceKey,
   getWorkbookResourceKey,
 } from "./resource-keys";
+import {
+  analyzeFormulaWithEnvironment,
+  type FormulaAnalysis,
+  type FormulaAnalysisOptions,
+  type NamedExpressionScope,
+} from "../language/formula-analysis";
 
 type Metadata = {
   cell?: unknown;
@@ -2021,6 +2027,74 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     cellAddress: CellAddress
   ): SerializedCellValue {
     return this.evaluationManager.evaluateFormula(formula, cellAddress);
+  }
+
+  /**
+   * Analyze editable formula text for syntax highlighting, diagnostics, and
+   * references that can be projected onto a spreadsheet UI.
+   *
+   * This method accepts formulas with or without a leading `=` and never
+   * throws for malformed or incomplete input.
+   */
+  analyzeFormula(options: FormulaAnalysisOptions): FormulaAnalysis {
+    return analyzeFormulaWithEnvironment(options, {
+      hasWorkbook: (workbookName) => this.hasWorkbook(workbookName),
+      hasSheet: (workbookName, sheetName) =>
+        this.hasSheet({ workbookName, sheetName }),
+      getOrderedSheetNames: (workbookName) =>
+        this.getOrderedSheetNames(workbookName),
+      getTable: (workbookName, tableName) =>
+        this.tableManager.getTable({ workbookName, name: tableName }),
+      findTableForCell: (address) => this.tableManager.isCellInTable(address),
+      resolveNamedExpression: ({
+        name,
+        workbookName,
+        sheetName,
+        origin,
+      }): NamedExpressionScope | undefined => {
+        const expressions = this.namedExpressionManager.getNamedExpressions();
+        const resolvedWorkbookName = workbookName ?? origin?.workbookName;
+
+        if (sheetName && resolvedWorkbookName) {
+          if (
+            expressions.sheetExpressions
+              .get(resolvedWorkbookName)
+              ?.get(sheetName)
+              ?.has(name)
+          ) {
+            return {
+              type: "sheet",
+              workbookName: resolvedWorkbookName,
+              sheetName,
+            };
+          }
+        } else if (!workbookName && !sheetName && origin) {
+          if (
+            expressions.sheetExpressions
+              .get(origin.workbookName)
+              ?.get(origin.sheetName)
+              ?.has(name)
+          ) {
+            return {
+              type: "sheet",
+              workbookName: origin.workbookName,
+              sheetName: origin.sheetName,
+            };
+          }
+        }
+
+        if (
+          resolvedWorkbookName &&
+          expressions.workbookExpressions.get(resolvedWorkbookName)?.has(name)
+        ) {
+          return { type: "workbook", workbookName: resolvedWorkbookName };
+        }
+        if (expressions.globalExpressions.has(name)) {
+          return { type: "global" };
+        }
+        return undefined;
+      },
+    });
   }
 
   getCellDependents(
