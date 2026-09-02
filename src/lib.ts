@@ -19,3 +19,12 @@ export type {
   NamedExpressionScope,
   SourceSpan,
 } from "./language/formula-analysis";
+export {
+  findFormulaFunction,
+  getFormulaFunctionCatalog,
+} from "./language/function-catalog";
+export type {
+  FormulaFunctionCategory,
+  FormulaFunctionDescriptor,
+  FormulaFunctionParameter,
+} from "./language/function-catalog";

@@ -1,0 +1,69 @@
+---
+title: "Function catalog"
+description: "Editor-neutral function names, signatures, parameters, aliases, categories, and descriptions."
+---
+
+The function catalog exposes the built-in formula language as immutable data.
+Editor adapters can use it for completion menus and snippets without importing
+the evaluator registry or depending on a specific editor.
+
+```typescript
+import {
+  findFormulaFunction,
+  getFormulaFunctionCatalog,
+} from "@ricsam/formula-engine";
+
+const completions = getFormulaFunctionCatalog().flatMap((fn) =>
+  [fn.name, ...fn.aliases].map((label) => ({
+    label,
+    detail: fn.signature,
+    documentation: fn.description,
+    category: fn.category,
+    parameters: fn.parameters,
+  }))
+);
+
+findFormulaFunction("sum");
+findFormulaFunction("concat"); // Returns the canonical CONCATENATE descriptor
+```
+
+`getFormulaFunctionCatalog()` returns one descriptor per canonical registered
+function, sorted by name. Aliases are listed on their canonical descriptor.
+`findFormulaFunction(name)` is case-insensitive and accepts either a canonical
+name or an alias.
+
+## Descriptor shape
+
+```typescript
+type FormulaFunctionCategory =
+  | "array"
+  | "information"
+  | "logical"
+  | "lookup"
+  | "math"
+  | "reference"
+  | "text";
+
+interface FormulaFunctionDescriptor {
+  readonly name: string;
+  readonly aliases: readonly string[];
+  readonly category: FormulaFunctionCategory;
+  readonly description: string;
+  readonly signature: string;
+  readonly parameters: readonly FormulaFunctionParameter[];
+}
+
+interface FormulaFunctionParameter {
+  readonly name: string;
+  readonly optional: boolean;
+  readonly repeatable: boolean;
+}
+```
+
+`signature` is ready for display and uses square brackets for optional
+arguments. `parameters` is structured data for generating editor snippets.
+For variadic functions, `repeatable` marks the repeating parameter or
+parameter group.
+
+The catalog, descriptors, aliases, and parameter arrays are frozen. Consumers
+can safely reuse them across editor instances.

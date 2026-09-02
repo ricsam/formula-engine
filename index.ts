@@ -34,6 +34,15 @@ export type {
   NamedExpressionScope,
   SourceSpan,
 } from "./src/language/formula-analysis";
+export {
+  findFormulaFunction,
+  getFormulaFunctionCatalog,
+} from "./src/language/function-catalog";
+export type {
+  FormulaFunctionCategory,
+  FormulaFunctionDescriptor,
+  FormulaFunctionParameter,
+} from "./src/language/function-catalog";
 
 // Export React integration (optional - only import if using React)
 export { useEngine as useSerializedSheet } from "./src/react/hooks";

@@ -54,6 +54,7 @@
             "pages": [
               "api/engine",
               "api/formula-analysis",
+              "api/function-catalog",
               "api/cells",
               "api/sheets",
               "api/named-expressions",

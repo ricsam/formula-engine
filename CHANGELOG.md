@@ -1,5 +1,12 @@
 # @ricsam/formula-engine
 
+## 0.2.25
+
+### Patch Changes
+
+- Add an immutable, editor-neutral catalog of built-in functions with aliases,
+  categories, signatures, descriptions, and structured parameter metadata.
+
 ## 0.2.24
 
 ### Patch Changes

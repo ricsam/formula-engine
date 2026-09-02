@@ -10,8 +10,9 @@ package does not depend on an editor.
 For Monaco, install the separately versioned
 [`@ricsam/formula-engine-editor`](https://www.npmjs.com/package/@ricsam/formula-engine-editor)
 adapter. It provides semantic tokens, diagnostics, caret-to-reference events,
-and an optional React `FormulaEditor` component while keeping Monaco out of the
-formula engine bundle.
+function completions, and an optional React `FormulaEditor` component while
+keeping Monaco out of the formula engine bundle. Completion metadata is also
+available directly through the editor-neutral [function catalog](/api/function-catalog).
 
 ```typescript
 const analysis = engine.analyzeFormula({
