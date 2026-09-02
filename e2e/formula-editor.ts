@@ -19,6 +19,12 @@ async function expectReferenceHighlight(cell: Locator) {
   await expect(cell).toHaveCSS("outline-style", "solid");
 }
 
+async function expectFormulaText(page: Page, text: string) {
+  await expect(
+    page.getByTestId("formula-editor").locator(".view-line"),
+  ).toContainText(text);
+}
+
 test.describe("Formula editor spreadsheet integration", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/spreadsheet");
@@ -124,5 +130,95 @@ test.describe("Formula editor spreadsheet integration", () => {
     await expect(page.getByTestId("spreadsheet-cell-E2")).toContainText(
       "6,472.8",
     );
+  });
+
+  test("offers and accepts built-in function autocomplete", async ({ page }) => {
+    const editorInput = await focusFormulaEditor(page);
+    await editorInput.press("Home");
+    await editorInput.press("Shift+End");
+    await page.keyboard.insertText("=SU");
+    await editorInput.press("Control+Space");
+
+    const suggestions = page.locator(".suggest-widget.visible");
+    await expect(suggestions).toBeVisible();
+    const sumSuggestion = suggestions.locator(".monaco-list-row").filter({
+      has: page.locator(".label-name", { hasText: /^SUM$/ }),
+    });
+    await expect(sumSuggestion).toBeVisible();
+    await sumSuggestion.click();
+
+    await expectFormulaText(page, "=SUM(value1)");
+  });
+
+  test("clicking a cell replaces the Monaco selection with its reference", async ({
+    page,
+  }) => {
+    const editorInput = await focusFormulaEditor(page);
+    await editorInput.press("Home");
+    await editorInput.press("ArrowRight");
+    await editorInput.press("Shift+ArrowRight");
+    await editorInput.press("Shift+ArrowRight");
+
+    await page.getByTestId("spreadsheet-cell-C3").click();
+
+    await expectFormulaText(page, "=C3*C2");
+    await expect(page.getByTestId("selected-cell-address")).toHaveText(
+      "Forecast!D2",
+    );
+    await expect(editorInput).toBeFocused();
+    await expectReferenceHighlight(page.getByTestId("spreadsheet-cell-C3"));
+
+    // A second pick replaces the active picked reference, as it does in Excel.
+    await page.getByTestId("spreadsheet-cell-B4").click();
+    await expectFormulaText(page, "=B4*C2");
+    await expectReferenceHighlight(page.getByTestId("spreadsheet-cell-B4"));
+  });
+
+  test("Escape leaves reference-picking mode so grid clicks select cells normally", async ({
+    page,
+  }) => {
+    const editorInput = await focusFormulaEditor(page);
+    await editorInput.press("Escape");
+    await page.getByTestId("spreadsheet-cell-C3").click();
+
+    await expect(page.getByTestId("selected-cell-address")).toHaveText(
+      "Forecast!C3",
+    );
+    await expectFormulaText(page, "99");
+  });
+
+  test("dragging a grid range updates one reference insertion live", async ({
+    page,
+  }) => {
+    const editorInput = await focusFormulaEditor(page);
+    await editorInput.press("Home");
+    await editorInput.press("Shift+End");
+    await page.keyboard.insertText("=SUM()");
+    await editorInput.press("ArrowLeft");
+
+    const start = await page.getByTestId("spreadsheet-cell-B2").boundingBox();
+    const end = await page.getByTestId("spreadsheet-cell-C4").boundingBox();
+    if (!start || !end) throw new Error("Expected spreadsheet cells to be visible");
+
+    await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2, {
+      steps: 8,
+    });
+
+    // The editor is updated before mouseup, while the grid selection is still active.
+    await expectFormulaText(page, "=SUM(B2:C4)");
+    await page.mouse.up();
+
+    await expectFormulaText(page, "=SUM(B2:C4)");
+    await expect(page.getByTestId("selected-cell-address")).toHaveText(
+      "Forecast!D2",
+    );
+    await expect(editorInput).toBeFocused();
+    for (const reference of ["B2", "B3", "B4", "C2", "C3", "C4"]) {
+      await expectReferenceHighlight(
+        page.getByTestId(`spreadsheet-cell-${reference}`),
+      );
+    }
   });
 });

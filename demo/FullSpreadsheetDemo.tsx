@@ -1,10 +1,13 @@
 import type {
   FormulaAnalysis,
   FormulaReference,
+  FormulaReferenceInsertion,
   FormulaReferenceTarget,
 } from "@ricsam/formula-engine-editor";
+import { beginFormulaReferenceInsertion } from "@ricsam/formula-engine-editor";
 import {
   FormulaEngine,
+  indexToColumn,
   type CellAddress,
   type SerializedCellValue,
   type SpreadsheetRange,
@@ -20,7 +23,11 @@ import {
   WorkbookSelectionManager,
 } from "@ricsam/react-spreadsheets";
 import "@ricsam/react-spreadsheets/styles.css";
-import type { SMArea } from "@ricsam/selection-manager";
+import type {
+  SelectionManager,
+  SelectionManagerState,
+  SMArea,
+} from "@ricsam/selection-manager";
 import type { editor as MonacoEditor } from "monaco-editor";
 import React, {
   useCallback,
@@ -229,6 +236,62 @@ function formatRange(range: SpreadsheetRange): string {
   return start === end ? start : `${start}:${end}`;
 }
 
+function quoteSheetName(sheetName: string): string {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(sheetName)
+    ? sheetName
+    : `'${sheetName.replaceAll("'", "''")}'`;
+}
+
+/** Formats a grid selection as a formula reference relative to the edited cell. */
+function formatPickedReference(
+  area: SMArea,
+  pickedSheetName: string,
+  origin: CellAddress,
+): string {
+  const startRow = area.start.row;
+  const startCol = area.start.col;
+  const endRow = area.end.row;
+  const endCol = area.end.col;
+
+  let localReference: string;
+  if (endRow.type === "infinity" && endCol.type === "infinity") {
+    localReference = `${getCellReference({
+      rowIndex: startRow,
+      colIndex: startCol,
+    })}:INFINITY`;
+  } else if (endRow.type === "infinity") {
+    const lastCol = endCol.type === "number" ? endCol.value : startCol;
+    const first = indexToColumn(Math.min(startCol, lastCol));
+    const last = indexToColumn(Math.max(startCol, lastCol));
+    localReference = `${first}:${last}`;
+  } else if (endCol.type === "infinity") {
+    const firstRow = Math.min(startRow, endRow.value) + 1;
+    const lastRow = Math.max(startRow, endRow.value) + 1;
+    localReference = `${firstRow}:${lastRow}`;
+  } else {
+    const firstRow = Math.min(startRow, endRow.value);
+    const lastRow = Math.max(startRow, endRow.value);
+    const firstCol = Math.min(startCol, endCol.value);
+    const lastCol = Math.max(startCol, endCol.value);
+    const first = getCellReference({ rowIndex: firstRow, colIndex: firstCol });
+    const last = getCellReference({ rowIndex: lastRow, colIndex: lastCol });
+    localReference = first === last ? first : `${first}:${last}`;
+  }
+
+  const sheetQualifier =
+    pickedSheetName === origin.sheetName ? "" : `${quoteSheetName(pickedSheetName)}!`;
+  return `${sheetQualifier}${localReference}`;
+}
+
+function isReferenceSelection(
+  selection: SelectionManagerState["isSelecting"],
+): selection is Exclude<
+  SelectionManagerState["isSelecting"],
+  { type: "none" | "fill" }
+> {
+  return selection.type !== "none" && selection.type !== "fill";
+}
+
 function formatTarget(target: FormulaReferenceTarget): string {
   if (target.type === "cell") {
     return `${target.address.sheetName}!${getCellReference(target.address)}`;
@@ -273,8 +336,17 @@ export function FullSpreadsheetDemo() {
   const [activeReference, setActiveReference] = useState<FormulaReference>();
   const [saveState, setSaveState] = useState<"saved" | "editing" | "error">("saved");
   const [saveMessage, setSaveMessage] = useState("Saved");
+  const [isPickingReference, setIsPickingReference] = useState(false);
   const [, setRevision] = useState(0);
   const formulaEditorRef = useRef<FormulaEditorHandle>(null);
+  const referenceInsertionRef = useRef<FormulaReferenceInsertion | undefined>(undefined);
+  const lastInsertedReferenceSpanRef = useRef<
+    FormulaReferenceInsertion["span"] | undefined
+  >(undefined);
+  const isUpdatingReferenceInsertionRef = useRef(false);
+  const ignoreSelectionRef = useRef(false);
+  const isFormulaEditingRef = useRef(false);
+  const suppressNextFormulaEditActivationRef = useRef(false);
   const lastCellBySheet = useRef(
     new Map<string, { colIndex: number; rowIndex: number }>([
       [FORECAST_SHEET, { colIndex: 3, rowIndex: 1 }],
@@ -307,6 +379,11 @@ export function FullSpreadsheetDemo() {
 
   const loadAddress = useCallback(
     (address: CellAddress) => {
+      referenceInsertionRef.current = undefined;
+      lastInsertedReferenceSpanRef.current = undefined;
+      ignoreSelectionRef.current = false;
+      isFormulaEditingRef.current = false;
+      setIsPickingReference(false);
       lastCellBySheet.current.set(address.sheetName, {
         colIndex: address.colIndex,
         rowIndex: address.rowIndex,
@@ -332,6 +409,7 @@ export function FullSpreadsheetDemo() {
       workbookSelectionManager.onSelectionChange((selections) => {
         const selection = selections[selections.length - 1];
         if (!selection) return;
+        if (referenceInsertionRef.current || ignoreSelectionRef.current) return;
         const current = selectedAddressRef.current;
         const { workbookName, sheetName, range } = selection;
         if (
@@ -351,6 +429,68 @@ export function FullSpreadsheetDemo() {
     [loadAddress, workbookSelectionManager],
   );
 
+  const handleGridSelection = useCallback(
+    (selectionManager: SelectionManager) => {
+      let wasSelectingReference = false;
+
+      return selectionManager.observeStateChange(
+        (state) => state,
+        (state) => {
+          const selection = state.isSelecting;
+          if (isReferenceSelection(selection)) {
+            let insertion = referenceInsertionRef.current;
+            if (!insertion) {
+              const editor = formulaEditorRef.current?.getEditor();
+              if (
+                !isFormulaEditingRef.current ||
+                !editor?.hasTextFocus() ||
+                !editor.getModel()?.getValue().trimStart().startsWith("=")
+              ) {
+                return;
+              }
+
+              insertion = beginFormulaReferenceInsertion(editor, {
+                replaceSpan: lastInsertedReferenceSpanRef.current,
+              });
+              if (!insertion) return;
+              referenceInsertionRef.current = insertion;
+              setIsPickingReference(true);
+            }
+
+            wasSelectingReference = true;
+            isUpdatingReferenceInsertionRef.current = true;
+            try {
+              insertion.update(
+                formatPickedReference(selection, visibleSheet, selectedAddressRef.current),
+              );
+            } finally {
+              isUpdatingReferenceInsertionRef.current = false;
+            }
+            return;
+          }
+
+          if (!wasSelectingReference || !referenceInsertionRef.current) return;
+
+          // Keep the insertion session alive until selection-manager commits the
+          // range on mouseup. WorkbookSelectionManager observes that same commit,
+          // so suppress its normal "load this cell" behavior for this turn.
+          ignoreSelectionRef.current = true;
+          lastInsertedReferenceSpanRef.current = {
+            ...referenceInsertionRef.current.span,
+          };
+          referenceInsertionRef.current.finish();
+          referenceInsertionRef.current = undefined;
+          wasSelectingReference = false;
+          setIsPickingReference(false);
+          queueMicrotask(() => {
+            ignoreSelectionRef.current = false;
+          });
+        },
+      );
+    },
+    [visibleSheet],
+  );
+
   const applyDraft = useCallback(() => {
     const address = selectedAddressRef.current;
     try {
@@ -361,6 +501,8 @@ export function FullSpreadsheetDemo() {
       setDraft(normalized);
       setSaveState("saved");
       setSaveMessage("Applied to the sheet");
+      isFormulaEditingRef.current = false;
+      lastInsertedReferenceSpanRef.current = undefined;
       formulaEditorRef.current?.refresh();
     } catch (error) {
       setSaveState("error");
@@ -370,6 +512,9 @@ export function FullSpreadsheetDemo() {
 
   const revertDraft = useCallback(() => {
     const current = readRawCell(engine, selectedAddressRef.current);
+    suppressNextFormulaEditActivationRef.current = draftRef.current !== current;
+    isFormulaEditingRef.current = false;
+    lastInsertedReferenceSpanRef.current = undefined;
     setSavedFormula(current);
     setDraft(current);
     setSaveState("saved");
@@ -384,6 +529,27 @@ export function FullSpreadsheetDemo() {
 
   const handleEditorMount = useCallback(
     (editor: MonacoEditor.IStandaloneCodeEditor, monaco: typeof import("monaco-editor")) => {
+      const activateFormulaEditing = () => {
+        isFormulaEditingRef.current = editor.getValue().trimStart().startsWith("=");
+      };
+
+      editor.onDidFocusEditorText(activateFormulaEditing);
+      editor.onMouseDown(activateFormulaEditing);
+      editor.onDidChangeCursorSelection(() => {
+        if (!isUpdatingReferenceInsertionRef.current) {
+          lastInsertedReferenceSpanRef.current = undefined;
+        }
+      });
+      editor.onDidChangeModelContent(() => {
+        if (!isUpdatingReferenceInsertionRef.current) {
+          lastInsertedReferenceSpanRef.current = undefined;
+        }
+        if (suppressNextFormulaEditActivationRef.current) {
+          suppressNextFormulaEditActivationRef.current = false;
+          return;
+        }
+        if (editor.hasTextFocus()) activateFormulaEditing();
+      });
       editor.addCommand(monaco.KeyCode.Enter, () => applyDraftRef.current());
       editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => applyDraftRef.current());
       editor.addCommand(monaco.KeyCode.Escape, () => revertDraftRef.current());
@@ -445,9 +611,9 @@ export function FullSpreadsheetDemo() {
           <span className="formula-studio__eyebrow">Formula language tooling</span>
           <h1>Write formulas with the grid in view.</h1>
           <p>
-            Monaco consumes <code>@ricsam/formula-engine-editor</code>. Put the caret on a
-            cell or range and the resolved target is previewed without changing the workbook
-            selection.
+            Monaco consumes <code>@ricsam/formula-engine-editor</code>. Type a formula,
+            then click or drag across the grid to insert a cell or range at the cursor. Put
+            the caret on any reference to preview its resolved target.
           </p>
         </div>
         <button type="button" className="formula-studio__reset" onClick={handleReset}>
@@ -476,7 +642,10 @@ export function FullSpreadsheetDemo() {
           <div className="formula-studio__editor-heading">
             <div>
               <span className="formula-studio__fx">ƒx</span>
-              <div><strong>Formula editor</strong><small>Enter to apply · Esc to revert</small></div>
+              <div>
+                <strong>Formula editor</strong>
+                <small>Click or drag cells to insert · Enter to apply · Esc to revert</small>
+              </div>
             </div>
             <div className="formula-studio__editor-actions">
               <span className={errorCount > 0 ? "has-errors" : ""} data-testid="formula-diagnostics">
@@ -560,11 +729,20 @@ export function FullSpreadsheetDemo() {
             />
           </div>
 
-          <div className={`formula-studio__reference ${activeReference ? "is-active" : ""}`} data-testid="active-reference">
+          <div
+            className={`formula-studio__reference ${activeReference || isPickingReference ? "is-active" : ""}`}
+            data-testid="active-reference"
+          >
             <span className="formula-studio__reference-icon"><EditorIcon name="spark" /></span>
             <div>
-              <small>{isCrossSheetPreview ? "Cross-sheet preview" : "Caret target"}</small>
-              <strong>{activeTargetLabel}</strong>
+              <small>
+                {isPickingReference
+                  ? "Inserting grid selection"
+                  : isCrossSheetPreview
+                    ? "Cross-sheet preview"
+                    : "Caret target"}
+              </small>
+              <strong>{isPickingReference ? "Drag to resize the reference" : activeTargetLabel}</strong>
             </div>
             {activeReference && <code>{draft.slice(activeReference.span.start, activeReference.span.end)}</code>}
           </div>
@@ -588,7 +766,10 @@ export function FullSpreadsheetDemo() {
               activeSheet={visibleSheet}
               onActiveSheetChange={handleSheetChange}
               selectionManager={workbookSelectionManager}
-              selection={{ initialState: selectionInitialState }}
+              selection={{
+                initialState: selectionInitialState,
+                effects: handleGridSelection,
+              }}
               isSelected
               customCellStyle={(cell, internalStyle) => {
                 const highlighted = targets.some(
@@ -617,7 +798,7 @@ export function FullSpreadsheetDemo() {
       <footer className="formula-studio__footer">
         <span><kbd>1</kbd> Select a formula cell</span><i />
         <span><kbd>2</kbd> Edit with semantic highlighting</span><i />
-        <span><kbd>3</kbd> Move the caret onto a reference</span><i />
+        <span><kbd>3</kbd> Click or drag cells to insert references</span><i />
         <span><kbd>4</kbd> Press Enter to recalculate</span>
       </footer>
     </div>
