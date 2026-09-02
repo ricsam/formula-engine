@@ -7,6 +7,12 @@ Formula analysis lets an editor integration highlight the formula language and
 connect formula references to cells or ranges in a spreadsheet UI. The core
 package does not depend on an editor.
 
+For Monaco, install the separately versioned
+[`@ricsam/formula-engine-editor`](https://www.npmjs.com/package/@ricsam/formula-engine-editor)
+adapter. It provides semantic tokens, diagnostics, caret-to-reference events,
+and an optional React `FormulaEditor` component while keeping Monaco out of the
+formula engine bundle.
+
 ```typescript
 const analysis = engine.analyzeFormula({
   formula: "=SUM(A2, Sheet2!$B$3:C4)",

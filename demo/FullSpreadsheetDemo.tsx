@@ -1,280 +1,625 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { getCellReference, parseCellReference, Spreadsheet } from "@anocca-pub/components";
-import { Input } from "@/components/ui/input";
-import { FormulaEngine } from "../src/core/engine";
-import { useEngine } from "../src/react/hooks";
-import type { CellAddress } from "../src/core/types";
+import type {
+  FormulaAnalysis,
+  FormulaReference,
+  FormulaReferenceTarget,
+} from "@ricsam/formula-engine-editor";
+import {
+  FormulaEngine,
+  type CellAddress,
+  type SerializedCellValue,
+  type SpreadsheetRange,
+} from "@ricsam/formula-engine";
+import {
+  FormulaEditor,
+  type FormulaEditorHandle,
+} from "@ricsam/formula-engine-editor/react";
+import {
+  coerceCellInput,
+  FormulaWorkbook,
+  getCellReference,
+  WorkbookSelectionManager,
+} from "@ricsam/react-spreadsheets";
+import "@ricsam/react-spreadsheets/styles.css";
+import type { SMArea } from "@ricsam/selection-manager";
+import type { editor as MonacoEditor } from "monaco-editor";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import "./FullSpreadsheetDemo.css";
 
-// Create a shared engine instance with rich example data
-const createEngineWithExampleData = () => {
+const WORKBOOK = "Studio";
+const FORECAST_SHEET = "Forecast";
+const ASSUMPTIONS_SHEET = "Assumptions";
+
+const sheet = (sheetName: string) => ({ workbookName: WORKBOOK, sheetName });
+
+const finiteRange = (
+  startCol: number,
+  startRow: number,
+  endCol: number,
+  endRow: number,
+): SpreadsheetRange => ({
+  start: { col: startCol, row: startRow },
+  end: {
+    col: { type: "number", value: endCol },
+    row: { type: "number", value: endRow },
+  },
+});
+
+function populateEngine(engine: FormulaEngine) {
+  engine.setSheetContent(
+    sheet(FORECAST_SHEET),
+    new Map<string, SerializedCellValue>([
+      ["A1", "PRODUCT"],
+      ["B1", "UNITS"],
+      ["C1", "UNIT PRICE"],
+      ["D1", "REVENUE"],
+      ["E1", "NET REVENUE"],
+      ["A2", "Starter"],
+      ["B2", 120],
+      ["C2", 29],
+      ["D2", "=B2*C2"],
+      ["E2", "=D2*(1-Assumptions!B3)"],
+      ["A3", "Pro"],
+      ["B3", 65],
+      ["C3", 99],
+      ["D3", "=B3*C3"],
+      ["E3", "=D3*(1-Assumptions!B3)"],
+      ["A4", "Team"],
+      ["B4", 28],
+      ["C4", 249],
+      ["D4", "=B4*C4"],
+      ["E4", "=D4*(1-Assumptions!B3)"],
+      ["A5", "Enterprise"],
+      ["B5", 8],
+      ["C5", 1200],
+      ["D5", "=B5*C5"],
+      ["E5", "=D5*(1-Assumptions!B3)"],
+      ["A7", "CURRENT PERIOD"],
+      ["B7", "=SUM(B2:B5)"],
+      ["C7", "=AVERAGE(C2:C5)"],
+      ["D7", "=SUM(D2:D5)"],
+      ["E7", "=SUM(E2:E5)"],
+      ["A9", "NEXT PERIOD"],
+      ["B9", "Growth"],
+      ["C9", "=Assumptions!B2"],
+      ["D9", "Projected"],
+      ["E9", "=E7*C9"],
+      ["A11", "Try the editor"],
+      ["B11", "Place the caret over B2, C2, or Assumptions!B3"],
+    ]),
+  );
+
+  engine.setSheetContent(
+    sheet(ASSUMPTIONS_SHEET),
+    new Map<string, SerializedCellValue>([
+      ["A1", "ASSUMPTION"],
+      ["B1", "VALUE"],
+      ["C1", "DESCRIPTION"],
+      ["A2", "Growth multiplier"],
+      ["B2", 1.18],
+      ["C2", "Used by Forecast!E9"],
+      ["A3", "Platform fee"],
+      ["B3", 0.07],
+      ["C3", "Used by Forecast!E2:E5"],
+      ["A4", "Target margin"],
+      ["B4", 0.72],
+      ["C4", "Planning target"],
+      ["A6", "After fees"],
+      ["B6", "=1-B3"],
+      ["C6", "Derived locally"],
+    ]),
+  );
+}
+
+function createDemoEngine() {
   const engine = FormulaEngine.buildEmpty();
-  const workbookName = "Workbook1";
-  engine.addWorkbook(workbookName);
-  const sheetNameToAdd = "Sheet1";
-  engine.addSheet({ workbookName, sheetName: sheetNameToAdd });
-  const sheetName = sheetNameToAdd;
+  engine.addWorkbook(WORKBOOK);
+  engine.addSheet(sheet(FORECAST_SHEET));
+  engine.addSheet(sheet(ASSUMPTIONS_SHEET));
+  populateEngine(engine);
 
-  // Rich example data with various formulas and data types
-  const exampleData = new Map<string, any>([
-    // Headers
-    ['A1', 'Product'],
-    ['B1', 'Price'],
-    ['C1', 'Quantity'],
-    ['D1', 'Total'],
-    ['E1', 'Tax Rate'],
-    ['F1', 'Final Price'],
-    
-    // Data rows
-    ['A2', 'Laptop'],
-    ['B2', 1000],
-    ['C2', 5],
-    ['D2', '=B2*C2'],
-    ['E2', 0.08],
-    ['F2', '=D2*(1+E2)'],
-    
-    ['A3', 'Mouse'],
-    ['B3', 30],
-    ['C3', 15],
-    ['D3', '=B3*C3'],
-    ['E3', 0.08],
-    ['F3', '=D3*(1+E3)'],
-    
-    ['A4', 'Keyboard'],
-    ['B4', 80],
-    ['C4', 8],
-    ['D4', '=B4*C4'],
-    ['E4', 0.08],
-    ['F4', '=D4*(1+E4)'],
-    
-    ['A5', 'Monitor'],
-    ['B5', 300],
-    ['C5', 3],
-    ['D5', '=B5*C5'],
-    ['E5', 0.08],
-    ['F5', '=D5*(1+E5)'],
-    
-    // Summary calculations
-    ['A7', 'Summary:'],
-    ['A8', 'Total Items'],
-    ['B8', '=SUM(C2:C5)'],
-    ['A9', 'Subtotal'],
-    ['B9', '=SUM(D2:D5)'],
-    ['A10', 'Total Tax'],
-    ['B10', '=SUM(F2:F5)-SUM(D2:D5)'],
-    ['A11', 'Grand Total'],
-    ['B11', '=SUM(F2:F5)'],
-    
-    // Additional calculations
-    ['D7', 'Analytics:'],
-    ['D8', 'Avg Price'],
-    ['E8', '=AVERAGE(B2:B5)'],
-    ['D9', 'Max Total'],
-    ['E9', '=MAX(F2:F5)'],
-    ['D10', 'Min Total'],
-    ['E10', '=MIN(F2:F5)'],
-    
-    // Text function demonstrations
-    ['A13', 'Text Functions:'],
-    ['A14', 'Has Laptop?'],
-    ['B14', '=IF(COUNTIF(A2:A5,"Laptop")>0,"Yes","No")'],
-    ['A15', 'Product List'],
-    ['B15', '=CONCATENATE(A2,", ",A3,", ",A4)'],
-    ['A16', 'First Product'],
-    ['B16', '=UPPER(A2)'],
-    ['A17', 'Name Length'],
-    ['B17', '=LEN(A2)'],
-    ['A18', 'Short Name'],
-    ['B18', '=LEFT(A2,4)'],
-    
-    // INDEX function demonstrations
-    ['A20', 'INDEX Examples:'],
-    ['A21', '2nd Product'],
-    ['B21', '=INDEX(A2:A5,2)'],
-    ['A22', '3rd Price'],
-    ['B22', '=INDEX(B2:B5,3)'],
-    ['A23', 'Last Product'],
-    ['B23', '=INDEX(A2:A5,4)'],
-    ['A24', 'Dynamic Lookup'],
-    ['B24', '=INDEX(A2:A5,2)&" costs $"&INDEX(B2:B5,2)'],
-    
-    // More text functions with INDEX
-    ['A26', 'Advanced Examples:'],
-    ['A27', 'Search Product'],
-    ['B27', '=FIND("top",LOWER(INDEX(A2:A5,1)))'],
-    ['A28', 'Replace Text'],
-    ['B28', '=SUBSTITUTE(INDEX(A2:A5,1),"Lap","Note")'],
-    ['A29', 'Middle Chars'],
-    ['B29', '=MID(INDEX(A2:A5,1),3,3)'],
-    ['A30', 'Trimmed Text'],
-    ['B30', '=TRIM("  "&INDEX(A2:A5,2)&"  ")'],
-    
-    // Lookup table for more INDEX examples
-    ['J1', 'Category'],
-    ['K1', 'Description'],
-    ['J2', 'Electronics'],
-    ['K2', 'High-tech devices'],
-    ['J3', 'Accessories'],
-    ['K3', 'Supporting items'],
-    ['J4', 'Computing'],
-    ['K4', 'Computer equipment'],
-    
-    // Using INDEX with the lookup table
-    ['A32', 'Category Info:'],
-    ['A33', 'Cat 1 Name'],
-    ['B33', '=INDEX(J2:J4,1)'],
-    ['A34', 'Cat 1 Desc'],
-    ['B34', '=INDEX(K2:K4,1)'],
-    ['A35', 'Cat 2 Info'],
-    ['B35', '=CONCATENATE(INDEX(J2:J4,2),": ",INDEX(K2:K4,2))'],
-    
-    // Status based on sales
-    ['A37', 'Status'],
-    ['A38', '=IF(B11>7000,"High Sales","Normal Sales")'],
-    
-    // Profit calculations
-    ['H1', 'Profit Margin'],
-    ['H2', '=F2*0.1'],
-    ['H3', '=F3*0.1'],
-    ['H4', '=F4*0.1'],
-    ['H5', '=F5*0.1'],
-    ['H7', 'Total Profit'],
-    ['H8', '=SUM(H2:H5)'],
-    
-    // More INDEX with calculations
-    ['H10', 'INDEX Calculations:'],
-    ['H11', 'Product 1 Profit'],
-    ['H12', '=INDEX(H2:H5,1)'],
-    ['H13', 'Best Product'],
-    ['H14', '=INDEX(A2:A5,1)&" (Best)'],
-  ]);
+  engine.addCellStyle({
+    areas: [
+      { ...sheet(FORECAST_SHEET), range: finiteRange(0, 0, 4, 0) },
+      { ...sheet(ASSUMPTIONS_SHEET), range: finiteRange(0, 0, 2, 0) },
+    ],
+    style: {
+      bold: true,
+      backgroundColor: "#172033",
+      color: "#ffffff",
+    },
+  });
+  engine.addCellStyle({
+    areas: [{ ...sheet(FORECAST_SHEET), range: finiteRange(0, 6, 4, 6) }],
+    style: {
+      bold: true,
+      backgroundColor: "#eef2ff",
+      color: "#3730a3",
+      borderColor: "#c7d2fe",
+    },
+  });
+  engine.addCellStyle({
+    areas: [{ ...sheet(FORECAST_SHEET), range: finiteRange(0, 8, 4, 8) }],
+    style: {
+      bold: true,
+      backgroundColor: "#ecfdf5",
+      color: "#047857",
+    },
+  });
+  engine.clearUndoRedoHistory();
+  return engine;
+}
 
-  engine.setSheetContent({ sheetName, workbookName }, exampleData);
-  return { engine, sheetName, workbookName };
+function readRawCell(engine: FormulaEngine, address: CellAddress): string {
+  const ref = getCellReference(address);
+  const raw = engine
+    .getSheet({ workbookName: address.workbookName, sheetName: address.sheetName })
+    ?.content.get(ref);
+  return raw === undefined ? "" : String(raw);
+}
+
+type PhysicalTarget = {
+  workbookName: string;
+  sheetName: string;
+  range: SpreadsheetRange;
 };
 
+function physicalTarget(target: FormulaReferenceTarget): PhysicalTarget | undefined {
+  if (target.type === "cell") {
+    return {
+      workbookName: target.address.workbookName,
+      sheetName: target.address.sheetName,
+      range: finiteRange(
+        target.address.colIndex,
+        target.address.rowIndex,
+        target.address.colIndex,
+        target.address.rowIndex,
+      ),
+    };
+  }
+  if (target.type === "range") return target.address;
+  if (target.type === "table") {
+    return {
+      workbookName: target.workbookName,
+      sheetName: target.sheetName,
+      range: target.range,
+    };
+  }
+  return undefined;
+}
+
+function resolvedTargets(reference: FormulaReference | undefined): PhysicalTarget[] {
+  if (!reference || reference.resolution.status !== "resolved") return [];
+  return reference.resolution.targets
+    .map(physicalTarget)
+    .filter((target): target is PhysicalTarget => target !== undefined);
+}
+
+function isCellInRange(
+  rowIndex: number,
+  colIndex: number,
+  range: SpreadsheetRange,
+) {
+  const rowInRange =
+    rowIndex >= range.start.row &&
+    (range.end.row.type === "infinity" || rowIndex <= range.end.row.value);
+  const colInRange =
+    colIndex >= range.start.col &&
+    (range.end.col.type === "infinity" || colIndex <= range.end.col.value);
+  return rowInRange && colInRange;
+}
+
+function formatRange(range: SpreadsheetRange): string {
+  const start = getCellReference({
+    colIndex: range.start.col,
+    rowIndex: range.start.row,
+  });
+  if (range.end.col.type === "infinity" || range.end.row.type === "infinity") {
+    return `${start}:∞`;
+  }
+  const end = getCellReference({
+    colIndex: range.end.col.value,
+    rowIndex: range.end.row.value,
+  });
+  return start === end ? start : `${start}:${end}`;
+}
+
+function formatTarget(target: FormulaReferenceTarget): string {
+  if (target.type === "cell") {
+    return `${target.address.sheetName}!${getCellReference(target.address)}`;
+  }
+  if (target.type === "range") {
+    return `${target.address.sheetName}!${formatRange(target.address.range)}`;
+  }
+  if (target.type === "table") return `${target.sheetName}!${target.tableName}`;
+  return target.name;
+}
+
+function EditorIcon({ name }: { name: "apply" | "reset" | "spark" }) {
+  if (name === "apply") {
+    return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8" /></svg>;
+  }
+  if (name === "reset") {
+    return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 6.5A6 6 0 1 1 4 13M4.5 6.5V2.8m0 3.7H8" /></svg>;
+  }
+  return (
+    <svg viewBox="0 0 20 20" aria-hidden="true">
+      <path d="m10 2-1 3.2A4 4 0 0 1 6.2 8L3 9l3.2 1A4 4 0 0 1 9 12.8l1 3.2 1-3.2a4 4 0 0 1 2.8-2.8L17 9l-3.2-1A4 4 0 0 1 11 5.2L10 2Z" />
+    </svg>
+  );
+}
+
 export function FullSpreadsheetDemo() {
-  const { engine, sheetName, workbookName } = useMemo(createEngineWithExampleData, []);
-  const [selectedCell, setSelectedCell] = useState<string | null>(null);
-  const spreadsheet = useEngine(engine);
-  const [formulaInput, setFormulaInput] = useState<string>("");
+  const engine = useMemo(createDemoEngine, []);
+  const workbookSelectionManager = useMemo(() => new WorkbookSelectionManager(), []);
+  const initialAddress = useMemo<CellAddress>(
+    () => ({
+      workbookName: WORKBOOK,
+      sheetName: FORECAST_SHEET,
+      colIndex: 3,
+      rowIndex: 1,
+    }),
+    [],
+  );
+  const [selectedAddress, setSelectedAddress] = useState<CellAddress>(initialAddress);
+  const [savedFormula, setSavedFormula] = useState(() => readRawCell(engine, initialAddress));
+  const [draft, setDraft] = useState(savedFormula);
+  const [analysis, setAnalysis] = useState<FormulaAnalysis>();
+  const [activeReference, setActiveReference] = useState<FormulaReference>();
+  const [saveState, setSaveState] = useState<"saved" | "editing" | "error">("saved");
+  const [saveMessage, setSaveMessage] = useState("Saved");
+  const [, setRevision] = useState(0);
+  const formulaEditorRef = useRef<FormulaEditorHandle>(null);
+  const lastCellBySheet = useRef(
+    new Map<string, { colIndex: number; rowIndex: number }>([
+      [FORECAST_SHEET, { colIndex: 3, rowIndex: 1 }],
+      [ASSUMPTIONS_SHEET, { colIndex: 1, rowIndex: 1 }],
+    ]),
+  );
+  const draftRef = useRef(draft);
+  const selectedAddressRef = useRef(selectedAddress);
+  const isDirty = draft !== savedFormula;
 
+  draftRef.current = draft;
+  selectedAddressRef.current = selectedAddress;
 
-  // Get the current sheet data
-  const currentSheet = spreadsheet.workbooks.get(workbookName)?.sheets.get(sheetName);
-  
-  console.log("Selected cell", selectedCell, spreadsheet, currentSheet?.content.get(selectedCell || ""));
-  const formula = useMemo(() => {
-    if (!selectedCell || !currentSheet) return "";
-    
+  useEffect(
+    () =>
+      engine.onUpdate(() => {
+        setRevision((value) => value + 1);
+        formulaEditorRef.current?.refresh();
+      }),
+    [engine],
+  );
+
+  const targets = useMemo(() => resolvedTargets(activeReference), [activeReference]);
+  const previewTarget = useMemo(() => {
+    if (targets.length === 0) return undefined;
+    return targets.find((target) => target.sheetName === selectedAddress.sheetName) ?? targets[0];
+  }, [selectedAddress.sheetName, targets]);
+  const visibleSheet = previewTarget?.sheetName ?? selectedAddress.sheetName;
+  const isCrossSheetPreview = visibleSheet !== selectedAddress.sheetName;
+
+  const loadAddress = useCallback(
+    (address: CellAddress) => {
+      lastCellBySheet.current.set(address.sheetName, {
+        colIndex: address.colIndex,
+        rowIndex: address.rowIndex,
+      });
+      const nextFormula = readRawCell(engine, address);
+      formulaEditorRef.current?.getEditor()?.setPosition({
+        lineNumber: 1,
+        column: 1,
+      });
+      setSelectedAddress(address);
+      setSavedFormula(nextFormula);
+      setDraft(nextFormula);
+      setAnalysis(undefined);
+      setActiveReference(undefined);
+      setSaveState("saved");
+      setSaveMessage("Saved");
+    },
+    [engine],
+  );
+
+  useEffect(
+    () =>
+      workbookSelectionManager.onSelectionChange((selections) => {
+        const selection = selections[selections.length - 1];
+        if (!selection) return;
+        const current = selectedAddressRef.current;
+        const { workbookName, sheetName, range } = selection;
+        if (
+          current.workbookName === workbookName &&
+          current.sheetName === sheetName &&
+          current.rowIndex === range.start.row &&
+          current.colIndex === range.start.col
+        ) return;
+
+        loadAddress({
+          workbookName,
+          sheetName,
+          rowIndex: range.start.row,
+          colIndex: range.start.col,
+        });
+      }),
+    [loadAddress, workbookSelectionManager],
+  );
+
+  const applyDraft = useCallback(() => {
+    const address = selectedAddressRef.current;
     try {
-      const cellFormula = currentSheet.content.get(selectedCell);
-      return cellFormula || "";
+      const content = coerceCellInput(draftRef.current, engine.getCellDataType(address));
+      engine.setCellContent(address, content);
+      const normalized = readRawCell(engine, address);
+      setSavedFormula(normalized);
+      setDraft(normalized);
+      setSaveState("saved");
+      setSaveMessage("Applied to the sheet");
+      formulaEditorRef.current?.refresh();
     } catch (error) {
-      return "";
+      setSaveState("error");
+      setSaveMessage(error instanceof Error ? error.message : "Could not apply formula");
     }
-  }, [currentSheet, selectedCell]);
+  }, [engine]);
 
-  // Update formula input when selected cell changes
-  useEffect(() => {
-    setFormulaInput(String(formula));
-  }, [formula]);
+  const revertDraft = useCallback(() => {
+    const current = readRawCell(engine, selectedAddressRef.current);
+    setSavedFormula(current);
+    setDraft(current);
+    setSaveState("saved");
+    setSaveMessage("Changes reverted");
+    setActiveReference(undefined);
+  }, [engine]);
 
-  const handleFormulaSubmit = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter' && selectedCell) {
-      try {
-        const { columnIndex, rowIndex } = parseCellReference(selectedCell);
-        const address: CellAddress = { workbookName, sheetName, colIndex: columnIndex, rowIndex: rowIndex };
-        
-        // If the input starts with =, it's a formula; otherwise it's a value
-        const content = formulaInput.startsWith('=') ? formulaInput : formulaInput;
-        engine.setCellContent(address, content || undefined);
-      } catch (error) {
-        console.error('Error updating cell:', error);
-      }
+  const applyDraftRef = useRef(applyDraft);
+  const revertDraftRef = useRef(revertDraft);
+  applyDraftRef.current = applyDraft;
+  revertDraftRef.current = revertDraft;
+
+  const handleEditorMount = useCallback(
+    (editor: MonacoEditor.IStandaloneCodeEditor, monaco: typeof import("monaco-editor")) => {
+      editor.addCommand(monaco.KeyCode.Enter, () => applyDraftRef.current());
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => applyDraftRef.current());
+      editor.addCommand(monaco.KeyCode.Escape, () => revertDraftRef.current());
+    },
+    [],
+  );
+
+  const handleSheetChange = useCallback(
+    (sheetName: string) => {
+      const previous = lastCellBySheet.current.get(sheetName) ?? { colIndex: 0, rowIndex: 0 };
+      loadAddress({ workbookName: WORKBOOK, sheetName, ...previous });
+    },
+    [loadAddress],
+  );
+
+  const handleReset = useCallback(() => {
+    populateEngine(engine);
+    engine.clearUndoRedoHistory();
+    loadAddress(initialAddress);
+    setSaveMessage("Demo reset");
+  }, [engine, initialAddress, loadAddress]);
+
+  const activeTargetLabel = useMemo(() => {
+    if (!activeReference) return "Move the caret onto a reference";
+    if (activeReference.resolution.status === "unresolved") {
+      return `Unresolved · ${activeReference.resolution.reason.replaceAll("-", " ")}`;
     }
-  };
+    if (activeReference.resolution.status === "dynamic") return "Dynamic reference";
+    return activeReference.resolution.targets.map(formatTarget).join(", ");
+  }, [activeReference]);
 
-  const handleFormulaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFormulaInput(e.target.value);
-  };
+  const evaluatedSelectedValue = engine.getCellValue(selectedAddress, true);
+  const selectedCellRef = getCellReference(selectedAddress);
+  const selectedCellLabel = `${selectedAddress.sheetName}!${selectedCellRef}`;
+  const diagnostics = analysis?.diagnostics ?? [];
+  const errorCount = diagnostics.filter((item) => item.severity === "error").length;
+
+  // The workbook selection is intentionally never mutated for caret previews.
+  // Reference targets are a presentation-only cell style layered over the grid.
+  const selectionInitialState = useMemo<{ selections: SMArea[] }>(
+    () => ({
+      selections: isCrossSheetPreview
+        ? []
+        : [{
+            start: { row: selectedAddress.rowIndex, col: selectedAddress.colIndex },
+            end: {
+              row: { type: "number" as const, value: selectedAddress.rowIndex },
+              col: { type: "number" as const, value: selectedAddress.colIndex },
+            },
+          }],
+    }),
+    [isCrossSheetPreview, selectedAddress.colIndex, selectedAddress.rowIndex],
+  );
 
   return (
-    <div className="flex flex-col gap-4 h-full w-full p-8">
-      {/* Formula Bar */}
-      <div className="flex gap-2 items-center">
-        <div className="w-20 text-sm font-mono bg-gray-100 px-2 py-2 rounded">
-          {selectedCell || ""}
+    <div className="formula-studio" data-testid="formula-studio">
+      <header className="formula-studio__header">
+        <div>
+          <span className="formula-studio__eyebrow">Formula language tooling</span>
+          <h1>Write formulas with the grid in view.</h1>
+          <p>
+            Monaco consumes <code>@ricsam/formula-engine-editor</code>. Put the caret on a
+            cell or range and the resolved target is previewed without changing the workbook
+            selection.
+          </p>
         </div>
-        <Input
-          value={formulaInput}
-          onChange={handleFormulaChange}
-          onKeyDown={handleFormulaSubmit}
-          placeholder={selectedCell ? "Enter formula or value..." : "Select a cell to edit"}
-          className="flex-1 font-mono"
-          disabled={!selectedCell}
-        />
-      </div>
+        <button type="button" className="formula-studio__reset" onClick={handleReset}>
+          <EditorIcon name="reset" /> Reset demo
+        </button>
+      </header>
 
-      {/* Instructions */}
-      <div className="text-sm text-muted-foreground bg-blue-50 p-3 rounded">
-        <strong>Instructions:</strong>
-        <ul className="list-disc list-inside mt-1 space-y-1">
-          <li>Click any cell to select it and see its formula in the input above</li>
-          <li>Type a formula (starting with =) or a value in the input and press Enter</li>
-          <li>Try editing existing formulas like =B2*C2 or =SUM(D2:D5)</li>
-          <li>Notice how dependent cells automatically update when you change values</li>
-          <li>Explore the rich example data including products, calculations, and analytics</li>
-        </ul>
-      </div>
-
-      {/* Spreadsheet */}
-      <div className="relative flex-1">
-        <Spreadsheet
-          style={{ width: "100%", height: "100%" }}
-          cellData={currentSheet?.content as Map<string, string | number>}
-          onCellDataChange={(updatedSpreadsheet) => {
-            engine.setSheetContent({ sheetName, workbookName }, updatedSpreadsheet);
-          }}
-          customCellRenderer={(cell) => {
-           
-            const value = engine.getCellValue({
-              workbookName,
-              sheetName,
-              colIndex: cell.colIndex,
-              rowIndex: cell.rowIndex,
-            });
-            return <div>{value}</div>;
-          }}
-          selection={{
-            onStateChange: (state) => {
-              if (state.isSelecting.type === "drag") {
-                const cell = state.isSelecting.start;
-                setSelectedCell(
-                  getCellReference({ rowIndex: cell.row, colIndex: cell.col })
-                );
-                return;
-              }
-              const cell = state.selections[state.selections.length - 1]?.start;
-              if (cell) {
-                setSelectedCell(
-                  getCellReference({ rowIndex: cell.row, colIndex: cell.col })
-                );
-              }
-            },
-          }}
-        />
-      </div>
-
-      {/* Live Data Display */}
-      <div className="bg-gray-50 p-3 rounded text-xs">
-        <strong>Live Calculations:</strong>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
-          <div>Total Items: <span className="font-mono">{currentSheet?.content.get('B8') || 0}</span></div>
-          <div>Subtotal: <span className="font-mono">${currentSheet?.content.get('B9') || 0}</span></div>
-          <div>Grand Total: <span className="font-mono">${currentSheet?.content.get('B11') || 0}</span></div>
-          <div>Avg Price: <span className="font-mono">${currentSheet?.content.get('E8') || 0}</span></div>
+      <section className="formula-studio__workbench" aria-label="Formula editor demo">
+        <div className="formula-studio__toolbar">
+          <div className="formula-studio__cell-pill">
+            <span>Editing</span>
+            <strong data-testid="selected-cell-address">{selectedCellLabel}</strong>
+          </div>
+          <div className="formula-studio__value">
+            <span>Calculated value</span>
+            <strong data-testid="selected-cell-value">
+              {evaluatedSelectedValue === undefined ? "—" : String(evaluatedSelectedValue)}
+            </strong>
+          </div>
+          <div className={`formula-studio__save-state formula-studio__save-state--${saveState}`} role="status">
+            <i /> {isDirty ? "Unapplied changes" : saveMessage}
+          </div>
         </div>
-      </div>
+
+        <div className="formula-studio__editor-panel">
+          <div className="formula-studio__editor-heading">
+            <div>
+              <span className="formula-studio__fx">ƒx</span>
+              <div><strong>Formula editor</strong><small>Enter to apply · Esc to revert</small></div>
+            </div>
+            <div className="formula-studio__editor-actions">
+              <span className={errorCount > 0 ? "has-errors" : ""} data-testid="formula-diagnostics">
+                {errorCount > 0 ? `${errorCount} ${errorCount === 1 ? "error" : "errors"}` : "Syntax valid"}
+              </span>
+              <button type="button" onClick={revertDraft} disabled={!isDirty}>Revert</button>
+              <button
+                type="button"
+                className="formula-studio__apply"
+                data-testid="apply-formula"
+                onClick={applyDraft}
+                disabled={!isDirty || errorCount > 0}
+              >
+                <EditorIcon name="apply" /> Apply
+              </button>
+            </div>
+          </div>
+
+          <div className="formula-studio__monaco">
+            <FormulaEditor
+              ref={formulaEditorRef}
+              engine={engine}
+              origin={selectedAddress}
+              value={draft}
+              height="112px"
+              theme="formula-studio-theme"
+              testId="formula-editor"
+              beforeMount={(monaco) => {
+                monaco.editor.defineTheme("formula-studio-theme", {
+                  base: "vs",
+                  inherit: true,
+                  rules: [
+                    { token: "function", foreground: "7C3AED", fontStyle: "bold" },
+                    { token: "variable.formulaCellReference", foreground: "EA580C" },
+                    { token: "namespace", foreground: "0369A1" },
+                    { token: "number", foreground: "047857" },
+                    { token: "string", foreground: "BE123C" },
+                    { token: "operator", foreground: "475569" },
+                  ],
+                  colors: {
+                    "editor.background": "#FBFCFE",
+                    "editor.foreground": "#172033",
+                    "editor.lineHighlightBackground": "#F1F5F900",
+                    "editorCursor.foreground": "#EA580C",
+                    "editor.selectionBackground": "#FED7AA88",
+                    "editorError.foreground": "#DC2626",
+                    "editorWarning.foreground": "#D97706",
+                  },
+                });
+              }}
+              onMount={handleEditorMount}
+              onChange={(value, nextAnalysis) => {
+                setDraft(value);
+                setAnalysis(nextAnalysis);
+                setSaveState("editing");
+                setSaveMessage("Editing");
+              }}
+              onAnalysisChange={({ analysis: nextAnalysis }) => setAnalysis(nextAnalysis)}
+              onActiveReferenceChange={(reference) => setActiveReference(reference)}
+              options={{
+                automaticLayout: true,
+                contextmenu: false,
+                cursorBlinking: "smooth",
+                fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace",
+                fontLigatures: true,
+                fontSize: 15,
+                folding: false,
+                glyphMargin: false,
+                lineDecorationsWidth: 0,
+                lineNumbers: "off",
+                minimap: { enabled: false },
+                overviewRulerBorder: false,
+                overviewRulerLanes: 0,
+                padding: { top: 21, bottom: 18 },
+                renderLineHighlight: "none",
+                scrollBeyondLastLine: false,
+                scrollbar: { horizontal: "hidden", vertical: "hidden", alwaysConsumeMouseWheel: false },
+                "semanticHighlighting.enabled": true,
+                wordWrap: "on",
+              }}
+            />
+          </div>
+
+          <div className={`formula-studio__reference ${activeReference ? "is-active" : ""}`} data-testid="active-reference">
+            <span className="formula-studio__reference-icon"><EditorIcon name="spark" /></span>
+            <div>
+              <small>{isCrossSheetPreview ? "Cross-sheet preview" : "Caret target"}</small>
+              <strong>{activeTargetLabel}</strong>
+            </div>
+            {activeReference && <code>{draft.slice(activeReference.span.start, activeReference.span.end)}</code>}
+          </div>
+        </div>
+
+        <div className="formula-studio__grid-panel">
+          <div className="formula-studio__grid-heading">
+            <div>
+              <strong data-testid="visible-sheet">{visibleSheet}</strong>
+              <span>{isCrossSheetPreview ? `Previewing a reference from ${selectedAddress.sheetName}` : "Live workbook"}</span>
+            </div>
+            <div className="formula-studio__legend">
+              <span><i className="selection" /> Selection</span>
+              <span><i className="reference" /> Caret reference</span>
+            </div>
+          </div>
+          <div className="formula-studio__grid" data-testid="formula-workbook">
+            <FormulaWorkbook
+              engine={engine}
+              workbookName={WORKBOOK}
+              activeSheet={visibleSheet}
+              onActiveSheetChange={handleSheetChange}
+              selectionManager={workbookSelectionManager}
+              selection={{ initialState: selectionInitialState }}
+              isSelected
+              customCellStyle={(cell, internalStyle) => {
+                const highlighted = targets.some(
+                  (target) =>
+                    target.workbookName === WORKBOOK &&
+                    target.sheetName === visibleSheet &&
+                    isCellInRange(cell.rowIndex, cell.colIndex, target.range),
+                );
+                if (!highlighted) return internalStyle;
+                return {
+                  ...internalStyle,
+                  backgroundColor: "#fff7ed",
+                  outline: "2px solid #f97316",
+                  outlineOffset: "-2px",
+                  color: "#9a3412",
+                  fontWeight: 700,
+                  position: "relative",
+                  zIndex: 3,
+                };
+              }}
+            />
+          </div>
+        </div>
+      </section>
+
+      <footer className="formula-studio__footer">
+        <span><kbd>1</kbd> Select a formula cell</span><i />
+        <span><kbd>2</kbd> Edit with semantic highlighting</span><i />
+        <span><kbd>3</kbd> Move the caret onto a reference</span><i />
+        <span><kbd>4</kbd> Press Enter to recalculate</span>
+      </footer>
     </div>
   );
 }
