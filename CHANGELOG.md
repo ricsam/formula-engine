@@ -1,5 +1,13 @@
 # @ricsam/formula-engine
 
+## 0.2.24
+
+### Patch Changes
+
+- Add editor-neutral formula analysis with semantic tokens, tolerant diagnostics,
+  caret reference lookup, and workbook-aware cell, range, table, name, and 3D
+  reference targets.
+
 ## 0.2.23
 
 ### Patch Changes
