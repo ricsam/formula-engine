@@ -25,6 +25,78 @@ async function expectFormulaText(page: Page, text: string) {
   ).toContainText(text);
 }
 
+async function expectExactFormulaText(page: Page, text: string) {
+  await expect(
+    page.getByTestId("formula-editor").locator(".view-line"),
+  ).toHaveText(text);
+}
+
+async function replaceFormula(
+  page: Page,
+  editorInput: Locator,
+  formula: string,
+) {
+  await editorInput.press("Home");
+  await editorInput.press("Shift+End");
+  await page.keyboard.insertText(formula);
+}
+
+async function dragBetween(start: Locator, end: Locator, page: Page) {
+  const startBox = await start.boundingBox();
+  const endBox = await end.boundingBox();
+  if (!startBox || !endBox) {
+    throw new Error("Expected both drag targets to be visible");
+  }
+
+  await page.mouse.move(
+    startBox.x + startBox.width / 2,
+    startBox.y + startBox.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    endBox.x + endBox.width / 2,
+    endBox.y + endBox.height / 2,
+    { steps: 8 },
+  );
+}
+
+async function expectReferenceOverlayCovers(
+  page: Page,
+  references: readonly string[],
+  phase: "selecting" | "selected",
+) {
+  const overlay = page.getByTestId("spreadsheet-reference-selection");
+  await expect(overlay).toBeVisible();
+  await expect(overlay).toHaveAttribute("data-reference-phase", phase);
+
+  await expect
+    .poll(
+      async () => {
+        const overlayBox = await overlay.boundingBox();
+        if (!overlayBox) return false;
+
+        const cellBoxes = await Promise.all(
+          references.map((reference) =>
+            page.getByTestId(`spreadsheet-cell-${reference}`).boundingBox(),
+          ),
+        );
+        if (cellBoxes.some((cellBox) => !cellBox)) return false;
+
+        // Allow one pixel for fractional layout coordinates and browser rounding.
+        return cellBoxes.every(
+          (cellBox) =>
+            cellBox &&
+            overlayBox.x <= cellBox.x + 1 &&
+            overlayBox.y <= cellBox.y + 1 &&
+            overlayBox.x + overlayBox.width >= cellBox.x + cellBox.width - 1 &&
+            overlayBox.y + overlayBox.height >= cellBox.y + cellBox.height - 1,
+        );
+      },
+      { message: `reference overlay should cover ${references.join(", ")}` },
+    )
+    .toBe(true);
+}
+
 test.describe("Formula editor spreadsheet integration", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/spreadsheet");
@@ -167,11 +239,67 @@ test.describe("Formula editor spreadsheet integration", () => {
     );
     await expect(editorInput).toBeFocused();
     await expectReferenceHighlight(page.getByTestId("spreadsheet-cell-C3"));
+    await expect(page.getByTestId("spreadsheet-cell-D2")).toHaveClass(
+      /rsp-cell-selected/,
+    );
+    await expect(page.getByTestId("spreadsheet-cell-C3")).not.toHaveClass(
+      /rsp-cell-selected/,
+    );
+    await expectReferenceOverlayCovers(page, ["C3"], "selected");
 
     // A second pick replaces the active picked reference, as it does in Excel.
     await page.getByTestId("spreadsheet-cell-B4").click();
     await expectFormulaText(page, "=B4*C2");
     await expectReferenceHighlight(page.getByTestId("spreadsheet-cell-B4"));
+    await expect(page.getByTestId("spreadsheet-cell-D2")).toHaveClass(
+      /rsp-cell-selected/,
+    );
+    await expectReferenceOverlayCovers(page, ["B4"], "selected");
+  });
+
+  test("clicking a cell replaces the reference under an empty caret", async ({
+    page,
+  }) => {
+    const editorInput = await focusFormulaEditor(page);
+    await editorInput.press("Home");
+    await editorInput.press("ArrowRight");
+    await editorInput.press("ArrowRight");
+    await expect(page.getByTestId("active-reference")).toContainText(
+      "Forecast!B2",
+    );
+
+    await page.getByTestId("spreadsheet-cell-C3").click();
+
+    await expectExactFormulaText(page, "=C3*C2");
+    await expect(page.getByTestId("selected-cell-address")).toHaveText(
+      "Forecast!D2",
+    );
+    await expectReferenceOverlayCovers(page, ["C3"], "selected");
+  });
+
+  test("sheet tabs retain the formula draft and qualify picked references", async ({
+    page,
+  }) => {
+    const editorInput = await focusFormulaEditor(page);
+    await replaceFormula(page, editorInput, "=SUM()");
+    await editorInput.press("ArrowLeft");
+
+    await page.getByTestId("sheet-tab-Assumptions").click();
+
+    await expect(page.getByTestId("visible-sheet")).toHaveText("Assumptions");
+    await expect(page.getByTestId("selected-cell-address")).toHaveText(
+      "Forecast!D2",
+    );
+    await expectExactFormulaText(page, "=SUM()");
+
+    await page.getByTestId("spreadsheet-cell-B3").click();
+
+    await expectExactFormulaText(page, "=SUM(Assumptions!B3)");
+    await expect(page.getByTestId("selected-cell-address")).toHaveText(
+      "Forecast!D2",
+    );
+    await expect(editorInput).toBeFocused();
+    await expectReferenceOverlayCovers(page, ["B3"], "selected");
   });
 
   test("Escape leaves reference-picking mode so grid clicks select cells normally", async ({
@@ -185,6 +313,63 @@ test.describe("Formula editor spreadsheet integration", () => {
       "Forecast!C3",
     );
     await expectFormulaText(page, "99");
+  });
+
+  test("cancelling an active reference drag cannot re-enter picking mode", async ({
+    page,
+  }) => {
+    const editorInput = await focusFormulaEditor(page);
+    await replaceFormula(page, editorInput, "=SUM()");
+    await editorInput.press("ArrowLeft");
+
+    await page.getByRole("button", { name: "Zoom In" }).click();
+    await dragBetween(
+      page.getByTestId("spreadsheet-cell-B2"),
+      page.getByTestId("spreadsheet-cell-B2"),
+      page,
+    );
+    await expectExactFormulaText(page, "=SUM(B2)");
+    await expectReferenceOverlayCovers(page, ["B2"], "selecting");
+
+    await page.keyboard.press("Escape");
+    await page.mouse.up();
+    await expect(
+      page.getByTestId("spreadsheet-reference-selection"),
+    ).toHaveCount(0);
+
+    await page.getByTestId("spreadsheet-cell-C3").click();
+    await expect(page.getByTestId("selected-cell-address")).toHaveText(
+      "Forecast!C3",
+    );
+    await expectExactFormulaText(page, "99");
+  });
+
+  test("caret movement and manual edits clear a committed reference overlay", async ({
+    page,
+  }) => {
+    const editorInput = await focusFormulaEditor(page);
+    await editorInput.press("Home");
+    await editorInput.press("ArrowRight");
+    await editorInput.press("Shift+ArrowRight");
+    await editorInput.press("Shift+ArrowRight");
+    await page.getByTestId("spreadsheet-cell-C3").click();
+    await expectReferenceOverlayCovers(page, ["C3"], "selected");
+
+    await editorInput.press("End");
+    await expect(
+      page.getByTestId("spreadsheet-reference-selection"),
+    ).toHaveCount(0);
+
+    await replaceFormula(page, editorInput, "=SUM()");
+    await editorInput.press("ArrowLeft");
+    await page.getByTestId("spreadsheet-cell-B4").click();
+    await expectReferenceOverlayCovers(page, ["B4"], "selected");
+
+    await page.keyboard.insertText("+1");
+    await expectExactFormulaText(page, "=SUM(B4+1)");
+    await expect(
+      page.getByTestId("spreadsheet-reference-selection"),
+    ).toHaveCount(0);
   });
 
   test("dragging a grid range updates one reference insertion live", async ({
@@ -208,6 +393,11 @@ test.describe("Formula editor spreadsheet integration", () => {
 
     // The editor is updated before mouseup, while the grid selection is still active.
     await expectFormulaText(page, "=SUM(B2:C4)");
+    await expectReferenceOverlayCovers(
+      page,
+      ["B2", "B3", "B4", "C2", "C3", "C4"],
+      "selecting",
+    );
     await page.mouse.up();
 
     await expectFormulaText(page, "=SUM(B2:C4)");
@@ -215,10 +405,77 @@ test.describe("Formula editor spreadsheet integration", () => {
       "Forecast!D2",
     );
     await expect(editorInput).toBeFocused();
+    await expect(page.getByTestId("spreadsheet-cell-D2")).toHaveClass(
+      /rsp-cell-selected/,
+    );
+    await expect(page.getByTestId("spreadsheet-cell-B2")).not.toHaveClass(
+      /rsp-cell-selected/,
+    );
+    await expectReferenceOverlayCovers(
+      page,
+      ["B2", "B3", "B4", "C2", "C3", "C4"],
+      "selected",
+    );
     for (const reference of ["B2", "B3", "B4", "C2", "C3", "C4"]) {
       await expectReferenceHighlight(
         page.getByTestId(`spreadsheet-cell-${reference}`),
       );
     }
+  });
+
+  test("cell-to-header drags preserve the finite start of open ranges", async ({
+    page,
+  }) => {
+    const editorInput = await focusFormulaEditor(page);
+    await replaceFormula(page, editorInput, "=SUM()");
+    await editorInput.press("ArrowLeft");
+
+    await dragBetween(
+      page.getByTestId("spreadsheet-cell-B2"),
+      page.getByTestId("spreadsheet-row-header-4"),
+      page,
+    );
+    await expectExactFormulaText(page, "=SUM(B2:4)");
+    await expectReferenceOverlayCovers(page, ["B2", "E4"], "selecting");
+    await page.mouse.up();
+    await expectReferenceOverlayCovers(page, ["B2", "E4"], "selected");
+
+    await replaceFormula(page, editorInput, "=SUM()");
+    await editorInput.press("ArrowLeft");
+    await dragBetween(
+      page.getByTestId("spreadsheet-cell-B2"),
+      page.getByTestId("spreadsheet-col-header-D"),
+      page,
+    );
+    await expectExactFormulaText(page, "=SUM(B2:D)");
+    await expectReferenceOverlayCovers(page, ["B2", "D11"], "selecting");
+    await page.mouse.up();
+    await expectReferenceOverlayCovers(page, ["B2", "D11"], "selected");
+  });
+
+  test("Control+Arrow navigates to sparse data and reveals an off-screen cell", async ({
+    page,
+  }) => {
+    const target = page.getByTestId("spreadsheet-cell-D40");
+    await expect(target).toHaveCount(0);
+
+    await page.getByTestId("spreadsheet-cell-D9").click();
+    await page.keyboard.press("Control+ArrowDown");
+
+    await expect(page.getByTestId("selected-cell-address")).toHaveText(
+      "Forecast!D40",
+    );
+    await expect(target).toBeVisible();
+    await expect(target).toHaveClass(/rsp-cell-selected/);
+
+    const gridBox = await page.getByTestId("formula-workbook").boundingBox();
+    const targetBox = await target.boundingBox();
+    if (!gridBox || !targetBox) {
+      throw new Error("Expected the workbook and navigated cell to be visible");
+    }
+    expect(targetBox.y).toBeGreaterThanOrEqual(gridBox.y);
+    expect(targetBox.y + targetBox.height).toBeLessThanOrEqual(
+      gridBox.y + gridBox.height + 1,
+    );
   });
 });

@@ -25,7 +25,6 @@ import {
 import "@ricsam/react-spreadsheets/styles.css";
 import type {
   SelectionManager,
-  SelectionManagerState,
   SMArea,
 } from "@ricsam/selection-manager";
 import type { editor as MonacoEditor } from "monaco-editor";
@@ -98,6 +97,7 @@ function populateEngine(engine: FormulaEngine) {
       ["E9", "=E7*C9"],
       ["A11", "Try the editor"],
       ["B11", "Place the caret over B2, C2, or Assumptions!B3"],
+      ["D40", "Off-screen navigation target"],
     ]),
   );
 
@@ -263,11 +263,14 @@ function formatPickedReference(
     const lastCol = endCol.type === "number" ? endCol.value : startCol;
     const first = indexToColumn(Math.min(startCol, lastCol));
     const last = indexToColumn(Math.max(startCol, lastCol));
-    localReference = `${first}:${last}`;
+    localReference = startRow === 0 ? `${first}:${last}` : `${first}${startRow + 1}:${last}`;
   } else if (endCol.type === "infinity") {
     const firstRow = Math.min(startRow, endRow.value) + 1;
     const lastRow = Math.max(startRow, endRow.value) + 1;
-    localReference = `${firstRow}:${lastRow}`;
+    localReference =
+      startCol === 0
+        ? `${firstRow}:${lastRow}`
+        : `${indexToColumn(startCol)}${firstRow}:${lastRow}`;
   } else {
     const firstRow = Math.min(startRow, endRow.value);
     const lastRow = Math.max(startRow, endRow.value);
@@ -283,13 +286,14 @@ function formatPickedReference(
   return `${sheetQualifier}${localReference}`;
 }
 
-function isReferenceSelection(
-  selection: SelectionManagerState["isSelecting"],
-): selection is Exclude<
-  SelectionManagerState["isSelecting"],
-  { type: "none" | "fill" }
-> {
-  return selection.type !== "none" && selection.type !== "fill";
+function singleCellArea(address: CellAddress): SMArea {
+  return {
+    start: { row: address.rowIndex, col: address.colIndex },
+    end: {
+      row: { type: "number", value: address.rowIndex },
+      col: { type: "number", value: address.colIndex },
+    },
+  };
 }
 
 function formatTarget(target: FormulaReferenceTarget): string {
@@ -337,15 +341,18 @@ export function FullSpreadsheetDemo() {
   const [saveState, setSaveState] = useState<"saved" | "editing" | "error">("saved");
   const [saveMessage, setSaveMessage] = useState("Saved");
   const [isPickingReference, setIsPickingReference] = useState(false);
+  const [referenceSheetOverride, setReferenceSheetOverride] = useState<string>();
   const [, setRevision] = useState(0);
   const formulaEditorRef = useRef<FormulaEditorHandle>(null);
+  const currentSheetSelectionManagerRef = useRef<SelectionManager | undefined>(
+    undefined,
+  );
   const referenceInsertionRef = useRef<FormulaReferenceInsertion | undefined>(undefined);
   const lastInsertedReferenceSpanRef = useRef<
     FormulaReferenceInsertion["span"] | undefined
   >(undefined);
-  const isUpdatingReferenceInsertionRef = useRef(false);
-  const ignoreSelectionRef = useRef(false);
   const isFormulaEditingRef = useRef(false);
+  const isClosingFormulaEditingRef = useRef(false);
   const suppressNextFormulaEditActivationRef = useRef(false);
   const lastCellBySheet = useRef(
     new Map<string, { colIndex: number; rowIndex: number }>([
@@ -374,16 +381,24 @@ export function FullSpreadsheetDemo() {
     if (targets.length === 0) return undefined;
     return targets.find((target) => target.sheetName === selectedAddress.sheetName) ?? targets[0];
   }, [selectedAddress.sheetName, targets]);
-  const visibleSheet = previewTarget?.sheetName ?? selectedAddress.sheetName;
+  const visibleSheet =
+    referenceSheetOverride ?? previewTarget?.sheetName ?? selectedAddress.sheetName;
   const isCrossSheetPreview = visibleSheet !== selectedAddress.sheetName;
 
   const loadAddress = useCallback(
     (address: CellAddress) => {
+      isClosingFormulaEditingRef.current = true;
+      try {
+        referenceInsertionRef.current?.cancel();
+      } finally {
+        isClosingFormulaEditingRef.current = false;
+      }
       referenceInsertionRef.current = undefined;
       lastInsertedReferenceSpanRef.current = undefined;
-      ignoreSelectionRef.current = false;
+      currentSheetSelectionManagerRef.current?.endReferenceSelection();
       isFormulaEditingRef.current = false;
       setIsPickingReference(false);
+      setReferenceSheetOverride(undefined);
       lastCellBySheet.current.set(address.sheetName, {
         colIndex: address.colIndex,
         rowIndex: address.rowIndex,
@@ -409,7 +424,6 @@ export function FullSpreadsheetDemo() {
       workbookSelectionManager.onSelectionChange((selections) => {
         const selection = selections[selections.length - 1];
         if (!selection) return;
-        if (referenceInsertionRef.current || ignoreSelectionRef.current) return;
         const current = selectedAddressRef.current;
         const { workbookName, sheetName, range } = selection;
         if (
@@ -431,62 +445,74 @@ export function FullSpreadsheetDemo() {
 
   const handleGridSelection = useCallback(
     (selectionManager: SelectionManager) => {
-      let wasSelectingReference = false;
+      currentSheetSelectionManagerRef.current = selectionManager;
+      if (isFormulaEditingRef.current) {
+        selectionManager.beginReferenceSelection({
+          editedRange: singleCellArea(selectedAddressRef.current),
+        });
+      }
 
-      return selectionManager.observeStateChange(
-        (state) => state,
-        (state) => {
-          const selection = state.isSelecting;
-          if (isReferenceSelection(selection)) {
-            let insertion = referenceInsertionRef.current;
-            if (!insertion) {
-              const editor = formulaEditorRef.current?.getEditor();
-              if (
-                !isFormulaEditingRef.current ||
-                !editor?.hasTextFocus() ||
-                !editor.getModel()?.getValue().trimStart().startsWith("=")
-              ) {
-                return;
-              }
+      const cleanup = selectionManager.listenToReferenceSelection((event) => {
+        if (event.phase === "cancel") {
+          isClosingFormulaEditingRef.current = true;
+          try {
+            referenceInsertionRef.current?.cancel();
+          } finally {
+            isClosingFormulaEditingRef.current = false;
+          }
+          referenceInsertionRef.current = undefined;
+          lastInsertedReferenceSpanRef.current = undefined;
+          isFormulaEditingRef.current = false;
+          selectionManager.endReferenceSelection();
+          setIsPickingReference(false);
+          setReferenceSheetOverride(undefined);
+          return;
+        }
 
-              insertion = beginFormulaReferenceInsertion(editor, {
-                replaceSpan: lastInsertedReferenceSpanRef.current,
-              });
-              if (!insertion) return;
-              referenceInsertionRef.current = insertion;
-              setIsPickingReference(true);
-            }
-
-            wasSelectingReference = true;
-            isUpdatingReferenceInsertionRef.current = true;
-            try {
-              insertion.update(
-                formatPickedReference(selection, visibleSheet, selectedAddressRef.current),
-              );
-            } finally {
-              isUpdatingReferenceInsertionRef.current = false;
-            }
+        let insertion = referenceInsertionRef.current;
+        if (!insertion) {
+          const editor = formulaEditorRef.current?.getEditor();
+          if (
+            !isFormulaEditingRef.current ||
+            !editor?.getModel()?.getValue().trimStart().startsWith("=")
+          ) {
             return;
           }
 
-          if (!wasSelectingReference || !referenceInsertionRef.current) return;
+          const selection = editor.getSelection();
+          const activeReferenceSpan = selection?.isEmpty()
+            ? formulaEditorRef.current?.getActiveReference()?.span
+            : undefined;
+          const replaceSpan =
+            lastInsertedReferenceSpanRef.current ?? activeReferenceSpan;
 
-          // Keep the insertion session alive until selection-manager commits the
-          // range on mouseup. WorkbookSelectionManager observes that same commit,
-          // so suppress its normal "load this cell" behavior for this turn.
-          ignoreSelectionRef.current = true;
-          lastInsertedReferenceSpanRef.current = {
-            ...referenceInsertionRef.current.span,
-          };
-          referenceInsertionRef.current.finish();
+          insertion = beginFormulaReferenceInsertion(
+            editor,
+            replaceSpan === undefined ? undefined : { replaceSpan },
+          );
+          if (!insertion) return;
+          referenceInsertionRef.current = insertion;
+          setIsPickingReference(true);
+        }
+
+        lastInsertedReferenceSpanRef.current = insertion.update(
+          formatPickedReference(event.range, visibleSheet, selectedAddressRef.current),
+        );
+
+        if (event.phase === "commit") {
+          insertion.finish();
           referenceInsertionRef.current = undefined;
-          wasSelectingReference = false;
           setIsPickingReference(false);
-          queueMicrotask(() => {
-            ignoreSelectionRef.current = false;
-          });
-        },
-      );
+        }
+      });
+
+      return () => {
+        cleanup();
+        selectionManager.endReferenceSelection();
+        if (currentSheetSelectionManagerRef.current === selectionManager) {
+          currentSheetSelectionManagerRef.current = undefined;
+        }
+      };
     },
     [visibleSheet],
   );
@@ -501,8 +527,18 @@ export function FullSpreadsheetDemo() {
       setDraft(normalized);
       setSaveState("saved");
       setSaveMessage("Applied to the sheet");
+      isClosingFormulaEditingRef.current = true;
+      try {
+        referenceInsertionRef.current?.finish();
+      } finally {
+        isClosingFormulaEditingRef.current = false;
+      }
+      referenceInsertionRef.current = undefined;
+      currentSheetSelectionManagerRef.current?.endReferenceSelection();
       isFormulaEditingRef.current = false;
       lastInsertedReferenceSpanRef.current = undefined;
+      setIsPickingReference(false);
+      setReferenceSheetOverride(undefined);
       formulaEditorRef.current?.refresh();
     } catch (error) {
       setSaveState("error");
@@ -512,9 +548,19 @@ export function FullSpreadsheetDemo() {
 
   const revertDraft = useCallback(() => {
     const current = readRawCell(engine, selectedAddressRef.current);
+    isClosingFormulaEditingRef.current = true;
+    try {
+      referenceInsertionRef.current?.cancel();
+    } finally {
+      isClosingFormulaEditingRef.current = false;
+    }
+    referenceInsertionRef.current = undefined;
+    currentSheetSelectionManagerRef.current?.endReferenceSelection();
     suppressNextFormulaEditActivationRef.current = draftRef.current !== current;
     isFormulaEditingRef.current = false;
     lastInsertedReferenceSpanRef.current = undefined;
+    setIsPickingReference(false);
+    setReferenceSheetOverride(undefined);
     setSavedFormula(current);
     setDraft(current);
     setSaveState("saved");
@@ -530,19 +576,52 @@ export function FullSpreadsheetDemo() {
   const handleEditorMount = useCallback(
     (editor: MonacoEditor.IStandaloneCodeEditor, monaco: typeof import("monaco-editor")) => {
       const activateFormulaEditing = () => {
-        isFormulaEditingRef.current = editor.getValue().trimStart().startsWith("=");
+        if (isClosingFormulaEditingRef.current) return;
+        const isFormula = editor.getValue().trimStart().startsWith("=");
+        isFormulaEditingRef.current = isFormula;
+        const selectionManager = currentSheetSelectionManagerRef.current;
+        if (isFormula) {
+          if (selectionManager?.selectionMode !== "reference") {
+            selectionManager?.beginReferenceSelection({
+              editedRange: singleCellArea(selectedAddressRef.current),
+            });
+          }
+        } else {
+          referenceInsertionRef.current?.cancel();
+          referenceInsertionRef.current = undefined;
+          lastInsertedReferenceSpanRef.current = undefined;
+          selectionManager?.endReferenceSelection();
+          setIsPickingReference(false);
+          setReferenceSheetOverride(undefined);
+        }
+      };
+
+      const clearCommittedReferenceSelection = () => {
+        if (isClosingFormulaEditingRef.current) return;
+        const selectionManager = currentSheetSelectionManagerRef.current;
+        if (
+          !referenceInsertionRef.current &&
+          isFormulaEditingRef.current &&
+          selectionManager?.selectionMode === "reference"
+        ) {
+          selectionManager.beginReferenceSelection({
+            editedRange: singleCellArea(selectedAddressRef.current),
+          });
+        }
       };
 
       editor.onDidFocusEditorText(activateFormulaEditing);
       editor.onMouseDown(activateFormulaEditing);
       editor.onDidChangeCursorSelection(() => {
-        if (!isUpdatingReferenceInsertionRef.current) {
+        if (!referenceInsertionRef.current) {
           lastInsertedReferenceSpanRef.current = undefined;
+          clearCommittedReferenceSelection();
         }
       });
       editor.onDidChangeModelContent(() => {
-        if (!isUpdatingReferenceInsertionRef.current) {
+        if (!referenceInsertionRef.current) {
           lastInsertedReferenceSpanRef.current = undefined;
+          clearCommittedReferenceSelection();
         }
         if (suppressNextFormulaEditActivationRef.current) {
           suppressNextFormulaEditActivationRef.current = false;
@@ -559,6 +638,10 @@ export function FullSpreadsheetDemo() {
 
   const handleSheetChange = useCallback(
     (sheetName: string) => {
+      if (isFormulaEditingRef.current) {
+        setReferenceSheetOverride(sheetName);
+        return;
+      }
       const previous = lastCellBySheet.current.get(sheetName) ?? { colIndex: 0, rowIndex: 0 };
       loadAddress({ workbookName: WORKBOOK, sheetName, ...previous });
     },
@@ -786,7 +869,6 @@ export function FullSpreadsheetDemo() {
                   outlineOffset: "-2px",
                   color: "#9a3412",
                   fontWeight: 700,
-                  position: "relative",
                   zIndex: 3,
                 };
               }}

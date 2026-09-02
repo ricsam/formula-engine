@@ -13,8 +13,8 @@
         "@radix-ui/react-select": "^2.2.5",
         "@radix-ui/react-slot": "^1.2.3",
         "@ricsam/formula-engine-editor": "0.2.0",
-        "@ricsam/react-spreadsheets": "0.0.7",
-        "@ricsam/selection-manager": "^0.0.25",
+        "@ricsam/react-spreadsheets": "0.0.8",
+        "@ricsam/selection-manager": "^0.0.30",
         "@tanstack/react-router": "^1.130.12",
         "@tanstack/react-router-devtools": "^1.130.13",
         "@tanstack/router-cli": "^1.130.15",
@@ -330,9 +330,9 @@
 
     "@ricsam/formula-engine-editor": ["@ricsam/formula-engine-editor@0.2.0", "", { "peerDependencies": { "@monaco-editor/react": "^4.7.0", "@ricsam/formula-engine": ">=0.2.25", "monaco-editor": ">=0.52 <1", "react": "^18 || ^19", "react-dom": "^18 || ^19" }, "optionalPeers": ["@monaco-editor/react", "react", "react-dom"] }, "sha512-5KkuVr9BSoRC65OR3+VJcRbzgid7Oi6H44Ai+wCwqZ81iEkO7ThR7ASsAc0gzP3nYFr+m9EcK+lZF1nrb1vtEw=="],
 
-    "@ricsam/react-spreadsheets": ["@ricsam/react-spreadsheets@0.0.7", "", { "peerDependencies": { "@ricsam/formula-engine": ">=0.2.0", "@ricsam/selection-manager": ">=0.0.25", "react": "^18 || ^19", "react-dom": "^18 || ^19" }, "optionalPeers": ["@ricsam/formula-engine"] }, "sha512-QR1Jcj92uQGA5DMVPd+57g0afYFdmK35KQ51YVtciwBpV3Q5rDedTnUFWf8AfS+QTCBpY+YgQLL8u/ByDW6t5w=="],
+    "@ricsam/react-spreadsheets": ["@ricsam/react-spreadsheets@0.0.8", "", { "peerDependencies": { "@ricsam/formula-engine": ">=0.2.0", "@ricsam/selection-manager": ">=0.0.29", "react": "^18 || ^19", "react-dom": "^18 || ^19" }, "optionalPeers": ["@ricsam/formula-engine"] }, "sha512-0+xXfz6SZLem/qaNkFiCdGkGCYljWFht6AHQc3un9xRLWrf2+X+9217NEsr0aacHs3xYR2rojPnqQgU2FqFtdg=="],
 
-    "@ricsam/selection-manager": ["@ricsam/selection-manager@0.0.25", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-Oddw4g1oTJrbL8Of9vqTzKYCA20FqR9KQKCLF5pS5NOdgzIkU6tCmcJwEMbHZ6RKFVTMfw++Z6NX1b43H+5Crw=="],
+    "@ricsam/selection-manager": ["@ricsam/selection-manager@0.0.30", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-4z54rjeYa0MIO8P6s7JY49UYnSYwLwavxnNwv8p3AHwqqQQpMSS/HcenzHOJDeG1LV90oClQXwCUFCFE/B3/FQ=="],
 
     "@tanstack/history": ["@tanstack/history@1.130.12", "", {}, "sha512-2VO1nNFDWojgZ7Uqv/OJfH6LphZQ1kE6l8sI3YBgSPtj3qN6I/rsoTHW9rGjwiDO8sQoDRXod2hpH6HMs5NDsw=="],
 
