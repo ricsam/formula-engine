@@ -644,6 +644,65 @@ describe("incremental history persistent-state parity", () => {
     expect(engine.getRefAddress(refId)).toBeUndefined();
   });
 
+  test("sheet clone restores complete target state", () => {
+    const engine = buildEngine();
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map<string, SerializedCellValue>([
+        ["A1", "Header"],
+        ["A2", 7],
+      ])
+    );
+    engine.setCellMetadata(cell("A2"), { label: "cloned cell" });
+    engine.setSheetMetadata(
+      { workbookName, sheetName },
+      { title: "Cloned sheet" }
+    );
+    engine.addNamedExpression({
+      expressionName: "LOCAL_VALUE",
+      expression: "A2",
+      workbookName,
+      sheetName,
+    });
+    engine.addCellStyle({
+      areas: [finiteRange("A1", "A2")],
+      style: { italic: true },
+    });
+    engine.addCellDataType({
+      areas: [finiteRange("A2")],
+      dataType: "number",
+    });
+    engine.addRangeMetadata({
+      areas: [finiteRange("A1", "A2")],
+      metadata: { kind: "note", label: "cloned range" },
+    });
+    engine.addTable({
+      workbookName,
+      sheetName,
+      tableName: "CloneSourceTable",
+      start: "A1",
+      numRows: { type: "number", value: 1 },
+      numCols: 1,
+    });
+
+    const cloned = expectUndoRedoParity(engine, () =>
+      engine.cloneSheet({
+        workbookName,
+        sheetName,
+        newSheetName: "Sheet Copy",
+      })
+    );
+
+    expect(cloned.name).toBe("Sheet Copy");
+    expect(engine.hasSheet({ workbookName, sheetName: "Sheet Copy" })).toBe(
+      true
+    );
+    expect(
+      engine.getTable({ workbookName, tableName: "CloneSourceTable_2" })
+        ?.sheetName
+    ).toBe("Sheet Copy");
+  });
+
   test("workbook add restores its empty ancillary scopes", () => {
     const engine = buildEngine();
     seedBaselineTable(engine);

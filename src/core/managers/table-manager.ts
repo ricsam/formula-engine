@@ -1025,6 +1025,7 @@ export class TableManager {
     to: {
       workbookName: string;
       tableName: string;
+      sheetName?: string;
     }
   ): void {
     const fromTable = this.getTable({
@@ -1038,14 +1039,19 @@ export class TableManager {
     if (!wb) {
       throw new Error("Workbook not found");
     }
+    if (wb.has(to.tableName)) {
+      throw new Error(`Table "${to.tableName}" already exists`);
+    }
     const before = this.observingMutations
       ? this.captureEntryState(to.workbookName, to.tableName)
       : undefined;
     const newTable: TableDefinition = {
-      ...fromTable,
+      ...cloneTableDefinition(fromTable),
+      name: to.tableName,
       workbookName: to.workbookName,
+      sheetName: to.sheetName ?? fromTable.sheetName,
     };
-    this.assertTableDoesNotCollide(newTable, wb, to.tableName);
+    this.assertTableDoesNotCollide(newTable, wb);
     wb.set(to.tableName, newTable);
     if (this.observingMutations) {
       const after: TableEntryState = {

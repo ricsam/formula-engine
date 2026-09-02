@@ -12,13 +12,20 @@ import { transformAST } from "./ast-traverser";
 export function renameTableInFormula(
   formula: string,
   oldTableName: string,
-  newTableName: string
+  newTableName: string,
+  workbookName?: string
 ): string {
   try {
     const ast = parseFormula(formula);
     
     const transformedAST = transformAST(ast, (node) => {
-      if (node.type === "structured-reference" && node.tableName === oldTableName) {
+      if (
+        node.type === "structured-reference" &&
+        node.tableName === oldTableName &&
+        (workbookName === undefined ||
+          node.workbookName === undefined ||
+          node.workbookName === workbookName)
+      ) {
         return {
           ...node,
           tableName: newTableName

@@ -18,14 +18,24 @@ export function renameSheetInFormula(options: {
   formula: string,
   oldSheetName: string;
   newSheetName: string;
+  workbookName?: string;
 }): string {
-  const { formula, oldSheetName, newSheetName } = options;
+  const { formula, oldSheetName, newSheetName, workbookName } = options;
   try {
     const ast = parseFormula(formula);
+
+    const referencesTargetWorkbook = (nodeWorkbookName?: string) =>
+      workbookName === undefined ||
+      nodeWorkbookName === undefined ||
+      nodeWorkbookName === workbookName;
     
     const updatedAst = transformAST(ast, (node) => {
       // Handle regular cross-sheet references (e.g., Sheet1!A1)
-      if (node.type === "reference" && node.sheetName === oldSheetName) {
+      if (
+        node.type === "reference" &&
+        node.sheetName === oldSheetName &&
+        referencesTargetWorkbook(node.workbookName)
+      ) {
         return {
           ...node,
           sheetName: newSheetName,
@@ -33,7 +43,11 @@ export function renameSheetInFormula(options: {
       }
       
       // Handle range references with sheet names (e.g., Sheet1!A1:B2)
-      if (node.type === "range" && node.sheetName === oldSheetName) {
+      if (
+        node.type === "range" &&
+        node.sheetName === oldSheetName &&
+        referencesTargetWorkbook(node.workbookName)
+      ) {
         return {
           ...node,
           sheetName: newSheetName,
@@ -92,4 +106,3 @@ export function getReferencedSheetNames(formula: string): string[] {
     return [];
   }
 }
-

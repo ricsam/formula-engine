@@ -55,6 +55,25 @@ const range = {
 const values = engine.getRangeValues(range); // [[1,2,3],[4,5,6],[7,8,9]]
 ```
 
+## Clone Workbooks And Sheets
+
+```typescript
+engine.cloneWorkbook("Workbook1", "Workbook1 Copy");
+
+const clonedSheet = engine.cloneSheet({
+  workbookName: "Workbook1",
+  sheetName: "Sheet1",
+  newSheetName: "Sheet1 Copy",
+});
+```
+
+`cloneSheet` copies cell content and metadata, sheet metadata, sheet-scoped
+named expressions, tables, styles, cell data types, and range metadata. Explicit
+self-references are rewritten to the new sheet. Because table names are unique
+within a workbook, cloned tables use the first available `_2`, `_3`, and so on
+suffix. The clone is added at the end of the workbook's sheet order, and the
+entire operation is one undo/redo step.
+
 ## Search And Replace Raw Strings
 
 ```typescript

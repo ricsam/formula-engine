@@ -25,6 +25,17 @@ describe("Sheet Renamer", () => {
       expect(result).toBe("DataSheet!A1+Sheet2!B1");
     });
 
+    test("should not rename a matching sheet in another workbook when scoped", () => {
+      const formula = "[Book]Sheet1!A1+[Other]Sheet1!B1";
+      const result = renameSheetInFormula({
+        formula,
+        oldSheetName: "Sheet1",
+        newSheetName: "DataSheet",
+        workbookName: "Book",
+      });
+      expect(result).toBe("[Book]DataSheet!A1+[Other]Sheet1!B1");
+    });
+
     test("should handle range references with sheet names", () => {
       const formula = "SUM(Sheet1!A1:B10)";
       const result = renameSheetInFormula({ formula, oldSheetName: "Sheet1", newSheetName: "DataSheet" });

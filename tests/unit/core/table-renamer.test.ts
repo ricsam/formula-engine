@@ -49,6 +49,19 @@ describe("Table Renamer", () => {
       expect(result).toBe("SUM(Orders[Total])");
     });
 
+    test("should not rename a matching table in another workbook when scoped", () => {
+      const formula = "SUM([Book]!Products[Price])+SUM([Other]!Products[Price])";
+      const result = renameTableInFormula(
+        formula,
+        "Products",
+        "Items",
+        "Book"
+      );
+      expect(result).toBe(
+        "SUM([Book]!Items[Price])+SUM([Other]!Products[Price])"
+      );
+    });
+
     test("should handle current row references", () => {
       const formula = "Products[@Price] * 1.1";
       const result = renameTableInFormula(formula, "Products", "Items");

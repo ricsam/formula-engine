@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.2.23
+
+### Patch Changes
+
+- Add full-fidelity sheet cloning with formula rewriting, table duplication, and undo/redo support.
+
 ## 0.2.22
 
 ### Patch Changes

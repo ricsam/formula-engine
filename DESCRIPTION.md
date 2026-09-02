@@ -51,7 +51,7 @@ Emission guarantees at-most-once-per-cell per cycle and sheet-batched delivery.
 Causes tagged on events include userEdit, recalc, volatile, spillResize, and structure.
 The API exposes getters for values, formulas, and serialized content per cell, sheet, and workbook.
 Data manipulation includes setCellContent, setSheetContent (Map-friendly), and range operations.
-Sheet management covers add/remove/rename, existence checks, and count with stable sheetIds.
+Sheet management covers add/remove/rename/clone, existence checks, and count with stable sheetIds.
 Dependency analysis provides getCellPrecedents and getCellDependents for cells and ranges.
 Evaluation control supports suspend/resume and formula utilities like normalize and validate.
 Undo/redo follows a command pattern with proper state tracking and stack management.

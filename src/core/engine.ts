@@ -2985,6 +2985,252 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     });
   }
 
+  /**
+   * Clone a sheet and all sheet-scoped engine state into a new sheet in the
+   * same workbook. Tables receive unique workbook-scoped names.
+   */
+  cloneSheet(opts: {
+    workbookName: string;
+    sheetName: string;
+    newSheetName: string;
+  }): Sheet {
+    return this.withUndoRedoCheckpoint(() => {
+      return this.withSheetScopeHistory(
+        opts.workbookName,
+        opts.newSheetName,
+        () => {
+          const sourceSheet = this.workbookManager.getSheet({
+            workbookName: opts.workbookName,
+            sheetName: opts.sheetName,
+          });
+          if (!sourceSheet) {
+            throw new Error(`Source sheet "${opts.sheetName}" not found`);
+          }
+          if (
+            this.workbookManager.getSheet({
+              workbookName: opts.workbookName,
+              sheetName: opts.newSheetName,
+            })
+          ) {
+            throw new Error(
+              `Target sheet "${opts.newSheetName}" already exists`
+            );
+          }
+
+          const sourceTables = Array.from(
+            this.tableManager.getTables(opts.workbookName).values()
+          ).filter((table) => table.sheetName === opts.sheetName);
+          const usedTableNames = new Set(
+            this.tableManager.getTables(opts.workbookName).keys()
+          );
+          const tableNameMap = new Map<string, string>();
+          for (const table of sourceTables) {
+            let suffix = 2;
+            let clonedName = `${table.name}_${suffix}`;
+            while (usedTableNames.has(clonedName)) {
+              suffix++;
+              clonedName = `${table.name}_${suffix}`;
+            }
+            usedTableNames.add(clonedName);
+            tableNameMap.set(table.name, clonedName);
+          }
+
+          const rewriteFormula = (formula: string): string => {
+            let rewritten = renameSheetInFormula({
+              formula,
+              oldSheetName: opts.sheetName,
+              newSheetName: opts.newSheetName,
+              workbookName: opts.workbookName,
+            });
+            for (const [oldTableName, newTableName] of tableNameMap) {
+              rewritten = renameTableInFormula(
+                rewritten,
+                oldTableName,
+                newTableName,
+                opts.workbookName
+              );
+            }
+            return rewritten;
+          };
+
+          const clonedContent = new Map<string, SerializedCellValue>();
+          for (const [cellReference, content] of sourceSheet.content) {
+            clonedContent.set(
+              cellReference,
+              typeof content === "string" && content.startsWith("=")
+                ? `=${rewriteFormula(content.slice(1))}`
+                : content
+            );
+          }
+
+          const targetSheet = this.workbookManager.addSheet({
+            workbookName: opts.workbookName,
+            sheetName: opts.newSheetName,
+          });
+          this.namedExpressionManager.addSheet({
+            workbookName: opts.workbookName,
+            sheetName: opts.newSheetName,
+          });
+          this.workbookManager.setSheetContent(
+            {
+              workbookName: opts.workbookName,
+              sheetName: opts.newSheetName,
+            },
+            clonedContent
+          );
+          targetSheet.metadata = cloneHistoryValue(sourceSheet.metadata);
+          if (sourceSheet.sheetMetadata !== undefined) {
+            targetSheet.sheetMetadata = cloneHistoryValue(
+              sourceSheet.sheetMetadata
+            );
+          }
+
+          const sourceSheetExpressions =
+            this.namedExpressionManager
+              .getNamedExpressions()
+              .sheetExpressions.get(opts.workbookName)
+              ?.get(opts.sheetName);
+          if (sourceSheetExpressions) {
+            for (const [expressionName, expression] of sourceSheetExpressions) {
+              this.namedExpressionManager.addNamedExpression({
+                expressionName,
+                expression: rewriteFormula(expression.expression),
+                workbookName: opts.workbookName,
+                sheetName: opts.newSheetName,
+              });
+            }
+          }
+
+          const clonedTables: TableDefinition[] = [];
+          for (const table of sourceTables) {
+            const tableName = tableNameMap.get(table.name)!;
+            this.tableManager.copyTable(
+              { workbookName: opts.workbookName, tableName: table.name },
+              {
+                workbookName: opts.workbookName,
+                tableName,
+                sheetName: opts.newSheetName,
+              }
+            );
+            const clonedTable = this.tableManager.getTable({
+              workbookName: opts.workbookName,
+              name: tableName,
+            });
+            if (clonedTable) {
+              clonedTables.push(clonedTable);
+            }
+          }
+
+          const cloneAreas = (areas: RangeAddress[]): RangeAddress[] =>
+            areas
+              .filter(
+                (area) =>
+                  area.workbookName === opts.workbookName &&
+                  area.sheetName === opts.sheetName
+              )
+              .map((area) => ({ ...area, sheetName: opts.newSheetName }));
+
+          for (const style of this.styleManager.getAllConditionalStyles()) {
+            const areas = cloneAreas(style.areas);
+            if (areas.length === 0) {
+              continue;
+            }
+            const condition =
+              style.condition.type === "formula"
+                ? {
+                    ...style.condition,
+                    formula: rewriteFormula(style.condition.formula),
+                  }
+                : {
+                    ...style.condition,
+                    min:
+                      style.condition.min.type === "number"
+                        ? {
+                            ...style.condition.min,
+                            valueFormula: rewriteFormula(
+                              style.condition.min.valueFormula
+                            ),
+                          }
+                        : style.condition.min,
+                    max:
+                      style.condition.max.type === "number"
+                        ? {
+                            ...style.condition.max,
+                            valueFormula: rewriteFormula(
+                              style.condition.max.valueFormula
+                            ),
+                          }
+                        : style.condition.max,
+                  };
+            this.styleManager.addConditionalStyle({
+              areas,
+              condition,
+            });
+          }
+
+          for (const style of this.styleManager.getAllCellStyles()) {
+            const areas = cloneAreas(style.areas);
+            if (areas.length > 0) {
+              this.styleManager.addCellStyle({ ...style, areas });
+            }
+          }
+
+          for (const dataType of this.styleManager.getAllCellDataTypes()) {
+            const areas = cloneAreas(dataType.areas);
+            if (areas.length > 0) {
+              this.styleManager.addCellDataType({ ...dataType, areas });
+            }
+          }
+
+          for (const metadata of this.rangeMetadataManager.getAllRangeMetadata()) {
+            const areas = cloneAreas(metadata.areas);
+            if (areas.length > 0) {
+              this.rangeMetadataManager.addRangeMetadata({
+                areas,
+                metadata: cloneHistoryValue(metadata.metadata),
+              });
+            }
+          }
+
+          const resourceKeys = [
+            getSheetResourceKey({
+              workbookName: opts.workbookName,
+              sheetName: opts.newSheetName,
+            }),
+            ...Array.from(
+              sourceSheetExpressions?.keys() ?? [],
+              (expressionName) =>
+                getNamedExpressionResourceKey({
+                  workbookName: opts.workbookName,
+                  sheetName: opts.newSheetName,
+                  expressionName,
+                })
+            ),
+            ...clonedTables.map((table) =>
+              getTableResourceKey({
+                workbookName: opts.workbookName,
+                tableName: table.name,
+              })
+            ),
+          ];
+          this.emitMutation({
+            touchedCells: buildTableTouchedCells(
+              this.workbookManager,
+              clonedTables
+            ),
+            tableContextChangedCells: buildTableContextChangedCells(
+              this.workbookManager,
+              clonedTables
+            ),
+            resourceKeys,
+          });
+
+          return targetSheet;
+        }
+      );
+    });
+  }
+
   removeSheet(opts: { workbookName: string; sheetName: string }): void {
     return this.withUndoRedoCheckpoint(() => {
       this.withSheetScopeHistory(opts.workbookName, opts.sheetName, () => {
