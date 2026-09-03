@@ -5,7 +5,9 @@ const REFERENCE_OUTLINE = "rgb(249, 115, 22)";
 
 async function focusFormulaEditor(page: Page): Promise<Locator> {
   const editor = page.getByTestId("formula-editor");
-  await expect(editor.locator(".monaco-editor")).toBeVisible({ timeout: 15_000 });
+  await expect(editor.locator(".monaco-editor")).toBeVisible({
+    timeout: 15_000,
+  });
 
   const input = editor.getByRole("textbox", { name: "Editor content" });
   await expect(input).toBeAttached({ timeout: 15_000 });
@@ -21,20 +23,20 @@ async function expectReferenceHighlight(cell: Locator) {
 
 async function expectFormulaText(page: Page, text: string) {
   await expect(
-    page.getByTestId("formula-editor").locator(".view-line"),
+    page.getByTestId("formula-editor").locator(".view-line")
   ).toContainText(text);
 }
 
 async function expectExactFormulaText(page: Page, text: string) {
   await expect(
-    page.getByTestId("formula-editor").locator(".view-line"),
+    page.getByTestId("formula-editor").locator(".view-line")
   ).toHaveText(text);
 }
 
 async function replaceFormula(
   page: Page,
   editorInput: Locator,
-  formula: string,
+  formula: string
 ) {
   await editorInput.press("Home");
   await editorInput.press("Shift+End");
@@ -50,20 +52,20 @@ async function dragBetween(start: Locator, end: Locator, page: Page) {
 
   await page.mouse.move(
     startBox.x + startBox.width / 2,
-    startBox.y + startBox.height / 2,
+    startBox.y + startBox.height / 2
   );
   await page.mouse.down();
   await page.mouse.move(
     endBox.x + endBox.width / 2,
     endBox.y + endBox.height / 2,
-    { steps: 8 },
+    { steps: 8 }
   );
 }
 
 async function expectReferenceOverlayCovers(
   page: Page,
   references: readonly string[],
-  phase: "selecting" | "selected",
+  phase: "selecting" | "selected"
 ) {
   const overlay = page.getByTestId("spreadsheet-reference-selection");
   await expect(overlay).toBeVisible();
@@ -77,8 +79,8 @@ async function expectReferenceOverlayCovers(
 
         const cellBoxes = await Promise.all(
           references.map((reference) =>
-            page.getByTestId(`spreadsheet-cell-${reference}`).boundingBox(),
-          ),
+            page.getByTestId(`spreadsheet-cell-${reference}`).boundingBox()
+          )
         );
         if (cellBoxes.some((cellBox) => !cellBox)) return false;
 
@@ -89,10 +91,10 @@ async function expectReferenceOverlayCovers(
             overlayBox.x <= cellBox.x + 1 &&
             overlayBox.y <= cellBox.y + 1 &&
             overlayBox.x + overlayBox.width >= cellBox.x + cellBox.width - 1 &&
-            overlayBox.y + overlayBox.height >= cellBox.y + cellBox.height - 1,
+            overlayBox.y + overlayBox.height >= cellBox.y + cellBox.height - 1
         );
       },
-      { message: `reference overlay should cover ${references.join(", ")}` },
+      { message: `reference overlay should cover ${references.join(", ")}` }
     )
     .toBe(true);
 }
@@ -102,7 +104,7 @@ test.describe("Formula editor spreadsheet integration", () => {
     await page.goto("/spreadsheet");
     await expect(page.getByTestId("formula-studio")).toBeVisible();
     await expect(page.getByTestId("selected-cell-address")).toHaveText(
-      "Forecast!D2",
+      "Forecast!D2"
     );
   });
 
@@ -119,24 +121,24 @@ test.describe("Formula editor spreadsheet integration", () => {
     await editorInput.press("ArrowRight");
 
     await expect(page.getByTestId("active-reference")).toContainText(
-      "Forecast!B2",
+      "Forecast!B2"
     );
     await expectReferenceHighlight(referencedCell);
 
     await expect(selectedCell).toHaveClass(/rsp-cell-selected/);
     await expect(referencedCell).not.toHaveClass(/rsp-cell-selected/);
     await expect(page.getByTestId("selected-cell-address")).toHaveText(
-      "Forecast!D2",
+      "Forecast!D2"
     );
   });
 
   test("caret previews every cell in a resolved range", async ({ page }) => {
     await page.getByTestId("spreadsheet-cell-D7").click();
     await expect(page.getByTestId("selected-cell-address")).toHaveText(
-      "Forecast!D7",
+      "Forecast!D7"
     );
     await expect(
-      page.getByTestId("formula-editor").locator(".view-line"),
+      page.getByTestId("formula-editor").locator(".view-line")
     ).toContainText("=SUM(D2:D5)", { timeout: 15_000 });
 
     const editorInput = await focusFormulaEditor(page);
@@ -146,15 +148,15 @@ test.describe("Formula editor spreadsheet integration", () => {
     }
 
     await expect(page.getByTestId("active-reference")).toContainText(
-      "Forecast!D2:D5",
+      "Forecast!D2:D5"
     );
     for (const reference of ["D2", "D3", "D4", "D5"]) {
       await expectReferenceHighlight(
-        page.getByTestId(`spreadsheet-cell-${reference}`),
+        page.getByTestId(`spreadsheet-cell-${reference}`)
       );
     }
     await expect(page.getByTestId("spreadsheet-cell-D7")).toHaveClass(
-      /rsp-cell-selected/,
+      /rsp-cell-selected/
     );
   });
 
@@ -163,26 +165,26 @@ test.describe("Formula editor spreadsheet integration", () => {
   }) => {
     await page.getByTestId("spreadsheet-cell-E2").click();
     await expect(page.getByTestId("selected-cell-address")).toHaveText(
-      "Forecast!E2",
+      "Forecast!E2"
     );
 
     const editor = page.getByTestId("formula-editor");
     await expect(editor.locator(".view-line")).toContainText(
       "=D2*(1-Assumptions!B3)",
-      { timeout: 15_000 },
+      { timeout: 15_000 }
     );
     const editorInput = await focusFormulaEditor(page);
     await editorInput.press("End");
     await editorInput.press("ArrowLeft");
 
     await expect(page.getByTestId("active-reference")).toContainText(
-      "Assumptions!B3",
+      "Assumptions!B3"
     );
     await expect(page.getByTestId("visible-sheet")).toHaveText("Assumptions");
     await expectReferenceHighlight(page.getByTestId("spreadsheet-cell-B3"));
 
     await expect(page.getByTestId("selected-cell-address")).toHaveText(
-      "Forecast!E2",
+      "Forecast!E2"
     );
   });
 
@@ -198,13 +200,120 @@ test.describe("Formula editor spreadsheet integration", () => {
     await page.getByTestId("apply-formula").click();
 
     await expect(page.getByTestId("selected-cell-value")).toHaveText("6960");
-    await expect(page.getByTestId("spreadsheet-cell-D2")).toContainText("6,960");
+    await expect(page.getByTestId("spreadsheet-cell-D2")).toContainText(
+      "6,960"
+    );
     await expect(page.getByTestId("spreadsheet-cell-E2")).toContainText(
-      "6,472.8",
+      "6,472.8"
     );
   });
 
-  test("offers and accepts built-in function autocomplete", async ({ page }) => {
+  test("Enter applies in compact mode without inserting a newline", async ({
+    page,
+  }) => {
+    const editorInput = await focusFormulaEditor(page);
+    await replaceFormula(page, editorInput, "=B2*C2*3");
+    await editorInput.press("Enter");
+
+    await expect(page.getByTestId("selected-cell-value")).toHaveText("10440");
+    await expectExactFormulaText(page, "=B2*C2*3");
+    await expect(
+      page.getByTestId("formula-editor").locator(".view-line")
+    ).toHaveCount(1);
+  });
+
+  test("Enter inserts a line in expanded mode and Control+Enter applies", async ({
+    page,
+  }) => {
+    const editorInput = await focusFormulaEditor(page);
+    await page.getByTestId("toggle-formula-editor").click();
+    await editorInput.press("End");
+    await editorInput.press("Enter");
+    await page.keyboard.insertText("+1");
+
+    await expect(
+      page.getByTestId("formula-editor").locator(".view-line")
+    ).toHaveCount(2);
+    await expect(page.getByTestId("selected-cell-value")).toHaveText("3480");
+
+    await editorInput.press("Control+Enter");
+    await expect(page.getByTestId("selected-cell-value")).toHaveText("3481");
+    await page.getByTestId("toggle-formula-editor").click();
+    await expectExactFormulaText(page, "=B2*C2+1");
+  });
+
+  test("plain cell text has no formula diagnostics or caret target", async ({
+    page,
+  }) => {
+    await page.getByTestId("spreadsheet-cell-A11").click();
+    await expect(page.getByTestId("selected-cell-address")).toHaveText(
+      "Forecast!A11"
+    );
+    await expectFormulaText(page, "Try the editor");
+    await expect(page.getByTestId("formula-diagnostics")).toHaveText(
+      "Text value"
+    );
+    await expect(page.getByTestId("active-reference")).toContainText(
+      "Move the caret onto a reference"
+    );
+    await expect(
+      page
+        .getByTestId("formula-editor")
+        .locator(".squiggly-error, .squiggly-warning")
+    ).toHaveCount(0);
+  });
+
+  test("expands valid formulas into pretty mode and compacts on collapse", async ({
+    page,
+  }) => {
+    await page.getByTestId("spreadsheet-cell-D7").click();
+    await expectExactFormulaText(page, "=SUM(D2:D5)");
+
+    await page.getByTestId("toggle-formula-editor").click();
+    await expect(page.getByTestId("format-formula")).toBeVisible();
+    await expect(
+      page.getByTestId("formula-editor").locator(".view-line")
+    ).toHaveCount(3);
+    await expect(page.getByTestId("apply-formula")).toBeDisabled();
+
+    await page.getByTestId("toggle-formula-editor").click();
+    await expectExactFormulaText(page, "=SUM(D2:D5)");
+    await expect(page.getByTestId("format-formula")).toHaveCount(0);
+  });
+
+  test("leaves invalid formulas untouched until manual formatting succeeds", async ({
+    page,
+  }) => {
+    const editorInput = await focusFormulaEditor(page);
+    await replaceFormula(page, editorInput, "=SUM(A1,,B1)");
+    await expect(page.getByTestId("formula-diagnostics")).toContainText(
+      "error"
+    );
+    await editorInput.press("Enter");
+    await expect(page.getByTestId("selected-cell-value")).toHaveText("3480");
+    await expect(page.getByTestId("formula-save-state")).toContainText(
+      "Fix formula errors before applying"
+    );
+
+    await page.getByTestId("toggle-formula-editor").click();
+    await expect(
+      page.getByTestId("formula-editor").locator(".view-line")
+    ).toHaveCount(1);
+    await expectExactFormulaText(page, "=SUM(A1,,B1)");
+
+    await replaceFormula(page, editorInput, "=IF(B2>0,SUM(B2,C2),0)");
+    await expect(page.getByTestId("formula-diagnostics")).toHaveText(
+      "Syntax valid"
+    );
+    await page.getByTestId("format-formula").click();
+    await expect(
+      page.getByTestId("formula-editor").locator(".view-line")
+    ).toHaveCount(8);
+  });
+
+  test("offers and accepts built-in function autocomplete", async ({
+    page,
+  }) => {
     const editorInput = await focusFormulaEditor(page);
     await editorInput.press("Home");
     await editorInput.press("Shift+End");
@@ -235,15 +344,15 @@ test.describe("Formula editor spreadsheet integration", () => {
 
     await expectFormulaText(page, "=C3*C2");
     await expect(page.getByTestId("selected-cell-address")).toHaveText(
-      "Forecast!D2",
+      "Forecast!D2"
     );
     await expect(editorInput).toBeFocused();
     await expectReferenceHighlight(page.getByTestId("spreadsheet-cell-C3"));
     await expect(page.getByTestId("spreadsheet-cell-D2")).toHaveClass(
-      /rsp-cell-selected/,
+      /rsp-cell-selected/
     );
     await expect(page.getByTestId("spreadsheet-cell-C3")).not.toHaveClass(
-      /rsp-cell-selected/,
+      /rsp-cell-selected/
     );
     await expectReferenceOverlayCovers(page, ["C3"], "selected");
 
@@ -252,7 +361,7 @@ test.describe("Formula editor spreadsheet integration", () => {
     await expectFormulaText(page, "=B4*C2");
     await expectReferenceHighlight(page.getByTestId("spreadsheet-cell-B4"));
     await expect(page.getByTestId("spreadsheet-cell-D2")).toHaveClass(
-      /rsp-cell-selected/,
+      /rsp-cell-selected/
     );
     await expectReferenceOverlayCovers(page, ["B4"], "selected");
   });
@@ -265,14 +374,14 @@ test.describe("Formula editor spreadsheet integration", () => {
     await editorInput.press("ArrowRight");
     await editorInput.press("ArrowRight");
     await expect(page.getByTestId("active-reference")).toContainText(
-      "Forecast!B2",
+      "Forecast!B2"
     );
 
     await page.getByTestId("spreadsheet-cell-C3").click();
 
     await expectExactFormulaText(page, "=C3*C2");
     await expect(page.getByTestId("selected-cell-address")).toHaveText(
-      "Forecast!D2",
+      "Forecast!D2"
     );
     await expectReferenceOverlayCovers(page, ["C3"], "selected");
   });
@@ -288,7 +397,7 @@ test.describe("Formula editor spreadsheet integration", () => {
 
     await expect(page.getByTestId("visible-sheet")).toHaveText("Assumptions");
     await expect(page.getByTestId("selected-cell-address")).toHaveText(
-      "Forecast!D2",
+      "Forecast!D2"
     );
     await expectExactFormulaText(page, "=SUM()");
 
@@ -296,7 +405,7 @@ test.describe("Formula editor spreadsheet integration", () => {
 
     await expectExactFormulaText(page, "=SUM(Assumptions!B3)");
     await expect(page.getByTestId("selected-cell-address")).toHaveText(
-      "Forecast!D2",
+      "Forecast!D2"
     );
     await expect(editorInput).toBeFocused();
     await expectReferenceOverlayCovers(page, ["B3"], "selected");
@@ -310,7 +419,7 @@ test.describe("Formula editor spreadsheet integration", () => {
     await page.getByTestId("spreadsheet-cell-C3").click();
 
     await expect(page.getByTestId("selected-cell-address")).toHaveText(
-      "Forecast!C3",
+      "Forecast!C3"
     );
     await expectFormulaText(page, "99");
   });
@@ -326,7 +435,7 @@ test.describe("Formula editor spreadsheet integration", () => {
     await dragBetween(
       page.getByTestId("spreadsheet-cell-B2"),
       page.getByTestId("spreadsheet-cell-B2"),
-      page,
+      page
     );
     await expectExactFormulaText(page, "=SUM(B2)");
     await expectReferenceOverlayCovers(page, ["B2"], "selecting");
@@ -334,12 +443,12 @@ test.describe("Formula editor spreadsheet integration", () => {
     await page.keyboard.press("Escape");
     await page.mouse.up();
     await expect(
-      page.getByTestId("spreadsheet-reference-selection"),
+      page.getByTestId("spreadsheet-reference-selection")
     ).toHaveCount(0);
 
     await page.getByTestId("spreadsheet-cell-C3").click();
     await expect(page.getByTestId("selected-cell-address")).toHaveText(
-      "Forecast!C3",
+      "Forecast!C3"
     );
     await expectExactFormulaText(page, "99");
   });
@@ -357,7 +466,7 @@ test.describe("Formula editor spreadsheet integration", () => {
 
     await editorInput.press("End");
     await expect(
-      page.getByTestId("spreadsheet-reference-selection"),
+      page.getByTestId("spreadsheet-reference-selection")
     ).toHaveCount(0);
 
     await replaceFormula(page, editorInput, "=SUM()");
@@ -368,7 +477,7 @@ test.describe("Formula editor spreadsheet integration", () => {
     await page.keyboard.insertText("+1");
     await expectExactFormulaText(page, "=SUM(B4+1)");
     await expect(
-      page.getByTestId("spreadsheet-reference-selection"),
+      page.getByTestId("spreadsheet-reference-selection")
     ).toHaveCount(0);
   });
 
@@ -383,9 +492,13 @@ test.describe("Formula editor spreadsheet integration", () => {
 
     const start = await page.getByTestId("spreadsheet-cell-B2").boundingBox();
     const end = await page.getByTestId("spreadsheet-cell-C4").boundingBox();
-    if (!start || !end) throw new Error("Expected spreadsheet cells to be visible");
+    if (!start || !end)
+      throw new Error("Expected spreadsheet cells to be visible");
 
-    await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+    await page.mouse.move(
+      start.x + start.width / 2,
+      start.y + start.height / 2
+    );
     await page.mouse.down();
     await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2, {
       steps: 8,
@@ -396,29 +509,29 @@ test.describe("Formula editor spreadsheet integration", () => {
     await expectReferenceOverlayCovers(
       page,
       ["B2", "B3", "B4", "C2", "C3", "C4"],
-      "selecting",
+      "selecting"
     );
     await page.mouse.up();
 
     await expectFormulaText(page, "=SUM(B2:C4)");
     await expect(page.getByTestId("selected-cell-address")).toHaveText(
-      "Forecast!D2",
+      "Forecast!D2"
     );
     await expect(editorInput).toBeFocused();
     await expect(page.getByTestId("spreadsheet-cell-D2")).toHaveClass(
-      /rsp-cell-selected/,
+      /rsp-cell-selected/
     );
     await expect(page.getByTestId("spreadsheet-cell-B2")).not.toHaveClass(
-      /rsp-cell-selected/,
+      /rsp-cell-selected/
     );
     await expectReferenceOverlayCovers(
       page,
       ["B2", "B3", "B4", "C2", "C3", "C4"],
-      "selected",
+      "selected"
     );
     for (const reference of ["B2", "B3", "B4", "C2", "C3", "C4"]) {
       await expectReferenceHighlight(
-        page.getByTestId(`spreadsheet-cell-${reference}`),
+        page.getByTestId(`spreadsheet-cell-${reference}`)
       );
     }
   });
@@ -433,7 +546,7 @@ test.describe("Formula editor spreadsheet integration", () => {
     await dragBetween(
       page.getByTestId("spreadsheet-cell-B2"),
       page.getByTestId("spreadsheet-row-header-4"),
-      page,
+      page
     );
     await expectExactFormulaText(page, "=SUM(B2:4)");
     await expectReferenceOverlayCovers(page, ["B2", "E4"], "selecting");
@@ -445,7 +558,7 @@ test.describe("Formula editor spreadsheet integration", () => {
     await dragBetween(
       page.getByTestId("spreadsheet-cell-B2"),
       page.getByTestId("spreadsheet-col-header-D"),
-      page,
+      page
     );
     await expectExactFormulaText(page, "=SUM(B2:D)");
     await expectReferenceOverlayCovers(page, ["B2", "D11"], "selecting");
@@ -463,7 +576,7 @@ test.describe("Formula editor spreadsheet integration", () => {
     await page.keyboard.press("Control+ArrowDown");
 
     await expect(page.getByTestId("selected-cell-address")).toHaveText(
-      "Forecast!D40",
+      "Forecast!D40"
     );
     await expect(target).toBeVisible();
     await expect(target).toHaveClass(/rsp-cell-selected/);
@@ -475,7 +588,7 @@ test.describe("Formula editor spreadsheet integration", () => {
     }
     expect(targetBox.y).toBeGreaterThanOrEqual(gridBox.y);
     expect(targetBox.y + targetBox.height).toBeLessThanOrEqual(
-      gridBox.y + gridBox.height + 1,
+      gridBox.y + gridBox.height + 1
     );
   });
 });

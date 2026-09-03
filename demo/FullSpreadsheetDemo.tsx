@@ -8,7 +8,9 @@ import { beginFormulaReferenceInsertion } from "@ricsam/formula-engine-editor";
 import {
   FormulaEngine,
   indexToColumn,
+  tryFormatFormula,
   type CellAddress,
+  type FormulaFormatStyle,
   type SerializedCellValue,
   type SpreadsheetRange,
 } from "@ricsam/formula-engine";
@@ -23,10 +25,7 @@ import {
   WorkbookSelectionManager,
 } from "@ricsam/react-spreadsheets";
 import "@ricsam/react-spreadsheets/styles.css";
-import type {
-  SelectionManager,
-  SMArea,
-} from "@ricsam/selection-manager";
+import type { SelectionManager, SMArea } from "@ricsam/selection-manager";
 import type { editor as MonacoEditor } from "monaco-editor";
 import React, {
   useCallback,
@@ -47,7 +46,7 @@ const finiteRange = (
   startCol: number,
   startRow: number,
   endCol: number,
-  endRow: number,
+  endRow: number
 ): SpreadsheetRange => ({
   start: { col: startCol, row: startRow },
   end: {
@@ -98,7 +97,7 @@ function populateEngine(engine: FormulaEngine) {
       ["A11", "Try the editor"],
       ["B11", "Place the caret over B2, C2, or Assumptions!B3"],
       ["D40", "Off-screen navigation target"],
-    ]),
+    ])
   );
 
   engine.setSheetContent(
@@ -119,7 +118,7 @@ function populateEngine(engine: FormulaEngine) {
       ["A6", "After fees"],
       ["B6", "=1-B3"],
       ["C6", "Derived locally"],
-    ]),
+    ])
   );
 }
 
@@ -165,9 +164,28 @@ function createDemoEngine() {
 function readRawCell(engine: FormulaEngine, address: CellAddress): string {
   const ref = getCellReference(address);
   const raw = engine
-    .getSheet({ workbookName: address.workbookName, sheetName: address.sheetName })
+    .getSheet({
+      workbookName: address.workbookName,
+      sheetName: address.sheetName,
+    })
     ?.content.get(ref);
   return raw === undefined ? "" : String(raw);
+}
+
+function formatCellEditorValue(
+  value: string,
+  style: FormulaFormatStyle
+): string {
+  if (!value.startsWith("=")) return value;
+  const result = tryFormatFormula(value, { style });
+  return result.ok ? result.formula : value;
+}
+
+function areCellEditorValuesEquivalent(left: string, right: string): boolean {
+  return (
+    formatCellEditorValue(left, "compact") ===
+    formatCellEditorValue(right, "compact")
+  );
 }
 
 type PhysicalTarget = {
@@ -176,7 +194,9 @@ type PhysicalTarget = {
   range: SpreadsheetRange;
 };
 
-function physicalTarget(target: FormulaReferenceTarget): PhysicalTarget | undefined {
+function physicalTarget(
+  target: FormulaReferenceTarget
+): PhysicalTarget | undefined {
   if (target.type === "cell") {
     return {
       workbookName: target.address.workbookName,
@@ -185,7 +205,7 @@ function physicalTarget(target: FormulaReferenceTarget): PhysicalTarget | undefi
         target.address.colIndex,
         target.address.rowIndex,
         target.address.colIndex,
-        target.address.rowIndex,
+        target.address.rowIndex
       ),
     };
   }
@@ -200,7 +220,9 @@ function physicalTarget(target: FormulaReferenceTarget): PhysicalTarget | undefi
   return undefined;
 }
 
-function resolvedTargets(reference: FormulaReference | undefined): PhysicalTarget[] {
+function resolvedTargets(
+  reference: FormulaReference | undefined
+): PhysicalTarget[] {
   if (!reference || reference.resolution.status !== "resolved") return [];
   return reference.resolution.targets
     .map(physicalTarget)
@@ -210,7 +232,7 @@ function resolvedTargets(reference: FormulaReference | undefined): PhysicalTarge
 function isCellInRange(
   rowIndex: number,
   colIndex: number,
-  range: SpreadsheetRange,
+  range: SpreadsheetRange
 ) {
   const rowInRange =
     rowIndex >= range.start.row &&
@@ -246,7 +268,7 @@ function quoteSheetName(sheetName: string): string {
 function formatPickedReference(
   area: SMArea,
   pickedSheetName: string,
-  origin: CellAddress,
+  origin: CellAddress
 ): string {
   const startRow = area.start.row;
   const startCol = area.start.col;
@@ -263,7 +285,8 @@ function formatPickedReference(
     const lastCol = endCol.type === "number" ? endCol.value : startCol;
     const first = indexToColumn(Math.min(startCol, lastCol));
     const last = indexToColumn(Math.max(startCol, lastCol));
-    localReference = startRow === 0 ? `${first}:${last}` : `${first}${startRow + 1}:${last}`;
+    localReference =
+      startRow === 0 ? `${first}:${last}` : `${first}${startRow + 1}:${last}`;
   } else if (endCol.type === "infinity") {
     const firstRow = Math.min(startRow, endRow.value) + 1;
     const lastRow = Math.max(startRow, endRow.value) + 1;
@@ -282,7 +305,9 @@ function formatPickedReference(
   }
 
   const sheetQualifier =
-    pickedSheetName === origin.sheetName ? "" : `${quoteSheetName(pickedSheetName)}!`;
+    pickedSheetName === origin.sheetName
+      ? ""
+      : `${quoteSheetName(pickedSheetName)}!`;
   return `${sheetQualifier}${localReference}`;
 }
 
@@ -309,10 +334,18 @@ function formatTarget(target: FormulaReferenceTarget): string {
 
 function EditorIcon({ name }: { name: "apply" | "reset" | "spark" }) {
   if (name === "apply") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10 4 4 8-8" /></svg>;
+    return (
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="m4 10 4 4 8-8" />
+      </svg>
+    );
   }
   if (name === "reset") {
-    return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.5 6.5A6 6 0 1 1 4 13M4.5 6.5V2.8m0 3.7H8" /></svg>;
+    return (
+      <svg viewBox="0 0 20 20" aria-hidden="true">
+        <path d="M4.5 6.5A6 6 0 1 1 4 13M4.5 6.5V2.8m0 3.7H8" />
+      </svg>
+    );
   }
   return (
     <svg viewBox="0 0 20 20" aria-hidden="true">
@@ -323,7 +356,10 @@ function EditorIcon({ name }: { name: "apply" | "reset" | "spark" }) {
 
 export function FullSpreadsheetDemo() {
   const engine = useMemo(createDemoEngine, []);
-  const workbookSelectionManager = useMemo(() => new WorkbookSelectionManager(), []);
+  const workbookSelectionManager = useMemo(
+    () => new WorkbookSelectionManager(),
+    []
+  );
   const initialAddress = useMemo<CellAddress>(
     () => ({
       workbookName: WORKBOOK,
@@ -331,41 +367,54 @@ export function FullSpreadsheetDemo() {
       colIndex: 3,
       rowIndex: 1,
     }),
-    [],
+    []
   );
-  const [selectedAddress, setSelectedAddress] = useState<CellAddress>(initialAddress);
-  const [savedFormula, setSavedFormula] = useState(() => readRawCell(engine, initialAddress));
+  const [selectedAddress, setSelectedAddress] =
+    useState<CellAddress>(initialAddress);
+  const [savedFormula, setSavedFormula] = useState(() =>
+    formatCellEditorValue(readRawCell(engine, initialAddress), "compact")
+  );
   const [draft, setDraft] = useState(savedFormula);
   const [analysis, setAnalysis] = useState<FormulaAnalysis>();
   const [activeReference, setActiveReference] = useState<FormulaReference>();
-  const [saveState, setSaveState] = useState<"saved" | "editing" | "error">("saved");
+  const [saveState, setSaveState] = useState<"saved" | "editing" | "error">(
+    "saved"
+  );
   const [saveMessage, setSaveMessage] = useState("Saved");
   const [isPickingReference, setIsPickingReference] = useState(false);
-  const [referenceSheetOverride, setReferenceSheetOverride] = useState<string>();
+  const [isFormulaEditorExpanded, setIsFormulaEditorExpanded] = useState(false);
+  const [referenceSheetOverride, setReferenceSheetOverride] =
+    useState<string>();
   const [, setRevision] = useState(0);
   const formulaEditorRef = useRef<FormulaEditorHandle>(null);
   const currentSheetSelectionManagerRef = useRef<SelectionManager | undefined>(
-    undefined,
+    undefined
   );
-  const referenceInsertionRef = useRef<FormulaReferenceInsertion | undefined>(undefined);
+  const referenceInsertionRef = useRef<FormulaReferenceInsertion | undefined>(
+    undefined
+  );
   const lastInsertedReferenceSpanRef = useRef<
     FormulaReferenceInsertion["span"] | undefined
   >(undefined);
   const isFormulaEditingRef = useRef(false);
   const isClosingFormulaEditingRef = useRef(false);
   const suppressNextFormulaEditActivationRef = useRef(false);
+  const isFormulaEditorExpandedRef = useRef(isFormulaEditorExpanded);
+  const savedFormulaRef = useRef(savedFormula);
   const lastCellBySheet = useRef(
     new Map<string, { colIndex: number; rowIndex: number }>([
       [FORECAST_SHEET, { colIndex: 3, rowIndex: 1 }],
       [ASSUMPTIONS_SHEET, { colIndex: 1, rowIndex: 1 }],
-    ]),
+    ])
   );
   const draftRef = useRef(draft);
   const selectedAddressRef = useRef(selectedAddress);
-  const isDirty = draft !== savedFormula;
+  const isDirty = !areCellEditorValuesEquivalent(draft, savedFormula);
 
   draftRef.current = draft;
   selectedAddressRef.current = selectedAddress;
+  savedFormulaRef.current = savedFormula;
+  isFormulaEditorExpandedRef.current = isFormulaEditorExpanded;
 
   useEffect(
     () =>
@@ -373,16 +422,25 @@ export function FullSpreadsheetDemo() {
         setRevision((value) => value + 1);
         formulaEditorRef.current?.refresh();
       }),
-    [engine],
+    [engine]
   );
 
-  const targets = useMemo(() => resolvedTargets(activeReference), [activeReference]);
+  const targets = useMemo(
+    () => resolvedTargets(activeReference),
+    [activeReference]
+  );
   const previewTarget = useMemo(() => {
     if (targets.length === 0) return undefined;
-    return targets.find((target) => target.sheetName === selectedAddress.sheetName) ?? targets[0];
+    return (
+      targets.find(
+        (target) => target.sheetName === selectedAddress.sheetName
+      ) ?? targets[0]
+    );
   }, [selectedAddress.sheetName, targets]);
   const visibleSheet =
-    referenceSheetOverride ?? previewTarget?.sheetName ?? selectedAddress.sheetName;
+    referenceSheetOverride ??
+    previewTarget?.sheetName ??
+    selectedAddress.sheetName;
   const isCrossSheetPreview = visibleSheet !== selectedAddress.sheetName;
 
   const loadAddress = useCallback(
@@ -403,20 +461,27 @@ export function FullSpreadsheetDemo() {
         colIndex: address.colIndex,
         rowIndex: address.rowIndex,
       });
-      const nextFormula = readRawCell(engine, address);
+      const storedFormula = formatCellEditorValue(
+        readRawCell(engine, address),
+        "compact"
+      );
+      const nextFormula = formatCellEditorValue(
+        storedFormula,
+        isFormulaEditorExpanded ? "pretty" : "compact"
+      );
       formulaEditorRef.current?.getEditor()?.setPosition({
         lineNumber: 1,
         column: 1,
       });
       setSelectedAddress(address);
-      setSavedFormula(nextFormula);
+      setSavedFormula(storedFormula);
       setDraft(nextFormula);
       setAnalysis(undefined);
       setActiveReference(undefined);
       setSaveState("saved");
       setSaveMessage("Saved");
     },
-    [engine],
+    [engine, isFormulaEditorExpanded]
   );
 
   useEffect(
@@ -431,7 +496,8 @@ export function FullSpreadsheetDemo() {
           current.sheetName === sheetName &&
           current.rowIndex === range.start.row &&
           current.colIndex === range.start.col
-        ) return;
+        )
+          return;
 
         loadAddress({
           workbookName,
@@ -440,7 +506,7 @@ export function FullSpreadsheetDemo() {
           colIndex: range.start.col,
         });
       }),
-    [loadAddress, workbookSelectionManager],
+    [loadAddress, workbookSelectionManager]
   );
 
   const handleGridSelection = useCallback(
@@ -474,7 +540,7 @@ export function FullSpreadsheetDemo() {
           const editor = formulaEditorRef.current?.getEditor();
           if (
             !isFormulaEditingRef.current ||
-            !editor?.getModel()?.getValue().trimStart().startsWith("=")
+            !editor?.getModel()?.getValue().startsWith("=")
           ) {
             return;
           }
@@ -488,7 +554,7 @@ export function FullSpreadsheetDemo() {
 
           insertion = beginFormulaReferenceInsertion(
             editor,
-            replaceSpan === undefined ? undefined : { replaceSpan },
+            replaceSpan === undefined ? undefined : { replaceSpan }
           );
           if (!insertion) return;
           referenceInsertionRef.current = insertion;
@@ -496,7 +562,11 @@ export function FullSpreadsheetDemo() {
         }
 
         lastInsertedReferenceSpanRef.current = insertion.update(
-          formatPickedReference(event.range, visibleSheet, selectedAddressRef.current),
+          formatPickedReference(
+            event.range,
+            visibleSheet,
+            selectedAddressRef.current
+          )
         );
 
         if (event.phase === "commit") {
@@ -514,17 +584,57 @@ export function FullSpreadsheetDemo() {
         }
       };
     },
-    [visibleSheet],
+    [visibleSheet]
   );
 
   const applyDraft = useCallback(() => {
     const address = selectedAddressRef.current;
     try {
-      const content = coerceCellInput(draftRef.current, engine.getCellDataType(address));
-      engine.setCellContent(address, content);
-      const normalized = readRawCell(engine, address);
+      const requestedValue = draftRef.current;
+      const analysisErrors =
+        formulaEditorRef.current
+          ?.getAnalysis()
+          ?.diagnostics.filter((item) => item.severity === "error") ?? [];
+      if (analysisErrors.length > 0) {
+        setSaveState("error");
+        setSaveMessage("Fix formula errors before applying");
+        return;
+      }
+
+      let requested = requestedValue;
+      if (requestedValue.startsWith("=")) {
+        const formatted = tryFormatFormula(requestedValue, {
+          style: "compact",
+        });
+        if (!formatted.ok) {
+          setSaveState("error");
+          setSaveMessage(formatted.error.message);
+          return;
+        }
+        requested = formatted.formula;
+      }
+      const current = formatCellEditorValue(
+        readRawCell(engine, address),
+        "compact"
+      );
+      if (!areCellEditorValuesEquivalent(requested, current)) {
+        const content = coerceCellInput(
+          requested,
+          engine.getCellDataType(address)
+        );
+        engine.setCellContent(address, content);
+      }
+      const normalized = formatCellEditorValue(
+        readRawCell(engine, address),
+        "compact"
+      );
       setSavedFormula(normalized);
-      setDraft(normalized);
+      setDraft(
+        formatCellEditorValue(
+          normalized,
+          isFormulaEditorExpandedRef.current ? "pretty" : "compact"
+        )
+      );
       setSaveState("saved");
       setSaveMessage("Applied to the sheet");
       isClosingFormulaEditingRef.current = true;
@@ -542,12 +652,21 @@ export function FullSpreadsheetDemo() {
       formulaEditorRef.current?.refresh();
     } catch (error) {
       setSaveState("error");
-      setSaveMessage(error instanceof Error ? error.message : "Could not apply formula");
+      setSaveMessage(
+        error instanceof Error ? error.message : "Could not apply formula"
+      );
     }
   }, [engine]);
 
   const revertDraft = useCallback(() => {
-    const current = readRawCell(engine, selectedAddressRef.current);
+    const current = formatCellEditorValue(
+      readRawCell(engine, selectedAddressRef.current),
+      "compact"
+    );
+    const visibleValue = formatCellEditorValue(
+      current,
+      isFormulaEditorExpandedRef.current ? "pretty" : "compact"
+    );
     isClosingFormulaEditingRef.current = true;
     try {
       referenceInsertionRef.current?.cancel();
@@ -556,13 +675,14 @@ export function FullSpreadsheetDemo() {
     }
     referenceInsertionRef.current = undefined;
     currentSheetSelectionManagerRef.current?.endReferenceSelection();
-    suppressNextFormulaEditActivationRef.current = draftRef.current !== current;
+    suppressNextFormulaEditActivationRef.current =
+      draftRef.current !== visibleValue;
     isFormulaEditingRef.current = false;
     lastInsertedReferenceSpanRef.current = undefined;
     setIsPickingReference(false);
     setReferenceSheetOverride(undefined);
     setSavedFormula(current);
-    setDraft(current);
+    setDraft(visibleValue);
     setSaveState("saved");
     setSaveMessage("Changes reverted");
     setActiveReference(undefined);
@@ -574,10 +694,10 @@ export function FullSpreadsheetDemo() {
   revertDraftRef.current = revertDraft;
 
   const handleEditorMount = useCallback(
-    (editor: MonacoEditor.IStandaloneCodeEditor, monaco: typeof import("monaco-editor")) => {
+    (editor: MonacoEditor.IStandaloneCodeEditor) => {
       const activateFormulaEditing = () => {
         if (isClosingFormulaEditingRef.current) return;
-        const isFormula = editor.getValue().trimStart().startsWith("=");
+        const isFormula = editor.getValue().startsWith("=");
         isFormulaEditingRef.current = isFormula;
         const selectionManager = currentSheetSelectionManagerRef.current;
         if (isFormula) {
@@ -629,11 +749,32 @@ export function FullSpreadsheetDemo() {
         }
         if (editor.hasTextFocus()) activateFormulaEditing();
       });
-      editor.addCommand(monaco.KeyCode.Enter, () => applyDraftRef.current());
-      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => applyDraftRef.current());
-      editor.addCommand(monaco.KeyCode.Escape, () => revertDraftRef.current());
+      editor.onKeyDown((event) => {
+        const keyboardEvent = event.browserEvent;
+        const completionIsOpen = Boolean(
+          document.querySelector(".suggest-widget.visible")
+        );
+
+        if (keyboardEvent.key === "Escape") {
+          if (completionIsOpen) return;
+          keyboardEvent.preventDefault();
+          keyboardEvent.stopPropagation();
+          revertDraftRef.current();
+          return;
+        }
+
+        if (keyboardEvent.key !== "Enter" || completionIsOpen) return;
+        const shouldApply =
+          !isFormulaEditorExpandedRef.current ||
+          keyboardEvent.metaKey ||
+          keyboardEvent.ctrlKey;
+        if (!shouldApply) return;
+        keyboardEvent.preventDefault();
+        keyboardEvent.stopPropagation();
+        applyDraftRef.current();
+      });
     },
-    [],
+    []
   );
 
   const handleSheetChange = useCallback(
@@ -642,10 +783,13 @@ export function FullSpreadsheetDemo() {
         setReferenceSheetOverride(sheetName);
         return;
       }
-      const previous = lastCellBySheet.current.get(sheetName) ?? { colIndex: 0, rowIndex: 0 };
+      const previous = lastCellBySheet.current.get(sheetName) ?? {
+        colIndex: 0,
+        rowIndex: 0,
+      };
       loadAddress({ workbookName: WORKBOOK, sheetName, ...previous });
     },
-    [loadAddress],
+    [loadAddress]
   );
 
   const handleReset = useCallback(() => {
@@ -658,9 +802,13 @@ export function FullSpreadsheetDemo() {
   const activeTargetLabel = useMemo(() => {
     if (!activeReference) return "Move the caret onto a reference";
     if (activeReference.resolution.status === "unresolved") {
-      return `Unresolved · ${activeReference.resolution.reason.replaceAll("-", " ")}`;
+      return `Unresolved · ${activeReference.resolution.reason.replaceAll(
+        "-",
+        " "
+      )}`;
     }
-    if (activeReference.resolution.status === "dynamic") return "Dynamic reference";
+    if (activeReference.resolution.status === "dynamic")
+      return "Dynamic reference";
     return activeReference.resolution.targets.map(formatTarget).join(", ");
   }, [activeReference]);
 
@@ -668,7 +816,10 @@ export function FullSpreadsheetDemo() {
   const selectedCellRef = getCellReference(selectedAddress);
   const selectedCellLabel = `${selectedAddress.sheetName}!${selectedCellRef}`;
   const diagnostics = analysis?.diagnostics ?? [];
-  const errorCount = diagnostics.filter((item) => item.severity === "error").length;
+  const errorCount = diagnostics.filter(
+    (item) => item.severity === "error"
+  ).length;
+  const isFormulaDraft = draft.startsWith("=");
 
   // The workbook selection is intentionally never mutated for caret previews.
   // Reference targets are a presentation-only cell style layered over the grid.
@@ -676,65 +827,136 @@ export function FullSpreadsheetDemo() {
     () => ({
       selections: isCrossSheetPreview
         ? []
-        : [{
-            start: { row: selectedAddress.rowIndex, col: selectedAddress.colIndex },
-            end: {
-              row: { type: "number" as const, value: selectedAddress.rowIndex },
-              col: { type: "number" as const, value: selectedAddress.colIndex },
+        : [
+            {
+              start: {
+                row: selectedAddress.rowIndex,
+                col: selectedAddress.colIndex,
+              },
+              end: {
+                row: {
+                  type: "number" as const,
+                  value: selectedAddress.rowIndex,
+                },
+                col: {
+                  type: "number" as const,
+                  value: selectedAddress.colIndex,
+                },
+              },
             },
-          }],
+          ],
     }),
-    [isCrossSheetPreview, selectedAddress.colIndex, selectedAddress.rowIndex],
+    [isCrossSheetPreview, selectedAddress.colIndex, selectedAddress.rowIndex]
   );
 
   return (
     <div className="formula-studio" data-testid="formula-studio">
       <header className="formula-studio__header">
         <div>
-          <span className="formula-studio__eyebrow">Formula language tooling</span>
+          <span className="formula-studio__eyebrow">
+            Formula language tooling
+          </span>
           <h1>Write formulas with the grid in view.</h1>
           <p>
-            Monaco consumes <code>@ricsam/formula-engine-editor</code>. Type a formula,
-            then click or drag across the grid to insert a cell or range at the cursor. Put
-            the caret on any reference to preview its resolved target.
+            Monaco consumes <code>@ricsam/formula-engine-editor</code>. Type a
+            formula, then click or drag across the grid to insert a cell or
+            range at the cursor. Put the caret on any reference to preview its
+            resolved target.
           </p>
         </div>
-        <button type="button" className="formula-studio__reset" onClick={handleReset}>
+        <button
+          type="button"
+          className="formula-studio__reset"
+          onClick={handleReset}
+        >
           <EditorIcon name="reset" /> Reset demo
         </button>
       </header>
 
-      <section className="formula-studio__workbench" aria-label="Formula editor demo">
+      <section
+        className="formula-studio__workbench"
+        aria-label="Formula editor demo"
+      >
         <div className="formula-studio__toolbar">
           <div className="formula-studio__cell-pill">
             <span>Editing</span>
-            <strong data-testid="selected-cell-address">{selectedCellLabel}</strong>
+            <strong data-testid="selected-cell-address">
+              {selectedCellLabel}
+            </strong>
           </div>
           <div className="formula-studio__value">
             <span>Calculated value</span>
             <strong data-testid="selected-cell-value">
-              {evaluatedSelectedValue === undefined ? "—" : String(evaluatedSelectedValue)}
+              {evaluatedSelectedValue === undefined
+                ? "—"
+                : String(evaluatedSelectedValue)}
             </strong>
           </div>
-          <div className={`formula-studio__save-state formula-studio__save-state--${saveState}`} role="status">
-            <i /> {isDirty ? "Unapplied changes" : saveMessage}
+          <div
+            className={`formula-studio__save-state formula-studio__save-state--${saveState}`}
+            role="status"
+            data-testid="formula-save-state"
+          >
+            <i />
+            {saveState === "error"
+              ? saveMessage
+              : isDirty
+              ? "Unapplied changes"
+              : saveMessage}
           </div>
         </div>
 
-        <div className="formula-studio__editor-panel">
+        <div
+          className={`formula-studio__editor-panel${
+            isFormulaEditorExpanded ? " is-expanded" : ""
+          }`}
+        >
           <div className="formula-studio__editor-heading">
             <div>
               <span className="formula-studio__fx">ƒx</span>
               <div>
                 <strong>Formula editor</strong>
-                <small>Click or drag cells to insert · Enter to apply · Esc to revert</small>
+                <small>
+                  {isFormulaEditorExpanded
+                    ? "Enter adds a line · Cmd/Ctrl+Enter applies · Esc reverts"
+                    : "Click or drag cells to insert · Enter to apply · Esc to revert"}
+                </small>
               </div>
             </div>
             <div className="formula-studio__editor-actions">
-              <span className={errorCount > 0 ? "has-errors" : ""} data-testid="formula-diagnostics">
-                {errorCount > 0 ? `${errorCount} ${errorCount === 1 ? "error" : "errors"}` : "Syntax valid"}
+              <span
+                className={errorCount > 0 ? "has-errors" : ""}
+                data-testid="formula-diagnostics"
+              >
+                {!isFormulaDraft
+                  ? "Text value"
+                  : errorCount > 0
+                  ? `${errorCount} ${errorCount === 1 ? "error" : "errors"}`
+                  : "Syntax valid"}
               </span>
-              <button type="button" onClick={revertDraft} disabled={!isDirty}>Revert</button>
+              <button type="button" onClick={revertDraft} disabled={!isDirty}>
+                Revert
+              </button>
+              {isFormulaEditorExpanded && (
+                <button
+                  type="button"
+                  data-testid="format-formula"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => formulaEditorRef.current?.format("pretty")}
+                >
+                  Format
+                </button>
+              )}
+              <button
+                type="button"
+                data-testid="toggle-formula-editor"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() =>
+                  setIsFormulaEditorExpanded((expanded) => !expanded)
+                }
+              >
+                {isFormulaEditorExpanded ? "Collapse" : "Expand"}
+              </button>
               <button
                 type="button"
                 className="formula-studio__apply"
@@ -753,7 +975,9 @@ export function FullSpreadsheetDemo() {
               engine={engine}
               origin={selectedAddress}
               value={draft}
-              height="112px"
+              inputMode="cell-content"
+              mode={isFormulaEditorExpanded ? "multiline" : "single-line"}
+              height={isFormulaEditorExpanded ? "172px" : "38px"}
               theme="formula-studio-theme"
               testId="formula-editor"
               beforeMount={(monaco) => {
@@ -761,8 +985,15 @@ export function FullSpreadsheetDemo() {
                   base: "vs",
                   inherit: true,
                   rules: [
-                    { token: "function", foreground: "7C3AED", fontStyle: "bold" },
-                    { token: "variable.formulaCellReference", foreground: "EA580C" },
+                    {
+                      token: "function",
+                      foreground: "7C3AED",
+                      fontStyle: "bold",
+                    },
+                    {
+                      token: "variable.formulaCellReference",
+                      foreground: "EA580C",
+                    },
                     { token: "namespace", foreground: "0369A1" },
                     { token: "number", foreground: "047857" },
                     { token: "string", foreground: "BE123C" },
@@ -780,19 +1011,31 @@ export function FullSpreadsheetDemo() {
                 });
               }}
               onMount={handleEditorMount}
+              onBeforeFormat={() => {
+                suppressNextFormulaEditActivationRef.current = true;
+              }}
               onChange={(value, nextAnalysis) => {
                 setDraft(value);
                 setAnalysis(nextAnalysis);
-                setSaveState("editing");
-                setSaveMessage("Editing");
+                const hasMeaningfulChange = !areCellEditorValuesEquivalent(
+                  value,
+                  savedFormulaRef.current
+                );
+                setSaveState(hasMeaningfulChange ? "editing" : "saved");
+                setSaveMessage(hasMeaningfulChange ? "Editing" : "Saved");
               }}
-              onAnalysisChange={({ analysis: nextAnalysis }) => setAnalysis(nextAnalysis)}
-              onActiveReferenceChange={(reference) => setActiveReference(reference)}
+              onAnalysisChange={({ analysis: nextAnalysis }) =>
+                setAnalysis(nextAnalysis)
+              }
+              onActiveReferenceChange={(reference) =>
+                setActiveReference(reference)
+              }
               options={{
                 automaticLayout: true,
                 contextmenu: false,
                 cursorBlinking: "smooth",
-                fontFamily: "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace",
+                fontFamily:
+                  "'JetBrains Mono', 'SFMono-Regular', Consolas, monospace",
                 fontLigatures: true,
                 fontSize: 15,
                 folding: false,
@@ -802,32 +1045,53 @@ export function FullSpreadsheetDemo() {
                 minimap: { enabled: false },
                 overviewRulerBorder: false,
                 overviewRulerLanes: 0,
-                padding: { top: 21, bottom: 18 },
+                padding: isFormulaEditorExpanded
+                  ? { top: 16, bottom: 16 }
+                  : { top: 8, bottom: 4 },
                 renderLineHighlight: "none",
                 scrollBeyondLastLine: false,
-                scrollbar: { horizontal: "hidden", vertical: "hidden", alwaysConsumeMouseWheel: false },
+                scrollbar: {
+                  horizontal: isFormulaEditorExpanded ? "auto" : "hidden",
+                  vertical: isFormulaEditorExpanded ? "auto" : "hidden",
+                  alwaysConsumeMouseWheel: false,
+                },
                 "semanticHighlighting.enabled": true,
-                wordWrap: "on",
+                wordWrap: isFormulaEditorExpanded ? "on" : "off",
               }}
             />
           </div>
 
           <div
-            className={`formula-studio__reference ${activeReference || isPickingReference ? "is-active" : ""}`}
+            className={`formula-studio__reference ${
+              activeReference || isPickingReference ? "is-active" : ""
+            }`}
             data-testid="active-reference"
           >
-            <span className="formula-studio__reference-icon"><EditorIcon name="spark" /></span>
+            <span className="formula-studio__reference-icon">
+              <EditorIcon name="spark" />
+            </span>
             <div>
               <small>
                 {isPickingReference
                   ? "Inserting grid selection"
                   : isCrossSheetPreview
-                    ? "Cross-sheet preview"
-                    : "Caret target"}
+                  ? "Cross-sheet preview"
+                  : "Caret target"}
               </small>
-              <strong>{isPickingReference ? "Drag to resize the reference" : activeTargetLabel}</strong>
+              <strong>
+                {isPickingReference
+                  ? "Drag to resize the reference"
+                  : activeTargetLabel}
+              </strong>
             </div>
-            {activeReference && <code>{draft.slice(activeReference.span.start, activeReference.span.end)}</code>}
+            {activeReference && (
+              <code>
+                {draft.slice(
+                  activeReference.span.start,
+                  activeReference.span.end
+                )}
+              </code>
+            )}
           </div>
         </div>
 
@@ -835,11 +1099,19 @@ export function FullSpreadsheetDemo() {
           <div className="formula-studio__grid-heading">
             <div>
               <strong data-testid="visible-sheet">{visibleSheet}</strong>
-              <span>{isCrossSheetPreview ? `Previewing a reference from ${selectedAddress.sheetName}` : "Live workbook"}</span>
+              <span>
+                {isCrossSheetPreview
+                  ? `Previewing a reference from ${selectedAddress.sheetName}`
+                  : "Live workbook"}
+              </span>
             </div>
             <div className="formula-studio__legend">
-              <span><i className="selection" /> Selection</span>
-              <span><i className="reference" /> Caret reference</span>
+              <span>
+                <i className="selection" /> Selection
+              </span>
+              <span>
+                <i className="reference" /> Caret reference
+              </span>
             </div>
           </div>
           <div className="formula-studio__grid" data-testid="formula-workbook">
@@ -859,7 +1131,7 @@ export function FullSpreadsheetDemo() {
                   (target) =>
                     target.workbookName === WORKBOOK &&
                     target.sheetName === visibleSheet &&
-                    isCellInRange(cell.rowIndex, cell.colIndex, target.range),
+                    isCellInRange(cell.rowIndex, cell.colIndex, target.range)
                 );
                 if (!highlighted) return internalStyle;
                 return {
@@ -878,10 +1150,21 @@ export function FullSpreadsheetDemo() {
       </section>
 
       <footer className="formula-studio__footer">
-        <span><kbd>1</kbd> Select a formula cell</span><i />
-        <span><kbd>2</kbd> Edit with semantic highlighting</span><i />
-        <span><kbd>3</kbd> Click or drag cells to insert references</span><i />
-        <span><kbd>4</kbd> Press Enter to recalculate</span>
+        <span>
+          <kbd>1</kbd> Select a formula cell
+        </span>
+        <i />
+        <span>
+          <kbd>2</kbd> Edit with semantic highlighting
+        </span>
+        <i />
+        <span>
+          <kbd>3</kbd> Click or drag cells to insert references
+        </span>
+        <i />
+        <span>
+          <kbd>4</kbd> Press Enter to recalculate
+        </span>
       </footer>
     </div>
   );

@@ -30,7 +30,7 @@
     "@radix-ui/react-label": "^2.1.7",
     "@radix-ui/react-select": "^2.2.5",
     "@radix-ui/react-slot": "^1.2.3",
-    "@ricsam/formula-engine-editor": "0.2.0",
+    "@ricsam/formula-engine-editor": "0.3.0",
     "@ricsam/react-spreadsheets": "0.0.8",
     "@ricsam/selection-manager": "^0.0.30",
     "@tanstack/react-router": "^1.130.12",
