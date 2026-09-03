@@ -63,6 +63,19 @@ export function astToString(ast: ASTNode): string {
   }
 }
 
+function formatSheetName(sheetName: string): string {
+  const normalizedName = sheetName.toUpperCase();
+  const canRemainUnquoted =
+    !sheetName.includes("$") &&
+    normalizedName !== "TRUE" &&
+    normalizedName !== "FALSE" &&
+    normalizedName !== "INFINITY" &&
+    /^[\p{L}_\p{Sc}\u00b0][\p{L}\p{N}_\p{Sc}.\u00b0]*$/u.test(sheetName);
+  return canRemainUnquoted
+    ? sheetName
+    : `'${sheetName.replace(/'/g, "''")}'`;
+}
+
 function formatValue(value: CellValue): string {
   if (value.type === "string") {
     // Escape quotes by doubling them and wrap in quotes
@@ -87,9 +100,8 @@ function formatReference(ast: ReferenceNode): string {
 
   let result = cellRef;
 
-  if (sheetName) {
-    const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
-    result = `${quotedSheet}!${cellRef}`;
+  if (sheetName !== undefined) {
+    result = `${formatSheetName(sheetName)}!${cellRef}`;
   }
 
   if (workbookName) {
@@ -124,9 +136,8 @@ function formatRange(ast: RangeNode): string {
 
   let result = rangeRef;
 
-  if (sheetName) {
-    const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
-    result = `${quotedSheet}!${rangeRef}`;
+  if (sheetName !== undefined) {
+    result = `${formatSheetName(sheetName)}!${rangeRef}`;
   }
 
   if (workbookName) {
@@ -191,9 +202,8 @@ function formatInfiniteRange(ast: RangeNode): string {
 
   let result = rangeRef;
 
-  if (sheetName) {
-    const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
-    result = `${quotedSheet}!${rangeRef}`;
+  if (sheetName !== undefined) {
+    result = `${formatSheetName(sheetName)}!${rangeRef}`;
   }
 
   if (workbookName) {
@@ -212,11 +222,13 @@ function formatFunction(ast: FunctionNode): string {
 function formatUnaryOp(ast: UnaryOpNode): string {
   const { operator, operand } = ast;
   const operandStr = astToString(operand);
+  const formattedOperand =
+    operand.type === "binary-op" ? `(${operandStr})` : operandStr;
 
   if (operator === "%") {
-    return `${operandStr}%`;
+    return `${formattedOperand}%`;
   } else {
-    return `${operator}${operandStr}`;
+    return `${operator}${formattedOperand}`;
   }
 }
 
@@ -290,8 +302,7 @@ function formatNamedExpression(ast: NamedExpressionNode): string {
 
   if (sheetName !== undefined) {
     // Sheet-scoped named expression
-    const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
-    result = `${quotedSheet}!${name}`;
+    result = `${formatSheetName(sheetName)}!${name}`;
   }
 
   if (workbookName) {
@@ -316,12 +327,9 @@ function formatThreeDRange(ast: ThreeDRangeNode): string {
     cleanRef = cleanRef.substring(bracketEnd + 1);
   }
 
-  const quotedStartSheet = startSheet.includes(" ")
-    ? `'${startSheet}'`
-    : startSheet;
-  const quotedEndSheet = endSheet.includes(" ") ? `'${endSheet}'` : endSheet;
-
-  let result = `${quotedStartSheet}:${quotedEndSheet}!${cleanRef}`;
+  let result = `${formatSheetName(startSheet)}:${formatSheetName(
+    endSheet
+  )}!${cleanRef}`;
 
   if (workbookName) {
     result = `[${workbookName}]${result}`;
@@ -379,9 +387,8 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
 
   if (workbookName) {
     result += `[${workbookName}]!`;
-  } else if (sheetName) {
-    const quotedSheet = sheetName.includes(" ") ? `'${sheetName}'` : sheetName;
-    result += `${quotedSheet}!`;
+  } else if (sheetName !== undefined) {
+    result += `${formatSheetName(sheetName)}!`;
   }
 
   result += tableName;

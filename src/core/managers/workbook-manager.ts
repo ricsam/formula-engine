@@ -23,7 +23,7 @@ import {
   SheetNotFoundError,
   WorkbookNotFoundError,
 } from "../../evaluator/evaluation-error";
-import { normalizeSerializedCellValue } from "../../parser/formatter";
+import { normalizeFormulaCellContent } from "../../language/formula-formatter";
 
 interface IndexEntry {
   number: number;
@@ -398,6 +398,12 @@ export class WorkbookManager {
     return this.isContentEmpty(content) ? undefined : content;
   }
 
+  private normalizeIncomingCellContent(
+    content: SerializedCellValue
+  ): SerializedCellValue {
+    return this.normalizeCellContent(normalizeFormulaCellContent(content));
+  }
+
   private getMapKeyIndex<TKey, TValue>(
     map: Map<TKey, TValue>,
     key: TKey
@@ -452,7 +458,7 @@ export class WorkbookManager {
     let insertionOrder = 0;
     let lastContentKey: string | undefined;
     for (const [key, storedValue] of sheet.content) {
-      const value = this.normalizeCellContent(storedValue);
+      const value = this.normalizeIncomingCellContent(storedValue);
       if (value === undefined) {
         sheet.content.delete(key);
         continue;
@@ -1474,6 +1480,8 @@ export class WorkbookManager {
        * if the sheet is being built from scratch, we can skip some checks
        */
       buildingFromScratch?: boolean;
+      /** @internal The caller already applied formula content normalization. */
+      formulaAlreadyNormalized?: boolean;
     },
     reportChange = true
   ): boolean {
@@ -1496,7 +1504,9 @@ export class WorkbookManager {
 
     const storedBefore = sheet.content.get(adr);
     const before = this.normalizeCellContent(storedBefore);
-    const after = this.normalizeCellContent(content);
+    const after = options?.formulaAlreadyNormalized
+      ? this.normalizeCellContent(content)
+      : this.normalizeIncomingCellContent(content);
     const changed = !Object.is(before, after);
     const shouldReport = changed && reportChange && this.observingMutations;
     const beforeIndex =
@@ -1563,9 +1573,11 @@ export class WorkbookManager {
        * if the sheet is being built from scratch, we can skip some checks
        */
       buildingFromScratch?: boolean;
+      /** @internal The caller already applied formula content normalization. */
+      formulaAlreadyNormalized?: boolean;
     }
-  ): void {
-    this.setCellContentInternal(address, content, options);
+  ): boolean {
+    return this.setCellContentInternal(address, content, options);
   }
 
   /**
@@ -2192,8 +2204,23 @@ export class WorkbookManager {
     if (!sheet) {
       throw new SheetNotFoundError(opts.sheetName);
     }
-    const replacementContent =
+    const sourceContent =
       newContent === sheet.content ? new Map(newContent) : newContent;
+    let replacementContent = sourceContent;
+    for (const [cellReference, storedValue] of sourceContent) {
+      const normalized = this.normalizeIncomingCellContent(storedValue);
+      if (Object.is(normalized, storedValue)) {
+        continue;
+      }
+      if (replacementContent === sourceContent) {
+        replacementContent = new Map(sourceContent);
+      }
+      if (normalized === undefined) {
+        replacementContent.delete(cellReference);
+      } else {
+        replacementContent.set(cellReference, normalized);
+      }
+    }
 
     // Only pay the diffing cost when a consumer needs mutation data. The
     // replacement itself remains a clear-and-rebuild operation so index
@@ -2462,7 +2489,7 @@ export class WorkbookManager {
     if (!sheet) {
       throw new SheetNotFoundError(cellAddress.sheetName);
     }
-    return normalizeSerializedCellValue(
+    return this.normalizeIncomingCellContent(
       sheet.content.get(getCellReference(cellAddress))
     );
   }

@@ -28,3 +28,10 @@ export type {
   FormulaFunctionDescriptor,
   FormulaFunctionParameter,
 } from "./language/function-catalog";
+export { formatFormula, tryFormatFormula } from "./language/formula-formatter";
+export type {
+  FormulaFormatError,
+  FormulaFormatOptions,
+  FormulaFormatResult,
+  FormulaFormatStyle,
+} from "./language/formula-formatter";

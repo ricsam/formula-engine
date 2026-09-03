@@ -141,6 +141,8 @@ describe("Formula Formatter", () => {
       expect(formatFormula("-A1")).toBe("-A1");
       expect(formatFormula("+A1")).toBe("+A1");
       expect(formatFormula("A1%")).toBe("A1%");
+      expect(formatFormula("-(A1+B1)")).toBe("-(A1+B1)");
+      expect(formatFormula("(A1+B1)%")).toBe("(A1+B1)%");
     });
   });
 

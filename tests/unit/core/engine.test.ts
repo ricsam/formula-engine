@@ -2484,7 +2484,7 @@ describe("FormulaEngine", () => {
       expect(cell("E6")).toBe(40);
 
       // Reference should be updated
-      expect(cellContent("C1")).toBe("=INDEX(D5:E6,1,1)"); // Spaces removed by parser
+      expect(cellContent("C1")).toBe("=INDEX(D5:E6, 1, 1)");
       expect(cell("C1")).toBe(10); // Should still return first cell of moved range
     });
 

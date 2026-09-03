@@ -1,5 +1,13 @@
 # @ricsam/formula-engine
 
+## 0.2.26
+
+### Patch Changes
+
+- Add safe compact and pretty formula formatting APIs, normalize valid formula
+  cell content on write, and suppress updates and undo entries for formatting-only
+  edits while preserving plain text and invalid formulas exactly.
+
 ## 0.2.25
 
 ### Patch Changes

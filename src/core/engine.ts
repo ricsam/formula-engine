@@ -31,6 +31,7 @@ import {
 
 import type { FillDirection } from "@ricsam/selection-manager";
 import { FormulaEvaluator } from "../evaluator/formula-evaluator";
+import { normalizeFormulaCellContent } from "../language/formula-formatter";
 import { AutoFill } from "./autofill-utils";
 import {
   WorkbookManager,
@@ -3818,7 +3819,10 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
       const preparedHeaderUpdates =
         this.tableManager.prepareHeaderUpdatesForSheet({
           ...opts,
-          getCellContent: (address) => content.get(getCellReference(address)),
+          getCellContent: (address) =>
+            normalizeFormulaCellContent(
+              content.get(getCellReference(address))
+            ),
         });
       let replacementContent = content;
       if (preparedHeaderUpdates.generatedHeaders.length > 0) {
@@ -3862,20 +3866,29 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
    */
   setCellContent(address: CellAddress, content: SerializedCellValue) {
     return this.withUndoRedoCheckpoint(() => {
+      const normalizedContent = normalizeFormulaCellContent(content);
       const preparedHeaderUpdate = this.tableManager.prepareHeaderUpdate(
         address,
-        content
+        normalizedContent
       );
       const applyContent = () => {
         const previousValue = this.workbookManager.getCellContent(address);
-        this.workbookManager.setCellContent(
+        const contentChanged = this.workbookManager.setCellContent(
           address,
-          preparedHeaderUpdate.content
+          preparedHeaderUpdate.content,
+          { formulaAlreadyNormalized: true }
+        );
+        const headerChanged = preparedHeaderUpdate.updates.some(
+          ({ oldName, newName }) => oldName !== newName
         );
         this.tableManager.applyHeaderUpdates(preparedHeaderUpdate.updates);
         const renamedReferences = this.renameTableHeaderReferences(
           preparedHeaderUpdate.updates
         );
+
+        if (!contentChanged && !headerChanged) {
+          return;
+        }
 
         this.emitMutation({
           touchedCells: mergeTouchedCells(

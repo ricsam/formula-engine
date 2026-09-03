@@ -15,6 +15,8 @@ A TypeScript-based spreadsheet formula evaluation library designed for high-perf
   cell/range targets for syntax highlighting and spreadsheet overlays
 - **Function completion metadata** with signatures, parameters, aliases,
   categories, and descriptions
+- **Safe formula formatting** with compact single-line and indented multiline
+  output for editor integrations
 
 ## Installation
 
@@ -77,6 +79,45 @@ self-references are rewritten to the new sheet. Because table names are unique
 within a workbook, cloned tables use the first available `_2`, `_3`, and so on
 suffix. The clone is added at the end of the workbook's sheet order, and the
 entire operation is one undo/redo step.
+
+## Formula Formatting
+
+The public formatter accepts either a formula body or a formula beginning with
+`=`. Compact output is a readable single line, while pretty output expands
+function arguments and array rows with indentation:
+
+```typescript
+import { formatFormula, tryFormatFormula } from "@ricsam/formula-engine";
+
+formatFormula("= SUM(1,2)", { style: "compact" });
+// =SUM(1, 2)
+
+formatFormula("=IF(A1>0,SUM(B1,B2),0)", { style: "pretty" });
+// =IF(
+//   A1 > 0,
+//   SUM(
+//     B1,
+//     B2
+//   ),
+//   0
+// )
+
+const result = tryFormatFormula("=SUM(A1,,B1)", { style: "pretty" });
+if (!result.ok) {
+  // result.formula is the exact original input, safe to retain in an editor.
+  console.log(result.error.message, result.error.position);
+}
+```
+
+`formatFormula` is strict and throws on syntax errors. `tryFormatFormula` is
+intended for editors where partially typed formulas must not be lost. Its
+result reports whether formatting changed the text and returns invalid input
+unchanged. Use the `indent` option to replace the default two-space indentation.
+
+Valid cell content beginning with `=` is stored by `FormulaEngine` in compact
+form. Consequently, edits which only change formula whitespace or line breaks
+do not create an update or undo entry. Ordinary text and syntactically invalid
+formula text are stored byte-for-byte as supplied.
 
 ## Search And Replace Raw Strings
 

@@ -43,6 +43,16 @@ export type {
   FormulaFunctionDescriptor,
   FormulaFunctionParameter,
 } from "./src/language/function-catalog";
+export {
+  formatFormula,
+  tryFormatFormula,
+} from "./src/language/formula-formatter";
+export type {
+  FormulaFormatError,
+  FormulaFormatOptions,
+  FormulaFormatResult,
+  FormulaFormatStyle,
+} from "./src/language/formula-formatter";
 
 // Export React integration (optional - only import if using React)
 export { useEngine as useSerializedSheet } from "./src/react/hooks";
