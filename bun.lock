@@ -14,7 +14,7 @@
         "@radix-ui/react-slot": "^1.2.3",
         "@ricsam/formula-engine-editor": "0.3.0",
         "@ricsam/react-spreadsheets": "0.0.8",
-        "@ricsam/selection-manager": "^0.0.30",
+        "@ricsam/selection-manager": "^0.0.33",
         "@tanstack/react-router": "^1.130.12",
         "@tanstack/react-router-devtools": "^1.130.13",
         "@tanstack/router-cli": "^1.130.15",
@@ -332,7 +332,7 @@
 
     "@ricsam/react-spreadsheets": ["@ricsam/react-spreadsheets@0.0.8", "", { "peerDependencies": { "@ricsam/formula-engine": ">=0.2.0", "@ricsam/selection-manager": ">=0.0.29", "react": "^18 || ^19", "react-dom": "^18 || ^19" }, "optionalPeers": ["@ricsam/formula-engine"] }, "sha512-0+xXfz6SZLem/qaNkFiCdGkGCYljWFht6AHQc3un9xRLWrf2+X+9217NEsr0aacHs3xYR2rojPnqQgU2FqFtdg=="],
 
-    "@ricsam/selection-manager": ["@ricsam/selection-manager@0.0.30", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-4z54rjeYa0MIO8P6s7JY49UYnSYwLwavxnNwv8p3AHwqqQQpMSS/HcenzHOJDeG1LV90oClQXwCUFCFE/B3/FQ=="],
+    "@ricsam/selection-manager": ["@ricsam/selection-manager@0.0.33", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-vBbWhyMJtSoWzFX4wdcle56/87VOPs+JTyOJRKW+vjdlmlTnjAtjlxfN8JFK+kGo43+bh+SaMzsecawpK1PplA=="],
 
     "@tanstack/history": ["@tanstack/history@1.130.12", "", {}, "sha512-2VO1nNFDWojgZ7Uqv/OJfH6LphZQ1kE6l8sI3YBgSPtj3qN6I/rsoTHW9rGjwiDO8sQoDRXod2hpH6HMs5NDsw=="],
 

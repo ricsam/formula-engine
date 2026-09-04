@@ -32,7 +32,7 @@
     "@radix-ui/react-slot": "^1.2.3",
     "@ricsam/formula-engine-editor": "0.3.0",
     "@ricsam/react-spreadsheets": "0.0.8",
-    "@ricsam/selection-manager": "^0.0.30",
+    "@ricsam/selection-manager": "^0.0.33",
     "@tanstack/react-router": "^1.130.12",
     "@tanstack/react-router-devtools": "^1.130.13",
     "@tanstack/router-cli": "^1.130.15",
