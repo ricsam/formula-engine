@@ -1,5 +1,12 @@
 # @ricsam/formula-engine
 
+## 0.2.27
+
+### Patch Changes
+
+- Prevent function-like words and valid punctuation inside structured-reference
+  columns and workbook qualifiers from producing false syntax diagnostics.
+
 ## 0.2.26
 
 ### Patch Changes

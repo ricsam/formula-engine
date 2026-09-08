@@ -288,4 +288,87 @@ describe("FormulaEngine.analyzeFormula", () => {
         .references[0]?.resolution
     ).toEqual({ status: "unresolved", reason: "missing-column" });
   });
+
+  test("treats function-like and lexical-special text as structured column names", () => {
+    const engine = buildEngine();
+    engine.setCellContent(
+      { workbookName: "Book", sheetName: "Sheet1", colIndex: 0, rowIndex: 0 },
+      "Cell number needed (M) with 20% excess"
+    );
+    engine.setCellContent(
+      { workbookName: "Book", sheetName: "Sheet1", colIndex: 1, rowIndex: 0 },
+      "Question?"
+    );
+    engine.addTable({
+      tableName: "eAPCHarvest",
+      workbookName: "Book",
+      sheetName: "Sheet1",
+      start: "A1",
+      numRows: { type: "number", value: 3 },
+      numCols: 2,
+    });
+
+    for (const column of [
+      "Cell number needed (M) with 20% excess",
+      "Question?",
+    ]) {
+      const formula = `=eAPCHarvest[${column}]`;
+      const analysis = engine.analyzeFormula({ formula, origin });
+
+      expect(analysis.references[0]?.resolution.status).toBe("resolved");
+      expect(
+        analysis.diagnostics.filter(
+          (diagnostic) =>
+            diagnostic.code === "function.unknown" ||
+            diagnostic.code === "syntax.invalid-token"
+        )
+      ).toEqual([]);
+      expect(
+        analysis.tokens
+          .filter((token) => token.kind === "table-column")
+          .map((token) => formula.slice(token.span.start, token.span.end))
+      ).not.toHaveLength(0);
+    }
+  });
+
+  test("still diagnoses genuine unknown functions and malformed syntax", () => {
+    const engine = buildEngine();
+    const unknownFunction = engine.analyzeFormula({
+      formula: "=NEEDED(A1)",
+      origin,
+    });
+    const malformedReference = engine.analyzeFormula({
+      formula: "=eAPCHarvest[Cell number needed (M)",
+      origin,
+    });
+
+    expect(unknownFunction.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "function.unknown" })
+    );
+    expect(malformedReference.diagnostics).toContainEqual(
+      expect.objectContaining({ severity: "error" })
+    );
+    expect(malformedReference.diagnostics).not.toContainEqual(
+      expect.objectContaining({ code: "function.unknown" })
+    );
+  });
+
+  test("does not classify workbook qualifiers as functions", () => {
+    const engine = buildEngine();
+    engine.addWorkbook("Book needed (M)");
+    engine.addSheet({
+      workbookName: "Book needed (M)",
+      sheetName: "Sheet1",
+    });
+
+    const analysis = engine.analyzeFormula({
+      formula: "=[Book needed (M)]Sheet1!A1",
+      origin,
+    });
+
+    expect(analysis.references[0]?.resolution.status).toBe("resolved");
+    expect(analysis.diagnostics).not.toContainEqual(
+      expect.objectContaining({ code: "function.unknown" })
+    );
+  });
 });

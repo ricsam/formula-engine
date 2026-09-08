@@ -1022,31 +1022,6 @@ export function analyzeFormulaWithEnvironment(
       rawTokens
     );
 
-    for (let index = 0; index < tokens.length; index++) {
-      const token = tokens[index]!;
-      if (token.source.type === "FUNCTION") {
-        if (!functions[token.source.value.toUpperCase()]) {
-          token.modifiers.add("unknown");
-          diagnostics.push({
-            span: token.span,
-            severity: "warning",
-            code: "function.unknown",
-            message: `Unknown function ${token.source.value}.`,
-          });
-        }
-      }
-      if (token.kind === "invalid") {
-        diagnostics.push({
-          span: token.span,
-          severity: "error",
-          code: "syntax.invalid-token",
-          message: `Invalid token ${JSON.stringify(
-            formula.slice(token.span.start, token.span.end)
-          )}.`,
-        });
-      }
-    }
-
     // Structured references are scanned first because their identifiers can
     // otherwise look like ordinary A1 or named-expression references.
     for (let index = 0; index < tokens.length; index++) {
@@ -1267,6 +1242,48 @@ export function analyzeFormulaWithEnvironment(
         const diagnostic = diagnosticForResolution(reference);
         if (diagnostic) diagnostics.push(diagnostic);
         index = endIndex - 1;
+      }
+    }
+
+    // The lexer has no reference context: an identifier followed by `(` is a
+    // FUNCTION token even when it is workbook or table-column text, and some
+    // valid header punctuation initially looks invalid. Diagnose only after
+    // every reference form has claimed its tokens. An unmatched `[` is common
+    // while editing, so its remaining contents stay reference text as well.
+    let bracketDepth = 0;
+    for (let index = 0; index < tokens.length; index++) {
+      const token = tokens[index]!;
+      if (token.source.type === "LBRACKET") {
+        bracketDepth++;
+        continue;
+      }
+      if (token.source.type === "RBRACKET") {
+        bracketDepth = Math.max(0, bracketDepth - 1);
+        continue;
+      }
+      if (occupied.has(index) || bracketDepth > 0) continue;
+
+      if (
+        token.source.type === "FUNCTION" &&
+        !functions[token.source.value.toUpperCase()]
+      ) {
+        token.modifiers.add("unknown");
+        diagnostics.push({
+          span: token.span,
+          severity: "warning",
+          code: "function.unknown",
+          message: `Unknown function ${token.source.value}.`,
+        });
+      }
+      if (token.kind === "invalid") {
+        diagnostics.push({
+          span: token.span,
+          severity: "error",
+          code: "syntax.invalid-token",
+          message: `Invalid token ${JSON.stringify(
+            formula.slice(token.span.start, token.span.end)
+          )}.`,
+        });
       }
     }
 
