@@ -12,7 +12,7 @@
         "@radix-ui/react-label": "^2.1.7",
         "@radix-ui/react-select": "^2.2.5",
         "@radix-ui/react-slot": "^1.2.3",
-        "@ricsam/formula-engine-editor": "0.3.0",
+        "@ricsam/formula-engine-editor": "0.5.0",
         "@ricsam/react-spreadsheets": "0.0.8",
         "@ricsam/selection-manager": "^0.0.33",
         "@tanstack/react-router": "^1.130.12",
@@ -326,9 +326,9 @@
 
     "@radix-ui/rect": ["@radix-ui/rect@1.1.1", "", {}, "sha512-HPwpGIzkl28mWyZqG52jiqDJ12waP11Pa1lGoiyUkIEuMLBP0oeK/C89esbXrxsky5we7dfd8U58nm0SgAWpVw=="],
 
-    "@ricsam/formula-engine": ["@ricsam/formula-engine@0.2.26", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-R0d5M+qO7bPzmqALbuPaifvCfrb1rp3s3EA7G2olGq40QcP22D7tYtfczSf5Sis9mj5GLeSfHnkSpXPzbyS3NA=="],
+    "@ricsam/formula-engine": ["@ricsam/formula-engine@0.2.27", "", { "peerDependencies": { "typescript": "^5" } }, "sha512-4aBvviNh7fFfkYL5RbC5yloF3+Xj95pXqkpQp87RaeT/YzJOPY7jABli7lt0mLXkHqgy0BJXyTM+9m7Qlx0YHQ=="],
 
-    "@ricsam/formula-engine-editor": ["@ricsam/formula-engine-editor@0.3.0", "", { "peerDependencies": { "@monaco-editor/react": "^4.7.0", "@ricsam/formula-engine": ">=0.2.26", "monaco-editor": ">=0.52 <1", "react": "^18 || ^19", "react-dom": "^18 || ^19" }, "optionalPeers": ["@monaco-editor/react", "react", "react-dom"] }, "sha512-cbz1NvVMuvUyQKEh0qrb45pnJRobbsdgk66HtZInmfjFWAoLimYH0/N42iRTvRaibqxHXaisY8i0z0iI4M05ZA=="],
+    "@ricsam/formula-engine-editor": ["@ricsam/formula-engine-editor@0.5.0", "", { "peerDependencies": { "@monaco-editor/react": "^4.7.0", "@ricsam/formula-engine": ">=0.2.27", "monaco-editor": ">=0.52 <1", "react": "^18 || ^19", "react-dom": "^18 || ^19" }, "optionalPeers": ["@monaco-editor/react", "react", "react-dom"] }, "sha512-m7Uln0JMj/9PZhNZPlUjcUzQCnYr55smHO1tAR0Aaf2EuajxRWgORk5BYcG1Ghdk1OD9WdCVj4+bUZW0X7dPwQ=="],
 
     "@ricsam/react-spreadsheets": ["@ricsam/react-spreadsheets@0.0.8", "", { "peerDependencies": { "@ricsam/formula-engine": ">=0.2.0", "@ricsam/selection-manager": ">=0.0.29", "react": "^18 || ^19", "react-dom": "^18 || ^19" }, "optionalPeers": ["@ricsam/formula-engine"] }, "sha512-0+xXfz6SZLem/qaNkFiCdGkGCYljWFht6AHQc3un9xRLWrf2+X+9217NEsr0aacHs3xYR2rojPnqQgU2FqFtdg=="],
 
