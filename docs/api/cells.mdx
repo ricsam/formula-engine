@@ -14,6 +14,28 @@ getCellValue(address: CellAddress, debug?: boolean): SerializedCellValue
 Evaluates lazily and returns a primitive. An empty or missing cell returns `""`.
 Formula errors are returned as strings such as `"#VALUE!"`.
 
+### `getCellErrorDetails`
+
+```typescript
+getCellErrorDetails(address: CellAddress): CellErrorDetails | undefined
+```
+
+Returns consumer-safe details when the cell evaluates to an error:
+
+```typescript
+interface CellErrorDetails {
+  code: FormulaError;
+  message: string;
+  failingCellAddress?: CellAddress;
+}
+```
+
+`failingCellAddress` identifies a concrete source cell when one is known. For
+example, if `A1` references a malformed formula in `B1`, asking for `A1`'s
+error details returns `B1` as the failing cell. The property is omitted for
+errors attributed to another kind of expression. This API does not expose the
+engine's internal dependency graph nodes.
+
 ### `getCellEvaluationResult`
 
 ```typescript

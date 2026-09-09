@@ -1,5 +1,12 @@
 # @ricsam/formula-engine
 
+## 0.2.28
+
+### Patch Changes
+
+- Add structured, consumer-safe cell error details with an optional concrete
+  source address for error navigation.
+
 ## 0.2.27
 
 ### Patch Changes

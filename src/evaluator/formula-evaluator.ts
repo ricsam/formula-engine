@@ -908,7 +908,17 @@ export class FormulaEvaluator {
       }
     }
 
-    return { ...evalNode.evaluationResult, sourceCell: cellAddress };
+    const evaluationResult = evalNode.evaluationResult;
+    return {
+      ...evaluationResult,
+      // An error can already carry the concrete cell where it originated.
+      // Preserve that address across additional reference hops instead of
+      // replacing it with each intermediary cell.
+      sourceCell:
+        evaluationResult.type === "error" && evaluationResult.sourceCell
+          ? evaluationResult.sourceCell
+          : cellAddress,
+    };
   }
 
   /**

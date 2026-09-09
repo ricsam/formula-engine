@@ -5,6 +5,7 @@
 
 import {
   type CellAddress,
+  type CellErrorDetails,
   type CellDataType,
   type CellStyle,
   type ConditionalStyle,
@@ -30,6 +31,7 @@ import {
 } from "./types";
 
 import type { FillDirection } from "@ricsam/selection-manager";
+import { CellValueNode } from "../evaluator/dependency-nodes/cell-value-node";
 import { FormulaEvaluator } from "../evaluator/formula-evaluator";
 import { normalizeFormulaCellContent } from "../language/formula-formatter";
 import { AutoFill } from "./autofill-utils";
@@ -1806,6 +1808,31 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     cellAddress: CellAddress
   ): SingleEvaluationResult | undefined {
     return this.evaluationManager.getCellEvaluationResult(cellAddress);
+  }
+
+  /**
+   * Return consumer-safe details for a cell evaluation error.
+   *
+   * Unlike `getCellEvaluationResult`, this method does not expose dependency
+   * graph nodes. If an error originated in a referenced cell,
+   * `failingCellAddress` identifies that cell; otherwise it is omitted.
+   * Returns `undefined` when the cell does not currently evaluate to an error.
+   */
+  getCellErrorDetails(cellAddress: CellAddress): CellErrorDetails | undefined {
+    const result = this.getCellEvaluationResult(cellAddress);
+    if (!result || result.type !== "error") {
+      return undefined;
+    }
+
+    return {
+      code: result.err,
+      message: result.message,
+      ...(result.errAddress instanceof CellValueNode
+        ? { failingCellAddress: { ...result.errAddress.cellAddress } }
+        : result.sourceCell
+        ? { failingCellAddress: { ...result.sourceCell } }
+        : {}),
+    };
   }
 
   getCellValue(cellAddress: CellAddress, debug?: boolean): SerializedCellValue {

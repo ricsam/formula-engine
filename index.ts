@@ -4,8 +4,10 @@
 
 // Export the main engine
 export { FormulaEngine } from "./src/core/engine";
+export { FormulaError } from "./src/core/types";
 export type {
   CellAddress,
+  CellErrorDetails,
   FormulaEngineOptions,
   RangeAddress,
   ReplaceChange,

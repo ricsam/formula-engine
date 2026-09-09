@@ -222,6 +222,23 @@ export enum FormulaError {
   SPILL = "#SPILL!",
 }
 
+/**
+ * Public, serializable details about a cell evaluation error.
+ *
+ * `failingCellAddress` is present when the engine can attribute the error to a
+ * concrete cell. It may differ from the address passed to
+ * `FormulaEngine.getCellErrorDetails` when an error propagates through a cell
+ * reference.
+ */
+export interface CellErrorDetails {
+  /** Spreadsheet error code displayed for the evaluated cell. */
+  code: FormulaError;
+  /** Diagnostic message captured where the error originated. */
+  message: string;
+  /** Concrete origin of the error, when it is a cell evaluation node. */
+  failingCellAddress?: CellAddress;
+}
+
 // Sheet structure
 export interface Sheet<TCellMetadata = unknown, TSheetMetadata = unknown> {
   name: string;
@@ -299,8 +316,8 @@ export type ErrorEvaluationResult =
       errAddress: DependencyNode;
       message: string;
       /**
-       * If the terminating evaluation result is a reference (see evaluateReference)
-       * then we store information about the source cell for context dependent functions like CELL
+       * If the error propagated through a reference (see evaluateReference),
+       * this is the deepest concrete referenced cell known to own the error.
        */
       sourceCell?: CellAddress;
     }
