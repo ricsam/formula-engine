@@ -15,7 +15,7 @@ describe("StyleManager", () => {
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
   });
 
@@ -828,7 +828,7 @@ describe("StyleManager", () => {
       engine.removeWorkbook(workbookName);
 
       // Re-create the workbook to check if styles were cleared
-      engine.addWorkbook(workbookName);
+      engine.addWorkbook({ workbookName: workbookName });
       expect(
         engine.getConditionalStylesIntersectingWithRange({
           workbookName,
@@ -1628,7 +1628,7 @@ describe("StyleManager", () => {
 
     test("filters cell styles by workbook name", () => {
       const otherWorkbookName = "OtherWorkbook";
-      engine.addWorkbook(otherWorkbookName);
+      engine.addWorkbook({ workbookName: otherWorkbookName });
       engine.addSheet({ workbookName: otherWorkbookName, sheetName });
 
       const cellStyle1: DirectCellStyle = {
@@ -2303,7 +2303,7 @@ describe("StyleManager", () => {
 
     test("returns undefined when range matches style exactly but is in different workbook", () => {
       const otherWorkbookName = "OtherWorkbook";
-      engine.addWorkbook(otherWorkbookName);
+      engine.addWorkbook({ workbookName: otherWorkbookName });
       engine.addSheet({ workbookName: otherWorkbookName, sheetName });
 
       const cellStyle: DirectCellStyle = {

@@ -28,7 +28,7 @@ describe("Sheets", () => {
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
   });
 
   test("should add new sheets", () => {

@@ -11,7 +11,7 @@ multiple ordered sheets.
 ```typescript
 const engine = FormulaEngine.buildEmpty();
 
-engine.addWorkbook("Budget");
+engine.addWorkbook({ workbookName: "Budget" });
 engine.addSheet({ workbookName: "Budget", sheetName: "Inputs" });
 engine.addSheet({ workbookName: "Budget", sheetName: "Summary" });
 ```

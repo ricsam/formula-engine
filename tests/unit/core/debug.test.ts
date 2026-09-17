@@ -32,7 +32,7 @@ describe("Reproduce issue with evalution order", () => {
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
   });
 
@@ -60,8 +60,8 @@ describe("Reproduce issue with evalution order", () => {
 
     // Create a new engine for this test
     const testEngine = FormulaEngine.buildEmpty();
-    testEngine.addWorkbook(workbook1Name);
-    testEngine.addWorkbook(workbook2Name);
+    testEngine.addWorkbook({ workbookName: workbook1Name });
+    testEngine.addWorkbook({ workbookName: workbook2Name });
 
     // Add sheets to Workbook1: Sheet1, Sheet2, Sheet3
     testEngine.addSheet({ workbookName: workbook1Name, sheetName: "Sheet1" });
@@ -217,7 +217,7 @@ describe("Reproduce issue with evalution order", () => {
   test("SUM, AVERAGE, COUNT on cross-sheet spilled range with aggregation", () => {
     // Create a new engine with multiple sheets for this test
     const testEngine = FormulaEngine.buildEmpty();
-    testEngine.addWorkbook(workbookName);
+    testEngine.addWorkbook({ workbookName: workbookName });
     testEngine.addSheet({ workbookName, sheetName: "Sheet1" });
     testEngine.addSheet({ workbookName, sheetName: "Sheet2" });
 

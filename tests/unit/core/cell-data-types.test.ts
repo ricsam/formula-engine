@@ -18,7 +18,7 @@ const sheetName = "Sheet1";
 
 function buildEngine() {
   const engine = FormulaEngine.buildEmpty();
-  engine.addWorkbook(workbookName);
+  engine.addWorkbook({ workbookName: workbookName });
   engine.addSheet({ workbookName, sheetName });
   engine.clearUndoRedoHistory();
   return engine;
@@ -168,7 +168,7 @@ describe("cell data types", () => {
   test("updates types for clone, rename, and deletion lifecycles", () => {
     const engine = buildEngine();
     engine.addSheet({ workbookName, sheetName: "Second" });
-    engine.addWorkbook("Other");
+    engine.addWorkbook({ workbookName: "Other" });
     engine.addSheet({ workbookName: "Other", sheetName });
     engine.addCellDataType({
       dataType: "boolean",

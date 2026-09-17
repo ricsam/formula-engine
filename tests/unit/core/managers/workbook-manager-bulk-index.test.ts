@@ -39,7 +39,7 @@ describe("WorkbookManager bulk indexing", () => {
 
   test("replays a large sheet patch with one index rebuild per direction", () => {
     const engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook("Book");
+    engine.addWorkbook({ workbookName: "Book" });
     engine.addSheet({ workbookName: "Book", sheetName: "Sheet" });
     engine.clearUndoRedoHistory();
 
@@ -75,7 +75,7 @@ describe("WorkbookManager bulk indexing", () => {
 
   test("groups append-only paste replay into one linear sheet rebuild", () => {
     const engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook("Book");
+    engine.addWorkbook({ workbookName: "Book" });
     engine.addSheet({ workbookName: "Book", sheetName: "Sheet" });
 
     const source: Array<{
@@ -128,7 +128,7 @@ describe("WorkbookManager bulk indexing", () => {
 
   test("replays sequential cut deletions with one ordered reconstruction", () => {
     const engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook("Book");
+    engine.addWorkbook({ workbookName: "Book" });
     engine.addSheet({ workbookName: "Book", sheetName: "Sheet" });
 
     const source: Array<{
@@ -186,7 +186,7 @@ describe("WorkbookManager bulk indexing", () => {
 
   test("sparse value and tail replay preserve collection instances", () => {
     const engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook("Book");
+    engine.addWorkbook({ workbookName: "Book" });
     engine.addSheet({ workbookName: "Book", sheetName: "Sheet" });
     engine.setSheetContent(
       { workbookName: "Book", sheetName: "Sheet" },

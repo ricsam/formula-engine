@@ -11,7 +11,7 @@ values, and it keeps everything consistent as edits arrive.
 import { FormulaEngine } from "@ricsam/formula-engine";
 
 const engine = FormulaEngine.buildEmpty();
-engine.addWorkbook("Workbook1");
+engine.addWorkbook({ workbookName: "Workbook1" });
 engine.addSheet({ workbookName: "Workbook1", sheetName: "Sheet1" });
 
 engine.setSheetContent(

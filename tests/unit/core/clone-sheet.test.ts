@@ -47,7 +47,7 @@ function range(
 
 function buildEngine(): FormulaEngine<TestMetadata> {
   const engine = FormulaEngine.buildEmpty<TestMetadata>();
-  engine.addWorkbook(workbookName);
+  engine.addWorkbook({ workbookName: workbookName });
   engine.addSheet({ workbookName, sheetName: sourceSheetName });
   engine.addSheet({ workbookName, sheetName: "Other" });
   return engine;

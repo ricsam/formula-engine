@@ -48,7 +48,7 @@ function range(
 
 function buildUndoableEngine() {
   const engine = FormulaEngine.buildEmpty();
-  engine.addWorkbook(workbookName);
+  engine.addWorkbook({ workbookName: workbookName });
   engine.addSheet({ workbookName, sheetName });
   engine.clearUndoRedoHistory();
   return engine;
@@ -61,7 +61,7 @@ function content(engine: FormulaEngine, ref: string): SerializedCellValue | "" {
 describe("FormulaEngine undo/redo", () => {
   test("is enabled by default", () => {
     const engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
     engine.clearUndoRedoHistory();
 
@@ -82,7 +82,7 @@ describe("FormulaEngine undo/redo", () => {
     const engine = FormulaEngine.buildEmpty({
       undoRedo: { maxEntries: 1, maxBytes: 1_024 },
     });
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
     engine.clearUndoRedoHistory();
 
@@ -303,7 +303,7 @@ describe("FormulaEngine undo/redo", () => {
 
   test("resetToSerializedEngine restores data and clears history", () => {
     const source = FormulaEngine.buildEmpty();
-    source.addWorkbook(workbookName);
+    source.addWorkbook({ workbookName: workbookName });
     source.addSheet({ workbookName, sheetName });
     source.setCellContent(cell("A1"), 99);
     const serialized = source.serializeEngine();

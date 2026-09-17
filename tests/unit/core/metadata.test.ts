@@ -20,7 +20,7 @@ describe("Cell Metadata", () => {
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty<{ cell: TestMetadata }>();
-    engine.addWorkbook("wb1");
+    engine.addWorkbook({ workbookName: "wb1" });
     engine.addSheet({ workbookName: "wb1", sheetName: "sheet1" });
   });
 
@@ -706,7 +706,7 @@ describe("Cell Metadata", () => {
         cell: TestMetadata;
         sheet: { textBoxes?: string[]; frozen?: boolean };
       }>();
-      engine.addWorkbook("wb1");
+      engine.addWorkbook({ workbookName: "wb1" });
       engine.addSheet({ workbookName: "wb1", sheetName: "sheet1" });
     });
 
@@ -823,7 +823,7 @@ describe("Cell Metadata", () => {
         cell: TestMetadata;
         workbook: { theme?: string; author?: string };
       }>();
-      engine.addWorkbook("wb1");
+      engine.addWorkbook({ workbookName: "wb1" });
       engine.addSheet({ workbookName: "wb1", sheetName: "sheet1" });
     });
 
@@ -890,7 +890,7 @@ describe("Cell Metadata", () => {
         sheet: { textBoxes?: string[] };
         workbook: { theme?: string };
       }>();
-      combinedEngine.addWorkbook("wb1");
+      combinedEngine.addWorkbook({ workbookName: "wb1" });
       combinedEngine.addSheet({ workbookName: "wb1", sheetName: "sheet1" });
     });
 

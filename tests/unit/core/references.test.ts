@@ -7,7 +7,7 @@ describe('Reference Tracking', () => {
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook('wb1');
+    engine.addWorkbook({ workbookName: 'wb1' });
     engine.addSheet({ workbookName: 'wb1', sheetName: 'Sheet1' });
   });
 
@@ -244,7 +244,7 @@ describe('Reference Tracking', () => {
     });
 
     it('should not update references to other workbooks', () => {
-      engine.addWorkbook('wb2');
+      engine.addWorkbook({ workbookName: 'wb2' });
       engine.addSheet({ workbookName: 'wb2', sheetName: 'Sheet1' });
 
       const ref1: RangeAddress = {
@@ -526,7 +526,7 @@ describe('Reference Tracking', () => {
       }
 
       const typedEngine = FormulaEngine.buildEmpty<{ sheet: SheetMeta }>();
-      typedEngine.addWorkbook('wb1');
+      typedEngine.addWorkbook({ workbookName: 'wb1' });
       typedEngine.addSheet({ workbookName: 'wb1', sheetName: 'Sheet1' });
 
       const anchorRef = typedEngine.createRef({
@@ -566,7 +566,7 @@ describe('Reference Tracking', () => {
       }
 
       const typedEngine = FormulaEngine.buildEmpty<{ sheet: SheetMeta }>();
-      typedEngine.addWorkbook('wb1');
+      typedEngine.addWorkbook({ workbookName: 'wb1' });
       typedEngine.addSheet({ workbookName: 'wb1', sheetName: 'Sheet1' });
 
       const ref1 = typedEngine.createRef({

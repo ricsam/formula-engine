@@ -27,7 +27,7 @@ describe("SEQUENCE function", () => {
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
   });
 

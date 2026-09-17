@@ -32,7 +32,7 @@ describe("Range Metadata", () => {
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty<{ range: TestRangeMetadata }>();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
   });
 
@@ -156,7 +156,7 @@ describe("Range Metadata", () => {
 describe("Cell Style extensions", () => {
   it("copies and serializes typed wrap and border style properties", () => {
     const engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
     engine.addCellStyle({
       areas: [range(0, 0, 0, 0)],

@@ -20,7 +20,7 @@ describe("AVERAGE function", () => {
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
   });
 
@@ -324,7 +324,7 @@ describe("AVERAGE function", () => {
 
   test("AVERAGE() with zero arguments", () => {
     const engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName: "Sheet1" });
     const sheetName = "Sheet1";
 

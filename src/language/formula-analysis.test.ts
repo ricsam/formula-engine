@@ -28,7 +28,7 @@ function onlyTarget(
 
 function buildEngine(): FormulaEngine {
   const engine = FormulaEngine.buildEmpty();
-  engine.addWorkbook("Book");
+  engine.addWorkbook({ workbookName: "Book" });
   engine.addSheet({ workbookName: "Book", sheetName: "Sheet1" });
   engine.addSheet({ workbookName: "Book", sheetName: "Sheet2" });
   engine.addSheet({ workbookName: "Book", sheetName: "Sheet3" });
@@ -355,7 +355,7 @@ describe("FormulaEngine.analyzeFormula", () => {
 
   test("does not classify workbook qualifiers as functions", () => {
     const engine = buildEngine();
-    engine.addWorkbook("Book needed (M)");
+    engine.addWorkbook({ workbookName: "Book needed (M)" });
     engine.addSheet({
       workbookName: "Book needed (M)",
       sheetName: "Sheet1",

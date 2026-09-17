@@ -16,7 +16,7 @@ describe("FormulaEngine.getCellErrorDetails", () => {
 
   const createEngine = () => {
     const engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
     return engine;
   };
@@ -58,7 +58,7 @@ describe("FormulaEngine.getCellErrorDetails", () => {
 
   test("retains the deepest referenced cell when its expression node owns the error", () => {
     const engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook("Book");
+    engine.addWorkbook({ workbookName: "Book" });
     engine.addSheet({ workbookName: "Book", sheetName: "Summary" });
     engine.setSheetContent(
       { workbookName: "Book", sheetName: "Summary" },

@@ -29,7 +29,7 @@ import { FormulaWorkbook } from "@ricsam/react-spreadsheets";
 
 function createBudget() {
   const engine = FormulaEngine.buildEmpty();
-  engine.addWorkbook("Budget");
+  engine.addWorkbook({ workbookName: "Budget" });
   engine.addSheet({ workbookName: "Budget", sheetName: "Sheet1" });
   engine.setSheetContent(
     { workbookName: "Budget", sheetName: "Sheet1" },

@@ -20,7 +20,7 @@ describe("MIN function", () => {
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
   });
 
@@ -322,7 +322,7 @@ describe("MIN function", () => {
 
   test("MIN() with zero arguments", () => {
     const engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName: "Sheet1" });
     const sheetName = "Sheet1";
 

@@ -61,7 +61,7 @@ describe("Direct mutator invalidation", () => {
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
   });
 
@@ -244,7 +244,7 @@ describe("Direct mutator invalidation", () => {
     expect(typeof cell("B1")).toBe("string");
     expect(typeof cell("C1")).toBe("string");
 
-    engine.addWorkbook("Book2");
+    engine.addWorkbook({ workbookName: "Book2" });
     engine.addSheet({ workbookName: "Book2", sheetName: "Sheet1" });
     engine.setCellContent(address("A1", "Sheet1", "Book2"), 10);
     expect(cell("B1")).toBe(11);

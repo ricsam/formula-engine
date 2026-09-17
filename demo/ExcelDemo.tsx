@@ -130,7 +130,7 @@ const createEngine = () => {
 
   // Create first workbook and sheet with sample data
   const workbookName = "Workbook1";
-  engine.addWorkbook(workbookName);
+  engine.addWorkbook({ workbookName: workbookName });
   const sheetNameToAdd = "Sheet1";
   engine.addSheet({
     workbookName,
@@ -372,7 +372,7 @@ export function ExcelDemo() {
     // Reset to initial state
     engine._workbookManager.resetWorkbooks(new Map());
     const workbookName = "Workbook1";
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     const sheetNameToAdd = "Sheet1";
     engine.addSheet({
       workbookName,
@@ -591,7 +591,7 @@ export function ExcelDemo() {
     const newSheetName = "Sheet1";
 
     // Add to engine
-    engine.addWorkbook(newWorkbookName);
+    engine.addWorkbook({ workbookName: newWorkbookName });
     engine.addSheet({
       workbookName: newWorkbookName,
       sheetName: newSheetName,

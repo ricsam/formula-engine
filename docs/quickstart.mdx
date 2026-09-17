@@ -15,7 +15,7 @@ import { FormulaEngine } from "@ricsam/formula-engine";
 
 const engine = FormulaEngine.buildEmpty();
 
-engine.addWorkbook("Budget");
+engine.addWorkbook({ workbookName: "Budget" });
 engine.addSheet({ workbookName: "Budget", sheetName: "Q1" });
 
 const sheet = { workbookName: "Budget", sheetName: "Q1" };

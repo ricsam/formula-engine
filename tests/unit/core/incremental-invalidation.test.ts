@@ -32,7 +32,7 @@ describe("Incremental invalidation", () => {
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
   });
 
@@ -157,7 +157,7 @@ describe("Incremental invalidation", () => {
     expect(cell("D1")).toBe(11);
 
     const restoredEngine = FormulaEngine.buildEmpty();
-    restoredEngine.addWorkbook(workbookName);
+    restoredEngine.addWorkbook({ workbookName: workbookName });
     restoredEngine.addSheet({ workbookName, sheetName });
     restoredEngine.resetToSerializedEngine(engine.serializeEngine());
 
@@ -197,7 +197,7 @@ describe("Incremental invalidation", () => {
     const snapshot = engine.serializeEngine();
 
     const restoredEngine = FormulaEngine.buildEmpty();
-    restoredEngine.addWorkbook(workbookName);
+    restoredEngine.addWorkbook({ workbookName: workbookName });
     restoredEngine.addSheet({ workbookName, sheetName });
     restoredEngine.resetToSerializedEngine(snapshot);
     engine = restoredEngine;

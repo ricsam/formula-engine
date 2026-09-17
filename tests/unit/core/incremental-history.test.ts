@@ -41,7 +41,7 @@ function finiteRange(start: string, end = start): RangeAddress {
 
 function buildEngine(options?: FormulaEngineOptions): FormulaEngine {
   const engine = FormulaEngine.buildEmpty(options);
-  engine.addWorkbook(workbookName);
+  engine.addWorkbook({ workbookName: workbookName });
   engine.addSheet({ workbookName, sheetName });
   engine.clearUndoRedoHistory();
   return engine;
@@ -71,7 +71,7 @@ describe("FormulaEngine incremental history", () => {
 
     const largeEngine = buildEngine();
     largeEngine.setCellContent(address("A1"), "before");
-    largeEngine.addWorkbook("UnrelatedBook");
+    largeEngine.addWorkbook({ workbookName: "UnrelatedBook" });
     largeEngine.addSheet({
       workbookName: "UnrelatedBook",
       sheetName: "LargeSheet",
@@ -449,7 +449,7 @@ describe("FormulaEngine incremental history", () => {
     const engine = FormulaEngine.buildEmpty({
       undoRedo: { maxBytes: 1_024 },
     });
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
 
     const content = new Map<string, SerializedCellValue>();
@@ -789,8 +789,8 @@ describe("FormulaEngine incremental history", () => {
 
   test("workbook rename replay preserves workbook order", () => {
     const engine = buildEngine();
-    engine.addWorkbook("Second");
-    engine.addWorkbook("Third");
+    engine.addWorkbook({ workbookName: "Second" });
+    engine.addWorkbook({ workbookName: "Third" });
     engine.clearUndoRedoHistory();
 
     engine.renameWorkbook({
@@ -819,7 +819,7 @@ describe("FormulaEngine incremental history", () => {
 
   test("binary metadata changes are not mistaken for no-ops", () => {
     const engine = FormulaEngine.buildEmpty<{ cell: ArrayBuffer }>();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
     engine.setCellMetadata(address("A1"), new Uint8Array([1]).buffer);
     engine.clearUndoRedoHistory();
@@ -840,7 +840,7 @@ describe("FormulaEngine incremental history", () => {
     const engine = FormulaEngine.buildEmpty<{
       cell: Map<string, number> | RegExp;
     }>();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
 
     engine.setCellMetadata(
@@ -896,7 +896,7 @@ describe("FormulaEngine incremental history", () => {
 
   test("unsupported metadata creates a barrier without invoking accessors", () => {
     const engine = FormulaEngine.buildEmpty<{ cell: object }>();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
     engine.setCellContent(address("A1"), "older-history");
 
@@ -929,7 +929,7 @@ describe("FormulaEngine incremental history", () => {
     const engine = FormulaEngine.buildEmpty<{ cell: unknown }>({
       undoRedo: { maxBytes: 4 * 1024 },
     });
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
 
     class CustomError extends Error {}
@@ -988,7 +988,7 @@ describe("FormulaEngine incremental history", () => {
     const engine = FormulaEngine.buildEmpty<{ cell: Uint8Array }>({
       undoRedo: { maxBytes: 1_024 },
     });
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
     const binary = new Uint8Array(4 * 1024 * 1024);
 
@@ -1009,7 +1009,7 @@ describe("FormulaEngine incremental history", () => {
     const engine = FormulaEngine.buildEmpty<{ range: Uint8Array }>({
       undoRedo: { maxBytes: 1_024 },
     });
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
     const binary = new Uint8Array(4 * 1024 * 1024);
 

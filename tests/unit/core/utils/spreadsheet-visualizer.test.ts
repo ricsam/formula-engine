@@ -11,7 +11,7 @@ describe("Spreadsheet Visualizer", () => {
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
   });
 
@@ -481,7 +481,7 @@ describe("Spreadsheet Visualizer", () => {
   describe("edge cases", () => {
     test("should handle empty engine", () => {
       const emptyEngine = FormulaEngine.buildEmpty();
-      emptyEngine.addWorkbook(workbookName);
+      emptyEngine.addWorkbook({ workbookName: workbookName });
       
       const result = visualizeSpreadsheet(emptyEngine, {
         numRows: 2,

@@ -48,6 +48,11 @@ import {
 } from "./table-renamer";
 import { renameWorkbookInFormula } from "./workbook-renamer";
 import { getCellReference, parseCellReference } from "./utils";
+import {
+  areasToRangeAddresses,
+  toEntryMap,
+  type WorkbookData,
+} from "./workbook-data";
 import { CacheManager } from "./managers/cache-manager";
 import {
   NamedExpressionManager,
@@ -3554,7 +3559,24 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
   //#endregion
 
   //#region Workbook
-  addWorkbook(workbookName: string): void {
+  /**
+   * Add a workbook, optionally populating it from a `WorkbookData` description.
+   *
+   * With `data`, the whole import is one undo/redo step and is applied in
+   * dependency order: sheets and their content first, then named expressions,
+   * then tables (whose headers are read from the content just written), then
+   * data types, styles and metadata.
+   */
+  addWorkbook(opts: {
+    workbookName: string;
+    data?: WorkbookData<
+      MetadataType<TMetadata, "cell">,
+      MetadataType<TMetadata, "sheet">,
+      MetadataType<TMetadata, "workbook">,
+      MetadataType<TMetadata, "range">
+    >;
+  }): void {
+    const { workbookName, data } = opts;
     return this.withUndoRedoCheckpoint(() => {
       this.withWorkbookScopeHistory(workbookName, () => {
         this.workbookManager.addWorkbook(workbookName);
@@ -3565,7 +3587,102 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
           resourceKeys: [getWorkbookResourceKey(workbookName)],
         });
       });
+      if (data) {
+        this.applyWorkbookData(workbookName, data);
+      }
     });
+  }
+
+  private applyWorkbookData(
+    workbookName: string,
+    data: WorkbookData<
+      MetadataType<TMetadata, "cell">,
+      MetadataType<TMetadata, "sheet">,
+      MetadataType<TMetadata, "workbook">,
+      MetadataType<TMetadata, "range">
+    >
+  ): void {
+    for (const sheet of data.sheets) {
+      this.addSheet({ workbookName, sheetName: sheet.name });
+      const content = toEntryMap(sheet.content);
+      if (content.size > 0) {
+        this.setSheetContent(
+          { workbookName, sheetName: sheet.name },
+          content
+        );
+      }
+    }
+
+    for (const namedExpression of data.namedExpressions ?? []) {
+      this.addNamedExpression({
+        workbookName,
+        sheetName: namedExpression.sheetName,
+        expressionName: namedExpression.name,
+        expression: namedExpression.expression,
+      });
+    }
+
+    // Tables derive their header names from cell content, so they are created
+    // after every sheet has been populated.
+    for (const table of data.tables ?? []) {
+      this.addTable({
+        workbookName,
+        tableName: table.name,
+        sheetName: table.sheetName,
+        start: table.start,
+        numRows: table.numRows,
+        numCols: table.numCols,
+      });
+    }
+
+    for (const cellDataType of data.cellDataTypes ?? []) {
+      this.addCellDataType({
+        areas: areasToRangeAddresses(cellDataType.areas, workbookName),
+        dataType: cellDataType.dataType,
+      });
+    }
+
+    for (const cellStyle of data.cellStyles ?? []) {
+      this.addCellStyle({
+        areas: areasToRangeAddresses(cellStyle.areas, workbookName),
+        style: cellStyle.style,
+      });
+    }
+
+    for (const conditionalStyle of data.conditionalStyles ?? []) {
+      this.addConditionalStyle({
+        areas: areasToRangeAddresses(conditionalStyle.areas, workbookName),
+        condition: conditionalStyle.condition,
+      });
+    }
+
+    for (const rangeMetadata of data.rangeMetadata ?? []) {
+      this.addRangeMetadata({
+        id: rangeMetadata.id,
+        areas: areasToRangeAddresses(rangeMetadata.areas, workbookName),
+        metadata: rangeMetadata.metadata,
+      });
+    }
+
+    for (const sheet of data.sheets) {
+      for (const [cellReference, metadata] of toEntryMap(sheet.cellMetadata)) {
+        const { rowIndex, colIndex } = parseCellReference(cellReference);
+        this.setCellMetadata(
+          { workbookName, sheetName: sheet.name, rowIndex, colIndex },
+          metadata
+        );
+      }
+      if (sheet.sheetMetadata !== undefined) {
+        this.setSheetMetadata(
+          { workbookName, sheetName: sheet.name },
+          sheet.sheetMetadata
+        );
+      }
+    }
+
+    if (data.workbookMetadata !== undefined) {
+      this.setWorkbookMetadata(workbookName, data.workbookMetadata);
+    }
   }
 
   removeWorkbook(workbookName: string): void {

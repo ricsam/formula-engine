@@ -20,7 +20,7 @@ describe("SUM function", () => {
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
   });
 
@@ -474,7 +474,7 @@ describe("SUM function", () => {
 
   test("SUM() with zero arguments", () => {
     const engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName: "Sheet1" });
     const sheetName = "Sheet1";
 

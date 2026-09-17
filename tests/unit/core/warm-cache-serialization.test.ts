@@ -25,7 +25,7 @@ function address(ref: string) {
 
 function buildEngine() {
   const engine = FormulaEngine.buildEmpty();
-  engine.addWorkbook(workbookName);
+  engine.addWorkbook({ workbookName: workbookName });
   engine.addSheet({ workbookName, sheetName });
   return engine;
 }
@@ -309,7 +309,7 @@ describe("Warm-cache serialization", () => {
     });
 
     const dirtyEngine = FormulaEngine.buildEmpty();
-    dirtyEngine.addWorkbook("a");
+    dirtyEngine.addWorkbook({ workbookName: "a" });
     dirtyEngine.addSheet({ workbookName: "a", sheetName: "Sheet1" });
     dirtyEngine.addNamedExpression({
       expressionName: "STALE_RATE",

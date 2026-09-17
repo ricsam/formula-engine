@@ -32,7 +32,7 @@ type PersistentManagers = Omit<
 
 function buildEngine(): TestEngine {
   const engine = FormulaEngine.buildEmpty<TestMetadata>();
-  engine.addWorkbook(workbookName);
+  engine.addWorkbook({ workbookName: workbookName });
   engine.addSheet({ workbookName, sheetName });
   engine.clearUndoRedoHistory();
   return engine;
@@ -707,7 +707,7 @@ describe("incremental history persistent-state parity", () => {
     const engine = buildEngine();
     seedBaselineTable(engine);
 
-    expectUndoRedoParity(engine, () => engine.addWorkbook("AddedBook"));
+    expectUndoRedoParity(engine, () => engine.addWorkbook({ workbookName: "AddedBook" }));
     expect(engine.hasWorkbook("AddedBook")).toBe(true);
   });
 

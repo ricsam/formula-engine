@@ -6,7 +6,7 @@ const sheetName = "Data";
 
 function buildEngine() {
   const engine = FormulaEngine.buildEmpty();
-  engine.addWorkbook(workbookName);
+  engine.addWorkbook({ workbookName: workbookName });
   engine.addSheet({ workbookName, sheetName });
   engine.clearUndoRedoHistory();
   return engine;

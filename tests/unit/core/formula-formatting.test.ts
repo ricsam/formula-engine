@@ -13,7 +13,7 @@ const address = {
 
 function buildEngine(): FormulaEngine {
   const engine = FormulaEngine.buildEmpty();
-  engine.addWorkbook(workbookName);
+  engine.addWorkbook({ workbookName: workbookName });
   engine.addSheet({ workbookName, sheetName });
   engine.clearUndoRedoHistory();
   return engine;

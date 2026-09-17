@@ -37,7 +37,7 @@ describe("FormulaEngine", () => {
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
   });
 
@@ -100,7 +100,7 @@ describe("FormulaEngine", () => {
 
   test("should handle formulas with cross sheet references", () => {
     const engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName: "Sheet1" });
     engine.addSheet({ workbookName, sheetName: "Sheet2" });
 
@@ -163,7 +163,7 @@ describe("FormulaEngine", () => {
   test("should handle named expressions", () => {
     const engine = FormulaEngine.buildEmpty();
     const sheetName = "Sheet1";
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
 
     engine.setSheetContent(
@@ -191,7 +191,7 @@ describe("FormulaEngine", () => {
 
   test("should handle named expressions with cross sheet references", () => {
     const engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName: "Sheet1" });
     engine.addSheet({ workbookName, sheetName: "Sheet2" });
 
@@ -2799,7 +2799,7 @@ describe("FormulaEngine", () => {
         new Map<string, SerializedCellValue>([["A1", "sum"]])
       );
 
-      engine.addWorkbook(secondWorkbookName);
+      engine.addWorkbook({ workbookName: secondWorkbookName });
       engine.addSheet({
         workbookName: secondWorkbookName,
         sheetName: "SheetA",

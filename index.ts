@@ -19,6 +19,18 @@ export type {
   UndoRedoState,
 } from "./src/core/types";
 
+export type {
+  WorkbookData,
+  WorkbookDataArea,
+  WorkbookDataCellDataType,
+  WorkbookDataCellStyle,
+  WorkbookDataConditionalStyle,
+  WorkbookDataNamedExpression,
+  WorkbookDataRangeMetadata,
+  WorkbookDataSheet,
+  WorkbookDataTable,
+} from "./src/core/workbook-data";
+
 export {
   analyzeFormula,
   findFormulaReferenceAt,

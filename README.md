@@ -61,6 +61,63 @@ const range = {
 const values = engine.getRangeValues(range); // [[1,2,3],[4,5,6],[7,8,9]]
 ```
 
+## Import A Whole Workbook
+
+`addWorkbook` optionally takes a `WorkbookData` description, which populates the
+workbook in one undo/redo step instead of driving the mutation APIs call by
+call. It is the format spreadsheet importers target.
+
+```typescript
+import { FormulaEngine, type WorkbookData } from "@ricsam/formula-engine";
+
+const data: WorkbookData = {
+  sheets: [
+    {
+      name: "Data",
+      // A Map or a plain object, so the shape survives a JSON round trip.
+      content: { A1: "Item", B1: "Amount", A2: "pens", B2: 3, D1: "=SUM(Sales[Amount])" },
+    },
+  ],
+  tables: [
+    {
+      name: "Sales",
+      sheetName: "Data",
+      start: "A1",
+      numRows: { type: "number", value: 1 },
+      numCols: 2,
+    },
+  ],
+  namedExpressions: [{ name: "TaxRate", expression: "0.25" }],
+  cellStyles: [
+    {
+      areas: [
+        {
+          sheetName: "Data",
+          range: {
+            start: { col: 0, row: 0 },
+            end: {
+              col: { type: "number", value: 1 },
+              row: { type: "number", value: 0 },
+            },
+          },
+        },
+      ],
+      style: { bold: true },
+    },
+  ],
+};
+
+const engine = FormulaEngine.buildEmpty();
+engine.addWorkbook({ workbookName: "Budget", data });
+```
+
+Sheets are created in array order, so that order becomes the tab order. Areas in
+`cellStyles`, `conditionalStyles`, `cellDataTypes` and `rangeMetadata` are
+sheet-scoped, and the engine fills in `workbookName` from the call — the same
+data can therefore be imported under any name. Application order is
+content, then named expressions, then tables (whose headers are read from the
+content just written), then data types, styles and metadata.
+
 ## Clone Workbooks And Sheets
 
 ```typescript
@@ -122,7 +179,7 @@ formula text are stored byte-for-byte as supplied.
 ## Search And Replace Raw Strings
 
 ```typescript
-engine.addWorkbook("Workbook1");
+engine.addWorkbook({ workbookName: "Workbook1" });
 engine.addSheet({ workbookName: "Workbook1", sheetName: "Sheet1" });
 engine.setSheetContent(
   { workbookName: "Workbook1", sheetName: "Sheet1" },

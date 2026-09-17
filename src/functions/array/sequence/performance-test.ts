@@ -25,7 +25,7 @@ const setCellContent = (ref: string, content: string) => {
 const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
 
 engine = FormulaEngine.buildEmpty();
-engine.addWorkbook(workbookName);
+engine.addWorkbook({ workbookName: workbookName });
 engine.addSheet({ workbookName, sheetName });
 
 engine.setSheetContent(

@@ -124,7 +124,7 @@ function populateEngine(engine: FormulaEngine) {
 
 function createDemoEngine() {
   const engine = FormulaEngine.buildEmpty();
-  engine.addWorkbook(WORKBOOK);
+  engine.addWorkbook({ workbookName: WORKBOOK });
   engine.addSheet(sheet(FORECAST_SHEET));
   engine.addSheet(sheet(ASSUMPTIONS_SHEET));
   populateEngine(engine);

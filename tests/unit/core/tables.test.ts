@@ -33,7 +33,7 @@ describe("Tables", () => {
 
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
-    engine.addWorkbook(workbookName);
+    engine.addWorkbook({ workbookName: workbookName });
     engine.addSheet({ workbookName, sheetName });
   });
 
@@ -372,7 +372,7 @@ describe("Tables", () => {
     const sourceWorkbookName = "Quarterly Model";
     const sourceSheetName = "Data";
 
-    engine.addWorkbook(sourceWorkbookName);
+    engine.addWorkbook({ workbookName: sourceWorkbookName });
     engine.addSheet({
       workbookName: sourceWorkbookName,
       sheetName: sourceSheetName,
