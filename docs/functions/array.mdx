@@ -1,6 +1,6 @@
 ---
 title: "Array functions"
-description: "Generate dynamic arrays with SEQUENCE."
+description: "Generate and reshape dynamic arrays with SEQUENCE and UNIQUE."
 ---
 
 ## `SEQUENCE`
@@ -34,6 +34,73 @@ Generates a rectangular array of sequential numbers.
 
 Only the top-left anchor stores the formula. The neighbouring values are spill
 members and can be referenced normally.
+
+## `UNIQUE`
+
+Returns the distinct rows, or columns, of a range or array.
+
+```excel
+=UNIQUE(array, [by_col], [exactly_once])
+```
+
+| Argument | Meaning | Default |
+| --- | --- | --- |
+| `array` | range or array to deduplicate | required |
+| `by_col` | `TRUE` compares columns instead of rows | `FALSE` |
+| `exactly_once` | `TRUE` keeps only entries occurring once | `FALSE` |
+
+```excel
+=UNIQUE(A1:A5)              // distinct values down a column
+=UNIQUE(A1:C1, TRUE)        // distinct values across a row
+=UNIQUE(A1:B4, FALSE, TRUE) // rows appearing exactly once
+```
+
+Entries keep the order of their first occurrence, and the first occurrence is the
+one returned. Given `a`, `b`, `a`, `c`, `b` in `A1:A5`, `=UNIQUE(A1:A5)` spills
+`a`, `b`, `c`.
+
+### Rows versus columns
+
+With a 2-D input, `UNIQUE` compares whole rows by default, so a row survives only
+when it differs from every earlier row in at least one column. `by_col` switches
+the comparison to whole columns. `by_col` also decides the orientation of a 1-D
+input: a single row is one entry unless `by_col` is `TRUE`.
+
+`by_col` and `exactly_once` accept booleans, or `1` and `0`.
+
+### Comparison rules
+
+Values must share a type to be equal, so `1`, `"1"` and `TRUE` are three distinct
+values. Text compares case-insensitively: `"Ab"` and `"aB"` collapse into one
+entry, retaining the casing of the first. Empty cells read as `""`, which is a
+value like any other.
+
+### Unbounded ranges
+
+`array` may be unbounded along the dimension being deduplicated, because the
+unbounded tail of empty rows or columns collapses into a single empty entry:
+
+```excel
+=UNIQUE(A:A)        // fine
+=UNIQUE(1:1, TRUE)  // fine
+```
+
+The other dimension must be bounded, since it determines the result's width or
+height. `=UNIQUE(1:2)` and `=UNIQUE(A:B, TRUE)` return `#VALUE!`.
+
+<Note>
+  An unbounded empty tail counts as more than one occurrence, so `exactly_once`
+  never returns the empty entry for an unbounded `array`.
+</Note>
+
+### Errors
+
+An error anywhere in `array` propagates to the result. When `exactly_once`
+removes every entry, `UNIQUE` returns `#CALC!`.
+
+```excel
+=UNIQUE(A1:A4, FALSE, TRUE) // #CALC! when every value repeats
+```
 
 ## Spill obstruction
 

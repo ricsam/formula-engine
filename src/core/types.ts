@@ -211,6 +211,7 @@ export interface TableDefinition {
 
 // Formula errors
 export enum FormulaError {
+  CALC = "#CALC!",
   DIV0 = "#DIV/0!",
   NA = "#N/A",
   NAME = "#NAME?",

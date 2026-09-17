@@ -8,6 +8,7 @@ import type { FunctionDefinition } from "../core/types";
 // import { basicMathFunctions } from "./math/basic";
 // import { textFunctions } from "./text/string-functions";
 import { SEQUENCE } from "./array/sequence/sequence";
+import { UNIQUE } from "./array/unique/unique";
 import { INDEX } from "./lookup/index-lookup/index-lookup"; // Fixed import path
 import { MATCH } from "./lookup/match/match";
 import { COUNT } from "./lookup/count/count";
@@ -98,6 +99,7 @@ export const functionDefinitions = {
   SUMIF,
   SUMIFS,
   TEXTJOIN,
+  UNIQUE,
   XLOOKUP,
 } satisfies Record<string, FunctionDefinition>;
 

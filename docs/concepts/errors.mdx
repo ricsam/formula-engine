@@ -13,6 +13,7 @@ Every result on this page was produced by running the code against the engine.
 
 | Value | Meaning | Typical trigger |
 | --- | --- | --- |
+| `#CALC!` | Array result is empty | `=UNIQUE(A1:A2,FALSE,TRUE)` where every value repeats |
 | `#CYCLE!` | Circular reference | `A1: =A2`, `A2: =A1` |
 | `#NAME?` | Unknown function or name | `=NOSUCHFN(1)`, `=UnknownName` |
 | `#VALUE!` | Wrong argument type | `=1+"abc"` |
@@ -128,7 +129,7 @@ Values are plain strings, so a small helper is enough:
 
 ```typescript
 const ERROR_VALUES = new Set([
-  "#CYCLE!", "#NAME?", "#VALUE!", "#NUM!",
+  "#CALC!", "#CYCLE!", "#NAME?", "#VALUE!", "#NUM!",
   "#SPILL!", "#REF!", "#ERROR!", "#DIV/0!", "#N/A",
 ]);
 

@@ -1,5 +1,26 @@
 # @ricsam/formula-engine
 
+## 0.3.1
+
+### Patch Changes
+
+- Add the `UNIQUE` function and a `#CALC!` error value.
+
+  `UNIQUE(array, [by_col], [exactly_once])` returns the distinct rows of a range or
+  array, in order of first occurrence. `by_col` compares columns instead of rows,
+  and also picks the orientation of a 1-D input. `exactly_once` keeps only the
+  rows or columns that occur a single time. Both flags accept booleans, or `1`
+  and `0`.
+
+  Values must share a type to be equal, so `1`, `"1"` and `TRUE` stay distinct,
+  while text compares case-insensitively and keeps the casing of its first
+  occurrence. `array` may be unbounded along the deduplicated dimension, since the
+  tail of empty rows or columns collapses into a single empty entry; unbounded
+  along the other dimension is `#VALUE!`, because that dimension sizes the result.
+
+  An error inside `array` propagates. When `exactly_once` removes every row,
+  `UNIQUE` returns the new `FormulaError.CALC` (`#CALC!`) value.
+
 ## 0.3.0
 
 ### Minor Changes

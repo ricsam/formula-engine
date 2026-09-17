@@ -363,6 +363,17 @@ const functionMetadata = {
       parameter("text2", true, true),
     ],
   },
+  UNIQUE: {
+    category: "array",
+    description:
+      "Returns the distinct rows, or columns, of a range or array.",
+    signature: "UNIQUE(array, [by_col], [exactly_once])",
+    parameters: [
+      parameter("array"),
+      parameter("by_col", true),
+      parameter("exactly_once", true),
+    ],
+  },
   XLOOKUP: {
     category: "lookup",
     description: "Finds a value and returns the corresponding value from another array.",

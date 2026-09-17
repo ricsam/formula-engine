@@ -1,9 +1,9 @@
 ---
 title: "Function reference"
-description: "The exact 39 functions registered by FormulaEngine."
+description: "The exact 40 functions registered by FormulaEngine."
 ---
 
-FormulaEngine currently registers **39 function names** across seven categories.
+FormulaEngine currently registers **40 function names** across seven categories.
 Function names are case-insensitive in formulas.
 
 | Category | Functions |
@@ -12,7 +12,7 @@ Function names are case-insensitive in formulas.
 | [Logical](/functions/logical) | `IF`, `IFERROR`, `AND`, `OR` |
 | [Text](/functions/text) | `CONCATENATE`, `CONCAT`, `EXACT`, `FIND`, `LEFT`, `RIGHT`, `MID`, `LEN`, `TEXTJOIN` |
 | [Lookup](/functions/lookup) | `COUNT`, `COUNTIF`, `COUNTIFS`, `INDEX`, `MATCH`, `XLOOKUP` |
-| [Array](/functions/array) | `SEQUENCE` |
+| [Array](/functions/array) | `SEQUENCE`, `UNIQUE` |
 | [Information](/functions/information) | `CELL`, `COLUMN`, `ROW` |
 | [Reference](/functions/reference) | `ADDRESS`, `INDIRECT`, `OFFSET` |
 
@@ -61,8 +61,9 @@ Criteria can be literals or comparison strings. Multi-criteria functions use
 
 ## Array results
 
-`SEQUENCE`, range references and range arithmetic may spill into neighbouring
-cells. A blocked output area produces `#SPILL!`. See [Spilling](/concepts/spilling).
+`SEQUENCE`, `UNIQUE`, range references and range arithmetic may spill into
+neighbouring cells. A blocked output area produces `#SPILL!`. See
+[Spilling](/concepts/spilling).
 
 ## Errors
 
