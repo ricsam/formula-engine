@@ -40,6 +40,24 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                           "deps": [
                             {
                               "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "directDepsUpdated": false,
+                                  "key": "ast:C1:C5",
+                                  "resolved": true,
+                                  "resultType": "spilled-values",
+                                  "type": "cell",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "A1",
+                              "resolved": true,
+                              "resultType": "spilled-values",
+                              "type": "cell",
+                            },
+                            {
+                              "canResolve": true,
                               "directDepsUpdated": false,
                               "key": "C1",
                               "resolved": true,
@@ -51,6 +69,24 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                           "key": "A1",
                           "resolved": true,
                           "resultType": "value",
+                          "type": "cell",
+                        },
+                        {
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "directDepsUpdated": false,
+                              "key": "ast:C1:C5",
+                              "resolved": true,
+                              "resultType": "spilled-values",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "A1",
+                          "resolved": true,
+                          "resultType": "spilled-values",
                           "type": "cell",
                         },
                         {
@@ -94,24 +130,6 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                           "resolved": true,
                           "resultType": "range",
                           "type": "range",
-                        },
-                        {
-                          "canResolve": true,
-                          "deps": [
-                            {
-                              "canResolve": true,
-                              "directDepsUpdated": false,
-                              "key": "ast:C1:C5",
-                              "resolved": true,
-                              "resultType": "spilled-values",
-                              "type": "cell",
-                            },
-                          ],
-                          "directDepsUpdated": false,
-                          "key": "A1",
-                          "resolved": true,
-                          "resultType": "spilled-values",
-                          "type": "cell",
                         },
                       ],
                       "directDepsUpdated": false,
@@ -156,6 +174,24 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                           "deps": [
                             {
                               "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "directDepsUpdated": false,
+                                  "key": "ast:C1:C5",
+                                  "resolved": true,
+                                  "resultType": "spilled-values",
+                                  "type": "cell",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "A1",
+                              "resolved": true,
+                              "resultType": "spilled-values",
+                              "type": "cell",
+                            },
+                            {
+                              "canResolve": true,
                               "directDepsUpdated": false,
                               "key": "C1",
                               "resolved": true,
@@ -167,6 +203,24 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                           "key": "A1",
                           "resolved": true,
                           "resultType": "value",
+                          "type": "cell",
+                        },
+                        {
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "directDepsUpdated": false,
+                              "key": "ast:C1:C5",
+                              "resolved": true,
+                              "resultType": "spilled-values",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "A1",
+                          "resolved": true,
+                          "resultType": "spilled-values",
                           "type": "cell",
                         },
                         {
@@ -210,24 +264,6 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                           "resolved": true,
                           "resultType": "range",
                           "type": "range",
-                        },
-                        {
-                          "canResolve": true,
-                          "deps": [
-                            {
-                              "canResolve": true,
-                              "directDepsUpdated": false,
-                              "key": "ast:C1:C5",
-                              "resolved": true,
-                              "resultType": "spilled-values",
-                              "type": "cell",
-                            },
-                          ],
-                          "directDepsUpdated": false,
-                          "key": "A1",
-                          "resolved": true,
-                          "resultType": "spilled-values",
-                          "type": "cell",
                         },
                       ],
                       "directDepsUpdated": false,
@@ -272,6 +308,24 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                           "deps": [
                             {
                               "canResolve": true,
+                              "deps": [
+                                {
+                                  "canResolve": true,
+                                  "directDepsUpdated": false,
+                                  "key": "ast:C1:C5",
+                                  "resolved": true,
+                                  "resultType": "spilled-values",
+                                  "type": "cell",
+                                },
+                              ],
+                              "directDepsUpdated": false,
+                              "key": "A1",
+                              "resolved": true,
+                              "resultType": "spilled-values",
+                              "type": "cell",
+                            },
+                            {
+                              "canResolve": true,
                               "directDepsUpdated": false,
                               "key": "C1",
                               "resolved": true,
@@ -283,6 +337,24 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                           "key": "A1",
                           "resolved": true,
                           "resultType": "value",
+                          "type": "cell",
+                        },
+                        {
+                          "canResolve": true,
+                          "deps": [
+                            {
+                              "canResolve": true,
+                              "directDepsUpdated": false,
+                              "key": "ast:C1:C5",
+                              "resolved": true,
+                              "resultType": "spilled-values",
+                              "type": "cell",
+                            },
+                          ],
+                          "directDepsUpdated": false,
+                          "key": "A1",
+                          "resolved": true,
+                          "resultType": "spilled-values",
                           "type": "cell",
                         },
                         {
@@ -326,24 +398,6 @@ exports[`Reproduce issue with evalution order SUM, AVERAGE, COUNT on spilled ran
                           "resolved": true,
                           "resultType": "range",
                           "type": "range",
-                        },
-                        {
-                          "canResolve": true,
-                          "deps": [
-                            {
-                              "canResolve": true,
-                              "directDepsUpdated": false,
-                              "key": "ast:C1:C5",
-                              "resolved": true,
-                              "resultType": "spilled-values",
-                              "type": "cell",
-                            },
-                          ],
-                          "directDepsUpdated": false,
-                          "key": "A1",
-                          "resolved": true,
-                          "resultType": "spilled-values",
-                          "type": "cell",
                         },
                       ],
                       "directDepsUpdated": false,

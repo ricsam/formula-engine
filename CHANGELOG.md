@@ -1,5 +1,32 @@
 # @ricsam/formula-engine
 
+## 0.3.2
+
+### Patch Changes
+
+- Fix stale spilled values when a spilling formula's inputs change.
+
+  A spilling formula is held by two nodes: a spill-meta node that owns the spilled
+  result, and the anchor cell's own node that exposes the top-left value. Two
+  dependency edges were missing between them, and because invalidation walks
+  reverse dependency edges, a node recording no dependencies could never be
+  invalidated.
+
+  The spill-meta node never recorded the formula's inputs. When a spill is set up
+  through the anchor, the formula is evaluated with the anchor as the context node,
+  so the anchor collected the inputs and the spill-meta node was handed only the
+  result. Separately, the anchor dropped its own edge to the spill-meta node on
+  re-evaluation, because that path clears the collected dependencies first and
+  never re-added the edge.
+
+  The effect was that results depended on read order. Reading a spill member first
+  happened to build the missing edge, so `C1 =SEQUENCE(3,1,A1)` recalculated
+  correctly; reading the anchor first left both nodes with no dependencies, so
+  editing `A1` never invalidated them and every later read returned a stale cached
+  value for the lifetime of the engine. Both nodes now record the edges they
+  depend on, so a spilling formula recalculates the same way regardless of read
+  order.
+
 ## 0.3.1
 
 ### Patch Changes

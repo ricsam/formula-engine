@@ -30,6 +30,11 @@ describe("Incremental invalidation", () => {
       `cell-value:${workbookName}:${targetSheetName}:${ref}`
     );
 
+  const spillMetaNode = (ref: string, targetSheetName = sheetName) =>
+    engine._dependencyManager.getSpillMetaNode(
+      `spill-meta:${workbookName}:${targetSheetName}:${ref}`
+    );
+
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
     engine.addWorkbook({ workbookName: workbookName });
@@ -271,5 +276,94 @@ describe("Incremental invalidation", () => {
     expect(cell("B1")).toBe(2);
     expect(cell("C1")).toBe("");
     expect(cell("D1")).toBe(11);
+  });
+
+  describe("spill anchors evaluated before their inputs change", () => {
+    // A spilling formula stores its real result on a spill-meta node, and copies the
+    // top-left value onto the anchor's own cell-value node. Reading the anchor first
+    // resolves the anchor without recording the AST dependency that the spill-meta
+    // node collects, so editing an input never invalidates the anchor and every
+    // subsequent read is served from a stale cache.
+    //
+    // Reading a spill member first happens to build the edge, which is why the same
+    // formula recalculates correctly depending only on read order.
+
+    test("editing an input invalidates a spill anchor that was already read", () => {
+      setCellContent("A1", 2);
+      setCellContent("C1", "=SEQUENCE(3,1,A1)");
+
+      // Read the anchor, not a member.
+      expect(cell("C1")).toBe(2);
+
+      const anchorNode = cellNode("C1");
+      const metaNode = spillMetaNode("C1");
+      expect(anchorNode.resolved).toBe(true);
+      expect(metaNode.resolved).toBe(true);
+
+      setCellContent("A1", 7);
+
+      // The anchor depends on A1 through the spilling formula, so both nodes must be
+      // invalidated by the edit.
+      expect(metaNode.resolved).toBe(false);
+      expect(anchorNode.resolved).toBe(false);
+
+      expect(cell("C1")).toBe(7);
+      expect(cell("C2")).toBe(8);
+      expect(cell("C3")).toBe(9);
+    });
+
+    test("a spilling formula recalculates the same way regardless of read order", () => {
+      setCellContent("A1", 2);
+      setCellContent("C1", "=SEQUENCE(3,1,A1)");
+      // Read a member first, which is the ordering that already works.
+      expect(cell("C2")).toBe(3);
+      setCellContent("A1", 7);
+      const memberFirst = [cell("C1"), cell("C2"), cell("C3")];
+
+      engine = FormulaEngine.buildEmpty();
+      engine.addWorkbook({ workbookName: workbookName });
+      engine.addSheet({ workbookName, sheetName });
+
+      setCellContent("A1", 2);
+      setCellContent("C1", "=SEQUENCE(3,1,A1)");
+      // Read the anchor first.
+      expect(cell("C1")).toBe(2);
+      setCellContent("A1", 7);
+      const anchorFirst = [cell("C1"), cell("C2"), cell("C3")];
+
+      expect(anchorFirst).toEqual(memberFirst);
+      expect(anchorFirst).toEqual([7, 8, 9]);
+    });
+
+    test("repeated edits refresh a spill anchor that was already read", () => {
+      setCellContent("A1", 2);
+      setCellContent("C1", "=SEQUENCE(3,1,A1)");
+
+      expect(cell("C1")).toBe(2);
+
+      // Neither a second edit nor an unrelated write recovers the cached value, so
+      // once an anchor goes stale it stays stale for the lifetime of the engine.
+      setCellContent("A1", 7);
+      expect(cell("C1")).toBe(7);
+
+      setCellContent("A1", 8);
+      expect(cell("C1")).toBe(8);
+
+      setCellContent("Z9", "unrelated");
+      expect(cell("C1")).toBe(8);
+    });
+
+    test("editing an input invalidates a UNIQUE anchor that was already read", () => {
+      setCellContent("A1", "a");
+      setCellContent("A2", "b");
+      setCellContent("C1", "=UNIQUE(A1:A2)");
+
+      expect(cell("C1")).toBe("a");
+
+      setCellContent("A1", "z");
+
+      expect(cell("C1")).toBe("z");
+      expect(cell("C2")).toBe("b");
+    });
   });
 });

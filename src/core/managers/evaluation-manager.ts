@@ -744,6 +744,13 @@ export class EvaluationManager {
       // we just need to evaluate the spill origin and assign the result to the currentDepNode
       const spillOrigin = node.spillMeta;
       if (spillOrigin.evaluationResult.type === "spilled-values") {
+        // The anchor's value is just the top-left cell of the spill-meta node's
+        // result, so the anchor has to keep depending on the spill-meta node.
+        // resetDirectDepsUpdated() above cleared the anchor's dependencies, so
+        // without re-adding this edge the anchor would end up with no
+        // dependencies at all and never be invalidated by edits to the
+        // spilling formula's inputs.
+        node.addDependency(spillOrigin);
         const result = spillOrigin.evaluationResult.evaluate(
           { x: 0, y: 0 },
           ctx
@@ -828,6 +835,14 @@ export class EvaluationManager {
         const spillMetaNode = this.dependencyManager.getSpillMetaNode(
           node.key.replace(/^[^:]+:/, "spill-meta:")
         );
+
+        // The formula lives in the anchor cell, so evaluating it above collected the
+        // formula's dependencies on the anchor. The spill-meta node is the node that
+        // owns the spilled result, so it has to depend on those same inputs,
+        // otherwise editing an input would never invalidate the spilled result.
+        for (const dependency of node.getDependencies()) {
+          spillMetaNode.addDependency(dependency);
+        }
 
         node.addDependency(spillMetaNode);
         node.setSpillMetaNode(spillMetaNode);
