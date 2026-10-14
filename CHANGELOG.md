@@ -1,5 +1,16 @@
 # @ricsam/formula-engine
 
+## 0.3.5
+
+### Patch Changes
+
+- Replace repeated per-entry transitive dependency searches during range
+  evaluation with one iterative candidate-closure/reverse-reachability pass.
+  Shared dependency graphs are visited once per range evaluation while preserving
+  circular aggregate/spill semantics, including cycles and deep chains.
+- Document the compact snapshot size versus cold-recalculation tradeoff; prefer
+  warm snapshots for interactive session recovery when reopen latency matters.
+
 ## 0.3.4
 
 ### Patch Changes

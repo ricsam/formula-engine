@@ -59,6 +59,13 @@ does not mutate the engine or require constructing a second engine. Save after
 workbook mutations, not selection/view changes. Neither form persists undo history
 or application-owned UI state outside the engine.
 
+Compact persistence trades file size and save cost for cold recalculation on
+reopen. Large dependency-heavy workbooks can take substantially longer to render
+initial values after a compact restore. Prefer the default warm snapshot for
+interactive session recovery when reopen latency matters; use compact saves when
+size matters more, and benchmark both with representative workbooks. Avoid
+serializing either form for selection-only changes.
+
 ## Quick Start
 
 ```typescript

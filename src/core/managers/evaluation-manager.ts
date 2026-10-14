@@ -70,27 +70,37 @@ export class EvaluationManager {
     this.dependencyManager.clearEvaluationCache();
   }
 
-  private dependsOnNode(
-    candidate: DependencyNode,
-    target: DependencyNode,
-    visited: Set<DependencyNode> = new Set()
-  ): boolean {
-    if (candidate === target) {
-      return true;
-    }
-
-    if (visited.has(candidate)) {
-      return false;
-    }
-    visited.add(candidate);
-
-    for (const dep of candidate.getDependencies()) {
-      if (this.dependsOnNode(dep, target, visited)) {
-        return true;
+  private collectCircularRangeEntries(
+    candidates: Iterable<DependencyNode>,
+    target: DependencyNode
+  ): Set<DependencyNode> {
+    // Build the candidate closure once, not a transitive DFS for every entry.
+    // Reverse traversal handles SCCs without incorrectly caching a false result
+    // for a back-edge encountered before another member's path to the target.
+    const reverse = new Map<DependencyNode, DependencyNode[]>();
+    const visited = new Set<DependencyNode>();
+    const pending = Array.from(candidates);
+    while (pending.length) {
+      const current = pending.pop()!;
+      if (current === target || visited.has(current)) continue;
+      visited.add(current);
+      for (const dependency of current.getDependencies()) {
+        let parents = reverse.get(dependency);
+        if (!parents) reverse.set(dependency, (parents = []));
+        parents.push(current);
+        if (!visited.has(dependency)) pending.push(dependency);
       }
     }
-
-    return false;
+    const circular = new Set<DependencyNode>([target]);
+    pending.push(target);
+    while (pending.length) {
+      for (const parent of reverse.get(pending.pop()!) ?? []) {
+        if (circular.has(parent)) continue;
+        circular.add(parent);
+        pending.push(parent);
+      }
+    }
+    return circular;
   }
 
   invalidateFromMutation(footprint: MutationInvalidation): void {
@@ -580,20 +590,21 @@ export class EvaluationManager {
       node.upgradeFrontierDependencies();
 
       const evalOrder = node.getRangeEvalOrder();
-      const circularEntryCache = new Map<DependencyNode, boolean>();
-      const shouldSkipCircularEntry = (candidate: DependencyNode) => {
-        const cached = circularEntryCache.get(candidate);
-        if (cached !== undefined) {
-          return cached;
+      const candidates: DependencyNode[] = [];
+      for (const entry of evalOrder) {
+        if (entry.type === "value") candidates.push(entry.node);
+        else if (entry.type === "empty_cell" || entry.type === "empty_range") {
+          for (const candidate of entry.candidates) candidates.push(candidate);
         }
-
-        // If a cell inside the range depends back on the range itself, including
-        // its current value would count a circular result back into the same
-        // aggregate on a later rerun.
-        const isCircular = this.dependsOnNode(candidate, node);
-        circularEntryCache.set(candidate, isCircular);
-        return isCircular;
-      };
+      }
+      // Candidate dependencies are stable while their already-evaluated values
+      // are consumed below. Spill callbacks collect dependencies on this range
+      // via its EvaluationContext, not on candidate nodes. Stop traversal at
+      // this range, whose outgoing edges can therefore change safely. Never
+      // retain the reachability set across range evaluations/reruns.
+      const circularEntries = this.collectCircularRangeEntries(candidates, node);
+      const shouldSkipCircularEntry = (candidate: DependencyNode) =>
+        circularEntries.has(candidate);
 
       const results: CellInRangeResult[] = [];
 
