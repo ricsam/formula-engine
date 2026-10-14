@@ -471,10 +471,17 @@ export class FormulaEvaluator {
             row: node.isAbsolute.start.row || node.isAbsolute.end.row,
           },
           sheetName: node.sheetName,
+          workbookName: node.workbookName,
         },
         context
       );
     }
+
+    // The range result captures its source address before any cells are read.
+    // Record that context now, including for aggregate consumers which call
+    // evaluateAllCells rather than the per-cell evaluate callback.
+    if (!node.workbookName) context.addContextDependency("workbook");
+    if (!node.sheetName) context.addContextDependency("sheet");
 
     const debugRange = getRangeKey(node.range);
 

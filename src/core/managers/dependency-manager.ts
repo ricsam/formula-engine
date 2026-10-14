@@ -2406,11 +2406,18 @@ export class DependencyManager {
     // Track visited nodes to avoid infinite loops in circular dependencies
     const visited = new Set<DependencyNode>();
     visited.add(node); // Don't revisit the current cell
+    const resolutionResults = new Map<DependencyNode, boolean>();
 
     const areTransitiveDepsResolved = (nodes: Set<DependencyNode>): boolean => {
       let canResolve = true;
       for (const node of nodes) {
-        if (visited.has(node) || node.resolved) {
+        if (node.resolved) {
+          continue;
+        }
+        if (visited.has(node)) {
+          // Only back edges on the active path can be skipped. A completed
+          // shared dependency may still need another evaluation pass.
+          if (resolutionResults.get(node) === false) canResolve = false;
           continue;
         }
         visited.add(node);
@@ -2420,6 +2427,7 @@ export class DependencyManager {
 
         const a = areTransitiveDepsResolved(directDeps);
         const b = node.canResolve();
+        resolutionResults.set(node, a && b);
 
         if (!a || !b) {
           canResolve = false;

@@ -1,5 +1,17 @@
 # @ricsam/formula-engine
 
+## 0.3.3
+
+### Patch Changes
+
+- Fix read-order-dependent nested aggregates. Shared unresolved dependencies now
+  retain their resolution status across dependency graph branches rather than
+  allowing a dependent cell to cache a provisional value.
+- Scope range expression caches to their workbook and sheet before evaluating
+  aggregates. Identical formulas in different workbooks or sheets no longer
+  reuse another context's result. Preserve explicit workbook references when
+  reducing single-cell ranges to references.
+
 ## 0.3.2
 
 ### Patch Changes
