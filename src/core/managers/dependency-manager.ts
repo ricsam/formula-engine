@@ -306,6 +306,7 @@ export class DependencyManager {
 
     return [
       ...this.cellNodes.values(),
+      ...this.virtualCellValueNodes.values(),
       ...this.spillMetaNodes.values(),
       ...this.emptyCells.values(),
       ...this.ranges.values(),
@@ -1571,6 +1572,15 @@ export class DependencyManager {
       return;
     }
 
+    // Virtual formula roots participate in the same dependent traversal as
+    // physical cells. Unregistering them without invalidating their result left
+    // evaluateFormula (including conditional styles) returning stale values.
+    if (node instanceof VirtualCellValueNode) {
+      node.clearSpillMetaNode();
+      node.invalidate();
+      return;
+    }
+
     if (node instanceof SpillMetaNode) {
       this.deleteSpilledValue(node.key);
       this.getLinkedCellValueNode(node)?.clearSpillMetaNode();
@@ -1678,6 +1688,13 @@ export class DependencyManager {
       if (shouldRemoveAddress(node.cellAddress)) {
         this.unregisterNode(node);
         this.cellNodes.delete(key);
+      }
+    }
+
+    for (const [key, node] of Array.from(this.virtualCellValueNodes.entries())) {
+      if (shouldRemoveAddress(node.cellAddress)) {
+        this.unregisterNode(node);
+        this.virtualCellValueNodes.delete(key);
       }
     }
 

@@ -4215,8 +4215,17 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     };
   }
 
-  serializeEngine(): string {
-    return serialize(this.buildSerializedSnapshot());
+  /**
+   * Serialize all canonical workbook data. By default also retains warm evaluation
+   * state. Set includeEvaluationState to false for compact durable persistence;
+   * resetToSerializedEngine rebuilds those derived dependencies lazily on demand.
+   */
+  serializeEngine(options: { includeEvaluationState?: boolean } = {}): string {
+    return serialize(
+      options.includeEvaluationState === false
+        ? this.buildHistorySnapshot()
+        : this.buildSerializedSnapshot()
+    );
   }
 
   private normalizeSupportedSnapshot(
@@ -4292,15 +4301,25 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     this.assertHistoryControlAllowed("reset serialized engine state");
     const deserialized = this.normalizeSupportedSnapshot(
       deserialize(data)
-    ) as EngineSnapshot;
-    this.restoreDataManagersFromSnapshot(deserialized.managers);
-    this.dependencyManager.restoreFromSnapshot(
-      {
-        dependency: deserialized.managers.dependency,
-        cache: deserialized.managers.cache,
-      },
-      this.evaluationManager
     );
+    const managers = deserialized.managers;
+    const hasDependency = "dependency" in managers;
+    const hasCache = "cache" in managers;
+    if (hasDependency !== hasCache) {
+      throw new Error("Serialized evaluation state must include both dependency and cache.");
+    }
+    this.restoreDataManagersFromSnapshot(managers);
+    if (hasDependency && hasCache) {
+      this.dependencyManager.restoreFromSnapshot(
+        {
+          dependency: managers.dependency,
+          cache: managers.cache,
+        },
+        this.evaluationManager
+      );
+    } else {
+      this.dependencyManager.clearEvaluationCache();
+    }
 
     this.clearUndoRedoHistory();
     this.eventManager.emitUpdate();

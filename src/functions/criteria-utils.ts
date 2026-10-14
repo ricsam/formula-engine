@@ -9,6 +9,7 @@ import {
 } from "../core/types";
 import { getRelativeRange } from "../core/utils";
 import type { EvaluationContext } from "../evaluator/evaluation-context";
+import { readCriteriaRange } from "../evaluator/criteria-range-cache";
 import {
   EvaluationError
 } from "../evaluator/evaluation-error";
@@ -224,23 +225,17 @@ export function processMultiCriteriaValues(
     }
 
     // Get all cells to simplify position-based pairing
-    const valueResults = valueRangeResult.evaluateAllCells.call(evaluator, {
-      context,
-      evaluate: valueRangeResult.evaluate,
-      origin: context.cellAddress,
-      lookupOrder,
-    });
+    const { result: valueResults } = readCriteriaRange(
+      valueRangeResult, evaluator, context, lookupOrder, false
+    );
 
     // Get criteria ranges (or track if single value)
     const criteriaResultsArrays = criteriaPairs.map(({ rangeResult }) => {
       if (rangeResult.type === "spilled-values") {
-        const criteriaResults = rangeResult.evaluateAllCells.call(evaluator, {
-          context,
-          evaluate: rangeResult.evaluate,
-          origin: context.cellAddress,
-          lookupOrder,
-        });
-        return { type: "array" as const, results: criteriaResults };
+        const { result, index } = readCriteriaRange(
+          rangeResult, evaluator, context, lookupOrder, true
+        );
+        return { type: "array" as const, results: result, index };
       } else {
         // Single value - we'll use it for all positions
         return { type: "single" as const, value: rangeResult };
@@ -255,12 +250,7 @@ export function processMultiCriteriaValues(
       if (criteriaData.results.type !== "values") {
         return null;
       }
-      const map = new Map<string, SingleEvaluationResult>();
-      for (const { result, relativePos } of criteriaData.results.values) {
-        const key = `${relativePos.x},${relativePos.y}`;
-        map.set(key, result);
-      }
-      return map;
+      return criteriaData.index;
     });
 
     if (valueResults.type !== "values") {

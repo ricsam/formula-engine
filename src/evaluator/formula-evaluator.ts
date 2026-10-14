@@ -65,6 +65,7 @@ import { notEquals } from "./comparison/not-equals";
 import { concatenate } from "./concatenation/concatenate";
 import { CellValueNode } from "./dependency-nodes/cell-value-node";
 import { EvaluationContext } from "./evaluation-context";
+import { registerCriteriaRangeReader } from "./criteria-range-cache";
 
 export class FormulaEvaluator {
   constructor(
@@ -509,7 +510,7 @@ export class FormulaEvaluator {
       );
     }
 
-    return {
+    return registerCriteriaRangeReader({
       type: "spilled-values",
       spillArea: (origin) => this.projectRange(node.range, origin),
       source: `range ${debugRange}`,
@@ -595,10 +596,18 @@ export class FormulaEvaluator {
 
         context.dependencyNode.addDependency(rangeNode);
 
-        return this.dependencyManager.getRangeNode(rangeAddressToKey(address))
-          .result;
+        return rangeNode.result;
       },
-    };
+    }, this, (consumerContext) => {
+      const address: RangeAddress = {
+        range: node.range,
+        sheetName: node.sheetName ?? consumerContext.cellAddress.sheetName,
+        workbookName: node.workbookName ?? consumerContext.cellAddress.workbookName,
+      };
+      const rangeNode = this.dependencyManager.getRangeNode(rangeAddressToKey(address));
+      consumerContext.dependencyNode.addDependency(rangeNode);
+      return rangeNode.result;
+    });
   }
 
   evaluateArray(

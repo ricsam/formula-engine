@@ -2,6 +2,7 @@ import { flags } from "../../debug/flags";
 import { AstEvaluationNode } from "../../evaluator/dependency-nodes/ast-evaluation-node";
 import { CellValueNode } from "../../evaluator/dependency-nodes/cell-value-node";
 import { EvaluationContext } from "../../evaluator/evaluation-context";
+import { hasCriteriaRangeReader, registerCriteriaRangeReader } from "../../evaluator/criteria-range-cache";
 import {
   EvaluationError,
   SheetNotFoundError,
@@ -291,7 +292,7 @@ export class EvaluationManager {
       rowIndex: origin.rowIndex,
     });
 
-    if (evaluation.sourceRange) {
+    if (evaluation.sourceRange && hasCriteriaRangeReader(evaluation, this.formulaEvaluator)) {
       return {
         type: "spilled-values",
         spill: {
@@ -401,7 +402,7 @@ export class EvaluationManager {
       };
     }
 
-    return {
+    return registerCriteriaRangeReader({
       type: "spilled-values",
       source: spillSnapshot.source,
       sourceCell: spillSnapshot.sourceCell,
@@ -454,7 +455,13 @@ export class EvaluationManager {
         context.dependencyNode.addDependency(rangeNode);
         return rangeNode.result;
       },
-    };
+    }, this.formulaEvaluator, (context) => {
+      const rangeNode = this.dependencyManager.getRangeNode(
+        rangeAddressToKey(spillSnapshot.sourceRange)
+      );
+      context.dependencyNode.addDependency(rangeNode);
+      return rangeNode.result;
+    });
   }
 
   serializeSpillMetaEvaluationResultSnapshot(
@@ -719,17 +726,13 @@ export class EvaluationManager {
       return;
     }
 
+    // Virtual formula roots are retained and reused too, so they need reverse
+    // dependency edges just like physical cells for mutation invalidation.
     const finalizePersistentNode = () => {
-      if (node instanceof VirtualCellValueNode) {
-        return;
-      }
-
       this.dependencyManager.registerNode(node);
     };
 
-    if (!(node instanceof VirtualCellValueNode)) {
-      this.dependencyManager.unregisterNode(node);
-    }
+    this.dependencyManager.unregisterNode(node);
     node.resetDirectDepsUpdated();
 
     const ctx = new EvaluationContext(
@@ -776,9 +779,7 @@ export class EvaluationManager {
         errAddress: node,
       };
       node.setEvaluationResult(evaluationResult);
-      if (!(node instanceof VirtualCellValueNode)) {
-        this.dependencyManager.registerNode(node);
-      }
+      finalizePersistentNode();
       return;
     }
 

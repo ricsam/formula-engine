@@ -24,6 +24,41 @@ A TypeScript-based spreadsheet formula evaluation library designed for high-perf
 bun install
 ```
 
+## Rendering and criteria lookup performance
+
+Cell-style point lookups use lazily built per-workbook/sheet rectangle indexes
+(including open-ended ranges), preserving rule and area precedence. A bounded
+8,192-cell cache retains resolved direct styles and misses. Style mutation,
+rename, reset and undo/redo invalidate the affected indexes/cache. Conditional
+formula and gradient results are deliberately reevaluated, not cached, so value
+and dependency changes remain visible.
+
+Multi-criteria aggregates reuse coordinate indexes for trusted raw-range results.
+Each use still registers its dependency against the current range node; indexes
+are weakly keyed by the resolved result object, not textual addresses. Replacing
+that result after invalidation naturally discards reuse, and independent engines,
+workbooks and transformed arrays cannot alias raw-range values.
+
+## Persistence
+
+```typescript
+// Compact durable save: all canonical workbook data, no rebuildable caches.
+const saved = engine.serializeEngine({ includeEvaluationState: false });
+engine.resetToSerializedEngine(saved);
+
+// Optional warm snapshot (the existing default), including dependency/cache state.
+const warm = engine.serializeEngine();
+```
+
+Both forms preserve formulas, cell data/types/styles, conditional rules, workbook
+and sheet metadata, range metadata, tables, named expressions, and tracked
+references. Compact saves skip dependency serialization entirely; evaluation
+state is rebuilt lazily after loading. Existing version 5/6 warm snapshots remain
+importable. Loading replaces the engine state and clears undo/redo history; saving
+does not mutate the engine or require constructing a second engine. Save after
+workbook mutations, not selection/view changes. Neither form persists undo history
+or application-owned UI state outside the engine.
+
 ## Quick Start
 
 ```typescript

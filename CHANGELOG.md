@@ -1,5 +1,25 @@
 # @ricsam/formula-engine
 
+## 0.3.4
+
+### Patch Changes
+
+- Index direct/conditional styles and cell data types by workbook, sheet and
+  rectangle; cache resolved direct styles with bounded retention and mutation,
+  history, reset and rename invalidation. Keep conditional results dynamic.
+- Reuse multi-criteria aggregate coordinate indexes for current raw-range results,
+  including ranges restored from existing warm snapshots, without losing
+  dependencies or mixing transformed ranges, sheets or engines. Preserve finite
+  transformed spill values when saving warm state instead of treating their
+  source-range metadata as raw values.
+- Fix retained virtual formula dependency tracking so conditional styles and
+  ad-hoc formula evaluation update after dependent edits, including undo/redo.
+- Add compact canonical persistence via
+  `serializeEngine({ includeEvaluationState: false })`, preserving all workbook
+  data while omitting rebuildable dependency/cache state. The existing loader
+  accepts compact saves and existing version 5/6 warm snapshots.
+- Add optional `CellStyle.fontFamily` for font fidelity in renderers/importers.
+
 ## 0.3.3
 
 ### Patch Changes

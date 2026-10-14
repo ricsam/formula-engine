@@ -15,7 +15,7 @@ import type {
 import type { StyleManagerSnapshot } from "../engine-snapshot";
 import type { WorkbookManager } from "./workbook-manager";
 import type { EvaluationManager } from "./evaluation-manager";
-import { isCellInRange } from "../utils";
+import { StyleLookupIndex } from "./style-lookup-index";
 import {
   calculateGradientFactor,
   interpolateLCH,
@@ -77,6 +77,21 @@ export class StyleManager {
   private conditionalStyles: ConditionalStyle[] = [];
   private cellStyles: DirectCellStyle[] = [];
   private cellDataTypes: DirectCellDataType[] = [];
+  private directIndex?: StyleLookupIndex<DirectCellStyle>;
+  private conditionalIndex?: StyleLookupIndex<ConditionalStyle>;
+  private dataTypeIndex?: StyleLookupIndex<DirectCellDataType>;
+  // Bound retained viewport history. Cache misses (undefined) are cached too.
+  private readonly directStyleCache = new Map<string, CellStyle | undefined>();
+  private static readonly DIRECT_CACHE_LIMIT = 8192;
+
+  private invalidateLookups(kinds: readonly StyleCollectionKind[]): void {
+    if (kinds.includes("cell-style")) {
+      this.directIndex = undefined;
+      this.directStyleCache.clear();
+    }
+    if (kinds.includes("conditional-style")) this.conditionalIndex = undefined;
+    if (kinds.includes("cell-data-type")) this.dataTypeIndex = undefined;
+  }
   private readonly mutationDispatcher: MutationObserverDispatcher<StyleDataChange>;
   private mutationBatchDepth = 0;
   private mutationBatchBefore?: {
@@ -175,6 +190,7 @@ export class StyleManager {
       ? this.mutationDispatcher.retain(style)
       : undefined;
     this.conditionalStyles.push(style);
+    this.invalidateLookups(["conditional-style"]);
     if (after) {
       this.mutationDispatcher.report([
         { kind: "conditional-style", after: { index, value: after } },
@@ -205,6 +221,7 @@ export class StyleManager {
             ? this.mutationDispatcher.retain(style)
             : undefined;
           this.conditionalStyles.splice(i, 1);
+          this.invalidateLookups(["conditional-style"]);
           if (before) {
             this.mutationDispatcher.report([
               {
@@ -247,6 +264,7 @@ export class StyleManager {
       ? this.mutationDispatcher.retain(normalizedStyle)
       : undefined;
     this.cellStyles.push(normalizedStyle);
+    this.invalidateLookups(["cell-style"]);
     if (after) {
       this.mutationDispatcher.report([
         { kind: "cell-style", after: { index, value: after } },
@@ -260,6 +278,7 @@ export class StyleManager {
       ? this.mutationDispatcher.retain(dataType)
       : undefined;
     this.cellDataTypes.push(dataType);
+    this.invalidateLookups(["cell-data-type"]);
     if (after) {
       this.mutationDispatcher.report([
         { kind: "cell-data-type", after: { index, value: after } },
@@ -285,21 +304,9 @@ export class StyleManager {
   }
 
   getCellDataType(cellAddress: CellAddress): CellDataType {
-    for (let index = this.cellDataTypes.length - 1; index >= 0; index--) {
-      const rule = this.cellDataTypes[index];
-      if (
-        rule?.areas.some(
-          (area) =>
-            area.workbookName === cellAddress.workbookName &&
-            area.sheetName === cellAddress.sheetName &&
-            isCellInRange(cellAddress, area.range)
-        )
-      ) {
-        return rule.dataType;
-      }
-    }
-
-    return "general";
+    this.dataTypeIndex ??= new StyleLookupIndex(this.cellDataTypes);
+    const matches = this.dataTypeIndex.query(cellAddress);
+    return matches[matches.length - 1]?.rule.dataType ?? "general";
   }
 
   getDataTypeForRange(range: RangeAddress): CellDataType | undefined {
@@ -381,6 +388,7 @@ export class StyleManager {
             ? this.mutationDispatcher.retain(style)
             : undefined;
           this.cellStyles.splice(i, 1);
+          this.invalidateLookups(["cell-style"]);
           if (before) {
             this.mutationDispatcher.report([
               { kind: "cell-style", before: { index: i, value: before } },
@@ -646,66 +654,43 @@ export class StyleManager {
    * direct styles for the properties they define.
    */
   getCellStyle(cellAddress: CellAddress): CellStyle | undefined {
-    let resolvedStyle: CellStyle | undefined;
-
-    for (const cellStyle of this.cellStyles) {
-      if (!cellStyle || !cellStyle.areas) {
-        continue;
+    const key = JSON.stringify([
+      cellAddress.workbookName, cellAddress.sheetName,
+      cellAddress.rowIndex, cellAddress.colIndex,
+    ]);
+    let resolvedStyle = this.directStyleCache.get(key);
+    if (!this.directStyleCache.has(key)) {
+      this.directIndex ??= new StyleLookupIndex(this.cellStyles);
+      let previousRule = -1;
+      for (const match of this.directIndex.query(cellAddress)) {
+        if (match.ruleIndex === previousRule) continue;
+        previousRule = match.ruleIndex;
+        resolvedStyle = { ...resolvedStyle, ...match.rule.style };
       }
-
-      for (const area of cellStyle.areas) {
-        if (
-          area.workbookName === cellAddress.workbookName &&
-          area.sheetName === cellAddress.sheetName &&
-          isCellInRange(cellAddress, area.range)
-        ) {
-          resolvedStyle = {
-            ...resolvedStyle,
-            ...cellStyle.style,
-          };
-          break;
-        }
+      if (this.directStyleCache.size >= StyleManager.DIRECT_CACHE_LIMIT) {
+        this.directStyleCache.delete(this.directStyleCache.keys().next().value!);
       }
+      this.directStyleCache.set(key, resolvedStyle);
     }
 
-    for (const style of this.conditionalStyles) {
-      if (!style || !style.areas) {
-        continue;
-      }
-
-      // Check if cell is in any of the style's areas
-      for (const area of style.areas) {
-        if (
-          area.sheetName !== cellAddress.sheetName ||
-          area.workbookName !== cellAddress.workbookName
-        ) {
-          continue;
-        }
-
-        if (!isCellInRange(cellAddress, area.range)) {
-          continue;
-        }
-
-        // Cell is in area, evaluate condition
-        if (style.condition.type === "formula") {
-          const result = this.evaluateFormulaCondition(
-            cellAddress,
-            style,
-            area
-          );
-          if (result) return { ...resolvedStyle, ...result };
-        } else {
-          const result = this.evaluateGradientCondition(
-            cellAddress,
-            style,
-            area
-          );
-          if (result) return { ...resolvedStyle, ...result };
-        }
-      }
+    this.conditionalIndex ??= new StyleLookupIndex(this.conditionalStyles);
+    for (const { rule: style, area } of this.conditionalIndex.query(cellAddress)) {
+      // Never cache conditional results: dependencies, volatile formulas and
+      // gradient bounds can change independently of style mutations.
+      const result = style.condition.type === "formula"
+        ? this.evaluateFormulaCondition(cellAddress, style, area)
+        : this.evaluateGradientCondition(cellAddress, style, area);
+      if (result) return {
+        ...resolvedStyle, ...result,
+        ...(resolvedStyle?.borderSides ? { borderSides: { ...resolvedStyle.borderSides } } : {}),
+      };
     }
 
-    return resolvedStyle;
+    // Do not expose the cached object to callers.
+    return resolvedStyle === undefined ? undefined : {
+      ...resolvedStyle,
+      ...(resolvedStyle.borderSides ? { borderSides: { ...resolvedStyle.borderSides } } : {}),
+    };
   }
 
   /**
@@ -1002,6 +987,7 @@ export class StyleManager {
     changes: readonly StyleDataChange[],
     direction: MutationDirection
   ): void {
+    this.invalidateLookups(changes.map((change) => change.kind));
     const conditionalChanges = changes.filter(
       (change): change is ConditionalStyleDataChange =>
         change.kind === "conditional-style"
@@ -1035,6 +1021,8 @@ export class StyleManager {
     kinds: readonly StyleCollectionKind[],
     callback: () => void
   ): void {
+    // Invalidate regardless of history observation/suppression or batching.
+    this.invalidateLookups(kinds);
     if (!this.mutationDispatcher.observed) {
       callback();
       return;

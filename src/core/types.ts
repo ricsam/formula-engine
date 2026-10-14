@@ -534,6 +534,7 @@ export interface CellStyle {
     left?: boolean;
   };
   fontSize?: number; // Font size in pixels
+  fontFamily?: string; // CSS font family or fallback list
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
