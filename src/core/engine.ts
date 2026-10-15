@@ -323,6 +323,18 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
     return new FormulaEngine<TMetadata>(options);
   }
 
+  /**
+   * Discard derived calculation results and notify update listeners. Values are
+   * recalculated lazily on the next read (including reads inside listeners).
+   * Workbook data, structural indexes, configuration and undo/redo are retained;
+   * this is not a workbook mutation or history entry. Notifications coalesce
+   * with other updates inside a transaction.
+   */
+  clearCache(): void {
+    this.dependencyManager.invalidateEvaluationCache();
+    this.emitUpdate();
+  }
+
   undo(): boolean {
     this.assertHistoryControlAllowed("undo");
     if (!this.undoRedoManager.canUndo()) {

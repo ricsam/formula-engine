@@ -663,6 +663,20 @@ export class DependencyManager {
     return { address, spillOffset: { x: offsetLeft, y: offsetTop } };
   }
 
+  /** Invalidate calculated state without replacing nodes or workbook indexes. */
+  invalidateEvaluationCache(): void {
+    const invalidatedKeys = new Set<string>();
+    // Snapshot first: runtime-discovered edges and watcher registrations must
+    // be rediscovered, not reused, when dynamic dependencies/spills change.
+    for (const node of this.getAllPersistentNodes()) {
+      this.invalidateNodeState(node, invalidatedKeys);
+    }
+    this._spilledValues.clear();
+    this.cacheManager.clear();
+    // Range invalidation replaces result identity, making old WeakMap criteria
+    // indexes unreachable from subsequent evaluations without a global reset.
+  }
+
   clearEvaluationCache(): void {
     this.cacheManager.clear();
     this.cellNodes.clear();

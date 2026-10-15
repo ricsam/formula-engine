@@ -31,6 +31,21 @@ In the UI I interface with the formula-engine like this:
 
 
 
+### clearCache(): void
+
+Use `engine.clearCache()` to invalidate **all workbooks' derived calculation state**, without clearing or reinitializing workbook data. Subsequent reads recalculate lazily; there is no eager evaluation pass.
+
+- Retains the engine, workbook/sheet objects, raw content/formulas, styles, metadata, tables, named expressions, references, configuration, and undo/redo stacks. It creates no history entry and does not clear redo.
+- Retains parsed ASTs, dependency-node identities and workbook structural indexes. Invalidates formula/cell/virtual formula/range results, evaluation orders, SCCs, spill membership and frontier decisions. Runtime-discovered dependency edges and reverse watchers are rediscovered during evaluation because dynamic dependencies and spill shapes can change.
+- Criteria coordinate indexes are keyed by range-result identity; invalidating range results prevents stale index reuse. Static style lookup caches/indexes are retained; conditional style formula results are invalidated with virtual formulas.
+- Emits the existing `onUpdate` notification **after** invalidation, even on an empty engine. Notifications coalesce inside `transact`. Listeners may immediately read/recalculate; consumers that autosave on updates will receive this notification too. No resource rename/delete events are emitted.
+- Repeated calls are safe. This is synchronous and returns `undefined`, not a Promise. It is a debug/recalculation operation, not a memory-compaction API; externally retained old result objects are not rewritten.
+
+```ts
+const unsubscribe = engine.onUpdate(() => render());
+engine.clearCache(); // render's reads now recalculate; workbook data is unchanged
+```
+
 ### setSheetContent:
 1. **Parse first, don’t evaluate yet**
 

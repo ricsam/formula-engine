@@ -1,5 +1,11 @@
 # @ricsam/formula-engine
 
+## 0.3.6
+
+### Patch Changes
+
+- Add `FormulaEngine.clearCache()` for lazy recalculation without clearing workbook data, replacing engine/workbook objects, or changing undo/redo history. Invalidate derived formula, criteria-range, evaluation-order, SCC and spill state and notify existing update subscribers.
+
 ## 0.3.5
 
 ### Patch Changes
