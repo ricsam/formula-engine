@@ -2,7 +2,7 @@ import { flags } from "../../debug/flags";
 import { AstEvaluationNode } from "../../evaluator/dependency-nodes/ast-evaluation-node";
 import { CellValueNode } from "../../evaluator/dependency-nodes/cell-value-node";
 import { EvaluationContext } from "../../evaluator/evaluation-context";
-import { hasCriteriaRangeReader, registerCriteriaRangeReader } from "../../evaluator/criteria-range-cache";
+import { canIndexDenseRangeNode, hasCriteriaRangeReader, registerCriteriaRangeReader } from "../../evaluator/criteria-range-cache";
 import {
   EvaluationError,
   SheetNotFoundError,
@@ -471,7 +471,9 @@ export class EvaluationManager {
       );
       context.dependencyNode.addDependency(rangeNode);
       return rangeNode.result;
-    });
+    }, () => canIndexDenseRangeNode(this.dependencyManager.getRangeNode(
+      rangeAddressToKey(spillSnapshot.sourceRange)
+    )));
   }
 
   serializeSpillMetaEvaluationResultSnapshot(

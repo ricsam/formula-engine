@@ -9,7 +9,7 @@ import {
 } from "../core/types";
 import { getRelativeRange } from "../core/utils";
 import type { EvaluationContext } from "../evaluator/evaluation-context";
-import { readCriteriaRange } from "../evaluator/criteria-range-cache";
+import { canIndexDenseCriteriaRange, hasCriteriaRangeReader, readCriteriaRange } from "../evaluator/criteria-range-cache";
 import {
   EvaluationError
 } from "../evaluator/evaluation-error";
@@ -153,6 +153,7 @@ export function processMultiCriteriaValues(
     valueRangeResult.type === "spilled-values"
   ) {
     return handleEmptyCriteriaSpilledValues(
+      evaluator,
       valueRangeResult,
       criteriaPairs,
       context
@@ -391,6 +392,7 @@ export type ProcessInfinityResult<T> =
  * @returns Array of matching values
  */
 function handleEmptyCriteriaSpilledValues(
+  evaluator: FormulaEvaluator,
   valueRangeResult: FunctionEvaluationResult,
   criteriaPairs: CriteriaPair[],
   context: EvaluationContext
@@ -417,6 +419,31 @@ function handleEmptyCriteriaSpilledValues(
     );
   }
 
+  // Only registered raw readers can replace per-cell callbacks. Transforms may
+  // carry sourceRange metadata but expose different values or dependencies.
+  const ranges = [valueRangeResult, ...criteriaPairs.map(pair => pair.rangeResult)];
+  let useIndexes = ranges.every(range =>
+    range.type === "value" ||
+    (range.type === "spilled-values" && hasCriteriaRangeReader(range, evaluator))
+  );
+  const indexes = new Map<FunctionEvaluationResult, ReadonlyMap<string, SingleEvaluationResult>>();
+  if (useIndexes) {
+    for (const range of ranges) {
+      if (range.type !== "spilled-values" || indexes.has(range)) continue;
+      // Always register the current consumer, even when the position index is
+      // cached. Awaiting ranges must reach the scheduler, never become blanks.
+      const { result, index } = readCriteriaRange(range, evaluator, context, "row-major", true);
+      if (result.type !== "values") return result;
+      indexes.set(range, index!);
+    }
+    useIndexes = ranges.every(range => range.type !== "spilled-values" ||
+      canIndexDenseCriteriaRange(range, context));
+  }
+  const emptyCell: ValueEvaluationResult = {
+    type: "value", result: { type: "string", value: "" },
+  };
+
+  // Keep dense traversal: missing positions still count for empty criteria.
   // Finite range - iterate over all cells in spill areas
   if (
     valueSpillArea.end.col.type === "number" &&
@@ -432,7 +459,10 @@ function handleEmptyCriteriaSpilledValues(
         col <= valueSpillArea.end.col.value;
         col++
       ) {
-        const valueCell = valueRangeResult.evaluate(
+        const positionKey = `${col - valueSpillArea.start.col},${row - valueSpillArea.start.row}`;
+        const valueCell = useIndexes
+          ? indexes.get(valueRangeResult)!.get(positionKey) ?? emptyCell
+          : valueRangeResult.evaluate(
           {
             x: col - valueSpillArea.start.col,
             y: row - valueSpillArea.start.row,
@@ -464,7 +494,9 @@ function handleEmptyCriteriaSpilledValues(
                   ? criteriaSpillArea.end.col.value
                   : Infinity)
             ) {
-              criteriaCell = rangeResult.evaluate(
+              criteriaCell = useIndexes
+                ? indexes.get(rangeResult)!.get(positionKey) ?? emptyCell
+                : rangeResult.evaluate(
                 {
                   x: criteriaCol - criteriaSpillArea.start.col,
                   y: criteriaRow - criteriaSpillArea.start.row,

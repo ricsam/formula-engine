@@ -1,5 +1,15 @@
 # @ricsam/formula-engine
 
+## 0.3.7
+
+### Patch Changes
+
+- Reuse trusted raw-range position indexes and shared range dependencies for
+  empty-criteria aggregates instead of resolving every cell for every consumer.
+  Preserve dense missing-cell counting, error handling and mutation invalidation;
+  retain per-cell callbacks for transformed spills and ranges with spill/cycle
+  contributions. Add cold-cache operation-count and semantic regressions.
+
 ## 0.3.6
 
 ### Patch Changes

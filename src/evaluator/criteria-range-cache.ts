@@ -1,3 +1,5 @@
+import { CellValueNode } from "./dependency-nodes/cell-value-node";
+import type { RangeEvaluationNode } from "./range-evaluation-node";
 import type { LookupOrder } from "../core/managers/range-eval-order-builder";
 import type {
   EvaluateAllCellsResult,
@@ -15,15 +17,34 @@ type PositionIndex = ReadonlyMap<string, SingleEvaluationResult>;
 const readers = new WeakMap<SpilledValuesEvaluationResult, {
   evaluator: FormulaEvaluator;
   read: (context: EvaluationContext) => EvaluateAllCellsResult;
+  canIndexDense?: (context: EvaluationContext) => boolean;
 }>();
 const indexes = new WeakMap<Values, PositionIndex>();
+const denseSafety = new WeakMap<Values, boolean>();
+
+export function canIndexDenseRangeNode(node: RangeEvaluationNode): boolean {
+  const result = node.result;
+  if (result.type !== "values") return false;
+  const cached = denseSafety.get(result);
+  if (cached !== undefined) return cached;
+  // A resolved raw range with only ordinary cell dependencies has no spill
+  // contributions. Be conservative for cycles and restored/other node kinds.
+  const dependencies = node.getDependencies();
+  const safe = result.values.length === dependencies.size &&
+    [...dependencies].every(dependency =>
+      dependency instanceof CellValueNode && !dependency.spillMeta
+    );
+  if (node.resolved) denseSafety.set(result, safe);
+  return safe;
+}
 
 export function registerCriteriaRangeReader(
   range: SpilledValuesEvaluationResult,
   evaluator: FormulaEvaluator,
-  read: (context: EvaluationContext) => EvaluateAllCellsResult
+  read: (context: EvaluationContext) => EvaluateAllCellsResult,
+  canIndexDense?: (context: EvaluationContext) => boolean
 ): SpilledValuesEvaluationResult {
-  readers.set(range, { evaluator, read });
+  readers.set(range, { evaluator, read, canIndexDense });
   return range;
 }
 
@@ -32,6 +53,15 @@ export function hasCriteriaRangeReader(
   evaluator: FormulaEvaluator
 ): boolean {
   return readers.get(range)?.evaluator === evaluator;
+}
+
+// Dense consumers must retain cell callbacks when spill materialization may
+// expose anchor-relative positions rather than coordinates of the raw range.
+export function canIndexDenseCriteriaRange(
+  range: SpilledValuesEvaluationResult,
+  context: EvaluationContext
+): boolean {
+  return readers.get(range)?.canIndexDense?.(context) ?? false;
 }
 
 export function readCriteriaRange(
