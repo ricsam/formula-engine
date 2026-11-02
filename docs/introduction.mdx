@@ -46,8 +46,8 @@ recalculate the entire workbook on every keystroke. FormulaEngine does neither.
     value versions keep repeat reads and unrelated edits cheap.
   </Card>
   <Card title="Dynamic arrays" icon="table-cells">
-    Array results spill into neighbouring cells, truncate at obstructions, and
-    report `#SPILL!` when they cannot be placed.
+    Array results spill into neighbouring cells, combine with Excel-style
+    broadcasting, and report `#SPILL!` while something blocks them.
   </Card>
   <Card title="Headless" icon="code">
     No React, no DOM, no styling opinions. Pair it with any renderer, or use
@@ -57,8 +57,10 @@ recalculate the entire workbook on every keystroke. FormulaEngine does neither.
 
 ## What is included
 
-- **40 functions** across math, logical, text, lookup, array, information and
-  reference categories. See the [function reference](/functions/overview).
+- **47 functions** across math, logical, text, lookup, array, information and
+  reference categories, including `LET` and the dynamic-array functions
+  `SEQUENCE`, `UNIQUE`, `TOCOL`, `TOROW` and `HSTACK`. See the
+  [function reference](/functions/overview).
 - **Multi-sheet workbooks** with cross-sheet references such as `=Sheet2!A1*2`.
 - **Named expressions** with workbook and sheet scope.
 - **Tables** with structured references such as `=SUM(Sales[Qty])`.
@@ -77,7 +79,8 @@ supported, and are verified against the test suite:
     not yet exposed through these methods.
   - Division by zero returns the string `"INFINITY"` rather than `#DIV/0!`, and
     `IFERROR` does not intercept it. See [Errors](/concepts/errors).
-  - R1C1 addressing is unimplemented for `INDIRECT` and `ADDRESS`.
+  - R1C1 addressing is unimplemented for `INDIRECT`. `ADDRESS` can produce
+    R1C1 text.
   - Some 3D/cross-sheet range aggregations (for example `SUM` over a sheet
     range) are still skipped in the test suite.
 </Warning>

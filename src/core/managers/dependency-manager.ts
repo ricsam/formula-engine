@@ -92,6 +92,60 @@ type SnapshotEligibleNode =
   | ResourceDependencyNode;
 
 /**
+ * A serialized node and the snapshot ids of every node it references: its
+ * dependencies, its spill-meta node and the error addresses in its result.
+ */
+type SerializedNode = {
+  snapshot: SerializedDependencyNodeSnapshot;
+  references: Set<NodeSnapshotId>;
+};
+
+type SerializedNodes = Map<NodeSnapshotId, SerializedNode>;
+
+/** A result references a node that is not part of the snapshot. */
+class MissingSnapshotNodeError extends Error {
+  constructor(node: DependencyNode) {
+    super(`Missing snapshot id for dependency node ${node.key}`);
+  }
+}
+
+/**
+ * A restored node is trusted as resolved, so it must come back with every node
+ * it references: restored without one of its dependencies, it would not be
+ * invalidated by an edit that reaches it through that dependency. Removes each
+ * node that references a node missing from `serializedNodes`, then the nodes
+ * referencing those, and so on. Removed nodes are recomputed on demand after a
+ * restore.
+ */
+function keepReferenceClosedNodes(serializedNodes: SerializedNodes): void {
+  const referencedBy = new Map<NodeSnapshotId, NodeSnapshotId[]>();
+  const removals: NodeSnapshotId[] = [];
+  for (const [snapshotId, { references }] of serializedNodes) {
+    for (const reference of references) {
+      if (!serializedNodes.has(reference)) {
+        removals.push(snapshotId);
+      }
+      const dependents = referencedBy.get(reference);
+      if (dependents) {
+        dependents.push(snapshotId);
+      } else {
+        referencedBy.set(reference, [snapshotId]);
+      }
+    }
+  }
+
+  while (removals.length > 0) {
+    const snapshotId = removals.pop()!;
+    if (!serializedNodes.delete(snapshotId)) {
+      continue;
+    }
+    for (const dependent of referencedBy.get(snapshotId) ?? []) {
+      removals.push(dependent);
+    }
+  }
+}
+
+/**
  * The DependencyManager is responsible for storing the evaluated values and their dependencies.
  */
 export class DependencyManager {
@@ -122,6 +176,14 @@ export class DependencyManager {
     string,
     SpilledValue
   > = new Map();
+
+  /**
+   * Spills that evaluated to #SPILL! because their area was occupied, keyed like
+   * `_spilledValues`. A blocked origin has no dependency on the blocking cells
+   * (a blocker may itself depend on the origin), so this registry is what
+   * re-evaluates the origin once a cell in its area changes.
+   */
+  private _blockedSpills: Map<string, SpilledValue> = new Map();
 
   /**
    * Key is workbook:sheetName:rangeKey, e.g. Workbook1:Sheet1:A1:D10, from rangeAddressToKey
@@ -201,20 +263,6 @@ export class DependencyManager {
     }
 
     return node.key;
-  }
-
-  private resetRestoredNodeToColdState(node: DependencyNode) {
-    this.unregisterNode(node);
-
-    if (node instanceof ResourceDependencyNode) {
-      return;
-    }
-
-    if (node instanceof CellValueNode) {
-      node.clearSpillMetaNode();
-    }
-
-    node.invalidate();
   }
 
   private getSheetWatcherKey(address: {
@@ -479,35 +527,65 @@ export class DependencyManager {
   ): Set<DependencyNode> {
     const affected = new Set<DependencyNode>();
 
-    for (const [spillOriginKey, spilledValue] of this._spilledValues.entries()) {
-      if (
-        spilledValue.origin.workbookName !== address.workbookName ||
-        spilledValue.origin.sheetName !== address.sheetName
-      ) {
-        continue;
-      }
+    // Placed spills must give way to new content, and blocked spills may now fit.
+    for (const spills of [this._spilledValues, this._blockedSpills]) {
+      for (const [spillOriginKey, spilledValue] of spills.entries()) {
+        if (
+          spilledValue.origin.workbookName !== address.workbookName ||
+          spilledValue.origin.sheetName !== address.sheetName
+        ) {
+          continue;
+        }
 
-      const isOriginCell =
-        spilledValue.origin.colIndex === address.colIndex &&
-        spilledValue.origin.rowIndex === address.rowIndex;
-      if (isOriginCell || !isCellInRange(address, spilledValue.spillOnto)) {
-        continue;
-      }
+        const isOriginCell =
+          spilledValue.origin.colIndex === address.colIndex &&
+          spilledValue.origin.rowIndex === address.rowIndex;
+        if (isOriginCell || !isCellInRange(address, spilledValue.spillOnto)) {
+          continue;
+        }
 
-      const cellValueNode = this.cellNodes.get(`cell-value:${spillOriginKey}`);
-      if (cellValueNode) {
-        affected.add(cellValueNode);
-      }
-
-      const spillMetaNode = this.spillMetaNodes.get(
-        `spill-meta:${spillOriginKey}`
-      );
-      if (spillMetaNode) {
-        affected.add(spillMetaNode);
+        this.addSpillOriginNodes(spillOriginKey, affected);
       }
     }
 
     return affected;
+  }
+
+  /**
+   * Origins whose spill was blocked by `spill`'s area: when that spill is
+   * removed or replaced, they get another chance to take the area.
+   */
+  private collectBlockedSpillOriginsIntersecting(
+    spill: SpilledValue
+  ): Set<DependencyNode> {
+    const affected = new Set<DependencyNode>();
+    for (const [spillOriginKey, blockedSpill] of this._blockedSpills.entries()) {
+      if (
+        blockedSpill.origin.workbookName === spill.origin.workbookName &&
+        blockedSpill.origin.sheetName === spill.origin.sheetName &&
+        checkRangeIntersection(blockedSpill.spillOnto, spill.spillOnto)
+      ) {
+        this.addSpillOriginNodes(spillOriginKey, affected);
+      }
+    }
+    return affected;
+  }
+
+  private addSpillOriginNodes(
+    spillOriginKey: string,
+    nodes: Set<DependencyNode>
+  ): void {
+    const cellValueNode = this.cellNodes.get(`cell-value:${spillOriginKey}`);
+    if (cellValueNode) {
+      nodes.add(cellValueNode);
+    }
+
+    const spillMetaNode = this.spillMetaNodes.get(
+      `spill-meta:${spillOriginKey}`
+    );
+    if (spillMetaNode) {
+      nodes.add(spillMetaNode);
+    }
   }
 
   private getLinkedSpillMetaNode(
@@ -672,6 +750,7 @@ export class DependencyManager {
       this.invalidateNodeState(node, invalidatedKeys);
     }
     this._spilledValues.clear();
+    this._blockedSpills.clear();
     this.cacheManager.clear();
     // Range invalidation replaces result identity, making old WeakMap criteria
     // indexes unreachable from subsequent evaluations without a global reset.
@@ -687,6 +766,7 @@ export class DependencyManager {
     this.ranges.clear();
     this.resourceNodes.clear();
     this._spilledValues.clear();
+    this._blockedSpills.clear();
     this.hardDependents.clear();
     this.frontierDependents.clear();
     this.registeredDependencies.clear();
@@ -773,75 +853,46 @@ export class DependencyManager {
       availableSnapshotIds.add(snapshotId);
     }
 
-    const getAllNodeSnapshotId = (
-      node: DependencyNode,
-      _context?: {
-        sourceNode?: DependencyNode;
-        relation?: string;
+    /**
+     * The snapshot id of `node`, or of a node with the same logical identity in
+     * the snapshot (such as an equivalent AST node); undefined when neither is
+     * part of the snapshot.
+     */
+    const findNodeSnapshotId = (
+      node: DependencyNode
+    ): NodeSnapshotId | undefined => {
+      const snapshotId = allNodeSnapshotIds.get(node);
+      if (snapshotId) {
+        return snapshotId;
       }
-    ): NodeSnapshotId => {
-      const snapshotId =
-        allNodeSnapshotIds.get(node) ??
-        (() => {
-          const logicalSnapshotId = this.getLogicalNodeSnapshotId(node);
-          return availableSnapshotIds.has(logicalSnapshotId)
-            ? logicalSnapshotId
-            : undefined;
-        })();
-      if (!snapshotId) {
-        throw new Error(`Missing snapshot id for dependency node ${node.key}`);
-      }
-      return snapshotId;
+      const logicalSnapshotId = this.getLogicalNodeSnapshotId(node);
+      return availableSnapshotIds.has(logicalSnapshotId)
+        ? logicalSnapshotId
+        : undefined;
     };
 
-    const nodeSnapshots: SerializedDependencyNodeSnapshot[] = [];
-    const includedSnapshotIds = new Set<NodeSnapshotId>();
-
+    const serializedNodes: SerializedNodes = new Map();
     for (const node of resolvedNodes) {
-      const snapshot = this.serializeNodeSnapshot(
+      const serialized = this.serializeNodeSnapshot(
         node,
         evaluationManager,
-        getAllNodeSnapshotId,
-        allNodeSnapshotIds
+        findNodeSnapshotId
       );
-      if (!snapshot) {
-        continue;
+      if (serialized) {
+        serializedNodes.set(serialized.snapshot.snapshotId, serialized);
       }
-      includedSnapshotIds.add(snapshot.snapshotId);
-      nodeSnapshots.push(snapshot);
     }
-
-    const filteredNodeSnapshots = nodeSnapshots.map((snapshot) => {
-      const dependencies = snapshot.dependencies.filter((dependency) =>
-        includedSnapshotIds.has(dependency)
-      );
-
-      if (snapshot.kind === "cell-value") {
-        return {
-          ...snapshot,
-          dependencies,
-          spillMetaSnapshotId:
-            snapshot.spillMetaSnapshotId &&
-            includedSnapshotIds.has(snapshot.spillMetaSnapshotId)
-              ? snapshot.spillMetaSnapshotId
-              : undefined,
-        };
-      }
-
-      return {
-        ...snapshot,
-        dependencies,
-      };
-    });
+    keepReferenceClosedNodes(serializedNodes);
 
     const dependency: DependencyManagerSnapshot = {
-      nodes: filteredNodeSnapshots,
+      nodes: Array.from(serializedNodes.values(), ({ snapshot }) => snapshot),
       spilledValues: Array.from(this._spilledValues.entries()),
+      blockedSpills: Array.from(this._blockedSpills.entries()),
     };
 
     const cache = this.cacheManager.toSnapshot((node) => {
       const snapshotId = allNodeSnapshotIds.get(node);
-      if (!snapshotId || !includedSnapshotIds.has(snapshotId)) {
+      if (!snapshotId || !serializedNodes.has(snapshotId)) {
         return undefined;
       }
       return snapshotId;
@@ -905,16 +956,16 @@ export class DependencyManager {
       const targetNode = nodesBySnapshotId.get(snapshot.snapshotId);
       if (!targetNode) {
         hadRestoreFailures = true;
-        continue;
+        break;
       }
 
-      const dependencies = new Set(
-        snapshot.dependencies
-          .map(resolveNodeSnapshotId)
-          .filter((node): node is DependencyNode => node !== undefined)
-      );
-
       try {
+        // A node restored without one of its dependencies would miss the edits
+        // that reach it through that dependency, so an unknown id fails.
+        const dependencies = new Set(
+          snapshot.dependencies.map(resolveRequiredNodeSnapshotId)
+        );
+
         if (snapshot.kind === "cell-value") {
           const node = targetNode as CellValueNode;
           node.restoreResolvedSnapshot({
@@ -926,12 +977,15 @@ export class DependencyManager {
               ),
           });
           if (snapshot.spillMetaSnapshotId) {
-            const spillMetaNode = resolveNodeSnapshotId(
+            const spillMetaNode = resolveRequiredNodeSnapshotId(
               snapshot.spillMetaSnapshotId
             );
-            if (spillMetaNode instanceof SpillMetaNode) {
-              node.setSpillMetaNode(spillMetaNode);
+            if (!(spillMetaNode instanceof SpillMetaNode)) {
+              throw new Error(
+                `Snapshot id ${snapshot.spillMetaSnapshotId} is not a spill-meta node`
+              );
             }
+            node.setSpillMetaNode(spillMetaNode);
           }
           continue;
         }
@@ -990,7 +1044,6 @@ export class DependencyManager {
         this.saveAstNode(node, snapshot.contextDependency);
       } catch (error) {
         hadRestoreFailures = true;
-        this.resetRestoredNodeToColdState(targetNode);
         this.logSnapshotRestoreWarning(
           "Failed to deserialize warm snapshot node; discarding warm dependency state",
           {
@@ -1004,10 +1057,19 @@ export class DependencyManager {
                 : { message: String(error) },
           }
         );
+        break;
       }
     }
 
+    if (hadRestoreFailures) {
+      // Restored nodes are trusted as resolved: with any of them missing, their
+      // dependents could serve stale results. Start from a cold state instead.
+      this.clearEvaluationCache();
+      return;
+    }
+
     this._spilledValues = new Map(snapshots.dependency.spilledValues);
+    this._blockedSpills = new Map(snapshots.dependency.blockedSpills);
     this.rebuildRuntimeIndexes();
     this.cacheManager.restoreFromSnapshot(
       snapshots.cache,
@@ -1015,56 +1077,94 @@ export class DependencyManager {
     );
   }
 
+  /**
+   * Serializes one node together with the ids of every node it references: its
+   * dependencies, its spill-meta node and the error addresses in its result.
+   * Undefined when the node cannot be restored faithfully, for example because
+   * it references a node outside the snapshot or its result cannot be stored.
+   */
   private serializeNodeSnapshot(
     node: SnapshotEligibleNode,
     evaluationManager: EvaluationManager,
-    getNodeSnapshotId: (
-      node: DependencyNode,
-      context?: {
-        sourceNode?: DependencyNode;
-        relation?: string;
-      }
-    ) => NodeSnapshotId,
-    allNodeSnapshotIds: Map<DependencyNode, NodeSnapshotId>
-  ): SerializedDependencyNodeSnapshot | undefined {
-    const snapshotId = getNodeSnapshotId(node);
-    const getKnownSnapshotId = (dependency: DependencyNode) => {
-      const directSnapshotId = allNodeSnapshotIds.get(dependency);
-      if (directSnapshotId) {
-        return directSnapshotId;
-      }
-
-      const logicalSnapshotId = this.getLogicalNodeSnapshotId(dependency);
-      return allNodeSnapshotIds
-        .values()
-        .some((knownSnapshotId) => knownSnapshotId === logicalSnapshotId)
-        ? logicalSnapshotId
-        : undefined;
-    };
-
-    const dependencies: NodeSnapshotId[] = [];
-    for (const dependency of node.getDependencies()) {
-      const dependencySnapshotId = getKnownSnapshotId(dependency);
-      if (!dependencySnapshotId) {
-        return undefined;
-      }
-      dependencies.push(dependencySnapshotId);
+    findNodeSnapshotId: (node: DependencyNode) => NodeSnapshotId | undefined
+  ): SerializedNode | undefined {
+    const snapshotId = findNodeSnapshotId(node);
+    if (snapshotId === undefined) {
+      return undefined;
     }
 
-    const getReferencedNodeSnapshotId = (dependency: DependencyNode) =>
-      getNodeSnapshotId(dependency, {
-        sourceNode: node,
-        relation: "evaluation result errAddress",
+    const references = new Set<NodeSnapshotId>();
+    const dependencies = new Set<NodeSnapshotId>();
+    let readsOutsideSnapshot = false;
+    const addDependency = (dependency: DependencyNode) => {
+      const dependencySnapshotId = findNodeSnapshotId(dependency);
+      if (dependencySnapshotId === undefined) {
+        readsOutsideSnapshot = true;
+        return;
+      }
+      dependencies.add(dependencySnapshotId);
+      references.add(dependencySnapshotId);
+    };
+    for (const dependency of node.getDependencies()) {
+      addDependency(dependency);
+    }
+    if (readsOutsideSnapshot) {
+      return undefined;
+    }
+
+    const getReferencedNodeSnapshotId = (
+      referenced: DependencyNode
+    ): NodeSnapshotId => {
+      const referencedSnapshotId = findNodeSnapshotId(referenced);
+      if (referencedSnapshotId === undefined) {
+        throw new MissingSnapshotNodeError(referenced);
+      }
+      references.add(referencedSnapshotId);
+      return referencedSnapshotId;
+    };
+
+    let snapshot: SerializedDependencyNodeSnapshot | undefined;
+    try {
+      snapshot = this.serializeNodeResultSnapshot(node, evaluationManager, {
+        snapshotId,
+        // Materializing a lazy spill adds what it reads to `dependencies`.
+        dependencies,
+        addDependency,
+        getReferencedNodeSnapshotId,
       });
+    } catch (error) {
+      if (error instanceof MissingSnapshotNodeError) {
+        return undefined;
+      }
+      throw error;
+    }
+    if (!snapshot || readsOutsideSnapshot) {
+      return undefined;
+    }
+    return { snapshot, references };
+  }
+
+  private serializeNodeResultSnapshot(
+    node: SnapshotEligibleNode,
+    evaluationManager: EvaluationManager,
+    options: {
+      snapshotId: NodeSnapshotId;
+      dependencies: Set<NodeSnapshotId>;
+      addDependency: (node: DependencyNode) => void;
+      getReferencedNodeSnapshotId: (node: DependencyNode) => NodeSnapshotId;
+    }
+  ): SerializedDependencyNodeSnapshot | undefined {
+    const {
+      snapshotId,
+      dependencies,
+      addDependency,
+      getReferencedNodeSnapshotId,
+    } = options;
 
     if (node instanceof CellValueNode) {
       const spillMetaSnapshotId = node.spillMeta
-        ? getKnownSnapshotId(node.spillMeta)
+        ? getReferencedNodeSnapshotId(node.spillMeta)
         : undefined;
-      if (node.spillMeta && !spillMetaSnapshotId) {
-        return undefined;
-      }
-
       const evaluationResult =
         evaluationManager.serializeSingleEvaluationResultSnapshot(
           node.evaluationResult,
@@ -1077,7 +1177,7 @@ export class DependencyManager {
         kind: "cell-value",
         snapshotId,
         key: node.key,
-        dependencies,
+        dependencies: Array.from(dependencies),
         evaluationResult,
         spillMetaSnapshotId,
       };
@@ -1090,6 +1190,7 @@ export class DependencyManager {
           {
             sourceNode: node,
             getNodeSnapshotId: getReferencedNodeSnapshotId,
+            addDependency,
           }
         );
       if (!evaluationResult) {
@@ -1099,7 +1200,7 @@ export class DependencyManager {
         kind: "spill-meta",
         snapshotId,
         key: node.key,
-        dependencies,
+        dependencies: Array.from(dependencies),
         evaluationResult,
       };
     }
@@ -1117,7 +1218,7 @@ export class DependencyManager {
         kind: "empty",
         snapshotId,
         key: node.key,
-        dependencies,
+        dependencies: Array.from(dependencies),
         evaluationResult,
       };
     }
@@ -1134,7 +1235,7 @@ export class DependencyManager {
         kind: "range",
         snapshotId,
         key: node.key,
-        dependencies,
+        dependencies: Array.from(dependencies),
         result,
       };
     }
@@ -1144,7 +1245,7 @@ export class DependencyManager {
         kind: "resource",
         snapshotId,
         key: node.key,
-        dependencies,
+        dependencies: Array.from(dependencies),
       };
     }
 
@@ -1154,6 +1255,7 @@ export class DependencyManager {
         {
           sourceNode: node,
           getNodeSnapshotId: getReferencedNodeSnapshotId,
+          addDependency,
         }
       );
     if (!evaluationResult) {
@@ -1163,7 +1265,7 @@ export class DependencyManager {
       kind: "ast",
       snapshotId,
       key: node.key,
-      dependencies,
+      dependencies: Array.from(dependencies),
       contextDependency: node.getContextDependency(),
       evaluationResult,
     };
@@ -1229,6 +1331,15 @@ export class DependencyManager {
 
   deleteSpilledValue(nodeKey: string): void {
     this._spilledValues.delete(nodeKey.replace(/^[^:]+:/, ""));
+  }
+
+  /** Records the area a spill would occupy while it is blocked (#SPILL!). */
+  setBlockedSpill(nodeKey: string, blockedSpill: SpilledValue): void {
+    this._blockedSpills.set(nodeKey.replace(/^[^:]+:/, ""), blockedSpill);
+  }
+
+  deleteBlockedSpill(nodeKey: string): void {
+    this._blockedSpills.delete(nodeKey.replace(/^[^:]+:/, ""));
   }
 
   getEmptyCellNode(nodeKey: string): EmptyCellEvaluationNode {
@@ -1561,6 +1672,9 @@ export class DependencyManager {
         })) {
           extras.add(watcher);
         }
+        for (const origin of this.collectBlockedSpillOriginsIntersecting(spill)) {
+          extras.add(origin);
+        }
       }
 
       const cellAddress = node.cellAddress;
@@ -1582,6 +1696,7 @@ export class DependencyManager {
     if (node instanceof CellValueNode) {
       node.clearSpillMetaNode();
       this.deleteSpilledValue(node.key);
+      this.deleteBlockedSpill(node.key);
       node.invalidate();
       return;
     }
@@ -1597,6 +1712,7 @@ export class DependencyManager {
 
     if (node instanceof SpillMetaNode) {
       this.deleteSpilledValue(node.key);
+      this.deleteBlockedSpill(node.key);
       this.getLinkedCellValueNode(node)?.clearSpillMetaNode();
       node.invalidate();
       return;
@@ -1762,14 +1878,16 @@ export class DependencyManager {
       }
     }
 
-    for (const [spillOriginKey, spilledValue] of Array.from(this._spilledValues.entries())) {
-      if (
-        shouldRemoveAddress({
-          workbookName: spilledValue.origin.workbookName,
-          sheetName: spilledValue.origin.sheetName,
-        })
-      ) {
-        this._spilledValues.delete(spillOriginKey);
+    for (const spills of [this._spilledValues, this._blockedSpills]) {
+      for (const [spillOriginKey, spilledValue] of Array.from(spills.entries())) {
+        if (
+          shouldRemoveAddress({
+            workbookName: spilledValue.origin.workbookName,
+            sheetName: spilledValue.origin.sheetName,
+          })
+        ) {
+          spills.delete(spillOriginKey);
+        }
       }
     }
   }

@@ -562,4 +562,50 @@ describe("MATCH function", () => {
       expect(cell("B1")).toBe(FormulaError.NA); // Should return error for empty table
     });
   });
+
+  describe("omitted arguments", () => {
+    beforeEach(() => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          ["A2", 20],
+          ["A3", 30],
+          ["B1", 5],
+          ["B2", 0],
+          ["B3", 7],
+        ])
+      );
+    });
+
+    test("an omitted match_type is 0, an exact match", () => {
+      setCellContent("D1", "=MATCH(25, A1:A3,)");
+      setCellContent("D2", "=MATCH(20, A1:A3,)");
+      // A missing match_type is 1, an approximate match.
+      setCellContent("D3", "=MATCH(25, A1:A3)");
+
+      expect(cell("D1")).toBe(FormulaError.NA);
+      expect(cell("D2")).toBe(2);
+      expect(cell("D3")).toBe(2);
+    });
+
+    test("an omitted lookup_value is 0", () => {
+      setCellContent("D1", "=MATCH(, B1:B3, 0)");
+      setCellContent("D2", "=MATCH(, B1:B3,)");
+      setCellContent("D3", "=MATCH(, A1:A3, 0)");
+
+      expect(cell("D1")).toBe(2);
+      expect(cell("D2")).toBe(2);
+      expect(cell("D3")).toBe(FormulaError.NA);
+    });
+
+    test("recalculates with the lookup array", () => {
+      setCellContent("D1", "=MATCH(, B1:B3,)");
+      expect(cell("D1")).toBe(2);
+
+      setCellContent("B2", 1);
+      setCellContent("B3", 0);
+      expect(cell("D1")).toBe(3);
+    });
+  });
 });

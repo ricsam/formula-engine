@@ -60,19 +60,19 @@ describe("formula content formatting", () => {
       new Map<string, SerializedCellValue>([
         ["A1", "=SUM(\n  1,2\n)"],
         ["A2", "ordinary  text\nwith a newline"],
-        ["A3", "=SUM(A1,,B1)"],
+        ["A3", "=SUM(A1;B1)"],
       ])
     );
 
     expect(stored(engine, "A1")).toBe("=SUM(1, 2)");
     expect(stored(engine, "A2")).toBe("ordinary  text\nwith a newline");
-    expect(stored(engine, "A3")).toBe("=SUM(A1,,B1)");
+    expect(stored(engine, "A3")).toBe("=SUM(A1;B1)");
   });
 
   test("preserves ordinary text and invalid formula text exactly", () => {
     const engine = buildEngine();
     const plainText = " SUM( 1,2 )\nnot a formula ";
-    const invalidFormula = "=SUM( 1,, 2 )\n";
+    const invalidFormula = "=SUM( 1;; 2 )\n";
 
     engine.setCellContent(address, plainText);
     expect(stored(engine)).toBe(plainText);

@@ -3,6 +3,7 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
 } from "../../../core/types";
+import { getSuppliedArgument } from "../../../parser/ast";
 import { createMidSpilledResult, midOperation } from "../text-helpers";
 
 /**
@@ -21,6 +22,8 @@ import { createMidSpilledResult, midOperation } from "../text-helpers";
  * - Supports dynamic arrays (spilled values) for both arguments
  * - Strict type checking: text must be string, num_chars must be number
  * - Implemented as MID(text, 1, num_chars)
+ * - A missing num_chars is 1, but an omitted one (`LEFT("abc",)`) is 0, as in
+ *   Excel, so the result is empty text
  */
 export const LEFT: FunctionDefinition = {
   name: "LEFT",
@@ -40,10 +43,13 @@ export const LEFT: FunctionDefinition = {
       return textResult;
     }
 
-    // Evaluate the numChars argument (optional, defaults to 1)
+    // Evaluate the numChars argument (1 when missing, 0 when omitted)
     let numCharsResult: FunctionEvaluationResult;
     if (node.args.length > 1) {
-      numCharsResult = this.evaluateNode(node.args[1]!, context);
+      const numCharsNode = getSuppliedArgument(node, 1);
+      numCharsResult = numCharsNode
+        ? this.evaluateNode(numCharsNode, context)
+        : { type: "value", result: { type: "number", value: 0 } };
       if (numCharsResult.type === "error") {
         return numCharsResult;
       }

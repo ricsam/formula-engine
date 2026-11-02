@@ -1,6 +1,6 @@
 ---
 title: "Math functions"
-description: "SUM, AVERAGE, MIN, MAX, criteria variants, and CEILING."
+description: "SUM, AVERAGE, MIN, MAX, criteria variants, CEILING, and INT."
 ---
 
 Every result below was verified against the engine.
@@ -83,6 +83,41 @@ Rounds a number away from zero to a multiple of `significance`.
 <Warning>
   A negative number with a positive significance is rejected:
   `=CEILING(-7.3,1)` returns `#NUM!`.
+</Warning>
+
+An omitted argument is `0`, as in Excel: `=CEILING(,1)` is `0`. A significance
+of `0`, including an omitted one as in `=CEILING(2.5,)`, returns `#DIV/0!`.
+
+## `INT`
+
+Rounds a number down to the nearest integer, toward negative infinity.
+
+```excel
+=INT(number)
+```
+
+```excel
+=INT(8.9)   // 8
+=INT(-8.9)  // -9
+```
+
+An array argument, such as a range or a spilled result, is rounded element by
+element and spills with the same shape. An error in one element stays in that
+element.
+
+```excel
+=INT(SEQUENCE(4)/2)       // spills 0, 1, 1, 2
+=SUM(INT(SEQUENCE(4)/2))  // 4
+```
+
+`INFINITY` and `-INFINITY` are returned unchanged.
+
+<Warning>
+  `INT` accepts only numbers, like `CEILING` and the arithmetic operators.
+  Text, `TRUE`, `FALSE` and empty cells return `#VALUE!`, where Excel converts
+  `INT("3.7")` to `3`, `INT(TRUE)` to `1` and an empty cell to `0`. Over a
+  range, an empty cell's place in the spill shows `#VALUE!`, while aggregates
+  such as `SUM(INT(A1:A3))` skip it.
 </Warning>
 
 ## Range behavior

@@ -12,6 +12,7 @@ import {
 import { getRangeIntersection, isRangeOneCell } from "../../../core/utils";
 import type { EvaluationContext } from "../../../evaluator/evaluation-context";
 import { EvaluationError } from "../../../evaluator/evaluation-error";
+import { getSuppliedArgument } from "../../../parser/ast";
 
 /**
  * UNIQUE(array, [by_col], [exactly_once])
@@ -24,6 +25,9 @@ import { EvaluationError } from "../../../evaluator/evaluation-error";
  * Comparison follows spreadsheet semantics: values must share a type to be equal,
  * and text is compared case-insensitively. Empty cells inside `array` compare as
  * empty text, which is how the engine reads any unpopulated cell.
+ *
+ * An omitted `by_col` or `exactly_once` (`UNIQUE(A1:A9,,TRUE)`) takes its
+ * default, FALSE, as in Excel.
  *
  * `array` may be unbounded along the dimension that gets deduplicated, because the
  * unbounded tail of empty rows/columns collapses into a single entry. It may not be
@@ -119,9 +123,10 @@ export const UNIQUE: FunctionDefinition = {
     }
 
     let byColumn = false;
-    if (node.args[1]) {
+    const byColumnNode = getSuppliedArgument(node, 1);
+    if (byColumnNode) {
       const byColumnArg = readLogicalArgument(
-        this.evaluateNode(node.args[1], context),
+        this.evaluateNode(byColumnNode, context),
         "by_col",
         context
       );
@@ -132,9 +137,10 @@ export const UNIQUE: FunctionDefinition = {
     }
 
     let exactlyOnce = false;
-    if (node.args[2]) {
+    const exactlyOnceNode = getSuppliedArgument(node, 2);
+    if (exactlyOnceNode) {
       const exactlyOnceArg = readLogicalArgument(
-        this.evaluateNode(node.args[2], context),
+        this.evaluateNode(exactlyOnceNode, context),
         "exactly_once",
         context
       );

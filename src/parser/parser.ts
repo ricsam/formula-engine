@@ -852,7 +852,7 @@ export class Parser {
     // Parse arguments
     const args: ASTNode[] = [];
 
-    // Handle empty argument list
+    // `F()` is a call with zero arguments, not one omitted argument.
     if (this.tokens.match("RPAREN")) {
       const rparenToken = this.tokens.consume();
       const endPos = rparenToken.position.end;
@@ -866,7 +866,7 @@ export class Parser {
 
     // Parse arguments
     while (true) {
-      args.push(this.parseExpression());
+      args.push(this.parseFunctionArgument());
 
       if (this.tokens.match("COMMA")) {
         this.tokens.consume();
@@ -893,6 +893,20 @@ export class Parser {
       "Unexpected end of function argument parsing",
       this.tokens.peek().position
     );
+  }
+
+  /**
+   * Parse one function argument. An argument is omitted when nothing stands
+   * between its delimiters: `SEQUENCE(,3)`, `SUM(1,,2)`, `IF(A1,1,)` or `F(,)`.
+   * It becomes an empty node with a zero-width position where the argument
+   * would start. Only argument lists accept this; array literals do not.
+   */
+  private parseFunctionArgument(): ASTNode {
+    if (this.tokens.match("COMMA") || this.tokens.match("RPAREN")) {
+      const position = this.tokens.peek().position.start;
+      return createEmptyNode({ start: position, end: position });
+    }
+    return this.parseExpression();
   }
 
   /**

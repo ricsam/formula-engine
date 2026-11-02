@@ -11,6 +11,7 @@ import {
   type SingleEvaluationResult,
 } from "../../../core/types";
 import type { EvaluationContext } from "../../../evaluator/evaluation-context";
+import { getSuppliedArgument } from "../../../parser/ast";
 
 /**
  * ADDRESS function - Creates a cell reference as text given row and column numbers
@@ -27,6 +28,11 @@ import type { EvaluationContext } from "../../../evaluator/evaluation-context";
  * - ADDRESS(2, 3) returns "$C$2"
  * - ADDRESS(2, 3, 4) returns "C2"
  * - ADDRESS(2, 3, 1, TRUE, "Sheet2") returns "Sheet2!$C$2"
+ * - ADDRESS(2, 3, 2, FALSE) returns "R2C[3]"
+ *
+ * Omitted arguments (a comma with nothing) take their defaults, as in Excel:
+ * `ADDRESS(1, 1,, FALSE)` is "R1C1" and `ADDRESS(1, 1,,, "Sheet2")` is
+ * "Sheet2!$A$1".
  */
 export const ADDRESS: FunctionDefinition = {
   name: "ADDRESS",
@@ -40,8 +46,13 @@ export const ADDRESS: FunctionDefinition = {
       };
     }
 
-    // Evaluate row_num
-    const rowResult = this.evaluateNode(node.args[0]!, context);
+    // Evaluate row_num and column_num; an omitted one is 0, which is invalid
+    const zero: FunctionEvaluationResult = {
+      type: "value",
+      result: { type: "number", value: 0 },
+    };
+    const rowNode = getSuppliedArgument(node, 0);
+    const rowResult = rowNode ? this.evaluateNode(rowNode, context) : zero;
     if (
       rowResult.type === "error" ||
       rowResult.type === "awaiting-evaluation"
@@ -59,7 +70,8 @@ export const ADDRESS: FunctionDefinition = {
     }
 
     // Evaluate column_num
-    const colResult = this.evaluateNode(node.args[1]!, context);
+    const colNode = getSuppliedArgument(node, 1);
+    const colResult = colNode ? this.evaluateNode(colNode, context) : zero;
     if (
       colResult.type === "error" ||
       colResult.type === "awaiting-evaluation"
@@ -94,8 +106,9 @@ export const ADDRESS: FunctionDefinition = {
     let sheetText = "";
 
     // Optional abs_num parameter
-    if (node.args.length >= 3) {
-      const absResult = this.evaluateNode(node.args[2]!, context);
+    const absNode = getSuppliedArgument(node, 2);
+    if (absNode) {
+      const absResult = this.evaluateNode(absNode, context);
       if (
         absResult.type === "error" ||
         absResult.type === "awaiting-evaluation"
@@ -103,22 +116,29 @@ export const ADDRESS: FunctionDefinition = {
         return absResult;
       }
 
-      if (absResult.type === "value" && absResult.result.type === "number") {
-        absNum = Math.floor(absResult.result.value);
-        if (absNum < 1 || absNum > 4) {
-          return {
-            type: "error",
-            err: FormulaError.VALUE,
-            message: "ADDRESS function abs_num must be between 1 and 4",
-            errAddress: context.dependencyNode,
-          };
-        }
+      if (absResult.type !== "value" || absResult.result.type !== "number") {
+        return {
+          type: "error",
+          err: FormulaError.VALUE,
+          message: "ADDRESS function abs_num must be a number",
+          errAddress: context.dependencyNode,
+        };
+      }
+      absNum = Math.floor(absResult.result.value);
+      if (absNum < 1 || absNum > 4) {
+        return {
+          type: "error",
+          err: FormulaError.VALUE,
+          message: "ADDRESS function abs_num must be between 1 and 4",
+          errAddress: context.dependencyNode,
+        };
       }
     }
 
-    // Optional a1 parameter
-    if (node.args.length >= 4) {
-      const a1Result = this.evaluateNode(node.args[3]!, context);
+    // Optional a1 parameter: TRUE for A1 style, FALSE for R1C1 style
+    const a1Node = getSuppliedArgument(node, 3);
+    if (a1Node) {
+      const a1Result = this.evaluateNode(a1Node, context);
       if (
         a1Result.type === "error" ||
         a1Result.type === "awaiting-evaluation"
@@ -128,12 +148,25 @@ export const ADDRESS: FunctionDefinition = {
 
       if (a1Result.type === "value" && a1Result.result.type === "boolean") {
         a1Style = a1Result.result.value;
+      } else if (
+        a1Result.type === "value" &&
+        a1Result.result.type === "number"
+      ) {
+        a1Style = a1Result.result.value !== 0;
+      } else {
+        return {
+          type: "error",
+          err: FormulaError.VALUE,
+          message: "ADDRESS function a1 must be a logical value",
+          errAddress: context.dependencyNode,
+        };
       }
     }
 
     // Optional sheet_text parameter
-    if (node.args.length === 5) {
-      const sheetResult = this.evaluateNode(node.args[4]!, context);
+    const sheetNode = getSuppliedArgument(node, 4);
+    if (sheetNode) {
+      const sheetResult = this.evaluateNode(sheetNode, context);
       if (
         sheetResult.type === "error" ||
         sheetResult.type === "awaiting-evaluation"
@@ -141,9 +174,25 @@ export const ADDRESS: FunctionDefinition = {
         return sheetResult;
       }
 
-      if (sheetResult.type === "value" && sheetResult.result.type === "string") {
-        sheetText = sheetResult.result.value;
+      if (sheetResult.type !== "value") {
+        return {
+          type: "error",
+          err: FormulaError.VALUE,
+          message: "ADDRESS function sheet_text must be a single value",
+          errAddress: context.dependencyNode,
+        };
       }
+      const sheetValue = sheetResult.result;
+      sheetText =
+        sheetValue.type === "string"
+          ? sheetValue.value
+          : sheetValue.type === "number"
+          ? String(sheetValue.value)
+          : sheetValue.type === "boolean"
+          ? sheetValue.value
+            ? "TRUE"
+            : "FALSE"
+          : "";
     }
 
     // Build the address string
@@ -168,13 +217,10 @@ export const ADDRESS: FunctionDefinition = {
           break;
       }
     } else {
-      // R1C1 style reference
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "ADDRESS function R1C1 style not yet implemented",
-        errAddress: context.dependencyNode,
-      };
+      // R1C1 style reference: a relative part is written in brackets
+      const rowPart = absNum === 1 || absNum === 2 ? `R${rowNum}` : `R[${rowNum}]`;
+      const colPart = absNum === 1 || absNum === 3 ? `C${colNum}` : `C[${colNum}]`;
+      address = `${rowPart}${colPart}`;
     }
 
     // Add sheet prefix if provided

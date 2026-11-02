@@ -1,11 +1,11 @@
 ---
 title: "Array functions"
-description: "Generate and reshape dynamic arrays with SEQUENCE and UNIQUE."
+description: "Generate and reshape dynamic arrays with SEQUENCE, UNIQUE, TOCOL, TOROW and HSTACK."
 ---
 
 ## `SEQUENCE`
 
-Generates a rectangular array of sequential numbers.
+Generates a rectangular array of sequential numbers, filled row by row.
 
 ```excel
 =SEQUENCE(rows, [columns], [start], [step])
@@ -13,7 +13,7 @@ Generates a rectangular array of sequential numbers.
 
 | Argument | Meaning | Default |
 | --- | --- | --- |
-| `rows` | output height | required |
+| `rows` | output height | `1` when omitted |
 | `columns` | output width | `1` |
 | `start` | first number | `1` |
 | `step` | increment | `1` |
@@ -34,6 +34,27 @@ Generates a rectangular array of sequential numbers.
 
 Only the top-left anchor stores the formula. The neighbouring values are spill
 members and can be referenced normally.
+
+### Omitted arguments
+
+Any argument can be omitted by leaving it empty. It then takes its default, as
+in Excel:
+
+```excel
+=SEQUENCE(,3)      // one row: 1,2,3
+=SEQUENCE(3,,10)   // one column: 10,11,12
+=SEQUENCE(2,3,,2)  // 1,3,5 in the first row, 7,9,11 in the second
+```
+
+`=SEQUENCE()`, with no arguments at all, returns `#VALUE!`. A one-cell
+sequence such as `=SEQUENCE(,)` is the single value `1`.
+
+### Argument rules
+
+`rows` and `columns` are truncated to whole numbers and must be at least `1`;
+`=SEQUENCE(0)` returns `#VALUE!`. Every argument must be a single value:
+`=SEQUENCE(A1:A2)` returns `#VALUE!`, where Excel builds one sequence per
+element.
 
 ## `UNIQUE`
 
@@ -66,7 +87,9 @@ when it differs from every earlier row in at least one column. `by_col` switches
 the comparison to whole columns. `by_col` also decides the orientation of a 1-D
 input: a single row is one entry unless `by_col` is `TRUE`.
 
-`by_col` and `exactly_once` accept booleans, or `1` and `0`.
+`by_col` and `exactly_once` accept booleans, or `1` and `0`. An omitted flag
+takes its default, `FALSE`, so `=UNIQUE(A1:A5,,TRUE)` compares rows and keeps
+the entries that occur once.
 
 ### Comparison rules
 
@@ -102,15 +125,124 @@ removes every entry, `UNIQUE` returns `#CALC!`.
 =UNIQUE(A1:A4, FALSE, TRUE) // #CALC! when every value repeats
 ```
 
+## `TOCOL`
+
+Returns the cells of a range or array as a single column.
+
+```excel
+=TOCOL(array, [ignore], [scan_by_column])
+```
+
+| Argument | Meaning | Default |
+| --- | --- | --- |
+| `array` | range or array to flatten | required |
+| `ignore` | `0` keeps every cell, `1` skips blanks, `2` skips errors, `3` skips both | `0` |
+| `scan_by_column` | `TRUE` reads the array column by column instead of row by row | `FALSE` |
+
+Given `1`, `2` in `A1:B1` and `3`, `4` in `A2:B2`:
+
+```excel
+=TOCOL(A1:B2)        // 1,2,3,4
+=TOCOL(A1:B2,,TRUE)  // 1,3,2,4
+```
+
+An omitted option keeps its default, as `ignore` does in the second formula.
+`ignore` accepts numbers, which are truncated, `TRUE` and `FALSE` as `1` and
+`0`, and an empty value as `0`. `scan_by_column` accepts booleans, or numbers,
+where `0` is `FALSE`. Any other value, including an `ignore` of `4`, returns
+`#VALUE!`.
+
+### Skipping blanks and errors
+
+Given `a`, `#VALUE!`, an empty cell and `b` in `A1:A4`:
+
+```excel
+=TOCOL(A1:A4)     // a, #VALUE!, (empty), b
+=TOCOL(A1:A4, 1)  // a, #VALUE!, b
+=TOCOL(A1:A4, 2)  // a, (empty), b
+=TOCOL(A1:A4, 3)  // a, b
+```
+
+Errors that are kept stay error cells of the result. The engine reads an empty
+cell as `""`, so a cell holding `""`, for example from a formula, is skipped as
+a blank too. Blanks that are kept spill as `""`, where Excel shows `0`.
+
+When nothing is left, `TOCOL` returns `#CALC!`. A one-cell result is a single
+value rather than a spill, and a single value or error passed as `array` is a
+1 × 1 array.
+
+### Unbounded ranges
+
+`array` may be an unbounded range such as `A:A`, `A2:A` or `A:B`. Skipping
+blanks drops the empty tail, so the result is bounded:
+
+```excel
+=TOCOL(A:A, 1)        // the non-blank cells of column A
+=TOCOL(A:B, 1)        // A1, B1, A2, B2, ... without the blanks
+=TOCOL(A:B, 1, TRUE)  // column A, then column B, without the blanks
+```
+
+Keeping blanks gives an unbounded result. That works only when the scan reaches
+every cell: a single row or column, a bounded number of columns read row by
+row, as in `=TOCOL(A:B)`, or a bounded number of rows read column by column,
+as in `=TOCOL(1:2,,TRUE)`. Otherwise the result is `#VALUE!`: in
+`=TOCOL(A:B, 0, TRUE)` the first column never ends, so column B would never be
+reached.
+
+## `TOROW`
+
+Returns the cells of a range or array as a single row.
+
+```excel
+=TOROW(array, [ignore], [scan_by_column])
+```
+
+`TOROW` takes the same arguments as `TOCOL` and follows the same rules for
+blanks, errors, `#CALC!` and unbounded ranges. Only the layout differs. With the
+same `A1:B2`:
+
+```excel
+=TOROW(A1:B2)        // 1,2,3,4 across one row
+=TOROW(A1:B2,,TRUE)  // 1,3,2,4 across one row
+```
+
+## `HSTACK`
+
+Appends arrays side by side, from left to right.
+
+```excel
+=HSTACK(array1, [array2], ...)
+```
+
+The result has as many rows as the tallest argument and as many columns as all
+arguments together. Given `1`, `2`, `3` in `A1:A3` and `x`, `y` in `B1:B2`,
+`=HSTACK(A1:A3, B1:B2)` spills:
+
+| | |
+| --- | --- |
+| 1 | x |
+| 2 | y |
+| 3 | #N/A |
+
+As in Excel, a shorter argument is padded with `#N/A` below its last row. A
+single value is a 1 × 1 array and is not repeated down:
+`=HSTACK(A1:A3, "total")` holds `"total"` in the first row and `#N/A` below
+it. A one-cell result is a single value rather than a spill.
+
+An omitted argument, as in `=HSTACK(A1:A2,,B1:B2)`, returns `#VALUE!`, as in
+Excel. Pass `""` for an empty cell instead; like any single value, it fills
+only the first row.
+
+An argument with unbounded rows, such as `A:A`, makes the result unbounded, with
+`#N/A` below the shorter arguments. Only the last argument may have unbounded
+columns, such as `1:1`, since no column could follow it; otherwise the result is
+`#VALUE!`.
+
 ## Spill obstruction
 
-Any content in the target area causes the anchor to return `#SPILL!`.
+Any content in the target area causes the anchor to return `#SPILL!`. The
+anchor spills again by itself once the area is free: when the blocking content
+is cleared, or when another spill that occupied the area goes away.
 
-<Warning>
-  Clearing the blocker does not currently invalidate the failed spill by itself.
-  Rewrite the anchor formula, or call `setSheetContent` with the unblocked
-  content, to restore it.
-</Warning>
-
-See [Spilling](/concepts/spilling) for array arithmetic, references, obstruction
+See [Spilling](/concepts/spilling) for broadcasting, references, obstruction
 and recovery.

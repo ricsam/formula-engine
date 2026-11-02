@@ -1,7 +1,9 @@
 import type {
+  CellInRangeResult,
   LocalCellAddress,
   RangeAddress,
   SingleEvaluationResult,
+  ValueEvaluationResult,
 } from "../core/types";
 import {
   FormulaError,
@@ -64,7 +66,9 @@ import { lessThanOrEqual } from "./comparison/less-than-or-equal";
 import { notEquals } from "./comparison/not-equals";
 import { concatenate } from "./concatenation/concatenate";
 import { CellValueNode } from "./dependency-nodes/cell-value-node";
+import { offsetCellResults } from "./array-shape";
 import { EvaluationContext } from "./evaluation-context";
+import { EvaluationError } from "./evaluation-error";
 import { canIndexDenseRangeNode, registerCriteriaRangeReader } from "./criteria-range-cache";
 
 export class FormulaEvaluator {
@@ -83,6 +87,17 @@ export class FormulaEvaluator {
     context: EvaluationContext
   ): FunctionEvaluationResult {
     const ast = parseFormula(formula);
+
+    if (ast.type === "empty") {
+      // A formula with nothing after `=`. Unlike an omitted function argument,
+      // an empty formula has no meaning.
+      return {
+        type: "error",
+        err: FormulaError.ERROR,
+        message: "Empty formula",
+        errAddress: context.dependencyNode,
+      };
+    }
 
     return captureEvaluationErrors(context.dependencyNode, () => {
       const result = this.evaluateNode(ast, context);
@@ -159,6 +174,9 @@ export class FormulaEvaluator {
 
         case "array":
           return this.evaluateArray(node, context);
+
+        case "empty":
+          return this.evaluateOmittedArgument();
 
         default:
           return {
@@ -386,6 +404,31 @@ export class FormulaEvaluator {
     return node.value;
   }
 
+  /**
+   * Evaluates an omitted function argument: nothing between the delimiters of
+   * an argument list, such as the first argument of `SEQUENCE(,3)`.
+   *
+   * It evaluates like a reference to an empty cell, to the blank value, which
+   * this engine reads as empty text. A function therefore treats `F(1,,2)` like
+   * `F(1,X,2)` where X is an empty cell: text functions read `""`, logical
+   * tests read FALSE and aggregates such as SUM skip it.
+   *
+   * Functions whose parameters give an omitted argument a meaning check for it
+   * with `getSuppliedArgument` (from `parser/ast`) and follow Excel: SEQUENCE
+   * uses its defaults, `MATCH(x, range,)` is an exact match, `OFFSET(A1,,1)` has
+   * 0 rows, `LEFT("abc",)` takes 0 characters, and IF and IFERROR return 0 for
+   * an omitted value.
+   *
+   * Excel instead passes a "missing" value that most functions read as 0, so
+   * results differ where this engine's blank differs from 0 in a function that
+   * does not check for an omitted argument: COUNT and AVERAGE count an omitted
+   * argument as a zero in Excel but skip it here, and a parameter that requires
+   * a number rejects it with #VALUE! here.
+   */
+  evaluateOmittedArgument(): ValueEvaluationResult {
+    return { type: "value", result: { type: "string", value: "" } };
+  }
+
   evaluate3DRange(
     node: ThreeDRangeNode,
     context: EvaluationContext
@@ -579,9 +622,10 @@ export class FormulaEvaluator {
             node.range,
             projectedIntersection
           );
-          if (calculateIntersection) {
-            range = calculateIntersection;
+          if (!calculateIntersection) {
+            return { type: "values", values: [] };
           }
+          range = calculateIntersection;
         }
 
         const address: RangeAddress = {
@@ -596,7 +640,13 @@ export class FormulaEvaluator {
 
         context.dependencyNode.addDependency(rangeNode);
 
-        return rangeNode.result;
+        // The range node reports positions relative to the start of `range`;
+        // callers expect them relative to the start of node.range, which is
+        // where the spill starts.
+        return offsetCellResults(rangeNode.result, {
+          x: range.start.col - node.range.start.col,
+          y: range.start.row - node.range.start.row,
+        });
       },
     }, this, (consumerContext) => {
       const address: RangeAddress = {
@@ -616,86 +666,140 @@ export class FormulaEvaluator {
     )));
   }
 
+  /**
+   * Evaluates an array literal such as `{1,2;3,4}`: commas separate columns and
+   * semicolons separate rows.
+   *
+   * - The literal spills from the formula cell. Its elements are evaluated
+   *   lazily, each with the context of whoever reads it, so a reader depends on
+   *   what the elements read.
+   * - A 1x1 literal such as `{5}` is its single element, like every one-cell
+   *   result in this engine.
+   * - The parser rejects ragged literals. A ragged AST built in code is as wide
+   *   as its longest row, and the missing elements are #N/A, which is how Excel
+   *   pads arrays of unequal size.
+   * - An element that evaluates to an array is #VALUE!: arrays do not nest.
+   * - `{}` is #CALC!, Excel's error for an empty array. The parser represents it
+   *   as one omitted element; a literal whose elements are all omitted has no
+   *   values.
+   */
   evaluateArray(
     node: ArrayNode,
     context: EvaluationContext
   ): FunctionEvaluationResult {
-    const firstRow = node.elements[0];
-    if (!firstRow) {
+    const rowCount = node.elements.length;
+    const columnCount = node.elements.reduce(
+      (widest, row) => Math.max(widest, row.length),
+      0
+    );
+    const hasValues = node.elements.some((row) =>
+      row.some((element) => element.type !== "empty")
+    );
+    if (rowCount === 0 || columnCount === 0 || !hasValues) {
       return {
         type: "error",
-        err: FormulaError.REF,
-        message: "Array is empty",
+        err: FormulaError.CALC,
+        message: "Array literal is empty",
         errAddress: context.dependencyNode,
       };
     }
-    const firstCell = firstRow[0];
-    if (!firstCell) {
-      return {
-        type: "error",
-        err: FormulaError.REF,
-        message: "Array is empty",
-        errAddress: context.dependencyNode,
-      };
+
+    const evaluateElement = (
+      x: number,
+      y: number,
+      readerContext: EvaluationContext
+    ): SingleEvaluationResult => {
+      if (x < 0 || y < 0 || x >= columnCount || y >= rowCount) {
+        return {
+          type: "error",
+          err: FormulaError.REF,
+          message: "Array literal: requested cell is outside the array",
+          errAddress: readerContext.dependencyNode,
+        };
+      }
+      const element = node.elements[y]?.[x];
+      if (!element) {
+        return {
+          type: "error",
+          err: FormulaError.NA,
+          message: "Array literal row is shorter than the widest row",
+          errAddress: readerContext.dependencyNode,
+        };
+      }
+      const result = this.evaluateNode(element, readerContext);
+      if (result.type === "spilled-values") {
+        return {
+          type: "error",
+          err: FormulaError.VALUE,
+          message: "Array literal elements cannot be arrays",
+          errAddress: readerContext.dependencyNode,
+        };
+      }
+      return result;
+    };
+
+    if (rowCount === 1 && columnCount === 1) {
+      return evaluateElement(0, 0, context);
     }
-    const originResult = this.evaluateNode(firstCell, context);
-    if (
-      originResult.type === "error" ||
-      originResult.type === "awaiting-evaluation"
-    ) {
-      return originResult;
-    }
+
+    const spillArea = (origin: CellAddress): SpreadsheetRange => ({
+      start: {
+        col: origin.colIndex,
+        row: origin.rowIndex,
+      },
+      end: {
+        col: { type: "number", value: origin.colIndex + columnCount - 1 },
+        row: { type: "number", value: origin.rowIndex + rowCount - 1 },
+      },
+    });
+
     return {
       type: "spilled-values",
-      spillArea: (origin) => ({
-        start: {
-          col: origin.colIndex,
-          row: origin.rowIndex,
-        },
-        end: {
-          col: {
-            type: "number",
-            value: origin.colIndex + firstRow.length - 1,
-          },
-          row: {
-            type: "number",
-            value: origin.rowIndex + node.elements.length - 1,
-          },
-        },
-      }),
-      source: `array`,
-      evaluate: (spillOffset, context) => {
-        const row = node.elements[spillOffset.y];
-        if (!row) {
-          return {
-            type: "error",
-            err: FormulaError.REF,
-            message: "Array is empty",
-            errAddress: context.dependencyNode,
-          };
+      spillArea,
+      source: "array literal",
+      evaluate: (spillOffset, readerContext) =>
+        evaluateElement(spillOffset.x, spillOffset.y, readerContext),
+      // Dense: every element is a cell of the result, including blank ones.
+      // Elements are read with this literal's own evaluator; `options.evaluate`
+      // may belong to a wrapper that maps the cells it receives.
+      evaluateAllCells: ({ intersection, context, origin, lookupOrder }) => {
+        let area = spillArea(origin);
+        if (intersection) {
+          const overlap = getRangeIntersection(area, intersection);
+          if (!overlap) {
+            return { type: "values", values: [] };
+          }
+          area = overlap;
         }
-        const cell = row[spillOffset.x];
-        if (!cell) {
-          return {
-            type: "error",
-            err: FormulaError.REF,
-            message: "Array is empty",
-            errAddress: context.dependencyNode,
-          };
+        if (area.end.col.type !== "number" || area.end.row.type !== "number") {
+          // Unreachable: the intersection with a finite area is finite.
+          throw new EvaluationError(
+            FormulaError.REF,
+            "Array literal: the area to evaluate is unbounded"
+          );
         }
-        const result = this.evaluateNode(cell, context);
-        if (result.type === "spilled-values") {
-          return {
-            type: "error",
-            err: FormulaError.VALUE,
-            message: "Arrays cannot contain spilled values",
-            errAddress: context.dependencyNode,
-          };
+
+        const firstX = area.start.col - origin.colIndex;
+        const lastX = area.end.col.value - origin.colIndex;
+        const firstY = area.start.row - origin.rowIndex;
+        const lastY = area.end.row.value - origin.rowIndex;
+        const values: CellInRangeResult[] = [];
+        const read = (x: number, y: number) => {
+          values.push({
+            result: evaluateElement(x, y, context),
+            relativePos: { x, y },
+          });
+        };
+        if (lookupOrder === "col-major") {
+          for (let x = firstX; x <= lastX; x++) {
+            for (let y = firstY; y <= lastY; y++) read(x, y);
+          }
+        } else {
+          for (let y = firstY; y <= lastY; y++) {
+            for (let x = firstX; x <= lastX; x++) read(x, y);
+          }
         }
-        return result;
-      },
-      evaluateAllCells: (intersectingRange) => {
-        throw new Error("WIP: evaluateAllCells for array is not implemented");
+        return { type: "values", values };
       },
     };
   }
@@ -745,7 +849,13 @@ export class FormulaEvaluator {
           );
         },
         evaluateAllCells: function (options) {
-          const cellValues = operandResult.evaluateAllCells.call(this, options);
+          // Read the operand's own cells. `options.evaluate` is this wrapper's
+          // evaluate, which already applies the operator, so forwarding it would
+          // apply the operator twice to producers that call it.
+          const cellValues = operandResult.evaluateAllCells.call(this, {
+            ...options,
+            evaluate: operandResult.evaluate,
+          });
           if (cellValues.type !== "values") {
             return cellValues;
           }

@@ -17,7 +17,7 @@ describe("formula function catalog", () => {
     );
 
     expect(catalog.map(({ name }) => name)).toEqual(registeredNames);
-    expect(catalog).toHaveLength(39);
+    expect(catalog).toHaveLength(47);
 
     for (const descriptor of catalog) {
       expect(descriptor.description.length).toBeGreaterThan(0);

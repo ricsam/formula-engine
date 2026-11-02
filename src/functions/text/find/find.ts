@@ -9,6 +9,7 @@ import {
 } from "../../../core/types";
 import type { EvaluationContext } from "../../../evaluator/evaluation-context";
 import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
+import { getSuppliedArgument } from "../../../parser/ast";
 import { convertToString, extractNumericValue } from "../text-helpers";
 
 // Helper function for FIND operation - returns the result, error, or null if not found
@@ -494,6 +495,8 @@ function createFindSpilledResult(
  * - Returns #VALUE! error if text is not found
  * - Supports dynamic arrays (spilled values) for find_text and within_text
  * - Strict type checking: text arguments must be strings, start_num must be number
+ * - A missing start_num is 1, but an omitted one (`FIND("b","abc",)`) is 0, as in
+ *   Excel, which is #VALUE!
  */
 export const FIND: FunctionDefinition = {
   name: "FIND",
@@ -519,10 +522,13 @@ export const FIND: FunctionDefinition = {
       return withinTextResult;
     }
 
-    // Evaluate startNum argument (optional, defaults to 1)
+    // Evaluate startNum argument (1 when missing, 0 when omitted)
     let startNumResult: FunctionEvaluationResult;
     if (node.args.length > 2) {
-      startNumResult = this.evaluateNode(node.args[2]!, context);
+      const startNumNode = getSuppliedArgument(node, 2);
+      startNumResult = startNumNode
+        ? this.evaluateNode(startNumNode, context)
+        : { type: "value", result: { type: "number", value: 0 } };
     } else {
       startNumResult = {
         type: "value",

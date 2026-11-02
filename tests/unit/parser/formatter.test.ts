@@ -112,6 +112,50 @@ describe("Formula Formatter", () => {
         "VLOOKUP(A1,B1:D,2,FALSE)"
       );
     });
+
+    test("should format omitted arguments as nothing between commas", () => {
+      const formulas = [
+        "SEQUENCE(,3)",
+        "SEQUENCE(3,,10)",
+        "SUM(1,,2)",
+        "IF(A1,1,)",
+        "F(,)",
+        "F(,,)",
+        "F(1,,,2)",
+        "SUM(IF(,1,),SEQUENCE(,ROWS(A1:A3)))",
+        "SUM(Table1[[#Headers],[Col1]],,Table1[[#All],[A]:[B]])",
+      ];
+
+      for (const formula of formulas) {
+        expect(formatFormula(formula)).toBe(formula);
+        // The formatted text is an AST cache key: it must parse back to the
+        // same tree.
+        expect(parseFormula(formatFormula(formula))).toEqual(
+          parseFormula(formula)
+        );
+      }
+    });
+
+    test("should normalize whitespace around omitted arguments", () => {
+      expect(formatFormula("SUM( 1 , , 2 )")).toBe("SUM(1,,2)");
+      expect(formatFormula("F( , )")).toBe("F(,)");
+    });
+
+    test("should keep a call without arguments distinct from omitted arguments", () => {
+      expect(formatFormula("F()")).toBe("F()");
+      expect(formatFormula("F( )")).toBe("F()");
+      expect(parseFormula(formatFormula("F(,)"))).toMatchObject({
+        type: "function",
+        args: [{ type: "empty" }, { type: "empty" }],
+      });
+    });
+
+    test("should format an omitted argument on its own as nothing", () => {
+      expect(astToString({ type: "empty" })).toBe("");
+      expect(parseFormula(astToString({ type: "empty" }))).toEqual({
+        type: "empty",
+      });
+    });
   });
 
   describe("Operators", () => {

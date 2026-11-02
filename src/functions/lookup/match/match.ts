@@ -7,6 +7,7 @@ import {
   type FunctionEvaluationResult,
 } from "../../../core/types";
 import type { EvaluationContext } from "../../../evaluator/evaluation-context";
+import { getSuppliedArgument } from "../../../parser/ast";
 
 /**
  * MATCH function - Returns the position of a value in an array
@@ -17,6 +18,11 @@ import type { EvaluationContext } from "../../../evaluator/evaluation-context";
  * - lookup_value: string or number only
  * - lookup_array: array of strings or numbers only
  * - match_type: number only (must be -1, 0, or 1)
+ *
+ * Omitted arguments (a comma with nothing) follow Excel, where an omitted
+ * value is 0: `MATCH(x, range,)` is an exact match, unlike `MATCH(x, range)`
+ * whose missing match_type defaults to 1, and `MATCH(, range, 0)` looks up the
+ * number 0.
  */
 
 function compareMatchValues(left: CellValue, right: CellValue): number | null {
@@ -175,8 +181,11 @@ export const MATCH: FunctionDefinition = {
       };
     }
 
-    // Evaluate lookup_value
-    const lookupValueResult = this.evaluateNode(node.args[0]!, context);
+    // Evaluate lookup_value; an omitted one is 0
+    const lookupValueNode = getSuppliedArgument(node, 0);
+    const lookupValueResult: FunctionEvaluationResult = lookupValueNode
+      ? this.evaluateNode(lookupValueNode, context)
+      : { type: "value", result: { type: "number", value: 0 } };
     if (
       lookupValueResult.type === "error" ||
       lookupValueResult.type === "awaiting-evaluation"
@@ -193,14 +202,15 @@ export const MATCH: FunctionDefinition = {
       return lookupArrayResult;
     }
 
-    // Evaluate match_type (optional, defaults to 1)
+    // Evaluate match_type: 1 when missing, 0 when omitted (`MATCH(x, range,)`)
     let matchTypeResult: FunctionEvaluationResult = {
       type: "value",
-      result: { type: "number", value: 1 },
+      result: { type: "number", value: node.args.length > 2 ? 0 : 1 },
     };
 
-    if (node.args[2]) {
-      matchTypeResult = this.evaluateNode(node.args[2], context);
+    const matchTypeNode = getSuppliedArgument(node, 2);
+    if (matchTypeNode) {
+      matchTypeResult = this.evaluateNode(matchTypeNode, context);
       if (
         matchTypeResult.type === "error" ||
         matchTypeResult.type === "awaiting-evaluation"

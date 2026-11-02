@@ -369,11 +369,14 @@ export type SpilledValuesEvaluationResult = {
    *
    * #### Nesting:
    * e.g. evaluation of scalar operators where we want to nest e.g. `5 * right.evaluate()`
-   * can be implemented by calling
+   * can be implemented by calling the child with its own `evaluate`:
    * ```ts
-   * const vals = child.evaluateAllCells.call(this, options);
+   * const vals = child.evaluateAllCells.call(this, { ...options, evaluate: child.evaluate });
    * return vals.map(val => ({ ...val, result: 5 * val.result }));
    * ```
+   * Never forward `options.evaluate` to a child: it is the wrapper's own
+   * evaluate, so producers that read cells through it would apply the
+   * wrapper's mapping twice.
    *
    * #### Consumers:
    * Only functions that need access to all spilled values in a range end up calling evaluateAllCells, e.g.
@@ -385,7 +388,9 @@ export type SpilledValuesEvaluationResult = {
     this: FormulaEvaluator,
     options: {
       /**
-       * an intersection relative to the origin
+       * Limits the result to the cells of this area, in sheet coordinates
+       * (the same coordinates as `spillArea(origin)`). Returned positions stay
+       * relative to the origin.
        */
       intersection?: SpreadsheetRange;
       evaluate: SpilledValuesEvaluator;

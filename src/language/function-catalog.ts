@@ -111,6 +111,12 @@ const functionMetadata = {
     signature: "COLUMN([reference])",
     parameters: [parameter("reference", true)],
   },
+  COLUMNS: {
+    category: "information",
+    description: "Returns the number of columns in a reference or array.",
+    signature: "COLUMNS(array)",
+    parameters: [parameter("array")],
+  },
   CONCATENATE: {
     category: "text",
     description: "Joins values into one text string.",
@@ -121,6 +127,12 @@ const functionMetadata = {
     category: "lookup",
     description: "Counts numeric values in the supplied arguments.",
     signature: "COUNT(value1, [value2], ...)",
+    parameters: [parameter("value1"), parameter("value2", true, true)],
+  },
+  COUNTA: {
+    category: "lookup",
+    description: "Counts values that are not empty, including text, logical values and errors.",
+    signature: "COUNTA(value1, [value2], ...)",
     parameters: [parameter("value1"), parameter("value2", true, true)],
   },
   COUNTIF: {
@@ -157,6 +169,12 @@ const functionMetadata = {
       parameter("start_num", true),
     ],
   },
+  HSTACK: {
+    category: "array",
+    description: "Joins arrays side by side into one array.",
+    signature: "HSTACK(array1, [array2], ...)",
+    parameters: [parameter("array1"), parameter("array2", true, true)],
+  },
   IF: {
     category: "logical",
     description: "Returns one value for a true condition and another for false.",
@@ -189,6 +207,12 @@ const functionMetadata = {
     signature: "INDIRECT(ref_text, [a1])",
     parameters: [parameter("ref_text"), parameter("a1", true)],
   },
+  INT: {
+    category: "math",
+    description: "Rounds a number down to the nearest integer.",
+    signature: "INT(number)",
+    parameters: [parameter("number")],
+  },
   LEFT: {
     category: "text",
     description: "Returns characters from the beginning of a text value.",
@@ -200,6 +224,20 @@ const functionMetadata = {
     description: "Returns the number of characters in a text value.",
     signature: "LEN(text)",
     parameters: [parameter("text")],
+  },
+  LET: {
+    category: "logical",
+    description:
+      "Names intermediate results and returns a final calculation that can use those names.",
+    signature:
+      "LET(name1, name_value1, calculation_or_name2, [name_value2, calculation_or_name3], ...)",
+    parameters: [
+      parameter("name1"),
+      parameter("name_value1"),
+      parameter("calculation_or_name2"),
+      parameter("name_value2", true, true),
+      parameter("calculation_or_name3", true, true),
+    ],
   },
   MATCH: {
     category: "lookup",
@@ -312,6 +350,12 @@ const functionMetadata = {
     signature: "ROW([reference])",
     parameters: [parameter("reference", true)],
   },
+  ROWS: {
+    category: "information",
+    description: "Returns the number of rows in a reference or array.",
+    signature: "ROWS(array)",
+    parameters: [parameter("array")],
+  },
   SEQUENCE: {
     category: "array",
     description: "Generates a spilled array of sequential numbers.",
@@ -361,6 +405,28 @@ const functionMetadata = {
       parameter("ignore_empty"),
       parameter("text1"),
       parameter("text2", true, true),
+    ],
+  },
+  TOCOL: {
+    category: "array",
+    description:
+      "Returns an array as a single column, optionally skipping blanks and errors.",
+    signature: "TOCOL(array, [ignore], [scan_by_column])",
+    parameters: [
+      parameter("array"),
+      parameter("ignore", true),
+      parameter("scan_by_column", true),
+    ],
+  },
+  TOROW: {
+    category: "array",
+    description:
+      "Returns an array as a single row, optionally skipping blanks and errors.",
+    signature: "TOROW(array, [ignore], [scan_by_column])",
+    parameters: [
+      parameter("array"),
+      parameter("ignore", true),
+      parameter("scan_by_column", true),
     ],
   },
   UNIQUE: {

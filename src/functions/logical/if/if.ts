@@ -1,16 +1,16 @@
 import {
   FormulaError,
-  type CellAddress,
   type CellValue,
-  type ErrorEvaluationResult,
   type FunctionDefinition,
   type FunctionEvaluationResult,
-  type SingleEvaluationResult,
-  type SpilledValuesEvaluationResult,
-  type SpreadsheetRange
 } from "../../../core/types";
+import {
+  createBroadcastResult,
+  toBroadcastOperand,
+} from "../../../evaluator/broadcast";
 import type { EvaluationContext } from "../../../evaluator/evaluation-context";
 import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
+import type { ASTNode } from "../../../parser/ast";
 
 /**
  * IF function - Returns one value if a condition is true and another value if it's false
@@ -25,11 +25,21 @@ import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
  *   IF(A1>10, "High", "Low") - returns "High" if A1>10, otherwise "Low"
  *   IF(B1="", "Empty", B1) - returns "Empty" if B1 is empty, otherwise B1's value
  *   IF(C1<0, "Negative") - returns "Negative" if C1<0, otherwise FALSE
+ *   IF(SEQUENCE(1,3), A1:A2) - a 2x3 array: each row repeats A1 or A2
  *
  * Note:
- * - Supports spilled values (dynamic arrays) for all arguments
  * - Logical test evaluation: 0 and empty string are FALSE, everything else is TRUE
- * - If logical_test is spilled, returns spilled results
+ * - A single-value test evaluates only the chosen branch and returns it unchanged,
+ *   so a range or array branch spills as it is.
+ * - An array test is broadcast against the two values like Excel arrays (see
+ *   `evaluator/broadcast.ts`): the result is as large as the largest of the three
+ *   in each dimension, an argument of size 1 in a dimension is repeated along it,
+ *   and cells beyond a shorter argument are #N/A. Each cell reads only the branch
+ *   its condition chooses; an error in a single-value branch is that cell's value,
+ *   so it only shows up where its branch is chosen. Aggregates that read every
+ *   cell at once (SUM(IF(...))) read all three arguments, as Excel does.
+ * - An omitted value (`IF(A1,,"x")` or `IF(A1,"x",)`) is 0; an omitted condition
+ *   is FALSE.
  */
 
 /**
@@ -51,127 +61,28 @@ function isTruthy(value: CellValue): boolean {
 }
 
 /**
- * Helper for creating spilled-values result for IF function
+ * Evaluates an IF argument. A missing argument (no comma) gives `whenMissing`;
+ * an empty one (a comma without a value, as in `IF(A1,,1)`) gives
+ * `whenEmpty`, like Excel.
  */
-function createIfSpilledResult(
+function evaluateArgument(
   this: FormulaEvaluator,
-  {
-    logicalTestResult,
-    valueIfTrueResult,
-    valueIfFalseResult,
-    context,
-  }: {
-    logicalTestResult: FunctionEvaluationResult;
-    valueIfTrueResult: FunctionEvaluationResult;
-    valueIfFalseResult: FunctionEvaluationResult;
-    context: EvaluationContext;
+  arg: ASTNode | undefined,
+  context: EvaluationContext,
+  whenMissing: CellValue,
+  whenEmpty: CellValue
+): FunctionEvaluationResult {
+  if (!arg) {
+    return { type: "value", result: whenMissing };
   }
-): SpilledValuesEvaluationResult | ErrorEvaluationResult {
-  const hasSpilledTest = logicalTestResult.type === "spilled-values";
-  const hasSpilledTrue = valueIfTrueResult.type === "spilled-values";
-  const hasSpilledFalse = valueIfFalseResult.type === "spilled-values";
-
-  if (!hasSpilledTest && !hasSpilledTrue && !hasSpilledFalse) {
-    throw new Error("createIfSpilledResult called without spilled values");
+  if (arg.type === "empty") {
+    return { type: "value", result: whenEmpty };
   }
-
-  return {
-    type: "spilled-values",
-    spillArea: (origin: CellAddress): SpreadsheetRange => {
-      // Calculate spill area (union of all spilled ranges)
-      let spillArea: SpreadsheetRange | undefined;
-
-      const spilledResults = [
-        hasSpilledTest ? logicalTestResult : null,
-        hasSpilledTrue ? valueIfTrueResult : null,
-        hasSpilledFalse ? valueIfFalseResult : null,
-      ].filter(Boolean) as SpilledValuesEvaluationResult[];
-
-      for (const result of spilledResults) {
-        const currentSpillArea = result.spillArea(origin);
-        if (!spillArea) {
-          spillArea = currentSpillArea;
-        } else {
-          spillArea = this.unionRanges(
-            this.projectRange(spillArea, origin),
-            this.projectRange(currentSpillArea, origin)
-          );
-        }
-      }
-
-      if (!spillArea) {
-        throw new Error("No spilled values found");
-      }
-      return spillArea;
-    },
-    source: "IF with spilled values",
-    evaluate: (spilledCell: any, evalContext: any): SingleEvaluationResult => {
-      // Evaluate all arguments at this spilled position
-      const spillLogicalResult = hasSpilledTest
-        ? logicalTestResult.evaluate(spilledCell, evalContext)
-        : logicalTestResult;
-      const spillTrueResult = hasSpilledTrue
-        ? valueIfTrueResult.evaluate(spilledCell, evalContext)
-        : valueIfTrueResult;
-      const spillFalseResult = hasSpilledFalse
-        ? valueIfFalseResult.evaluate(spilledCell, evalContext)
-        : valueIfFalseResult;
-
-      // Check for errors
-      if (spillLogicalResult === undefined) {
-        return {
-          type: "error",
-          err: FormulaError.REF,
-          message: "The spilled logical test has not been evaluated",
-          errAddress: context.dependencyNode,
-        };
-      }
-      if (spillLogicalResult.type === "error" || spillLogicalResult.type === "awaiting-evaluation") {
-        return spillLogicalResult;
-      }
-
-      if (spillTrueResult === undefined) {
-        return {
-          type: "error",
-          err: FormulaError.REF,
-          message: "The spilled true value has not been evaluated",
-          errAddress: context.dependencyNode,
-        };
-      }
-      if (spillTrueResult.type === "error" || spillTrueResult.type === "awaiting-evaluation") {
-        return spillTrueResult;
-      }
-
-      if (spillFalseResult === undefined) {
-        return {
-          type: "error",
-          err: FormulaError.REF,
-          message: "The spilled false value has not been evaluated",
-          errAddress: context.dependencyNode,
-        };
-      }
-      if (spillFalseResult.type === "error" || spillFalseResult.type === "awaiting-evaluation") {
-        return spillFalseResult;
-      }
-
-      // Perform IF logic
-      if (spillLogicalResult.type !== "value") {
-        return {
-          type: "error",
-          err: FormulaError.VALUE,
-          message: "Invalid logical test result",
-          errAddress: context.dependencyNode,
-        };
-      }
-
-      const isTrue = isTruthy(spillLogicalResult.result);
-      return isTrue ? spillTrueResult : spillFalseResult;
-    },
-    evaluateAllCells: (intersectingRange: any) => {
-      throw new Error("WIP: evaluateAllCells for IF is not implemented");
-    },
-  };
+  return this.evaluateNode(arg, context);
 }
+
+const FALSE_VALUE: CellValue = { type: "boolean", value: false };
+const ZERO_VALUE: CellValue = { type: "number", value: 0 };
 
 /**
  * IF function implementation
@@ -188,8 +99,13 @@ export const IF: FunctionDefinition = {
       };
     }
 
-    // Evaluate logical test
-    const logicalTestResult = this.evaluateNode(node.args[0]!, context);
+    const logicalTestResult = evaluateArgument.call(
+      this,
+      node.args[0],
+      context,
+      FALSE_VALUE,
+      FALSE_VALUE
+    );
     if (
       logicalTestResult.type === "awaiting-evaluation" ||
       logicalTestResult.type === "error"
@@ -197,56 +113,63 @@ export const IF: FunctionDefinition = {
       return logicalTestResult;
     }
 
-    // Handle spilled values - we need to evaluate both branches
-    // because different cells might take different paths
-    if (logicalTestResult.type === "spilled-values") {
-      // Evaluate value_if_true
-      const valueIfTrueResult = this.evaluateNode(node.args[1]!, context);
-      if (valueIfTrueResult.type === "error" || valueIfTrueResult.type === "awaiting-evaluation") {
-        return valueIfTrueResult;
-      }
-
-      // Evaluate value_if_false (optional, defaults to FALSE)
-      let valueIfFalseResult: FunctionEvaluationResult;
-      if (node.args.length > 2) {
-        valueIfFalseResult = this.evaluateNode(node.args[2]!, context);
-        if (valueIfFalseResult.type === "error" || valueIfFalseResult.type === "awaiting-evaluation") {
-          return valueIfFalseResult;
-        }
-      } else {
-        valueIfFalseResult = {
-          type: "value",
-          result: { type: "boolean", value: false },
-        };
-      }
-
-      return createIfSpilledResult.call(this, {
-        logicalTestResult,
-        valueIfTrueResult,
-        valueIfFalseResult,
-        context,
-      });
+    if (logicalTestResult.type === "value") {
+      // LAZY EVALUATION: only evaluate the branch we need, and return it as is.
+      return isTruthy(logicalTestResult.result)
+        ? evaluateArgument.call(
+            this,
+            node.args[1],
+            context,
+            ZERO_VALUE,
+            ZERO_VALUE
+          )
+        : evaluateArgument.call(
+            this,
+            node.args[2],
+            context,
+            FALSE_VALUE,
+            ZERO_VALUE
+          );
     }
 
-    // Evaluate the logical test
-    const isTrue = isTruthy(logicalTestResult.result);
-
-    // LAZY EVALUATION: Only evaluate the branch we need
-    if (isTrue) {
-      // Evaluate value_if_true
-      const valueIfTrueResult = this.evaluateNode(node.args[1]!, context);
+    // An array test is broadcast against both values, so both are needed for
+    // the shape. Their cells are still read lazily, per chosen branch.
+    const valueIfTrueResult = evaluateArgument.call(
+      this,
+      node.args[1],
+      context,
+      ZERO_VALUE,
+      ZERO_VALUE
+    );
+    if (valueIfTrueResult.type === "awaiting-evaluation") {
       return valueIfTrueResult;
-    } else {
-      // Evaluate value_if_false (optional, defaults to FALSE)
-      if (node.args.length > 2) {
-        const valueIfFalseResult = this.evaluateNode(node.args[2]!, context);
-        return valueIfFalseResult;
-      } else {
-        return {
-          type: "value",
-          result: { type: "boolean", value: false },
-        };
-      }
     }
+    const valueIfFalseResult = evaluateArgument.call(
+      this,
+      node.args[2],
+      context,
+      FALSE_VALUE,
+      ZERO_VALUE
+    );
+    if (valueIfFalseResult.type === "awaiting-evaluation") {
+      return valueIfFalseResult;
+    }
+
+    return createBroadcastResult({
+      operands: [
+        toBroadcastOperand(logicalTestResult, context.cellAddress),
+        toBroadcastOperand(valueIfTrueResult, context.cellAddress),
+        toBroadcastOperand(valueIfFalseResult, context.cellAddress),
+      ],
+      context,
+      source: "IF with an array condition",
+      combine: (operandCell) => {
+        const test = operandCell(0);
+        if (test.type !== "value") {
+          return test;
+        }
+        return operandCell(isTruthy(test.result) ? 1 : 2);
+      },
+    });
   },
 };

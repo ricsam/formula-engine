@@ -109,4 +109,14 @@ describe("RIGHT function", () => {
       expect(cell("A1")).toBe("#VALUE!");
     });
   });
+
+  describe("omitted arguments", () => {
+    test("an omitted num_chars is 0, unlike a missing one", () => {
+      setCellContent("A1", '=RIGHT("Hello",)');
+      setCellContent("A2", '=RIGHT("Hello")');
+
+      expect(cell("A1")).toBe("");
+      expect(cell("A2")).toBe("o");
+    });
+  });
 });

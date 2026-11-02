@@ -546,9 +546,7 @@ describe("XLOOKUP function", () => {
   });
 
   describe("edge cases", () => {
-    // Note: Empty cell handling has known limitations in the engine's evaluateAllCells
-    // Skipping this test for now as it requires engine-level fixes
-    test.skip("should match empty string values", () => {
+    test("should match empty string values", () => {
       engine.setSheetContent(
         sheetAddress,
         new Map<string, SerializedCellValue>([
@@ -741,6 +739,122 @@ describe("XLOOKUP function", () => {
       engine.setSheetContent(sheetAddress, data);
 
       expect(cell("C1")).toBe("Value50");
+    });
+  });
+
+  describe("blank cells", () => {
+    beforeEach(() => {
+      // A2 and B4 are blank.
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 1],
+          ["A3", 3],
+          ["A4", 4],
+          ["B1", "one"],
+          ["B2", "two"],
+          ["B3", "three"],
+        ])
+      );
+    });
+
+    test("keep their place in lookup_array and return_array", () => {
+      setCellContent("D1", "=XLOOKUP(3, A1:A4, B1:B4)");
+      setCellContent("D2", "=XLOOKUP(1, A1:A4, B1:B4)");
+      setCellContent("D3", "=XLOOKUP(4, A1:A4, B1:B4)");
+      setCellContent("D4", '=XLOOKUP("three", B1:B4, A1:A4)');
+
+      expect(cell("D1")).toBe("three");
+      expect(cell("D2")).toBe("one");
+      expect(cell("D3")).toBe("");
+      expect(cell("D4")).toBe(3);
+    });
+
+    test("work with whole columns", () => {
+      setCellContent("D1", "=XLOOKUP(3, A:A, B:B)");
+      setCellContent("D2", '=XLOOKUP("two", B:B, A:A, "none")');
+
+      expect(cell("D1")).toBe("three");
+      expect(cell("D2")).toBe("");
+    });
+
+    test("only match a blank lookup value", () => {
+      setCellContent("D1", "=XLOOKUP(0, A1:A4, B1:B4)");
+      setCellContent("D2", "=XLOOKUP(Z1, A1:A4, B1:B4)");
+
+      expect(cell("D1")).toBe(FormulaError.NA);
+      expect(cell("D2")).toBe("two");
+    });
+
+    test("recalculate when a blank cell is filled", () => {
+      setCellContent("D1", "=XLOOKUP(2, A1:A4, B1:B4, \"none\")");
+      expect(cell("D1")).toBe("none");
+
+      setCellContent("A2", 2);
+      expect(cell("D1")).toBe("two");
+    });
+  });
+
+  describe("omitted arguments", () => {
+    beforeEach(() => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 10],
+          ["A3", 30],
+          ["A4", 10],
+          ["B1", "first"],
+          ["B2", "blank"],
+          ["B3", "thirty"],
+          ["B4", "last"],
+        ])
+      );
+    });
+
+    test("an omitted if_not_found returns #N/A", () => {
+      setCellContent("D1", "=XLOOKUP(99, A1:A4, B1:B4,)");
+      setCellContent("D2", "=XLOOKUP(99, A1:A4, B1:B4,, 0)");
+      setCellContent("D3", "=XLOOKUP(99, A1:A4, B1:B4,,,)");
+
+      expect(cell("D1")).toBe(FormulaError.NA);
+      expect(cell("D2")).toBe(FormulaError.NA);
+      expect(cell("D3")).toBe(FormulaError.NA);
+    });
+
+    test("an omitted match_mode is an exact match", () => {
+      setCellContent("D1", '=XLOOKUP(30, A1:A4, B1:B4, "none",)');
+      setCellContent("D2", '=XLOOKUP(25, A1:A4, B1:B4, "none",)');
+      setCellContent("D3", '=XLOOKUP(25, A1:A4, B1:B4, "none",, 1)');
+
+      expect(cell("D1")).toBe("thirty");
+      expect(cell("D2")).toBe("none");
+      expect(cell("D3")).toBe("none");
+    });
+
+    test("an omitted search_mode searches from the first item", () => {
+      setCellContent("D1", "=XLOOKUP(10, A1:A4, B1:B4,,,)");
+      setCellContent("D2", "=XLOOKUP(10, A1:A4, B1:B4,,, -1)");
+
+      expect(cell("D1")).toBe("first");
+      expect(cell("D2")).toBe("last");
+    });
+
+    test("an omitted lookup_value finds the first blank cell", () => {
+      setCellContent("D1", "=XLOOKUP(, A1:A4, B1:B4)");
+      setCellContent("D2", '=XLOOKUP(, A1:A4, B1:B4, "none",, -1)');
+      setCellContent("D3", '=XLOOKUP(, A1:A1, B1:B1, "none")');
+
+      expect(cell("D1")).toBe("blank");
+      expect(cell("D2")).toBe("blank");
+      expect(cell("D3")).toBe("none");
+    });
+
+    test("an error in if_not_found only matters when nothing matches", () => {
+      setCellContent("D1", '=XLOOKUP(30, A1:A4, B1:B4, 1/"x")');
+      setCellContent("D2", '=XLOOKUP(99, A1:A4, B1:B4, 1/"x")');
+
+      expect(cell("D1")).toBe("thirty");
+      expect(cell("D2")).toBe(FormulaError.VALUE);
     });
   });
 });

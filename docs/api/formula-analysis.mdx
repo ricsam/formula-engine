@@ -44,7 +44,8 @@ interface FormulaAnalysis {
 - `tokens` describe syntax and semantics without prescribing colors.
 - `references` resolve formula text to directly highlightable cells, ranges,
   tables, or named expressions.
-- `diagnostics` contain syntax errors and unresolved-resource warnings.
+- `diagnostics` contain syntax errors, unresolved-resource warnings, and
+  warnings about invalid `LET` names.
 
 Analysis is tolerant and does not throw for incomplete editor input. For
 example, `=SUM(A2,` still returns the token and resolved target for `A2`, plus a
@@ -112,6 +113,42 @@ remain unresolved.
 
 Token kinds include formula markers, functions, literals, operators,
 delimiters, workbook and sheet names, cell references, table names and columns,
-named expressions, keywords, and invalid tokens. Optional modifiers mark
-absolute, external, current-row, and unknown semantics. An editor adapter maps
-these stable, editor-neutral values to its own theme and token API.
+named expressions, `LET` variables, keywords, and invalid tokens. Optional
+modifiers mark absolute, external, current-row, and unknown semantics. An
+editor adapter maps these stable, editor-neutral values to its own theme and
+token API.
+
+## `LET` names
+
+A name declared by [`LET`](/functions/logical#let) is a `variable` token, both
+at its declaration and wherever it is used in scope. `LET` names are local to
+the formula: they have no entry in `references`, carry no `referenceId`, and
+never produce a missing-name warning. Inside its scope, a `LET` name hides a
+named expression with the same name.
+
+```typescript
+const analysis = engine.analyzeFormula({
+  formula: "=LET(rate, TaxRate, A1*rate)",
+  origin,
+});
+// rate (twice): "variable" tokens, no reference
+// TaxRate:      a "named-expression" token and reference
+// A1:           a "cell-reference" token and reference
+```
+
+Scoping follows `LET`: a name is visible in the values that follow it and in
+the final calculation, not in its own value, and a nested `LET` can declare an
+outer name again. After the closing parenthesis the name means a named
+expression again, so `rate` in `=LET(rate, 0.1, A1*rate) + rate` is a
+`variable` token inside the call and a named-expression reference outside it.
+
+Analysis works on tokens, so an unfinished `LET` still scopes the names
+declared so far. While its last argument is still being typed, a lone name is
+a `variable` unless it matches an existing named expression.
+
+Two warnings report `LET` names that `LET` would reject with `#NAME?`:
+
+| Code | Reported for |
+| --- | --- |
+| `let.invalid-name` | a name argument that is not a plain name, such as the cell reference `x1` or the qualified `Sheet1!x` |
+| `let.duplicate-name` | a name declared a second time in the same `LET` |

@@ -452,6 +452,108 @@ describe("UNIQUE function", () => {
     });
   });
 
+  describe("array literal input", () => {
+    test("deduplicates a column literal", () => {
+      setContent([["A1", "=UNIQUE({1;1;2})"]]);
+
+      expect(cell("A1")).toBe(1);
+      expect(cell("A2")).toBe(2);
+      expect(cell("A3")).toBe("");
+    });
+
+    test("keeps a row literal whole, because it is a single row", () => {
+      setContent([["A1", "=UNIQUE({1,1,2})"]]);
+
+      expect(cell("A1")).toBe(1);
+      expect(cell("B1")).toBe(1);
+      expect(cell("C1")).toBe(2);
+      expect(cell("A2")).toBe("");
+    });
+
+    test("deduplicates a row literal by column", () => {
+      setContent([["A1", "=UNIQUE({1,1,2},TRUE)"]]);
+
+      expect(cell("A1")).toBe(1);
+      expect(cell("B1")).toBe(2);
+      expect(cell("C1")).toBe("");
+    });
+
+    test("compares the rows of a two-dimensional literal", () => {
+      setContent([["A1", '=UNIQUE({1,"x";1,"X";2,"x"})']]);
+
+      // Text compares case-insensitively, so the second row repeats the first.
+      expect(cell("A1")).toBe(1);
+      expect(cell("B1")).toBe("x");
+      expect(cell("A2")).toBe(2);
+      expect(cell("B2")).toBe("x");
+      expect(cell("A3")).toBe("");
+    });
+
+    test("returns values that occur exactly once", () => {
+      setContent([["A1", "=UNIQUE({1;2;1;3},FALSE,TRUE)"]]);
+
+      expect(cell("A1")).toBe(2);
+      expect(cell("A2")).toBe(3);
+      expect(cell("A3")).toBe("");
+    });
+
+    test("collapses to a single value", () => {
+      setContent([
+        ["A1", "=UNIQUE({5;5;5})"],
+        ["B1", "=UNIQUE({5})"],
+      ]);
+
+      expect(cell("A1")).toBe(5);
+      expect(cell("A2")).toBe("");
+      expect(cell("B1")).toBe(5);
+    });
+
+    test("feeds aggregates and operators", () => {
+      setContent([
+        ["A1", "=SUM(UNIQUE({1;1;2}))"],
+        ["A2", '=COUNT(UNIQUE({1;1;2;"x"}))'],
+        ["A3", "=SUM(-UNIQUE({1;2;3;3}))"],
+        ["B1", "=UNIQUE({1;1;2})*10"],
+      ]);
+
+      expect(cell("A1")).toBe(3);
+      expect(cell("A2")).toBe(2);
+      expect(cell("A3")).toBe(-6);
+      expect(cell("B1")).toBe(10);
+      expect(cell("B2")).toBe(20);
+      expect(cell("B3")).toBe("");
+    });
+  });
+
+  describe("omitted arguments", () => {
+    test("an omitted by_col compares rows", () => {
+      setContent([
+        ["A1", "a"],
+        ["A2", "b"],
+        ["A3", "a"],
+        ["A4", "c"],
+        ["C1", "=UNIQUE(A1:A4,, TRUE)"],
+        ["D1", "=UNIQUE({1,1,2},,)"],
+      ]);
+
+      expect(cell("C1")).toBe("b");
+      expect(cell("C2")).toBe("c");
+      expect(cell("C3")).toBe("");
+      // A single row is already a distinct row.
+      expect(cell("D1")).toBe(1);
+      expect(cell("E1")).toBe(1);
+      expect(cell("F1")).toBe(2);
+    });
+
+    test("an omitted exactly_once keeps every distinct value", () => {
+      setContent([["A1", "=UNIQUE({1,1,2}, TRUE,)"]]);
+
+      expect(cell("A1")).toBe(1);
+      expect(cell("B1")).toBe(2);
+      expect(cell("C1")).toBe("");
+    });
+  });
+
   describe("errors", () => {
     test("propagates an error found in the input", () => {
       setContent([

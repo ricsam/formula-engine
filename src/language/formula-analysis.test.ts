@@ -4,6 +4,8 @@ import { FormulaEngine } from "../core/engine";
 import {
   analyzeFormula,
   findFormulaReferenceAt,
+  type FormulaAnalysis,
+  type FormulaTokenKind,
   type FormulaReferenceTarget,
 } from "./formula-analysis";
 
@@ -33,6 +35,21 @@ function buildEngine(): FormulaEngine {
   engine.addSheet({ workbookName: "Book", sheetName: "Sheet2" });
   engine.addSheet({ workbookName: "Book", sheetName: "Sheet3" });
   return engine;
+}
+
+/** Each identifier-like token as `text:kind`, in order. */
+function nameTokens(analysis: FormulaAnalysis): string[] {
+  const kinds: FormulaTokenKind[] = ["variable", "named-expression", "cell-reference"];
+  return analysis.tokens
+    .filter((token) => kinds.includes(token.kind))
+    .map(
+      (token) =>
+        `${analysis.formula.slice(token.span.start, token.span.end)}:${token.kind}`
+    );
+}
+
+function diagnosticCodes(analysis: FormulaAnalysis): string[] {
+  return analysis.diagnostics.map((diagnostic) => diagnostic.code);
 }
 
 describe("analyzeFormula", () => {
@@ -370,5 +387,175 @@ describe("FormulaEngine.analyzeFormula", () => {
     expect(analysis.diagnostics).not.toContainEqual(
       expect.objectContaining({ code: "function.unknown" })
     );
+  });
+});
+
+describe("LET names in formula analysis", () => {
+  test("marks declarations and uses as variables without references or warnings", () => {
+    const engine = buildEngine();
+    const analysis = engine.analyzeFormula({
+      formula: "=LET(total, A1, total*2)",
+      origin,
+    });
+
+    expect(nameTokens(analysis)).toEqual([
+      "total:variable",
+      "A1:cell-reference",
+      "total:variable",
+    ]);
+    expect(analysis.references.map((reference) => reference.kind)).toEqual([
+      "cell",
+    ]);
+    expect(analysis.diagnostics).toEqual([]);
+    const variable = analysis.tokens.find((token) => token.kind === "variable");
+    expect(variable?.referenceId).toBeUndefined();
+    expect(variable?.modifiers).toEqual([]);
+  });
+
+  test("LET names hide defined names only inside their scope", () => {
+    const engine = buildEngine();
+    engine.addNamedExpression({ expressionName: "Rate", expression: "0.5" });
+    const analysis = engine.analyzeFormula({
+      formula: "=LET(Rate, 2, RATE*10) + Rate + Sheet2!Rate",
+      origin,
+    });
+
+    expect(nameTokens(analysis)).toEqual([
+      "Rate:variable",
+      "RATE:variable",
+      "Rate:named-expression",
+      "Rate:named-expression",
+    ]);
+    expect(
+      analysis.references.map((reference) => [
+        analysis.formula.slice(reference.span.start, reference.span.end),
+        reference.resolution.status,
+      ])
+    ).toEqual([
+      ["Rate", "resolved"],
+      ["Sheet2!Rate", "resolved"],
+    ]);
+    expect(analysis.diagnostics).toEqual([]);
+  });
+
+  test("follows LET scoping: values see earlier names, not their own", () => {
+    const analysis = analyzeFormula({
+      formula: "=LET(a, a, b, a+1, LET(c, b, a+b+c)) + c",
+      origin,
+    });
+
+    expect(nameTokens(analysis)).toEqual([
+      "a:variable",
+      "a:named-expression",
+      "b:variable",
+      "a:variable",
+      "c:variable",
+      "b:variable",
+      "a:variable",
+      "b:variable",
+      "c:variable",
+      "c:named-expression",
+    ]);
+    // Only the names outside any scope are unresolved defined names.
+    expect(
+      analysis.diagnostics.map((diagnostic) =>
+        analysis.formula.slice(diagnostic.span.start, diagnostic.span.end)
+      )
+    ).toEqual(["a", "c"]);
+    expect(diagnosticCodes(analysis)).toEqual([
+      "reference.missing-name",
+      "reference.missing-name",
+    ]);
+  });
+
+  test("degrades gracefully while a LET is typed", () => {
+    const partial = (formula: string) => {
+      const analysis = analyzeFormula({ formula, origin });
+      expect(diagnosticCodes(analysis)).not.toContain("reference.missing-name");
+      return nameTokens(analysis);
+    };
+
+    expect(partial("=LET(")).toEqual([]);
+    expect(partial("=LET(total")).toEqual(["total:variable"]);
+    expect(partial("=LET(total,")).toEqual(["total:variable"]);
+    expect(partial("=LET(x, 1, x")).toEqual(["x:variable", "x:variable"]);
+    expect(partial("=LET(x, 1, x*")).toEqual(["x:variable", "x:variable"]);
+    expect(partial("=LET(x, 1, y")).toEqual(["x:variable", "y:variable"]);
+    expect(partial("=LET(x, 1, y, x+")).toEqual([
+      "x:variable",
+      "y:variable",
+      "x:variable",
+    ]);
+    expect(partial("=SUM(LET(x, A2, LET(y, x")).toEqual([
+      "x:variable",
+      "A2:cell-reference",
+      "y:variable",
+      "x:variable",
+    ]);
+  });
+
+  test("a trailing name in an unfinished LET can still be a defined name", () => {
+    const engine = buildEngine();
+    engine.addNamedExpression({ expressionName: "Rate", expression: "0.5" });
+    const analysis = engine.analyzeFormula({ formula: "=LET(x, 1, Rate", origin });
+
+    expect(nameTokens(analysis)).toEqual([
+      "x:variable",
+      "Rate:named-expression",
+    ]);
+    expect(analysis.references[0]?.resolution.status).toBe("resolved");
+  });
+
+  test("reports invalid and repeated LET names", () => {
+    const invalid = analyzeFormula({ formula: "=LET(x1, 5, x1)", origin });
+    expect(nameTokens(invalid)).toEqual([
+      "x1:cell-reference",
+      "x1:cell-reference",
+    ]);
+    expect(invalid.diagnostics).toEqual([
+      {
+        span: { start: 5, end: 7 },
+        severity: "warning",
+        code: "let.invalid-name",
+        message:
+          "x1 cannot be a LET name because it is a cell reference. LET names are plain names such as total or x_1.",
+      },
+    ]);
+
+    const qualified = analyzeFormula({ formula: "=LET(Sheet1!x, 5, 1)", origin });
+    expect(diagnosticCodes(qualified)).toContain("let.invalid-name");
+
+    const repeated = analyzeFormula({ formula: "=LET(x, 1, X, 2, x)", origin });
+    expect(nameTokens(repeated)).toEqual([
+      "x:variable",
+      "X:variable",
+      "x:variable",
+    ]);
+    expect(repeated.diagnostics).toEqual([
+      {
+        span: { start: 11, end: 12 },
+        severity: "warning",
+        code: "let.duplicate-name",
+        message: "The name X is already declared in this LET.",
+      },
+    ]);
+  });
+
+  test("leaves table columns and other functions' arguments alone", () => {
+    const analysis = analyzeFormula({
+      formula: "=LET(x, 1, Sales[x] + SUM(x, y))",
+      origin,
+    });
+
+    expect(nameTokens(analysis)).toEqual([
+      "x:variable",
+      "x:variable",
+      "y:named-expression",
+    ]);
+    expect(
+      analysis.tokens
+        .filter((token) => token.kind === "table-column")
+        .map((token) => analysis.formula.slice(token.span.start, token.span.end))
+    ).toEqual(["x"]);
   });
 });

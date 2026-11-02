@@ -108,7 +108,7 @@ describe("public formula formatter", () => {
 
   test("returns invalid formulas verbatim from the safe API", () => {
     const invalidFormulas = [
-      "=SUM(A1,,B1)",
+      "=SUM(A1;B1)",
       "=A1+",
       '="unterminated',
       '="',
@@ -129,20 +129,102 @@ describe("public formula formatter", () => {
   });
 
   test("reports parser positions against the original leading-equals input", () => {
-    const result = tryFormatFormula("=SUM(A1,,B1)");
+    const result = tryFormatFormula("=SUM(A1;B1)");
     expect(result).toMatchObject({
       ok: false,
-      formula: "=SUM(A1,,B1)",
+      formula: "=SUM(A1;B1)",
       changed: false,
       error: {
         name: "ParseError",
-        position: { start: 8, end: 9 },
+        position: { start: 7, end: 8 },
       },
     });
   });
 
   test("the strict API refuses invalid syntax", () => {
-    expect(() => formatFormula("=SUM(A1,,B1)")).toThrow(ParseError);
+    expect(() => formatFormula("=SUM(A1;B1)")).toThrow(ParseError);
+  });
+
+  test("prints omitted arguments as nothing", () => {
+    expect(formatFormula("=SEQUENCE(,3)")).toBe("=SEQUENCE(, 3)");
+    expect(formatFormula("=IF(A1,1,)")).toBe("=IF(A1, 1,)");
+    expect(formatFormula("=IF( A1 , , B1 )")).toBe("=IF(A1,, B1)");
+    expect(formatFormula("=IF(,,)")).toBe("=IF(,,)");
+
+    expect(formatFormula("=SEQUENCE(,3)", { style: "pretty" })).toBe(
+      "=SEQUENCE(\n  ,\n  3\n)"
+    );
+    // An omitted last argument is marked by the preceding comma alone.
+    expect(formatFormula("=IF(A1,1,)", { style: "pretty" })).toBe(
+      "=IF(\n  A1,\n  1,\n)"
+    );
+    expect(formatFormula("=IF(A1,,B1)", { style: "pretty" })).toBe(
+      "=IF(\n  A1,\n  ,\n  B1\n)"
+    );
+    expect(formatFormula("=SUM(,)", { style: "pretty" })).toBe(
+      "=SUM(\n  ,\n)"
+    );
+    expect(formatFormula("={}", { style: "pretty" })).toBe("={}");
+  });
+
+  test("omitted arguments round-trip in both styles", () => {
+    const formulas = [
+      "=SEQUENCE(,3)",
+      "=IF(A1,,B1)",
+      "=IF(A1,1,)",
+      "=IF(,,)",
+      "=SUM(,)",
+      "=IF(A1, SEQUENCE(, 2), LET(x, , y, 1, x + y))",
+      "={}",
+    ];
+
+    for (const formula of formulas) {
+      const compact = formatFormula(formula, { style: "compact" });
+      const pretty = formatFormula(compact, { style: "pretty" });
+
+      expect(compact).not.toContain(", ,");
+      expect(compact).not.toContain(", )");
+      expect(pretty.split("\n").some((line) => line.trim() === "")).toBe(false);
+      expect(formatFormula(compact, { style: "compact" })).toBe(compact);
+      expect(formatFormula(pretty, { style: "pretty" })).toBe(pretty);
+      expect(formatFormula(pretty, { style: "compact" })).toBe(compact);
+      expectSameExpression(formula, compact);
+      expectSameExpression(formula, pretty);
+    }
+  });
+
+  test("formats LET calls in both styles", () => {
+    expect(formatFormula("=LET(x,A1,y,x*2,x+y)")).toBe(
+      "=LET(x, A1, y, x*2, x+y)"
+    );
+    expect(formatFormula("=LET(x,A1,y,x*2,x+y)", { style: "pretty" })).toBe(`=LET(
+  x,
+  A1,
+  y,
+  x * 2,
+  x + y
+)`);
+  });
+
+  test("LET formulas round-trip in both styles", () => {
+    const formulas = [
+      "=LET(x, A1, x*2)",
+      "=LET(total, SUM(A1:A10), count, COUNT(A1:A10), IF(count > 0, total / count, 0))",
+      "=LET(x, 1, LET(x, x+1, y, -x^2, {x, y; x*y, 0}))",
+      "=LET(a, , b, Sheet2!Rate, a + b)",
+      "=LET(a, UNIQUE(TOCOL(A2:A1000, 1)), b, UNIQUE(TOCOL(B2:B1000, 1)), HSTACK(TOCOL(IF(SEQUENCE(,ROWS(b)), a)), TOCOL(IF(SEQUENCE(ROWS(a)), TOROW(b)))))",
+    ];
+
+    for (const formula of formulas) {
+      const compact = formatFormula(formula, { style: "compact" });
+      const pretty = formatFormula(compact, { style: "pretty" });
+
+      expect(formatFormula(compact, { style: "compact" })).toBe(compact);
+      expect(formatFormula(pretty, { style: "pretty" })).toBe(pretty);
+      expect(formatFormula(pretty, { style: "compact" })).toBe(compact);
+      expectSameExpression(formula, compact);
+      expectSameExpression(formula, pretty);
+    }
   });
 
   test("reports whether valid formatting changed the text", () => {

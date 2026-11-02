@@ -84,7 +84,10 @@ read("Sheet1!A1"); // 99 — sheet scope wins
 read("Sheet2!A1"); // 1  — falls back to global
 ```
 
-Names outside their scope evaluate to `#NAME?`.
+Names outside their scope evaluate to `#NAME?`. Inside a formula, a name
+declared by [`LET`](/functions/logical#let) shadows a named expression of any
+scope: with `TaxRate` defined as `0.25`, `=LET(TaxRate, 0.1, 100*TaxRate)` is
+`10`.
 
 ## Expressions can be formulas or ranges
 
@@ -128,6 +131,18 @@ engine.renameNamedExpression({
 });
 
 // "=A1*TaxRate" becomes "=A1*VatRate"
+```
+
+A rename understands `LET` scoping. A `LET` name spelled like the old name is
+left alone, because it is local to its formula. When the new name is already a
+`LET` name in scope, that `LET` name is renamed to the first unused spelling
+with a numeric suffix, so the formula keeps its meaning. With a named
+expression `y`:
+
+```typescript
+engine.renameNamedExpression({ expressionName: "y", newName: "x" });
+
+// "=LET(x, 1, x+y)" becomes "=LET(x_1, 1, x_1+x)"
 ```
 
 Removal leaves formulas intact but unresolved:

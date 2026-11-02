@@ -213,6 +213,12 @@ function formatInfiniteRange(ast: RangeNode): string {
   return result;
 }
 
+/**
+ * An omitted argument (an empty node) formats as nothing between its commas, so
+ * `SEQUENCE(,3)`, `SUM(1,,2)` and `IF(A1,1,)` round-trip exactly. These strings
+ * also serve as AST cache keys. A call whose only argument is empty has no text
+ * form (`F()` has zero arguments), and the parser never produces one.
+ */
 function formatFunction(ast: FunctionNode): string {
   const { name, args } = ast;
   const formattedArgs = args.map((arg: ASTNode) => astToString(arg)).join(",");

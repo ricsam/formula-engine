@@ -157,6 +157,40 @@ describe("Concatenation Operator (&)", () => {
       expect(cell("D1")).toBe("Hello World");
       expect(cell("D2")).toBe("Good Day");
     });
+
+    test("should broadcast a column against a row", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "a"],
+          ["A2", "b"],
+          ["B1", 1],
+          ["C1", 2],
+          ["E1", "=A1:A2&B1:C1"],
+        ])
+      );
+
+      expect([cell("E1"), cell("F1")]).toEqual(["a1", "a2"]);
+      expect([cell("E2"), cell("F2")]).toEqual(["b1", "b2"]);
+      expect(cell("G1")).toBe("");
+      expect(cell("E3")).toBe("");
+    });
+
+    test("should read blank cells in arrays as empty text", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "x"],
+          // A2 is blank
+          ["B1", "1"],
+          ["B2", "2"],
+          ["D1", "=A1:A2&B1:B2"],
+        ])
+      );
+
+      expect(cell("D1")).toBe("x1");
+      expect(cell("D2")).toBe("2");
+    });
   });
 
   describe("complex expressions", () => {

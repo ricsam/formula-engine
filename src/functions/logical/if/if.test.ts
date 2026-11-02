@@ -24,6 +24,34 @@ describe("IF function", () => {
 
   const address = (ref: string) => ({ sheetName, ...parseCellReference(ref) });
 
+  /** Reads a block of cells row by row, e.g. block("C1", 3, 4). */
+  const block = (topLeft: string, rows: number, cols: number) => {
+    const start = parseCellReference(topLeft);
+    const values: SerializedCellValue[][] = [];
+    for (let y = 0; y < rows; y++) {
+      const row: SerializedCellValue[] = [];
+      for (let x = 0; x < cols; x++) {
+        row.push(
+          engine.getCellValue({
+            sheetName,
+            workbookName,
+            colIndex: start.colIndex + x,
+            rowIndex: start.rowIndex + y,
+          })
+        );
+      }
+      values.push(row);
+    }
+    return values;
+  };
+
+  const setContent = (entries: [string, SerializedCellValue][]) => {
+    engine.setSheetContent(
+      sheetAddress,
+      new Map<string, SerializedCellValue>(entries)
+    );
+  };
+
   beforeEach(() => {
     engine = FormulaEngine.buildEmpty();
     engine.addWorkbook({ workbookName: workbookName });
@@ -249,6 +277,332 @@ describe("IF function", () => {
       expect(cell("D1")).toBe("True A"); // 1 -> True A
       expect(cell("D2")).toBe("False B"); // 0 -> False B
       expect(cell("D3")).toBe("True C"); // 1 -> True C
+    });
+  });
+
+  describe("array broadcasting", () => {
+    test("a row condition repeats a column value across the columns", () => {
+      // The shape of IF(SEQUENCE(,ROWS(b)), a): every row repeats one value of a.
+      setContent([
+        ["A1", "a1"],
+        ["A2", "a2"],
+        ["A3", "a3"],
+        ["C1", "=IF(SEQUENCE(,2), A1:A3)"],
+      ]);
+
+      expect(block("C1", 3, 2)).toEqual([
+        ["a1", "a1"],
+        ["a2", "a2"],
+        ["a3", "a3"],
+      ]);
+      expect(cell("E1")).toBe("");
+      expect(cell("C4")).toBe("");
+    });
+
+    test("a column condition repeats a row value down the rows", () => {
+      // The shape of IF(SEQUENCE(ROWS(a)), TOROW(b)): every row is all of b.
+      setContent([
+        ["A1", "b1"],
+        ["B1", "b2"],
+        ["D1", "=IF(SEQUENCE(3), A1:B1)"],
+      ]);
+
+      expect(block("D1", 3, 2)).toEqual([
+        ["b1", "b2"],
+        ["b1", "b2"],
+        ["b1", "b2"],
+      ]);
+      expect(cell("F1")).toBe("");
+      expect(cell("D4")).toBe("");
+    });
+
+    test("the two shapes pair every value of a with every value of b", () => {
+      setContent([
+        ["A1", "x"],
+        ["A2", "y"],
+        ["B1", 1],
+        ["C1", 2],
+        ["D1", 3],
+        ["F1", '=IF(SEQUENCE(,3), A1:A2)&"/"&IF(SEQUENCE(2), B1:D1)'],
+      ]);
+
+      expect(block("F1", 2, 3)).toEqual([
+        ["x/1", "x/2", "x/3"],
+        ["y/1", "y/2", "y/3"],
+      ]);
+    });
+
+    test("condition, value and alternative are broadcast together", () => {
+      setContent([
+        ["A1", 1],
+        ["A2", 5],
+        ["C1", "=IF(A1:A2>2, SEQUENCE(1,3)*10, -SEQUENCE(1,3))"],
+      ]);
+
+      expect(block("C1", 2, 3)).toEqual([
+        [-1, -2, -3],
+        [10, 20, 30],
+      ]);
+    });
+
+    test("a row condition chooses between two columns", () => {
+      setContent([
+        ["A1", "t1"],
+        ["A2", "t2"],
+        ["B1", "f1"],
+        ["B2", "f2"],
+        ["D1", "=IF(SEQUENCE(1,3)<>2, A1:A2, B1:B2)"],
+        ["D4", '=IF({1,0,1}, {"a";"b"}, "-")'],
+      ]);
+
+      expect(block("D1", 2, 3)).toEqual([
+        ["t1", "f1", "t1"],
+        ["t2", "f2", "t2"],
+      ]);
+      expect(block("D4", 2, 3)).toEqual([
+        ["a", "-", "a"],
+        ["b", "-", "b"],
+      ]);
+    });
+
+    test("single values fill the condition's shape", () => {
+      setContent([
+        ["A1", "=IF(SEQUENCE(2,2)>2, \"big\", \"small\")"],
+        ["D1", "=IF(SEQUENCE(1,3)>1, \"yes\")"],
+      ]);
+
+      expect(block("A1", 2, 2)).toEqual([
+        ["small", "small"],
+        ["big", "big"],
+      ]);
+      // An omitted alternative is FALSE in every cell that does not pass.
+      expect(block("D1", 1, 3)).toEqual([[false, "yes", "yes"]]);
+    });
+
+    test("a single-value condition returns the chosen array unchanged", () => {
+      setContent([
+        ["A1", "=IF(TRUE, SEQUENCE(2), SEQUENCE(1,3))"],
+        ["C1", "=IF(FALSE, SEQUENCE(2), SEQUENCE(1,3))"],
+      ]);
+
+      expect(block("A1", 3, 1)).toEqual([[1], [2], [""]]);
+      expect(block("C1", 1, 4)).toEqual([[1, 2, 3, ""]]);
+    });
+
+    test("cells beyond a shorter argument are #N/A", () => {
+      setContent([
+        ["A1", "=IF(SEQUENCE(3)>0, SEQUENCE(2)*10)"],
+        ["C1", "=IF(SEQUENCE(1,2), SEQUENCE(1,3))"],
+        ["C3", "=IF(SEQUENCE(2,2)>1, SEQUENCE(3), 0)"],
+      ]);
+
+      expect(block("A1", 3, 1)).toEqual([[10], [20], [FormulaError.NA]]);
+      expect(block("C1", 1, 3)).toEqual([[1, 2, FormulaError.NA]]);
+      // The 2x2 condition is shorter than the 3x1 value: its third row is #N/A.
+      expect(block("C3", 3, 2)).toEqual([
+        [0, 1],
+        [2, 2],
+        [FormulaError.NA, FormulaError.NA],
+      ]);
+    });
+
+    test("omitted values are 0", () => {
+      setContent([
+        ["A1", "=IF(TRUE,,1)"],
+        ["A2", "=IF(FALSE,1,)"],
+        ["A3", "=IF(FALSE,1)"],
+        ["A4", "=IF(,1,2)"],
+        ["C1", '=IF(SEQUENCE(1,2)>1,,"x")'],
+      ]);
+
+      expect(cell("A1")).toBe(0);
+      expect(cell("A2")).toBe(0);
+      expect(cell("A3")).toBe(false);
+      expect(cell("A4")).toBe(2);
+      expect(block("C1", 1, 2)).toEqual([["x", 0]]);
+    });
+  });
+
+  describe("array condition laziness", () => {
+    test("each cell reads only the branch its condition chooses", () => {
+      // B2 takes the alternative, so it never reads C2. Reading C2 from B2 would
+      // close the cycle B2 -> C2 -> B1 -> C1 -> B2.
+      setContent([
+        ["A1", 1],
+        ["A2", 0],
+        ["B1", "=IF(A1:A2=1, C1:C2, 200)"],
+        ["C1", "=B2"],
+        ["C2", "=B1"],
+      ]);
+
+      expect(cell("B1")).toBe(200);
+      expect(cell("B2")).toBe(200);
+      expect(cell("C1")).toBe(200);
+      expect(cell("C2")).toBe(200);
+    });
+
+    test("an error in a single-value branch only shows where it is chosen", () => {
+      setContent([
+        ["A1", 1],
+        ["A2", 5],
+        ["A3", 2],
+        ["B1", '=IF(A1:A3>2, "big", CEILING(5))'],
+      ]);
+
+      expect(block("B1", 3, 1)).toEqual([
+        [FormulaError.VALUE],
+        ["big"],
+        [FormulaError.VALUE],
+      ]);
+    });
+
+    test("errors in the condition stay per cell", () => {
+      setContent([
+        ["A1", 1],
+        ["A2", "=CEILING(5)"],
+        ["A3", 0],
+        ["B1", '=IF(A1:A3, "yes", "no")'],
+      ]);
+
+      expect(block("B1", 3, 1)).toEqual([
+        ["yes"],
+        [FormulaError.VALUE],
+        ["no"],
+      ]);
+    });
+  });
+
+  describe("aggregates over an array condition", () => {
+    test("SUM and COUNT read every broadcast cell", () => {
+      setContent([
+        ["A1", "=SUM(IF(SEQUENCE(1,3), SEQUENCE(2)))"],
+        ["A2", "=COUNT(IF(SEQUENCE(1,3), SEQUENCE(2)))"],
+        ["A3", "=SUM(IF(SEQUENCE(4)>2, SEQUENCE(4), 100))"],
+        ["A4", "=SUM(IF(SEQUENCE(2), SEQUENCE(1,3)*10))"],
+      ]);
+
+      expect(cell("A1")).toBe(9);
+      expect(cell("A2")).toBe(6);
+      expect(cell("A3")).toBe(207);
+      expect(cell("A4")).toBe(120);
+    });
+
+    test("conditional sums over ranges", () => {
+      setContent([
+        ["A1", 1],
+        ["A2", 8],
+        ["A3", 3],
+        ["A4", 9],
+        ["B1", 10],
+        ["B2", 20],
+        ["B3", 30],
+        ["B4", 40],
+        ["D1", "=SUM(IF(A1:A4>2, B1:B4))"],
+        ["D2", "=SUM(IF(A1:A4>2, B1:B4, -B1:B4))"],
+        ["D3", "=COUNT(IF(A1:A4>5, A1:A4))"],
+      ]);
+
+      expect(cell("D1")).toBe(90);
+      expect(cell("D2")).toBe(80);
+      expect(cell("D3")).toBe(2);
+    });
+
+    test("open-ended conditions read only the populated cells", () => {
+      setContent([
+        ["A1", 3],
+        ["A2", 7],
+        ["A3", 9],
+        ["B1", 1],
+        ["B2", 2],
+        ["B3", 4],
+        ["D1", "=SUM(IF(A:A>5, A:A))"],
+        ["D2", "=SUM(IF(A:A>5, B:B, 100))"],
+        ["D3", "=COUNT(IF(A:A>5, A:A))"],
+        ["D4", "=SUM(IF(SEQUENCE(1,3), A:A))"],
+      ]);
+
+      expect(cell("D1")).toBe(16);
+      expect(cell("D2")).toBe(106);
+      expect(cell("D3")).toBe(2);
+      expect(cell("D4")).toBe(57);
+    });
+
+    test("UNIQUE reads an IF result", () => {
+      setContent([
+        ["A1", 1],
+        ["A2", 5],
+        ["A3", 7],
+        ["C1", '=UNIQUE(IF(A1:A3>2, "big", "small"))'],
+        ["E1", "=UNIQUE(IF(SEQUENCE(,2), A1:A3))"],
+      ]);
+
+      expect(block("C1", 3, 1)).toEqual([["small"], ["big"], [""]]);
+      expect(block("E1", 3, 2)).toEqual([
+        [1, 1],
+        [5, 5],
+        [7, 7],
+      ]);
+    });
+
+    test("an open range reads the part of an IF spill it overlaps", () => {
+      setContent([
+        ["A10", "=IF(SEQUENCE(1,3), SEQUENCE(3))"],
+        ["A1", "=SUM(B10:B)"],
+        ["A2", "=SUM(B11:INFINITY)"],
+      ]);
+
+      // A10:C12 holds [1,1,1; 2,2,2; 3,3,3]
+      expect(cell("A1")).toBe(6);
+      expect(cell("A2")).toBe(10);
+    });
+  });
+
+  describe("recalculation with an array condition", () => {
+    test("spilled cells and aggregates follow edits", () => {
+      setContent([
+        ["A1", 1],
+        ["A2", 5],
+        ["B1", 10],
+        ["B2", 20],
+        ["D1", '=IF(A1:A2>2, B1:B2, "low")'],
+        ["E1", "=SUM(IF(A1:A2>2, B1:B2))"],
+      ]);
+
+      expect(block("D1", 2, 1)).toEqual([["low"], [20]]);
+      expect(cell("E1")).toBe(20);
+
+      setCellContent("A1", 3);
+      expect(block("D1", 2, 1)).toEqual([[10], [20]]);
+      expect(cell("E1")).toBe(30);
+
+      setCellContent("B2", 200);
+      expect(block("D1", 2, 1)).toEqual([[10], [200]]);
+      expect(cell("E1")).toBe(210);
+
+      setCellContent("A2", 0);
+      expect(block("D1", 2, 1)).toEqual([[10], ["low"]]);
+      expect(cell("E1")).toBe(10);
+    });
+
+    test("the broadcast shape follows its arguments", () => {
+      setContent([
+        ["A1", 2],
+        ["B1", 3],
+        ["D1", "=IF(SEQUENCE(1,B1), SEQUENCE(A1))"],
+      ]);
+
+      expect(block("D1", 2, 3)).toEqual([
+        [1, 1, 1],
+        [2, 2, 2],
+      ]);
+      expect(cell("G1")).toBe("");
+
+      setCellContent("B1", 4);
+      expect(cell("G2")).toBe(2);
+
+      setCellContent("A1", 1);
+      expect(cell("G1")).toBe(1);
+      expect(cell("D2")).toBe("");
     });
   });
 

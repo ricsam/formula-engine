@@ -1,6 +1,6 @@
 ---
 title: "Lookup and count functions"
-description: "COUNT, criteria counts, INDEX, MATCH, and XLOOKUP."
+description: "COUNT, COUNTA, criteria counts, INDEX, MATCH, and XLOOKUP."
 ---
 
 ## Count
@@ -13,6 +13,43 @@ Counts numeric values.
 =COUNT(value1, [value2], ...)
 =COUNT(B2:B6) // 5 for five numeric cells
 ```
+
+### `COUNTA`
+
+Counts the values that are not empty: numbers, text, logical values and
+errors.
+
+```excel
+=COUNTA(value1, [value2], ...)
+```
+
+Given `North`, `10`, `TRUE`, a formula returning `""`, an empty cell and
+`#VALUE!` in `A1:A6`:
+
+```excel
+=COUNTA(A1:A6)          // 5
+=COUNTA(A:A)            // 5
+=COUNTA(1, "", TRUE)    // 3
+=COUNTA(SEQUENCE(3,2))  // 6
+```
+
+- In a range, empty cells are not counted, but a cell whose formula returns
+  `""` is, as in Excel. Cells that other formulas spill onto count like any
+  populated cell, and errors inside a range are counted rather than
+  propagated.
+- A spilled argument, such as `SEQUENCE`, `UNIQUE` or `TOCOL`, counts its
+  cells.
+- A value passed directly counts once, including `""` and an error value. A
+  reference to an empty cell counts `0`.
+
+<Warning>
+  The engine reads an empty cell as `""`, so a direct reference to a single
+  cell whose formula returns `""` counts `0`, where Excel counts `1`. Inside a
+  range such a cell is counted. A reference to the cell a formula spills from
+  counts the whole spill: with `C1` holding `=SEQUENCE(5)`, `=COUNTA(C1)` is
+  `5`, where Excel needs `C1#` for that and returns `1`. `=COUNTA()` returns
+  `#VALUE!`; Excel rejects the formula.
+</Warning>
 
 ### `COUNTIF`
 
@@ -51,6 +88,21 @@ Returns the value at a position in a range.
 
 Row and column numbers are 1-based within the supplied array.
 
+A `row_num` or `column_num` of `0` selects a whole column or row, as in Excel,
+and an omitted one counts as `0`. Given the regions in `A2:A6` and the units
+`10,20,30,40,50` in `B2:B6`:
+
+```excel
+=INDEX(A2:B6,0,2)      // spills the second column: 10,20,30,40,50
+=INDEX(A2:B6,,2)       // the same
+=INDEX(A2:B6,4,0)      // spills the fourth row: East, 40
+=SUM(INDEX(A2:B6,,2))  // 150
+```
+
+A selection from a range behaves like that range, so `=INDEX(A2:B6,,2)` reads
+like `B2:B6`. A selection from a computed array spills its cells:
+`=INDEX(SEQUENCE(3,3),,2)` spills `2`, `5`, `8`.
+
 ## `MATCH`
 
 Returns the 1-based position of a value in a lookup range.
@@ -63,7 +115,17 @@ Returns the 1-based position of a value in a lookup range.
 =MATCH("East",A2:A6,0) // 4
 ```
 
-Use match type `0` for an exact match.
+Use match type `0` for an exact match. Leaving `match_type` out makes it `1`,
+the largest value less than or equal to the lookup value. An omitted
+`match_type`, written as a trailing comma, is `0`, as in Excel:
+
+```excel
+=MATCH(25,B2:B6)   // 2
+=MATCH(25,B2:B6,)  // #N/A, an exact match finds no 25
+```
+
+An omitted `lookup_value` is the number `0`: `=MATCH(,B2:B6,0)` looks for a
+`0`.
 
 ## `XLOOKUP`
 
@@ -83,7 +145,20 @@ Use match type `0` for an exact match.
 =XLOOKUP("West",A2:A6,B2:B6,"none") // "none"
 ```
 
-Lookup and return arrays should have corresponding shapes.
+Lookup and return arrays should have corresponding shapes. Cells are paired by
+position, blank cells included, so ranges with gaps such as
+`=XLOOKUP("East",A:A,B:B)` return the cell next to the match. A blank cell in
+`return_array` is returned as `""`, where Excel shows `0`.
+
+`if_not_found` is used only when nothing matches, so an error there does not
+affect a found value. An omitted optional argument takes its default, as in
+Excel: `=XLOOKUP("West",A2:A6,B2:B6,,1)` returns `#N/A` when nothing matches.
+An omitted `lookup_value` finds the first blank cell of `lookup_array`.
+
+<Warning>
+  `XLOOKUP` compares text case-sensitively: `=XLOOKUP("east",A2:A6,B2:B6)`
+  returns `#N/A`. Excel, and `MATCH` in this engine, ignore case.
+</Warning>
 
 ## Structured ranges
 

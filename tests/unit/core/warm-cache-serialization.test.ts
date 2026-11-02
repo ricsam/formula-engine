@@ -494,7 +494,7 @@ describe("Warm-cache serialization", () => {
     );
   });
 
-  test("tolerates dangling snapshot node ids from older warm-cache saves", () => {
+  test("falls back to cold dependency state for dangling snapshot node ids", () => {
     engine.setSheetContent(
       { workbookName, sheetName },
       new Map<string, string | number>([
@@ -517,10 +517,39 @@ describe("Warm-cache serialization", () => {
     const firstEvaluationOrder = snapshot.managers.cache.evaluationOrders[0];
     firstEvaluationOrder.evaluationOrder.push(danglingNodeId);
 
-    const hydratedEngine = FormulaEngine.buildEmpty();
-    expect(() =>
-      hydratedEngine.resetToSerializedEngine(serialize(snapshot))
-    ).not.toThrow();
-    expect(hydratedEngine.getCellValue(address("B1"))).toBe(6);
+    const originalConsoleWarn = console.warn;
+    const warnings: unknown[][] = [];
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args);
+    };
+
+    try {
+      const hydratedEngine = FormulaEngine.buildEmpty();
+      expect(() =>
+        hydratedEngine.resetToSerializedEngine(serialize(snapshot))
+      ).not.toThrow();
+
+      // A node restored without one of its dependencies would never see edits
+      // that reach it through that dependency, so nothing is restored warm.
+      expect(
+        hydratedEngine._dependencyManager.getCellValueNode(
+          cellAddressToKey(address("B1"))
+        ).resolved
+      ).toBe(false);
+      expect(hydratedEngine.getCellValue(address("B1"))).toBe(6);
+
+      hydratedEngine.setCellContent(address("A1"), 7);
+      expect(hydratedEngine.getCellValue(address("B1"))).toBe(8);
+    } finally {
+      console.warn = originalConsoleWarn;
+    }
+
+    expect(
+      warnings.some(
+        (entry) =>
+          entry[0] === "[FormulaEngine snapshot]" &&
+          String(entry[1]).includes("Failed to deserialize warm snapshot node")
+      )
+    ).toBe(true);
   });
 });

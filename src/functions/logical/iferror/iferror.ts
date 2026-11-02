@@ -1,19 +1,14 @@
 import {
   FormulaError,
-  type CellValue,
-  type CellNumber,
   type FunctionDefinition,
   type FunctionEvaluationResult,
-  type ValueEvaluationResult,
-  type CellAddress,
-  type SpreadsheetRange,
-  type SpilledValuesEvaluationResult,
-  type SingleEvaluationResult,
-  type ErrorEvaluationResult,
 } from "../../../core/types";
 import { captureEvaluationErrors } from "../../../core/utils";
-import type { EvaluationContext } from "../../../evaluator/evaluation-context";
-import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
+import {
+  createBroadcastResult,
+  toBroadcastOperand,
+} from "../../../evaluator/broadcast";
+import { getSuppliedArgument } from "../../../parser/ast";
 
 /**
  * IFERROR function - Returns a value you specify if a formula evaluates to an error
@@ -31,98 +26,20 @@ import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
  * Note:
  * - If value is not an error, returns the value unchanged
  * - If value is an error, returns value_if_error
- * - Supports spilled values (dynamic arrays) for both arguments
  * - Any error type (#VALUE!, #DIV/0!, #N/A, etc.) triggers the error handling
+ * - value_if_error is only evaluated when value is a single error or an array
+ * - An array value is checked cell by cell, and an array value_if_error is
+ *   broadcast against it like Excel arrays (see `evaluator/broadcast.ts`): a
+ *   dimension of size 1 is repeated and cells beyond a shorter array are #N/A.
+ *   An error in a single value_if_error only shows in the cells that need it.
+ * - An omitted argument (a comma with nothing) is 0, as in Excel:
+ *   `IFERROR(1/"x",)` is 0
  */
 
-/**
- * Helper for creating spilled-values result for IFERROR function
- */
-function createIfErrorSpilledResult(
-  this: FormulaEvaluator,
-  {
-    valueResult,
-    valueIfErrorResult,
-    context,
-  }: {
-    valueResult: FunctionEvaluationResult;
-    valueIfErrorResult: FunctionEvaluationResult;
-    context: EvaluationContext;
-  }
-): SpilledValuesEvaluationResult | ErrorEvaluationResult {
-  const hasSpilledValue = valueResult.type === "spilled-values";
-  const hasSpilledError = valueIfErrorResult.type === "spilled-values";
-
-  if (!hasSpilledValue && !hasSpilledError) {
-    throw new Error("createIfErrorSpilledResult called without spilled values");
-  }
-
-  return {
-    type: "spilled-values",
-    spillArea: (origin: CellAddress): SpreadsheetRange => {
-      // Calculate spill area (union of spilled ranges)
-      if (hasSpilledValue && valueResult.type === "spilled-values") {
-        const spillArea = valueResult.spillArea(origin);
-        if (hasSpilledError && valueIfErrorResult.type === "spilled-values") {
-          return this.unionRanges(
-            this.projectRange(spillArea, origin),
-            this.projectRange(valueIfErrorResult.spillArea(origin), origin)
-          );
-        }
-        return spillArea;
-      } else if (
-        hasSpilledError &&
-        valueIfErrorResult.type === "spilled-values"
-      ) {
-        return valueIfErrorResult.spillArea(origin);
-      } else {
-        throw new Error("No spilled values found");
-      }
-    },
-    source: "IFERROR with spilled values",
-    evaluate: (spilledCell: any, evalContext: any): SingleEvaluationResult => {
-      // Evaluate arguments at this spilled position
-      const spillValueResult = hasSpilledValue
-        ? valueResult.evaluate(spilledCell, evalContext)
-        : valueResult;
-      const spillErrorResult = hasSpilledError
-        ? valueIfErrorResult.evaluate(spilledCell, evalContext)
-        : valueIfErrorResult;
-
-      if (spillValueResult === undefined) {
-        return {
-          type: "error",
-          err: FormulaError.REF,
-          message: "The spilled value has not been evaluated",
-          errAddress: context.dependencyNode,
-        };
-      }
-
-      if (spillErrorResult === undefined) {
-        return {
-          type: "error",
-          err: FormulaError.REF,
-          message: "The spilled error value has not been evaluated",
-          errAddress: context.dependencyNode,
-        };
-      }
-
-      // IFERROR logic: if first argument is error, return second argument
-      if (
-        spillValueResult.type === "error" ||
-        spillValueResult.type === "awaiting-evaluation"
-      ) {
-        return spillErrorResult;
-      }
-
-      // If first argument is not an error, return it
-      return spillValueResult;
-    },
-    evaluateAllCells: (intersectingRange: any) => {
-      throw new Error("WIP: evaluateAllCells for IFERROR is not implemented");
-    },
-  };
-}
+const ZERO: FunctionEvaluationResult = {
+  type: "value",
+  result: { type: "number", value: 0 },
+};
 
 /**
  * IFERROR function implementation
@@ -139,44 +56,50 @@ export const IFERROR: FunctionDefinition = {
       };
     }
 
+    const evaluateArgument = (index: number): FunctionEvaluationResult => {
+      const argument = getSuppliedArgument(node, index);
+      return argument
+        ? captureEvaluationErrors(context.dependencyNode, () =>
+            this.evaluateNode(argument, context)
+          )
+        : ZERO;
+    };
+
     // Evaluate the value argument (the expression to check for errors)
-    const valueResult = captureEvaluationErrors(
-      context.dependencyNode,
-      () => this.evaluateNode(node.args[0]!, context)
-    );
+    const valueResult = evaluateArgument(0);
 
     if (valueResult.type === "awaiting-evaluation") {
       return valueResult;
     }
 
-    // Handle spilled values - we need to evaluate both branches
-    // because different cells might have errors or not
-    if (valueResult.type === "spilled-values") {
-      // Evaluate the value_if_error argument
-      const valueIfErrorResult = this.evaluateNode(node.args[1]!, context);
-      if (
-        valueIfErrorResult.type === "error" ||
-        valueIfErrorResult.type === "awaiting-evaluation"
-      ) {
-        return valueIfErrorResult; // Error in the error handler itself
-      }
-
-      return createIfErrorSpilledResult.call(this, {
-        valueResult,
-        valueIfErrorResult,
-        context,
-      });
+    // LAZY EVALUATION: Only evaluate the error handler if we have an error
+    if (valueResult.type === "error") {
+      return evaluateArgument(1);
     }
 
-    // LAZY EVALUATION: Only evaluate error handler if we have an error
-    // IFERROR logic: if first argument is error, return second argument
-    if (valueResult.type === "error") {
-      const valueIfErrorResult = this.evaluateNode(node.args[1]!, context);
+    // If a single value is not an error, return it unchanged WITHOUT evaluating
+    // the error handler
+    if (valueResult.type === "value") {
+      return valueResult;
+    }
+
+    // An array may have errors in some cells, so the error handler is needed
+    const valueIfErrorResult = evaluateArgument(1);
+    if (valueIfErrorResult.type === "awaiting-evaluation") {
       return valueIfErrorResult;
     }
 
-    // If first argument is not an error, return it unchanged
-    // WITHOUT evaluating the error handler
-    return valueResult;
+    return createBroadcastResult({
+      operands: [
+        toBroadcastOperand(valueResult, context.cellAddress),
+        toBroadcastOperand(valueIfErrorResult, context.cellAddress),
+      ],
+      context,
+      source: "IFERROR with an array value",
+      combine: (operandCell) => {
+        const value = operandCell(0);
+        return value.type === "error" ? operandCell(1) : value;
+      },
+    });
   },
 };

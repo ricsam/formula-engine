@@ -3,6 +3,7 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
 } from "../../../core/types";
+import { getSuppliedArgument } from "../../../parser/ast";
 import { createMidSpilledResult, midOperation } from "../text-helpers";
 
 /**
@@ -22,6 +23,8 @@ import { createMidSpilledResult, midOperation } from "../text-helpers";
  * - If start_num is greater than the length of text, the function returns an empty string.
  * - Supports dynamic arrays (spilled values) for all arguments
  * - Strict type checking: text must be string, start_num and num_chars must be numbers
+ * - An omitted start_num or num_chars (a comma with nothing) is 0, as in Excel:
+ *   `MID("abc",2,)` is empty text and `MID("abc",,1)` is #VALUE!
  */
 export const MID: FunctionDefinition = {
   name: "MID",
@@ -44,8 +47,15 @@ export const MID: FunctionDefinition = {
       return textResult;
     }
 
-    // Evaluate the start_num argument
-    const startNumResult = this.evaluateNode(node.args[1]!, context);
+    // Evaluate the start_num argument (0 when omitted)
+    const zero: FunctionEvaluationResult = {
+      type: "value",
+      result: { type: "number", value: 0 },
+    };
+    const startNumNode = getSuppliedArgument(node, 1);
+    const startNumResult = startNumNode
+      ? this.evaluateNode(startNumNode, context)
+      : zero;
     if (
       startNumResult.type === "error" ||
       startNumResult.type === "awaiting-evaluation"
@@ -53,8 +63,11 @@ export const MID: FunctionDefinition = {
       return startNumResult;
     }
 
-    // Evaluate the num_chars argument
-    const numCharsResult = this.evaluateNode(node.args[2]!, context);
+    // Evaluate the num_chars argument (0 when omitted)
+    const numCharsNode = getSuppliedArgument(node, 2);
+    const numCharsResult = numCharsNode
+      ? this.evaluateNode(numCharsNode, context)
+      : zero;
     if (
       numCharsResult.type === "error" ||
       numCharsResult.type === "awaiting-evaluation"

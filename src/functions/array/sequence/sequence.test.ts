@@ -140,49 +140,198 @@ describe("SEQUENCE function", () => {
     expect(cell("G2")).toBe(150);
   });
 
-  test.skip("array input", () => {
-    engine.setSheetContent(
-      sheetAddress,
-      new Map<string, SerializedCellValue>([["A1", "=SEQUENCE(SEQUENCE(3))"]])
-    );
-
-    const cell = (ref: string, debug?: boolean) =>
-      engine.getCellValue(
-        { sheetName, workbookName, ...parseCellReference(ref) },
-        debug
-      );
-
-    // SEQUENCE(3) produces {1; 2; 3}
-    // SEQUENCE(SEQUENCE(3)) uses origin value 1, so it's SEQUENCE(1) which is {1}
-    // But since the input is an array with 3 rows, it broadcasts {1} over 3 rows
-    expect(cell("A1", true)).toBe(1);
-    expect(cell("A2")).toBe(1);
-    expect(cell("A3")).toBe(1);
-  });
-
-  test.skip("array input - SEQUENCE(SEQUENCE(5), 1, 10)", () => {
+  test("rejects an array argument with #VALUE!", () => {
+    // Excel lifts SEQUENCE over an array argument; this engine does not.
     engine.setSheetContent(
       sheetAddress,
       new Map<string, SerializedCellValue>([
-        ["A1", "=SEQUENCE(SEQUENCE(5), 1, 10)"],
+        ["A1", "=SEQUENCE(SEQUENCE(3))"],
+        ["B1", "=SEQUENCE(SEQUENCE(5), 1, 10)"],
+        ["C1", "=SEQUENCE(2, {1,2})"],
+        ["D1", "=SEQUENCE(2, 1, G1:G2)"],
+        ["E1", "=SEQUENCE(2, 1, 1, G1:G3)"],
       ])
     );
 
-    const cell = (ref: string) =>
-      engine.getCellValue({
-        sheetName,
-        workbookName,
-        ...parseCellReference(ref),
-      });
+    expect(cell("A1")).toBe(FormulaError.VALUE);
+    expect(cell("A2")).toBe("");
+    expect(cell("B1")).toBe(FormulaError.VALUE);
+    expect(cell("C1")).toBe(FormulaError.VALUE);
+    expect(cell("D1")).toBe(FormulaError.VALUE);
+    expect(cell("E1")).toBe(FormulaError.VALUE);
+  });
 
-    // SEQUENCE(5) produces {1; 2; 3; 4; 5}
-    // SEQUENCE(SEQUENCE(5), 1, 10) uses origin value 1, so it's SEQUENCE(1, 1, 10) which is {10}
-    // But since the input is an array with 5 rows, it broadcasts {10} over 5 rows
-    expect(cell("A1")).toBe(10);
-    expect(cell("A2")).toBe(10);
-    expect(cell("A3")).toBe(10);
-    expect(cell("A4")).toBe(10);
-    expect(cell("A5")).toBe(10);
+  test("accepts a single-cell range or a one-element array as an argument", () => {
+    engine.setSheetContent(
+      sheetAddress,
+      new Map<string, SerializedCellValue>([
+        ["A1", 3],
+        ["B1", "=SEQUENCE(A1:A1)"],
+        ["C1", "=SEQUENCE({2})"],
+      ])
+    );
+
+    expect(cell("B1")).toBe(1);
+    expect(cell("B3")).toBe(3);
+    expect(cell("C1")).toBe(1);
+    expect(cell("C2")).toBe(2);
+  });
+
+  describe("omitted arguments", () => {
+    test("an omitted rows argument defaults to 1", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([["A1", "=SEQUENCE(,3)"]])
+      );
+
+      // A single row {1,2,3}
+      expect(cell("A1")).toBe(1);
+      expect(cell("B1")).toBe(2);
+      expect(cell("C1")).toBe(3);
+      expect(cell("D1")).toBe("");
+      expect(cell("A2")).toBe("");
+    });
+
+    test("an omitted columns argument defaults to 1", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "=SEQUENCE(3,,10)"],
+          ["B1", "=SEQUENCE(2,)"],
+        ])
+      );
+
+      // A single column {10;11;12}
+      expect(cell("A1")).toBe(10);
+      expect(cell("A2")).toBe(11);
+      expect(cell("A3")).toBe(12);
+      expect(cell("A4")).toBe("");
+      expect(cell("B1")).toBe(1);
+      expect(cell("B2")).toBe(2);
+      expect(cell("C1")).toBe("");
+    });
+
+    test("omitted start and step default to 1", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "=SEQUENCE(2,2,,)"],
+          ["D1", "=SEQUENCE(1,3,,5)"],
+          ["D2", "=SEQUENCE(1,3,5,)"],
+        ])
+      );
+
+      expect(cell("A1")).toBe(1);
+      expect(cell("B1")).toBe(2);
+      expect(cell("A2")).toBe(3);
+      expect(cell("B2")).toBe(4);
+      expect(cell("D1")).toBe(1);
+      expect(cell("E1")).toBe(6);
+      expect(cell("F1")).toBe(11);
+      expect(cell("D2")).toBe(5);
+      expect(cell("E2")).toBe(6);
+      expect(cell("F2")).toBe(7);
+    });
+
+    test("every argument omitted gives the single value 1", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "=SEQUENCE(,)"],
+          ["A2", "=SEQUENCE(,,,)"],
+          ["A3", "=SEQUENCE(,,7)"],
+        ])
+      );
+
+      expect(cell("A1")).toBe(1);
+      expect(cell("B1")).toBe("");
+      expect(cell("A2")).toBe(1);
+      expect(cell("A3")).toBe(7);
+    });
+
+    test("an argument referencing an empty cell is not omitted", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "=SEQUENCE(Z1,3)"],
+          ["A2", "=SEQUENCE(2,1,Z1)"],
+        ])
+      );
+
+      expect(cell("A1")).toBe(FormulaError.VALUE);
+      expect(cell("A2")).toBe(FormulaError.VALUE);
+    });
+
+    test("feeds aggregates and other functions", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "=SUM(SEQUENCE(,4))"],
+          ["A2", "=INDEX(SEQUENCE(,4,10),1,3)"],
+          ["A3", "=SUM(SEQUENCE(3,,10))"],
+        ])
+      );
+
+      expect(cell("A1")).toBe(10);
+      expect(cell("A2")).toBe(12);
+      expect(cell("A3")).toBe(33);
+    });
+
+    test("recalculates when a supplied argument changes", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 2],
+          ["B1", "=SEQUENCE(,A1)"],
+        ])
+      );
+
+      expect(cell("B1")).toBe(1);
+      expect(cell("C1")).toBe(2);
+      expect(cell("D1")).toBe("");
+
+      engine.setCellContent(
+        { sheetName, workbookName, ...parseCellReference("A1") },
+        3
+      );
+
+      expect(cell("B1")).toBe(1);
+      expect(cell("D1")).toBe(3);
+    });
+  });
+
+  test("rejects non-numeric start and step", () => {
+    engine.setSheetContent(
+      sheetAddress,
+      new Map<string, SerializedCellValue>([
+        ["A1", '=SEQUENCE(2,1,"a")'],
+        ["A2", '=SEQUENCE(2,1,1,"b")'],
+        ["A3", "=SEQUENCE(-INFINITY)"],
+        ["A4", "=SEQUENCE()"],
+        ["A5", "=SEQUENCE(1,1,1,1,1)"],
+      ])
+    );
+
+    expect(cell("A1")).toBe(FormulaError.VALUE);
+    expect(cell("A2")).toBe(FormulaError.VALUE);
+    expect(cell("A3")).toBe(FormulaError.VALUE);
+    expect(cell("A4")).toBe(FormulaError.VALUE);
+    expect(cell("A5")).toBe(FormulaError.VALUE);
+  });
+
+  test("aggregates apply a wrapping operator once", () => {
+    engine.setSheetContent(
+      sheetAddress,
+      new Map<string, SerializedCellValue>([
+        ["A1", "=SUM(-SEQUENCE(3))"],
+        ["A2", "=SUM(SEQUENCE(4)/2)"],
+        ["A3", "=SUM(SEQUENCE(4)*SEQUENCE(4))"],
+      ])
+    );
+
+    expect(cell("A1")).toBe(-6);
+    expect(cell("A2")).toBe(5);
+    expect(cell("A3")).toBe(30);
   });
 
   test("SEQUENCE with INFINITY rows", () => {
@@ -226,6 +375,20 @@ describe("SEQUENCE function", () => {
     expect(cell("A2")).toBe(15);
     expect(cell("A3")).toBe(20);
     expect(cell("A10")).toBe(55);
+  });
+
+  test("SEQUENCE with INFINITY rows fills row by row across finite columns", () => {
+    engine.setSheetContent(
+      sheetAddress,
+      new Map<string, SerializedCellValue>([["A1", "=SEQUENCE(INFINITY, 2)"]])
+    );
+
+    expect(cell("A1")).toBe(1);
+    expect(cell("B1")).toBe(2);
+    expect(cell("A2")).toBe(3);
+    expect(cell("B2")).toBe(4);
+    expect(cell("B50")).toBe(100);
+    expect(cell("C1")).toBe("");
   });
 
   test("SEQUENCE with both INFINITY rows and columns", () => {

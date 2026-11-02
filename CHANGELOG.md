@@ -1,5 +1,139 @@
 # @ricsam/formula-engine
 
+## 0.4.0
+
+### Minor Changes
+
+- Add `LET`, `TOCOL`, `TOROW`, `HSTACK`, `ROWS`, `COLUMNS` (alias `COLS`), `INT`
+  and `COUNTA`, for 47 functions in all. Together with omitted arguments and
+  broadcasting they support combinatorial spills such as every pair of distinct
+  values from two columns:
+  `=LET(a, UNIQUE(TOCOL(A2:A1000, 1)), b, UNIQUE(TOCOL(B2:B1000, 1)), HSTACK(TOCOL(IF(SEQUENCE(,ROWS(b)), a)), TOCOL(IF(SEQUENCE(ROWS(a)), TOROW(b)))))`.
+
+  `LET(name1, name_value1, ..., calculation)` names intermediate results. Names
+  are local to the formula and case-insensitive, each value sees the names
+  declared before it, a nested `LET` can declare an outer name again, and a
+  `LET` name hides a named expression of the same name. A name bound to a
+  reference stays a reference. A wrong argument count or a missing calculation
+  is `#VALUE!`, an invalid or repeated name is `#NAME?`, and a `LET` whose
+  expansion exceeds 10,000 nodes is `#CALC!`. Unlike Excel, a name used n times
+  evaluates its value n times per calculation, an unused value is never
+  evaluated, and an omitted value is 0.
+
+  `TOCOL(array, [ignore], [scan_by_column])` and `TOROW` flatten a range or
+  array into one column or row, optionally skipping blanks (1), errors (2) or
+  both (3). Unbounded ranges such as `A:A` work; skipping blanks drops their
+  empty tail. Nothing left is `#CALC!`. `HSTACK(array1, ...)` appends arrays
+  side by side and pads shorter ones with `#N/A`.
+
+  `ROWS` and `COLUMNS` measure a range without reading its cells and a spilled
+  result by its spill area. A reference to a spilling cell measures the whole
+  spill, and an unbounded dimension is `INFINITY`. `INT` rounds down toward
+  negative infinity, element by element over arrays, and accepts only numbers.
+  `COUNTA` counts non-empty values, including errors and, inside a range,
+  formulas that return `""`.
+
+- Broadcast arrays like Excel in operators and `IF`. In each dimension the
+  result is as large as the largest operand; an operand of size 1 is repeated
+  and cells beyond a shorter operand are `#N/A`. `SEQUENCE(3)*SEQUENCE(,4)`
+  spills a 3 × 4 table and `IF(SEQUENCE(,3), A1:A2)` spills 2 × 3. An array
+  condition makes `IF` choose per cell and read only the chosen branch, and
+  `IFERROR` checks an array cell by cell, broadcasting an array fallback. Array
+  literals can be read whole. Aggregates now accept these results:
+  `SUM(IF(...))`, `COUNT(IF(...))`, `UNIQUE(IF(...))`, `SUM(IFERROR(...))` and
+  `SUM({1,2,3})` work instead of returning `#ERROR!`.
+
+  Behavior changes:
+
+  - Two arrays combine by broadcasting instead of by position. Cells beyond a
+    shorter array are `#N/A` without being read; before, `A1:A3+B1:B2` read
+    `B3`, and mismatched shapes gave errors such as `#REF!`.
+  - A blank cell inside an array behaves as it does in a single-cell formula:
+    `&` treats it as empty text and arithmetic returns `#VALUE!`. Before, a
+    blank cell in an operation between two arrays gave `#N/A`.
+  - When an aggregate reads an operator result, a position filled in only one
+    operand is computed with a blank instead of being `#N/A`, and `#N/A` cells
+    beyond a shorter array are included. A position where every array operand
+    is blank is still left out.
+  - An error in a single-value `IF` branch or `IFERROR` fallback appears only in
+    the cells that use it instead of failing the whole result.
+  - An error in one element of an array literal is that cell's value instead of
+    the whole array's, and `{}` is `#CALC!`.
+
+- Accept omitted function arguments such as `SEQUENCE(,3)`, `SUM(1,,2)` and
+  `IF(A1,1,)`. Formulas like these were syntax errors that showed `#ERROR!`;
+  they now evaluate and are stored in compact form like other valid formulas.
+  Array literals still reject omitted elements.
+
+  An omitted argument evaluates like a reference to an empty cell, except where
+  a function follows Excel's rule for it. `SEQUENCE` uses its defaults for rows,
+  columns, start and step. `IF`, `IFERROR` and `CEILING` read an omitted value
+  as 0. `UNIQUE`, `XLOOKUP`, `OFFSET`'s height and width and `ADDRESS` use
+  their defaults. `MATCH(x, r,)` is an exact match, `OFFSET(A1,,1)` moves 0
+  rows, `LEFT("abc",)`, `RIGHT` and `MID` take 0 characters, `FIND` and `MID`
+  with an omitted start position return `#VALUE!`, and `TEXTJOIN` reads an
+  omitted delimiter as empty text and an omitted `ignore_empty` as `TRUE`.
+  Elsewhere, results can differ from Excel, which reads most omitted arguments
+  as 0: `COUNT(1,,2)` is 2 here and 3 in Excel.
+
+  Related function changes:
+
+  - `INDEX` accepts a row or column number of 0, and an omitted one counts as
+    0: `INDEX(A1:C3,,2)` is the whole second column. A selection from a range
+    reads like that range; from a computed array it spills. Before,
+    `INDEX(A1:A2,0,1)` was `#VALUE!`.
+  - `ADDRESS` produces R1C1 text when `a1` is `FALSE`: `ADDRESS(2,3,4,FALSE)` is
+    `"R[2]C[3]"`. Before, it returned `#VALUE!`.
+  - `OFFSET` returns `#VALUE!` for a non-numeric `height` or `width`, and
+    `ADDRESS` for a non-numeric `abs_num`, instead of ignoring them.
+  - `SEQUENCE` returns `#VALUE!` for an array argument and for `-INFINITY`
+    instead of `#ERROR!` and `1`, and `SEQUENCE(INFINITY, 2)` fills row by row
+    instead of repeating each number across the row.
+
+  `formatFormula` prints an omitted argument as nothing, as in `=SEQUENCE(, 3)`
+  and `=IF(A1, 1,)`. Pretty output gives an omitted last argument no line of its
+  own and keeps `{}` on one line.
+
+- Add `LET` support to the formula tooling. Formula analysis reports `LET` names
+  as the new public `FormulaTokenKind` `"variable"`, at the declaration and
+  every use in scope, without a reference entry or a missing-name warning, and
+  scopes the names of a `LET` that is still being typed. The new warnings
+  `let.invalid-name` and `let.duplicate-name` flag names that `LET` rejects.
+  Editor integrations that switch over `FormulaTokenKind` need to handle the
+  new kind.
+
+  Renaming a named expression is scope-aware. `LET` names spelled like the old
+  name are left alone, and a `LET` name that would capture the new name is
+  renamed to the first free `<name>_<n>`: with `y` renamed to `x`,
+  `=LET(x, 1, x+y)` becomes `=LET(x_1, 1, x_1+x)`.
+
+### Patch Changes
+
+- Recover blocked spills automatically. An anchor showing `#SPILL!` now spills
+  as soon as its area is free: when the blocking content is cleared, including
+  a blocker that depends on the anchor itself, when another spill that held the
+  area goes away, and after a warm snapshot restore. Before, the anchor stayed
+  `#SPILL!` until its formula was entered again.
+- Report spilled cells inside a range at their real position. With `A1` holding
+  `x` and `A2` holding `=SEQUENCE(3)`, `MATCH(2, A1:A5, 0)` returned 2 instead
+  of 3 and `UNIQUE(A1:A5)` lost a value; `UNIQUE`, `MATCH`, `XLOOKUP` and other
+  functions over such ranges are now correct.
+- Stop applying element mappings twice when an aggregate reads a computed
+  array: `SUM(SEQUENCE(4)/2)` returned 2.5 instead of 5 and `SUM(-SEQUENCE(3))`
+  returned 6 instead of -6.
+- Keep warm snapshots consistent. A stored spill now records the cells it was
+  read from, so lazy spills such as `=A1:A2*1`, `=-A1:A2` and `TOCOL(A1:B2)`,
+  and formulas built on them, recalculate after a restore and an edit instead of
+  keeping their saved values. A node is stored only together with everything it
+  references; one that cannot be, such as an unbounded spill, is left out with
+  its dependents and recomputed on demand. A snapshot with unknown node ids or
+  nodes that fail to load restores cold with a `[FormulaEngine snapshot]`
+  warning, instead of dropping the broken edges silently. An error address
+  outside the snapshot no longer makes `serializeEngine` throw.
+- Pair `XLOOKUP`'s lookup and return arrays by position. A blank cell in only
+  one of the ranges, as in `XLOOKUP(x, A:A, B:B)` with gaps, made every lookup
+  `#VALUE!`. An error in `if_not_found` now shows only when nothing matches.
+
 ## 0.3.7
 
 ### Patch Changes

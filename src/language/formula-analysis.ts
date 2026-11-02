@@ -1,5 +1,6 @@
 import type { StructuredReferenceNode } from "../parser/ast";
 import { functions } from "../functions/function-registry";
+import { LET_FUNCTION_NAME, normalizeLetName } from "../core/ast-traverser";
 import { columnToIndex } from "../core/utils";
 import {
   FormulaError,
@@ -34,6 +35,12 @@ export type FormulaTokenKind =
   | "table-column"
   | "table-selector"
   | "named-expression"
+  /**
+   * A name declared by LET, at its declaration and wherever it is used in
+   * scope. LET names are local to the formula: they have no entry in
+   * FormulaAnalysis.references and hide defined names of the same name.
+   */
+  | "variable"
   | "keyword"
   | "invalid";
 
@@ -980,6 +987,201 @@ function markStructuredSyntax(
 }
 
 /**
+ * How an identifier token relates to LET names:
+ * - `declaration`: the name argument of a LET pair;
+ * - `local`: an identifier spelled like a LET name in scope;
+ * - `pending`: the last, even-positioned argument of an unterminated LET call,
+ *   which may become a new name or the final calculation as typing continues.
+ *   It is a LET name unless it resolves to a defined name.
+ *
+ * Roles describe identifiers by position only; whether an identifier is a
+ * plain name at all (rather than part of a qualifier, cell reference or table
+ * reference) is decided by the reference scan that consults them.
+ */
+type LetTokenRole = "declaration" | "local" | "pending";
+
+interface LetNameAnalysis {
+  roles: Map<number, LetTokenRole>;
+  diagnostics: FormulaDiagnostic[];
+}
+
+/** A token range [start, end) holding one function argument. */
+type ArgumentRange = { start: number; end: number };
+
+const CELL_LIKE_NAME = /^[A-Z]+[1-9][0-9]*$/i;
+
+/** An identifier that parses as an unqualified named expression. */
+function isPlainNameToken(token: WorkingToken | undefined): boolean {
+  return (
+    token?.source.type === "IDENTIFIER" &&
+    !token.source.value.startsWith("'") &&
+    !CELL_LIKE_NAME.test(token.source.value)
+  );
+}
+
+/**
+ * Find LET declarations and the identifiers in their scope, following LET's
+ * scoping rules: a name is visible in the values of later pairs and in the
+ * final calculation of its LET, not in its own value, and nested LETs shadow
+ * outer names. This works on tokens rather than a parse tree because the
+ * formula is often incomplete while it is typed: an unterminated LET call
+ * still scopes the names declared so far.
+ */
+function analyzeLetNames(
+  tokens: readonly WorkingToken[],
+  formula: string
+): LetNameAnalysis {
+  const roles = new Map<number, LetTokenRole>();
+  const diagnostics: FormulaDiagnostic[] = [];
+
+  const isPlainNameArgument = (argument: ArgumentRange) =>
+    argument.end - argument.start === 1 &&
+    isPlainNameToken(tokens[argument.start]);
+
+  const nameKey = (argument: ArgumentRange) =>
+    normalizeLetName(tokens[argument.start]!.source.value);
+
+  const scan = (start: number, end: number, scope: ReadonlySet<string>) => {
+    let bracketDepth = 0;
+    for (let index = start; index < end; index++) {
+      const token = tokens[index]!;
+      const type = token.source.type;
+      if (type === "LBRACKET") {
+        bracketDepth++;
+        continue;
+      }
+      if (type === "RBRACKET") {
+        bracketDepth = Math.max(0, bracketDepth - 1);
+        continue;
+      }
+      // Bracketed text is a table, column or workbook name.
+      if (bracketDepth > 0) continue;
+
+      if (
+        type === "FUNCTION" &&
+        token.source.value === LET_FUNCTION_NAME &&
+        index + 1 < end &&
+        tokens[index + 1]!.source.type === "LPAREN"
+      ) {
+        index = scanLetCall(index + 1, end, scope) - 1;
+        continue;
+      }
+      if (type === "IDENTIFIER" && scope.has(normalizeLetName(token.source.value))) {
+        roles.set(index, "local");
+      }
+    }
+  };
+
+  /** Scan the LET call opened at `openIndex`; returns the index after it. */
+  const scanLetCall = (
+    openIndex: number,
+    end: number,
+    outerScope: ReadonlySet<string>
+  ): number => {
+    const argumentsRanges: ArgumentRange[] = [];
+    let depth = 0;
+    let argumentStart = openIndex + 1;
+    let index = openIndex + 1;
+    let closed = false;
+    for (; index < end; index++) {
+      const type = tokens[index]!.source.type;
+      if (type === "LPAREN" || type === "LBRACE" || type === "LBRACKET") {
+        depth++;
+      } else if (
+        type === "RPAREN" ||
+        type === "RBRACE" ||
+        type === "RBRACKET"
+      ) {
+        if (depth === 0) {
+          closed = type === "RPAREN";
+          break;
+        }
+        depth--;
+      } else if (type === "COMMA" && depth === 0) {
+        argumentsRanges.push({ start: argumentStart, end: index });
+        argumentStart = index + 1;
+      }
+    }
+    argumentsRanges.push({ start: argumentStart, end: index });
+
+    let scope = outerScope;
+    const declaredHere = new Set<string>();
+    for (let position = 0; position < argumentsRanges.length; position += 2) {
+      const argument = argumentsRanges[position]!;
+      if (position === argumentsRanges.length - 1) {
+        if (closed || !isPlainNameArgument(argument)) {
+          // The final calculation sees every name of this LET.
+          scan(argument.start, argument.end, scope);
+        } else if (position === 0) {
+          // The first name of a LET being typed.
+          roles.set(argument.start, "declaration");
+        } else {
+          roles.set(
+            argument.start,
+            scope.has(nameKey(argument)) ? "local" : "pending"
+          );
+        }
+        break;
+      }
+
+      const value = argumentsRanges[position + 1]!;
+      if (!isPlainNameArgument(argument)) {
+        if (argument.end > argument.start) {
+          diagnostics.push(invalidLetNameDiagnostic(tokens, argument, formula));
+        }
+        scan(argument.start, argument.end, scope);
+        scan(value.start, value.end, scope);
+        continue;
+      }
+
+      const key = nameKey(argument);
+      roles.set(argument.start, "declaration");
+      if (declaredHere.has(key)) {
+        const token = tokens[argument.start]!;
+        diagnostics.push({
+          span: token.span,
+          severity: "warning",
+          code: "let.duplicate-name",
+          message: `The name ${token.source.value} is already declared in this LET.`,
+        });
+      }
+      declaredHere.add(key);
+      // A value sees the names declared before its own.
+      scan(value.start, value.end, scope);
+      scope = new Set(scope).add(key);
+    }
+
+    return closed ? index + 1 : index;
+  };
+
+  scan(0, tokens.length, new Set());
+  return { roles, diagnostics };
+}
+
+function invalidLetNameDiagnostic(
+  tokens: readonly WorkingToken[],
+  argument: ArgumentRange,
+  formula: string
+): FormulaDiagnostic {
+  const span = {
+    start: tokens[argument.start]!.span.start,
+    end: tokens[argument.end - 1]!.span.end,
+  };
+  const text = formula.slice(span.start, span.end);
+  const single = argument.end - argument.start === 1 ? tokens[argument.start] : undefined;
+  const reason =
+    single?.source.type === "IDENTIFIER" && CELL_LIKE_NAME.test(single.source.value)
+      ? " because it is a cell reference"
+      : "";
+  return {
+    span,
+    severity: "warning",
+    code: "let.invalid-name",
+    message: `${text} cannot be a LET name${reason}. LET names are plain names such as total or x_1.`,
+  };
+}
+
+/**
  * Analyze formula text without requiring an engine. Static cell references can
  * resolve when origin is supplied; engine-owned resources remain unresolved.
  */
@@ -1021,6 +1223,8 @@ export function analyzeFormulaWithEnvironment(
       bodyOffset,
       rawTokens
     );
+    const letNames = analyzeLetNames(tokens, formula);
+    diagnostics.push(...letNames.diagnostics);
 
     // Structured references are scanned first because their identifiers can
     // otherwise look like ordinary A1 or named-expression references.
@@ -1195,6 +1399,26 @@ export function analyzeFormulaWithEnvironment(
 
       const nameToken = tokens[endpointIndex];
       if (nameToken?.source.type === "IDENTIFIER") {
+        const letRole = qualifier
+          ? undefined
+          : letNames.roles.get(endpointIndex);
+        if (
+          letRole === "declaration" ||
+          letRole === "local" ||
+          (letRole === "pending" &&
+            resolveNamedReference(
+              nameToken.source.value,
+              undefined,
+              options.origin,
+              environment
+            ).status !== "resolved")
+        ) {
+          // A LET name is local to the formula: no reference, no resolution.
+          nameToken.kind = "variable";
+          occupied.add(endpointIndex);
+          continue;
+        }
+
         const id = `reference:${references.length}`;
         const resolution = resolveNamedReference(
           nameToken.source.value,

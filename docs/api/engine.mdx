@@ -47,10 +47,10 @@ const state = engine.getState();
 
 Treat this as read-only. Use the mutation methods to make changes.
 
-### `serializeEngine()`
+### `serializeEngine(options?)`
 
 ```typescript
-serializeEngine(): string
+serializeEngine(options?: { includeEvaluationState?: boolean }): string
 ```
 
 Serializes all workbook data and engine-managed resources to a JSON string.
@@ -59,6 +59,14 @@ Verified top-level keys are `version` and `managers`.
 ```typescript
 localStorage.setItem("model", engine.serializeEngine());
 ```
+
+By default the string is a warm snapshot: it also stores evaluated results and
+their dependencies, so values are available right after a restore. A result is
+stored only together with everything it was computed from, including the cells
+a stored spill read. Results that cannot be stored that way, such as unbounded
+spills, are left out together with the formulas built on them and recalculate
+on demand after a restore. Pass `{ includeEvaluationState: false }` for a
+smaller compact save that recalculates lazily after loading.
 
 ### `resetToSerializedEngine(data)`
 
@@ -72,6 +80,11 @@ Replaces engine state with a string returned by `serializeEngine`.
 const restored = FormulaEngine.buildEmpty();
 restored.resetToSerializedEngine(localStorage.getItem("model")!);
 ```
+
+If a warm snapshot's dependency state cannot be restored, for example because a
+node references an unknown node, the engine logs a `console.warn` message
+prefixed with `[FormulaEngine snapshot]` and loads the workbook data cold.
+Values are then recalculated on demand.
 
 <Note>
   Serialization persists workbook state, but not the undo/redo stack.

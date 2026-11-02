@@ -2,375 +2,231 @@ import {
   FormulaError,
   type CellAddress,
   type CellInRangeResult,
-  type CellNumber,
+  type ErrorEvaluationResult,
   type FunctionDefinition,
   type FunctionEvaluationResult,
-  type SpilledValuesEvaluationResult,
+  type SingleEvaluationResult,
   type SpreadsheetRange,
 } from "../../../core/types";
 import { getRangeIntersection, isRangeOneCell } from "../../../core/utils";
+import type { EvaluationContext } from "../../../evaluator/evaluation-context";
 import { EvaluationError } from "../../../evaluator/evaluation-error";
+import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
+import { getSuppliedArgument, type FunctionNode } from "../../../parser/ast";
+
+const valueError = (
+  message: string,
+  context: EvaluationContext
+): ErrorEvaluationResult => ({
+  type: "error",
+  err: FormulaError.VALUE,
+  message,
+  errAddress: context.dependencyNode,
+});
+
+/**
+ * Reads an optional argument as a single value, or returns `undefined` when the
+ * call omits it so that the caller applies the default.
+ */
+function readSingleArgument(
+  evaluator: FormulaEvaluator,
+  node: FunctionNode,
+  index: number,
+  name: string,
+  context: EvaluationContext
+): SingleEvaluationResult | undefined {
+  const argument = getSuppliedArgument(node, index);
+  if (!argument) {
+    return undefined;
+  }
+  const result = evaluator.evaluateNode(argument, context);
+  if (result.type === "spilled-values") {
+    return valueError(
+      `SEQUENCE ${name} must be a single value, not an array`,
+      context
+    );
+  }
+  return result;
+}
+
+/** Reads the rows or columns argument: a whole number of at least 1, or INFINITY. */
+function readDimension(
+  evaluator: FormulaEvaluator,
+  node: FunctionNode,
+  index: number,
+  name: "rows" | "columns",
+  context: EvaluationContext
+): number | ErrorEvaluationResult {
+  const result = readSingleArgument(evaluator, node, index, name, context);
+  if (!result) {
+    return 1;
+  }
+  if (result.type !== "value") {
+    return result;
+  }
+  const value = result.result;
+  if (value.type === "infinity" && value.sign === "positive") {
+    return Infinity;
+  }
+  if (value.type !== "number") {
+    return valueError(
+      `SEQUENCE ${name} must be a number or INFINITY`,
+      context
+    );
+  }
+  const count = Math.floor(value.value);
+  if (!(count >= 1)) {
+    return valueError(`SEQUENCE ${name} must be at least 1`, context);
+  }
+  return count;
+}
+
+/** Reads the start or step argument: a number. */
+function readNumber(
+  evaluator: FormulaEvaluator,
+  node: FunctionNode,
+  index: number,
+  name: "start" | "step",
+  context: EvaluationContext
+): number | ErrorEvaluationResult {
+  const result = readSingleArgument(evaluator, node, index, name, context);
+  if (!result) {
+    return 1;
+  }
+  if (result.type !== "value") {
+    return result;
+  }
+  if (result.result.type !== "number") {
+    return valueError(`SEQUENCE ${name} must be a number`, context);
+  }
+  return result.result.value;
+}
 
 /**
  * SEQUENCE(rows, [columns], [start], [step])
- * Generates a sequence of numbers in an array.
+ * Generates a sequence of numbers in an array, filled row by row.
  *
- * @param rows - The number of rows to return (can be array - uses origin value)
- * @param columns - [Optional] The number of columns to return (default: 1, can be array - uses origin value)
- * @param start - [Optional] The first number in the sequence (default: 1, can be array - uses origin value)
- * @param step - [Optional] The amount to increment each subsequent value (default: 1, can be array - uses origin value)
+ * @param rows - The number of rows (default: 1), or INFINITY
+ * @param columns - [Optional] The number of columns (default: 1), or INFINITY
+ * @param start - [Optional] The first number in the sequence (default: 1)
+ * @param step - [Optional] The amount to increment each subsequent value (default: 1)
  *
- * Returns a spilled array of sequential numbers.
- * When any argument is an array, the result is broadcast over the largest input spill area.
+ * An omitted argument takes its default, as in Excel: `SEQUENCE(,3)` is the row
+ * {1,2,3} and `SEQUENCE(3,,10)` is the column {10;11;12}. Rows and columns are
+ * truncated to whole numbers and must be at least 1.
+ *
+ * Every argument must be a single value. Excel lifts SEQUENCE over an array
+ * argument (one sequence per element, each reduced to its first value); this
+ * engine returns #VALUE! for an array argument instead.
+ *
+ * An unbounded sequence still fills row by row while the number of columns is
+ * finite. With INFINITY columns, every row of a multi-row sequence repeats the
+ * first row, and an INFINITY x INFINITY sequence holds `start + (x + y) * step`
+ * at column offset x and row offset y.
  */
 export const SEQUENCE: FunctionDefinition = {
   name: "SEQUENCE",
   evaluate: function (node, context): FunctionEvaluationResult {
     if (node.args.length < 1 || node.args.length > 4) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "SEQUENCE function takes 1 to 4 arguments",
-        errAddress: context.dependencyNode,
-      };
+      return valueError("SEQUENCE function takes 1 to 4 arguments", context);
     }
 
-    // Evaluate all arguments and check for array inputs
-    const argResults: FunctionEvaluationResult[] = [];
-    let largestSpillArea: SpreadsheetRange | null = null;
-    let hasArrayInput = false;
-
-    for (let i = 0; i < node.args.length; i++) {
-      const result = this.evaluateNode(node.args[i]!, context);
-      if (result.type === "error" || result.type === "awaiting-evaluation") {
-        return result;
-      }
-      argResults.push(result);
-
-      if (result.type === "spilled-values") {
-        hasArrayInput = true;
-        const spillArea = result.spillArea(context.cellAddress);
-        if (!largestSpillArea) {
-          largestSpillArea = spillArea;
-        } else {
-          // Use the larger spill area (more cells)
-          const currentCols =
-            spillArea.end.col.type === "number"
-              ? spillArea.end.col.value
-              : Infinity;
-          const currentRows =
-            spillArea.end.row.type === "number"
-              ? spillArea.end.row.value
-              : Infinity;
-          const currentSize =
-            (currentCols - spillArea.start.col + 1) *
-            (currentRows - spillArea.start.row + 1);
-
-          const largestCols =
-            largestSpillArea.end.col.type === "number"
-              ? largestSpillArea.end.col.value
-              : Infinity;
-          const largestRows =
-            largestSpillArea.end.row.type === "number"
-              ? largestSpillArea.end.row.value
-              : Infinity;
-          const largestSize =
-            (largestCols - largestSpillArea.start.col + 1) *
-            (largestRows - largestSpillArea.start.row + 1);
-
-          if (currentSize > largestSize) {
-            largestSpillArea = spillArea;
-          }
-        }
-      }
+    const rows = readDimension(this, node, 0, "rows", context);
+    if (typeof rows !== "number") {
+      return rows;
+    }
+    const columns = readDimension(this, node, 1, "columns", context);
+    if (typeof columns !== "number") {
+      return columns;
+    }
+    const start = readNumber(this, node, 2, "start", context);
+    if (typeof start !== "number") {
+      return start;
+    }
+    const step = readNumber(this, node, 3, "step", context);
+    if (typeof step !== "number") {
+      return step;
     }
 
-    // Extract values from arguments (using origin values for arrays)
-    const rowsResult = argResults[0];
-    if (!rowsResult) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Missing rows argument",
-        errAddress: context.dependencyNode,
-      };
-    }
+    const isRowsInfinite = rows === Infinity;
+    const isColumnsInfinite = columns === Infinity;
 
-    let rowsValue: number | "infinity" = 0;
-    let isRowsInfinite = false;
-
-    if (
-      rowsResult.type === "awaiting-evaluation" ||
-      rowsResult.type === "error"
-    ) {
-      return rowsResult;
-    }
-
-    if (rowsResult.type === "spilled-values") {
-      throw new Error("Sequences cannot contain spilled values");
-    } else if (rowsResult.type === "value") {
-      if (rowsResult.result.type === "infinity") {
-        rowsValue = "infinity";
-        isRowsInfinite = true;
-      } else if (rowsResult.result.type === "number") {
-        rowsValue = rowsResult.result.value;
-      } else {
-        return {
-          type: "error",
-          err: FormulaError.VALUE,
-          message: "Rows argument must be a number or INFINITY",
-          errAddress: context.dependencyNode,
-        };
-      }
-    }
-
-    const rows = isRowsInfinite ? Infinity : Math.floor(rowsValue as number);
-    if (!isRowsInfinite && rows < 1) {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "Rows must be greater than 0",
-        errAddress: context.dependencyNode,
-      };
-    }
-
-    // Evaluate columns argument (optional, default: 1)
-    let columns = 1;
-    let isColumnsInfinite = false;
-    if (node.args.length > 1) {
-      const columnsResult = argResults[1];
-      if (!columnsResult) {
-        return {
-          type: "error",
-          err: FormulaError.VALUE,
-          message: "Missing columns argument",
-          errAddress: context.dependencyNode,
-        };
-      }
-
-      if (columnsResult.type === "spilled-values") {
-        throw new Error("Sequences cannot contain spilled values");
-      } else if (columnsResult.type === "value") {
-        if (columnsResult.result.type === "infinity") {
-          columns = Infinity;
-          isColumnsInfinite = true;
-        } else if (columnsResult.result.type === "number") {
-          columns = Math.floor(columnsResult.result.value);
-        } else {
-          return {
-            type: "error",
-            err: FormulaError.VALUE,
-            message: "Columns argument must be a number or INFINITY",
-            errAddress: context.dependencyNode,
-          };
-        }
-      } else {
-        return {
-          type: "error",
-          err: FormulaError.VALUE,
-          message: "Columns argument must be a number or INFINITY",
-          errAddress: context.dependencyNode,
-        };
-      }
-      if (!isColumnsInfinite && columns < 1) {
-        return {
-          type: "error",
-          err: FormulaError.VALUE,
-          message: "Columns must be greater than 0",
-          errAddress: context.dependencyNode,
-        };
-      }
-    }
-
-    // Evaluate start argument (optional, default: 1)
-    let start = 1;
-    if (node.args.length > 2) {
-      const startResult = argResults[2];
-      if (!startResult) {
-        return {
-          type: "error",
-          err: FormulaError.VALUE,
-          message: "Missing start argument",
-          errAddress: context.dependencyNode,
-        };
-      }
-
-      if (startResult.type === "spilled-values") {
-        throw new Error("Sequences cannot contain spilled values");
-      } else if (
-        startResult.type === "value" &&
-        startResult.result.type === "number"
-      ) {
-        start = startResult.result.value;
-      } else {
-        return {
-          type: "error",
-          err: FormulaError.VALUE,
-          message: "Start argument must be a number",
-          errAddress: context.dependencyNode,
-        };
-      }
-    }
-
-    // Evaluate step argument (optional, default: 1)
-    let step = 1;
-    if (node.args.length > 3) {
-      const stepResult = argResults[3];
-      if (!stepResult) {
-        return {
-          type: "error",
-          err: FormulaError.VALUE,
-          message: "Missing step argument",
-          errAddress: context.dependencyNode,
-        };
-      }
-
-      if (stepResult.type === "spilled-values") {
-        throw new Error("Sequences cannot contain spilled values");
-      } else if (
-        stepResult.type === "value" &&
-        stepResult.result.type === "number"
-      ) {
-        step = stepResult.result.value;
-      } else {
-        return {
-          type: "error",
-          err: FormulaError.VALUE,
-          message: "Step argument must be a number",
-          errAddress: context.dependencyNode,
-        };
-      }
-    }
-
-    // Create the spill area - if there are array inputs, use the largest input spill area
-    // Otherwise, create a new spill area based on the SEQUENCE dimensions
-    const spillArea = (origin: CellAddress): SpreadsheetRange => {
-      return hasArrayInput && largestSpillArea
-        ? largestSpillArea
-        : {
-            start: {
-              col: origin.colIndex,
-              row: origin.rowIndex,
-            },
-            end: {
-              col: isColumnsInfinite
-                ? { type: "infinity", sign: "positive" }
-                : { type: "number", value: origin.colIndex + columns - 1 },
-              row: isRowsInfinite
-                ? { type: "infinity", sign: "positive" }
-                : { type: "number", value: origin.rowIndex + rows - 1 },
-            },
-          };
-    };
-
-    // Calculate the origin result (top-left cell value)
-    const originResult: CellNumber = {
-      type: "number",
-      value: start,
-    };
+    const spillArea = (origin: CellAddress): SpreadsheetRange => ({
+      start: {
+        col: origin.colIndex,
+        row: origin.rowIndex,
+      },
+      end: {
+        col: isColumnsInfinite
+          ? { type: "infinity", sign: "positive" }
+          : { type: "number", value: origin.colIndex + columns - 1 },
+        row: isRowsInfinite
+          ? { type: "infinity", sign: "positive" }
+          : { type: "number", value: origin.rowIndex + rows - 1 },
+      },
+    });
 
     if (isRangeOneCell(spillArea(context.cellAddress))) {
       return {
         type: "value",
-        result: originResult,
+        result: { type: "number", value: start },
       };
     }
+
+    /** The value at column offset x and row offset y of the sequence. */
+    const valueAt = (
+      x: number,
+      y: number,
+      readerContext: EvaluationContext
+    ): SingleEvaluationResult => {
+      if (x < 0 || y < 0 || x >= columns || y >= rows) {
+        return {
+          type: "error",
+          err: FormulaError.REF,
+          message: "SEQUENCE: requested cell is outside the sequence",
+          errAddress: readerContext.dependencyNode,
+        };
+      }
+
+      let sequenceIndex: number;
+      if (!isColumnsInfinite) {
+        // Row by row: (0,0), (1,0), ..., (0,1), (1,1), ...
+        sequenceIndex = y * columns + x;
+      } else if (isRowsInfinite) {
+        // No row-by-row order exists over unbounded rows and columns.
+        sequenceIndex = y + x;
+      } else {
+        // A row never ends, so every row repeats the first one.
+        sequenceIndex = x;
+      }
+
+      return {
+        type: "value",
+        result: { type: "number", value: start + sequenceIndex * step },
+      };
+    };
 
     return {
       type: "spilled-values",
       spillArea,
       source: "SEQUENCE function",
-      evaluate: (spillOffset, context) => {
-        if (hasArrayInput) {
-          // When we have array inputs, all cells in the broadcast area get the same SEQUENCE result
-          // The SEQUENCE is calculated once using the origin values from the input arrays
-
-          // For broadcasting, we always return the same sequence across all spilled cells
-          // Calculate the value for the origin cell of the SEQUENCE (always (0,0))
-          const x = 0;
-          const y = 0;
-
-          // Check if the origin cell is within our intended SEQUENCE area
-          if (
-            (!isColumnsInfinite && x >= columns) ||
-            (!isRowsInfinite && y >= rows)
-          ) {
-            return {
-              type: "error",
-              err: FormulaError.ERROR,
-              message: "Error evaluating SEQUENCE",
-              errAddress: context.dependencyNode,
-            };
-          }
-
-          // Calculate the sequential value for origin cell
-          // Since this is for broadcasting, we always use the origin (0,0) value
-          const sequenceIndex = 0;
-          const value = start + sequenceIndex * step;
-
-          return {
-            type: "value",
-            result: {
-              type: "number",
-              value,
-            },
-          };
-        } else {
-          // Normal SEQUENCE behavior - calculate the value for this spilled cell based on its offset
-          const x = spillOffset.x;
-          const y = spillOffset.y;
-
-          // Check if the spilled cell is within our intended area
-          if (
-            (!isColumnsInfinite && x >= columns) ||
-            (!isRowsInfinite && y >= rows)
-          ) {
-            return {
-              type: "error",
-              err: FormulaError.ERROR,
-              message: "Error evaluating SEQUENCE",
-              errAddress: context.dependencyNode,
-            };
-          }
-
-          // Calculate the sequential value
-          // Values are filled row by row: (0,0), (0,1), (0,2), ..., (1,0), (1,1), etc.
-          let sequenceIndex: number;
-          if (isColumnsInfinite && isRowsInfinite) {
-            // For infinite 2D sequences, we can't calculate a single index
-            // We'll use a simple pattern based on position
-            sequenceIndex = y + x;
-          } else if (isColumnsInfinite) {
-            // For infinite columns, sequence goes horizontally
-            sequenceIndex = x;
-          } else if (isRowsInfinite) {
-            // For infinite rows, sequence goes vertically
-            sequenceIndex = y;
-          } else {
-            // Finite dimensions - normal calculation
-            sequenceIndex = y * columns + x;
-          }
-
-          const value = start + sequenceIndex * step;
-
-          return {
-            type: "value",
-            result: {
-              type: "number",
-              value,
-            },
-          };
-        }
-      },
-      evaluateAllCells: function ({ evaluate, intersection, context, origin }) {
-        const results: CellInRangeResult[] = [];
+      evaluate: (spillOffset, readerContext) =>
+        valueAt(spillOffset.x, spillOffset.y, readerContext),
+      // Dense. The values are read with this sequence's own `valueAt`:
+      // `options.evaluate` may belong to a wrapper that maps the cells it gets.
+      evaluateAllCells: function ({
+        intersection,
+        context,
+        origin,
+        lookupOrder,
+      }) {
         let range = spillArea(origin);
         if (intersection) {
-          const newRange = getRangeIntersection(range, intersection);
-          if (!newRange) {
-            throw new Error("Intersection is not valid #2");
+          const overlap = getRangeIntersection(range, intersection);
+          if (!overlap) {
+            return { type: "values", values: [] };
           }
-          range = newRange;
+          range = overlap;
         }
         if (
           range.end.row.type === "infinity" ||
@@ -382,14 +238,24 @@ export const SEQUENCE: FunctionDefinition = {
           );
         }
 
-        for (let i = range.start.row; i <= range.end.row.value; i++) {
-          for (let j = range.start.col; j <= range.end.col.value; j++) {
-            const offsetLeft = j - origin.colIndex;
-            const offsetTop = i - origin.rowIndex;
-
-            const evaled = evaluate({ x: offsetLeft, y: offsetTop }, context);
-            const relativePos = { x: offsetLeft, y: offsetTop };
-            results.push({ result: evaled, relativePos });
+        const firstX = range.start.col - origin.colIndex;
+        const lastX = range.end.col.value - origin.colIndex;
+        const firstY = range.start.row - origin.rowIndex;
+        const lastY = range.end.row.value - origin.rowIndex;
+        const results: CellInRangeResult[] = [];
+        const read = (x: number, y: number) => {
+          results.push({
+            result: valueAt(x, y, context),
+            relativePos: { x, y },
+          });
+        };
+        if (lookupOrder === "col-major") {
+          for (let x = firstX; x <= lastX; x++) {
+            for (let y = firstY; y <= lastY; y++) read(x, y);
+          }
+        } else {
+          for (let y = firstY; y <= lastY; y++) {
+            for (let x = firstX; x <= lastX; x++) read(x, y);
           }
         }
 

@@ -122,12 +122,63 @@ describe("ADDRESS function", () => {
       setCellContent("A1", "=ADDRESS(2, 3, 5)");
       expect(cell("A1")).toBe(FormulaError.VALUE);
     });
+
+    test("ADDRESS rejects a non-numeric abs_num and a non-logical a1", () => {
+      setCellContent("A1", '=ADDRESS(2, 3, "x")');
+      expect(cell("A1")).toBe(FormulaError.VALUE);
+
+      setCellContent("A2", '=ADDRESS(2, 3, 1, "x")');
+      expect(cell("A2")).toBe(FormulaError.VALUE);
+    });
   });
 
-  describe("R1C1 style (not yet implemented)", () => {
-    test.skip("ADDRESS with a1=FALSE returns R1C1 style", () => {
+  describe("R1C1 style", () => {
+    test("ADDRESS with a1=FALSE returns R1C1 style", () => {
       setCellContent("A1", "=ADDRESS(2, 3, 1, FALSE)");
       expect(cell("A1")).toBe("R2C3");
+    });
+
+    test("relative parts are written in brackets", () => {
+      setCellContent("A1", "=ADDRESS(2, 3, 2, FALSE)");
+      setCellContent("A2", "=ADDRESS(2, 3, 3, FALSE)");
+      setCellContent("A3", "=ADDRESS(2, 3, 4, FALSE)");
+      setCellContent("A4", '=ADDRESS(2, 3, 1, 0, "Data")');
+
+      expect(cell("A1")).toBe("R2C[3]");
+      expect(cell("A2")).toBe("R[2]C3");
+      expect(cell("A3")).toBe("R[2]C[3]");
+      expect(cell("A4")).toBe("Data!R2C3");
+    });
+  });
+
+  describe("omitted arguments", () => {
+    test("an omitted abs_num is 1 (absolute)", () => {
+      setCellContent("A1", "=ADDRESS(1, 1,, FALSE)");
+      setCellContent("A2", "=ADDRESS(2, 3,, TRUE)");
+
+      expect(cell("A1")).toBe("R1C1");
+      expect(cell("A2")).toBe("$C$2");
+    });
+
+    test("an omitted a1 is TRUE (A1 style)", () => {
+      setCellContent("A1", "=ADDRESS(2, 3, 4,)");
+      setCellContent("A2", '=ADDRESS(1, 1,,, "Sheet2")');
+
+      expect(cell("A1")).toBe("C2");
+      expect(cell("A2")).toBe("Sheet2!$A$1");
+    });
+
+    test("an omitted sheet_text adds no sheet", () => {
+      setCellContent("A1", "=ADDRESS(2, 3, 1, TRUE,)");
+      expect(cell("A1")).toBe("$C$2");
+    });
+
+    test("omitted row_num or column_num is 0, which is out of range", () => {
+      setCellContent("A1", "=ADDRESS(, 3)");
+      setCellContent("A2", "=ADDRESS(2,)");
+
+      expect(cell("A1")).toBe(FormulaError.VALUE);
+      expect(cell("A2")).toBe(FormulaError.VALUE);
     });
   });
 });

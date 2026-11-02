@@ -152,5 +152,59 @@ describe("OFFSET function", () => {
       setCellContent("B1", "=OFFSET(A1, 2.9, 0)");
       expect(cell("B1")).toBe(30);
     });
+
+    test("OFFSET rejects a non-numeric height or width", () => {
+      setCellContent("B1", '=OFFSET(A1, 0, 0, "x")');
+      setCellContent("B2", '=OFFSET(A1, 0, 0, 1, "x")');
+
+      expect(cell("B1")).toBe(FormulaError.VALUE);
+      expect(cell("B2")).toBe(FormulaError.VALUE);
+    });
+  });
+
+  describe("omitted arguments", () => {
+    beforeEach(() => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 1],
+          ["A2", 2],
+          ["B1", 3],
+          ["B2", 4],
+          ["C3", 5],
+        ])
+      );
+    });
+
+    test("an omitted rows or cols is 0", () => {
+      setCellContent("E1", "=OFFSET(A1,, 1)");
+      setCellContent("E2", "=OFFSET(A1, 1,)");
+      setCellContent("E3", "=OFFSET(A1,,)");
+
+      expect(cell("E1")).toBe(3);
+      expect(cell("E2")).toBe(2);
+      expect(cell("E3")).toBe(1);
+    });
+
+    test("an omitted height or width keeps the size of reference", () => {
+      setCellContent("E1", "=SUM(OFFSET(A1:B2, 1, 1,,))");
+      setCellContent("E2", "=SUM(OFFSET(A1:B2,,,, 1))");
+      setCellContent("E3", "=SUM(OFFSET(A1:B2,,, 1,))");
+
+      // B2:C3
+      expect(cell("E1")).toBe(9);
+      // A1:A2
+      expect(cell("E2")).toBe(3);
+      // A1:B1
+      expect(cell("E3")).toBe(4);
+    });
+
+    test("recalculates when the offset cells change", () => {
+      setCellContent("E1", "=OFFSET(A1,, 1)");
+      expect(cell("E1")).toBe(3);
+
+      setCellContent("B1", 30);
+      expect(cell("E1")).toBe(30);
+    });
   });
 });

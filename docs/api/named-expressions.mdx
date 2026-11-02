@@ -64,7 +64,9 @@ renameNamedExpression(opts: {
 }): void
 ```
 
-Rewrites formula references from the old name to the new one.
+Rewrites formula references from the old name to the new one. `LET` names in
+those formulas are left alone, or renamed when they would capture the new name;
+see [Named expressions](/concepts/named-expressions).
 
 ## Remove
 

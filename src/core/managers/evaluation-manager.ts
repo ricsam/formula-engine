@@ -8,6 +8,7 @@ import {
   SheetNotFoundError,
 } from "../../evaluator/evaluation-error";
 import { RangeEvaluationNode } from "../../evaluator/range-evaluation-node";
+import { offsetCellResults } from "../../evaluator/array-shape";
 import { normalizeSerializedCellValue } from "../../parser/formatter";
 import { FormulaEvaluator } from "../../evaluator/formula-evaluator";
 import {
@@ -151,7 +152,7 @@ export class EvaluationManager {
   }
 
   private buildSnapshotOrigin(
-    node: CellValueNode | SpillMetaNode | AstEvaluationNode
+    node: SpillMetaNode | AstEvaluationNode
   ): CellAddress {
     if ("cellAddress" in node) {
       return node.cellAddress;
@@ -164,6 +165,20 @@ export class EvaluationManager {
       colIndex: contextDependency.colIndex ?? 0,
       rowIndex: contextDependency.rowIndex ?? 0,
     };
+  }
+
+  /**
+   * A stand-in for `node` that collects what is read while a spilled result of
+   * `node` is materialized for a snapshot. It has the snapshot identity of
+   * `node`, so a cell result naming it as its error address serializes as
+   * `node`, and the reads leave the dependencies of the live node untouched.
+   */
+  private createSnapshotReadRecorder(
+    node: SpillMetaNode | AstEvaluationNode
+  ): SpillMetaNode | AstEvaluationNode {
+    return node instanceof SpillMetaNode
+      ? new SpillMetaNode(node.key)
+      : new AstEvaluationNode(node.ast, node.getContextDependency());
   }
 
   private serializeErrorEvaluationResultSnapshot(
@@ -281,11 +296,24 @@ export class EvaluationManager {
     };
   }
 
+  /**
+   * Serializes the result of an AST or spill-meta node. A spilled result over a
+   * raw range is kept as a reference to that range; any other spilled result is
+   * materialized into fixed values when its area is bounded (otherwise it
+   * cannot be serialized and `undefined` is returned).
+   *
+   * Materializing reads each cell through the result's `evaluate`. A lazy
+   * result such as `A1:A2*1` or `TOCOL(A1:B2)` reads cells that its node never
+   * depended on, since the cells that display it did those reads. Every node
+   * read here is passed to `addDependency`: a restored node serving the fixed
+   * values must depend on what they were read from.
+   */
   serializeFunctionEvaluationResultSnapshot(
     evaluation: FunctionEvaluationResult,
     options: {
-      sourceNode: CellValueNode | SpillMetaNode | AstEvaluationNode;
+      sourceNode: SpillMetaNode | AstEvaluationNode;
       getNodeSnapshotId: (node: DependencyNode) => NodeSnapshotId;
+      addDependency: (node: DependencyNode) => void;
     }
   ): SerializedFunctionEvaluationResultSnapshot | undefined {
     if (evaluation.type !== "spilled-values") {
@@ -322,11 +350,8 @@ export class EvaluationManager {
       return undefined;
     }
 
-    const context = new EvaluationContext(
-      this.tableManager,
-      options.sourceNode,
-      origin
-    );
+    const recorder = this.createSnapshotReadRecorder(options.sourceNode);
+    const context = new EvaluationContext(this.tableManager, recorder, origin);
     const values: SerializedCellInRangeResultSnapshot[] = [];
 
     for (let y = 0; y < relativeSpillArea.height.value; y++) {
@@ -346,6 +371,10 @@ export class EvaluationManager {
           result: serialized,
         });
       }
+    }
+
+    for (const dependency of recorder.getDependencies()) {
+      options.addDependency(dependency);
     }
 
     return {
@@ -463,7 +492,13 @@ export class EvaluationManager {
           rangeAddressToKey(rangeAddress)
         );
         context.dependencyNode.addDependency(rangeNode);
-        return rangeNode.result;
+        // The range node reports positions relative to `range`, which an
+        // intersection may have narrowed; callers expect them relative to the
+        // start of the whole source range.
+        return offsetCellResults(rangeNode.result, {
+          x: range.start.col - spillSnapshot.sourceRange.range.start.col,
+          y: range.start.row - spillSnapshot.sourceRange.range.start.row,
+        });
       },
     }, this.formulaEvaluator, (context) => {
       const rangeNode = this.dependencyManager.getRangeNode(
@@ -479,8 +514,9 @@ export class EvaluationManager {
   serializeSpillMetaEvaluationResultSnapshot(
     evaluation: SpillMetaNode["evaluationResult"],
     options: {
-      sourceNode: CellValueNode | SpillMetaNode | AstEvaluationNode;
+      sourceNode: SpillMetaNode;
       getNodeSnapshotId: (node: DependencyNode) => NodeSnapshotId;
+      addDependency: (node: DependencyNode) => void;
     }
   ): SerializedSpillMetaEvaluationResultSnapshot | undefined {
     if (evaluation.type === "does-not-spill") {
@@ -658,7 +694,9 @@ export class EvaluationManager {
                     node,
                     candidateNode.cellAddress
                   );
-                  const spilledResults =
+                  // The spill reports positions relative to its anchor; this
+                  // range reports them relative to its own start.
+                  const spilledResults = offsetCellResults(
                     candidateNode.evaluationResult.evaluateAllCells.call(
                       this.formulaEvaluator,
                       {
@@ -668,7 +706,16 @@ export class EvaluationManager {
                         origin: candidateNode.cellAddress,
                         lookupOrder: "col-major",
                       }
-                    );
+                    ),
+                    {
+                      x:
+                        candidateNode.cellAddress.colIndex -
+                        node.address.range.start.col,
+                      y:
+                        candidateNode.cellAddress.rowIndex -
+                        node.address.range.start.row,
+                    }
+                  );
 
                   if (spilledResults.type === "values") {
                     results.push(...spilledResults.values);
@@ -831,8 +878,16 @@ export class EvaluationManager {
           message: "Cannot spill - area is blocked",
           errAddress: node,
         };
+        if (!(node instanceof VirtualCellValueNode)) {
+          // Lets a later edit inside the area re-evaluate this origin.
+          this.dependencyManager.setBlockedSpill(node.key, {
+            spillOnto: spillArea,
+            origin: node.cellAddress,
+          });
+        }
       } else {
         // Spill succeeds - register it
+        this.dependencyManager.deleteBlockedSpill(node.key);
         this.dependencyManager.setSpilledValue(node.key, {
           spillOnto: spillArea,
           origin: node.cellAddress,

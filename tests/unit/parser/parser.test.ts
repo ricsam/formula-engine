@@ -271,6 +271,123 @@ describe("Parser - Functions", () => {
   });
 });
 
+describe("Parser - Omitted Function Arguments", () => {
+  const argTypes = (formula: string) =>
+    parseFormula(formula).args.map((arg: any) => arg.type);
+
+  test("parses an omitted first argument", () => {
+    const ast = parseFormula("SEQUENCE(,3)");
+    expect(ast.type).toBe("function");
+    expect(ast.name).toBe("SEQUENCE");
+    expect(ast.args).toHaveLength(2);
+    expect(ast.args[0]).toEqual({
+      type: "empty",
+      position: { start: 9, end: 9 },
+    });
+    expect(ast.args[1].value).toEqual({ type: "number", value: 3 });
+  });
+
+  test("parses an omitted middle argument", () => {
+    expect(argTypes("SUM(1,,2)")).toEqual(["value", "empty", "value"]);
+    expect(argTypes("F(1,,,2)")).toEqual(["value", "empty", "empty", "value"]);
+  });
+
+  test("parses an omitted last argument", () => {
+    const ast = parseFormula("IF(A1,1,)");
+    expect(ast.args.map((arg: any) => arg.type)).toEqual([
+      "reference",
+      "value",
+      "empty",
+    ]);
+    // The empty argument sits where the closing parenthesis starts.
+    expect(ast.args[2].position).toEqual({ start: 8, end: 8 });
+    expect(ast.position).toEqual({ start: 0, end: 9 });
+  });
+
+  test("parses calls whose arguments are all omitted", () => {
+    expect(argTypes("F(,)")).toEqual(["empty", "empty"]);
+    expect(argTypes("F(,,)")).toEqual(["empty", "empty", "empty"]);
+  });
+
+  test("keeps F() a call with zero arguments", () => {
+    expect(parseFormula("F()").args).toEqual([]);
+    expect(parseFormula("F( )").args).toEqual([]);
+  });
+
+  test("ignores whitespace around an omitted argument", () => {
+    expect(argTypes("SUM( 1 , , 2 )")).toEqual(["value", "empty", "value"]);
+    expect(argTypes("F( , )")).toEqual(["empty", "empty"]);
+  });
+
+  test("parses omitted arguments in nested calls", () => {
+    const ast = parseFormula("SUM(IF(,1,),SEQUENCE(,ROWS(A1:A3)))");
+    expect(ast.args).toHaveLength(2);
+    expect(ast.args[0].args.map((arg: any) => arg.type)).toEqual([
+      "empty",
+      "value",
+      "empty",
+    ]);
+    expect(ast.args[1].args.map((arg: any) => arg.type)).toEqual([
+      "empty",
+      "function",
+    ]);
+  });
+
+  test("parses the cartesian-product formula", () => {
+    const ast = parseFormula(
+      "LET(a, UNIQUE(TOCOL(A2:A1000, 1)), b, UNIQUE(TOCOL(B2:B1000, 1)), HSTACK(TOCOL(IF(SEQUENCE(,ROWS(b)), a)), TOCOL(IF(SEQUENCE(ROWS(a)), TOROW(b)))))"
+    );
+    expect(ast.name).toBe("LET");
+    const hstack = ast.args[4];
+    const firstSequence = hstack.args[0].args[0].args[0];
+    expect(firstSequence.name).toBe("SEQUENCE");
+    expect(firstSequence.args.map((arg: any) => arg.type)).toEqual([
+      "empty",
+      "function",
+    ]);
+  });
+
+  test("keeps structured references with commas intact", () => {
+    const ast = parseFormula(
+      "SUM(Table1[[#Headers],[Col1]],,Table1[[#All],[A]:[B]])"
+    );
+    expect(ast.args.map((arg: any) => arg.type)).toEqual([
+      "structured-reference",
+      "empty",
+      "structured-reference",
+    ]);
+    expect(ast.args[0]).toMatchObject({
+      tableName: "Table1",
+      selector: "#Headers",
+      cols: { startCol: "Col1", endCol: "Col1" },
+    });
+    expect(ast.args[2]).toMatchObject({
+      tableName: "Table1",
+      selector: "#All",
+      cols: { startCol: "A", endCol: "B" },
+    });
+  });
+
+  test("still rejects omitted elements in array literals", () => {
+    expect(() => parseFormula("{1,,2}")).toThrow(ParseError);
+    expect(() => parseFormula("{,1}")).toThrow(ParseError);
+    expect(() => parseFormula("{1;}")).toThrow(ParseError);
+    expect(() => parseFormula("SUM({1,,2})")).toThrow(ParseError);
+  });
+
+  test("still rejects unterminated argument lists", () => {
+    expect(() => parseFormula("SUM(1,")).toThrow(ParseError);
+    expect(() => parseFormula("SUM(,")).toThrow(ParseError);
+    expect(() => parseFormula("SUM(1,,")).toThrow(ParseError);
+  });
+
+  test("does not accept empty expressions outside argument lists", () => {
+    expect(() => parseFormula("()")).toThrow(ParseError);
+    expect(() => parseFormula("SUM((),1)")).toThrow(ParseError);
+    expect(() => parseFormula("1+,")).toThrow(ParseError);
+  });
+});
+
 describe("Parser - Arrays", () => {
   test("should parse array literals", () => {
     const ast = parseFormula("{1,2,3}") as ArrayNode;
@@ -1603,11 +1720,12 @@ describe("Parser - Error Handling", () => {
   });
 
   test("should provide helpful error messages", () => {
-    try {
-      parseFormula("SUM(1,2,)");
-    } catch (e) {
-      expect(e).toBeInstanceOf(ParseError);
-      expect((e as ParseError).message).toContain("Unexpected token");
-    }
+    expect(() => parseFormula("SUM(1 2)")).toThrow(
+      "Expected ',' or ')' in function arguments"
+    );
+    expect(() => parseFormula("SUM(1,2")).toThrow(
+      "Expected ',' or ')' in function arguments"
+    );
+    expect(() => parseFormula("1+*2")).toThrow("Unexpected token: *");
   });
 });

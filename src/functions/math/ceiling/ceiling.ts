@@ -12,6 +12,7 @@ import {
 } from "../../../core/types";
 import type { EvaluationContext } from "../../../evaluator/evaluation-context";
 import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
+import { getSuppliedArgument } from "../../../parser/ast";
 
 /**
  * CEILING function - Rounds a number up to the nearest multiple of significance
@@ -31,6 +32,8 @@ import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
  * - Positive number with negative significance returns #NUM! error
  * - Supports spilled values (dynamic arrays)
  * - Handles infinity values appropriately
+ * - An omitted argument (a comma with nothing) is 0, as in Excel: `CEILING(2.5,)`
+ *   is CEILING(2.5, 0), which this engine reports as #DIV/0!
  */
 
 /**
@@ -247,14 +250,23 @@ export const CEILING: FunctionDefinition = {
       };
     }
 
-    // Evaluate number argument
-    const numberResult = this.evaluateNode(node.args[0]!, context);
+    // Evaluate number and significance; an omitted argument is 0
+    const zero: FunctionEvaluationResult = {
+      type: "value",
+      result: { type: "number", value: 0 },
+    };
+    const numberNode = getSuppliedArgument(node, 0);
+    const numberResult = numberNode
+      ? this.evaluateNode(numberNode, context)
+      : zero;
     if (numberResult.type === "error" || numberResult.type === "awaiting-evaluation") {
       return numberResult;
     }
 
-    // Evaluate significance argument (required)
-    const significanceResult = this.evaluateNode(node.args[1]!, context);
+    const significanceNode = getSuppliedArgument(node, 1);
+    const significanceResult = significanceNode
+      ? this.evaluateNode(significanceNode, context)
+      : zero;
     if (significanceResult.type === "error" || significanceResult.type === "awaiting-evaluation") {
       return significanceResult;
     }

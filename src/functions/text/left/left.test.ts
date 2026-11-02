@@ -250,4 +250,19 @@ describe("LEFT function", () => {
       expect(cell("A1")).toBe("Hello");
     });
   });
+
+  describe("omitted arguments", () => {
+    test("an omitted num_chars is 0, unlike a missing one", () => {
+      setCellContent("A1", '=LEFT("Hello",)');
+      setCellContent("A2", '=LEFT("Hello")');
+
+      expect(cell("A1")).toBe("");
+      expect(cell("A2")).toBe("H");
+    });
+
+    test("an omitted text is empty text", () => {
+      setCellContent("A1", "=LEFT(,2)");
+      expect(cell("A1")).toBe("");
+    });
+  });
 });

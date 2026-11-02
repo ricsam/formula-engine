@@ -1,6 +1,6 @@
 ---
 title: "Spilling"
-description: "How array results occupy neighbouring cells, what blocks them, and how to recover."
+description: "How array results occupy neighbouring cells, how arrays of different shapes combine, and what blocks a spill."
 ---
 
 A formula that produces an array writes into its own cell and **spills** the
@@ -52,7 +52,33 @@ engine.setSheetContent(
 );
 ```
 
-## Scalar broadcast
+A range that covers spilled cells sees each of them at its own position, so
+lookups and `UNIQUE` over such a range work as expected:
+
+```typescript
+engine.setSheetContent(
+  sheet,
+  new Map([
+    ["A1", "x"],
+    ["A2", "=SEQUENCE(3)"], // spills 1,2,3 into A2:A4
+    ["C1", "=MATCH(2, A1:A5, 0)"],
+  ]),
+);
+
+read("C1"); // 3
+```
+
+## Broadcasting
+
+Operators (arithmetic, comparisons and `&`), `IF` and `IFERROR` combine arrays
+cell by cell, the way Excel does. In each dimension the result is as large as
+the largest operand:
+
+- a single value is repeated over the whole result;
+- an operand with one row, or one column, is repeated along that dimension;
+- cells beyond a shorter operand are `#N/A`.
+
+### A single value
 
 A scalar combined with a range broadcasts across the whole range.
 
@@ -69,6 +95,77 @@ read("C1"); // 10
 read("C2"); // 20
 read("C3"); // 30
 ```
+
+### Arrays of the same shape
+
+Arrays of the same shape pair up cell by cell. With `10,20,30` in `B1:B3`,
+`=A1:A3+B1:B3` spills `11`, `22`, `33`.
+
+### A column and a row
+
+A column combined with a row gives a grid with one cell for every pair:
+
+```typescript
+engine.setCellContent(d1, "=SEQUENCE(3)*SEQUENCE(,4)");
+
+// D1=1  E1=2  F1=3  G1=4
+// D2=2  E2=4  F2=6  G2=8
+// D3=3  E3=6  F3=9  G3=12
+```
+
+### A shorter array
+
+When two operands are larger than 1 in the same dimension but differ in size,
+the result has the larger size and the cells beyond the shorter operand are
+`#N/A`. The engine does not read past the end of the shorter operand.
+
+```typescript
+engine.setCellContent(d1, "={1;2;3}+{10;20}");
+
+read("D1"); // 11
+read("D2"); // 22
+read("D3"); // "#N/A"
+```
+
+### `IF` with an array condition
+
+`IF` broadcasts its condition and both values the same way. With `1` and `2` in
+`A1:A2`, a one-row condition and a one-column value give a 2 × 3 result:
+
+```typescript
+engine.setCellContent(c1, "=IF(SEQUENCE(1,3), A1:A2)");
+
+// C1=1  D1=1  E1=1
+// C2=2  D2=2  E2=2
+```
+
+Each cell evaluates only the branch its condition chooses. See
+[`IF`](/functions/logical#if).
+
+### Blank cells
+
+A blank cell inside an array behaves as it does in a single-cell formula. The
+engine reads it as `""`, so `&` treats it as empty text and arithmetic returns
+`#VALUE!`, where Excel would use `0`:
+
+```typescript
+// A1=1, A2 empty, A3=3
+engine.setCellContent(c1, '=A1:A3&"x"'); // spills "1x", "x", "3x"
+engine.setCellContent(e1, "=A1:A3*2");   // spills 2, "#VALUE!", 6
+```
+
+### Aggregating a broadcast
+
+Aggregates read every cell of a broadcast result:
+
+```typescript
+engine.setCellContent(a5, "=SUM(SEQUENCE(3)*SEQUENCE(,4))");
+read("A5"); // 60
+```
+
+A position where every array operand is an empty cell is left out, as the empty
+cells of a range are. With `A2` empty, `=COUNT(A1:A3*2)` is `2`, where Excel
+counts the `0` at that position and returns `3`.
 
 ## Obstruction produces `#SPILL!`
 
@@ -93,54 +190,30 @@ An **empty** cell never blocks a spill — only actual content does.
 
 ## Recovering from `#SPILL!`
 
-<Warning>
-  Clearing the blocking cell does **not**, on its own, restore the spill. The
-  anchor stays `#SPILL!` until the spilling formula is re-established.
-</Warning>
+A blocked anchor spills again by itself as soon as its area is free. Clearing
+the blocking cell is enough:
 
 ```typescript
-engine.setCellContent(c2, undefined);
-read("C1"); // still "#SPILL!"
+engine.setCellContent(c2, undefined); // remove the blocker
+read("C1"); // 1
+read("C2"); // 2
+read("C3"); // 3
 ```
 
 This holds for `setCellContent(undefined)`, `setCellContent("")` and
-`clearSpreadsheetRange()`. Two reliable recovery paths:
+`clearSpreadsheetRange()`. The anchor also recovers when:
 
-<Tabs>
-  <Tab title="Rewrite the anchor">
-    ```typescript
-    engine.setCellContent(c2, undefined);      // remove the blocker
-    engine.setCellContent(c1, "=A1:A3");       // re-write the formula
-    read("C1"); // 1
-    read("C2"); // 2
-    read("C3"); // 3
-    ```
-  </Tab>
-  <Tab title="Re-set the whole sheet">
-    ```typescript
-    engine.setSheetContent(
-      sheet,
-      new Map([
-        ["A1", 1], ["A2", 2], ["A3", 3],
-        ["C1", "=A1:A3"],
-      ]),
-    );
-    read("C1"); // 1
-    read("C2"); // 2
-    read("C3"); // 3
-    ```
-  </Tab>
-</Tabs>
-
-In a UI, the natural fix is free: when the user deletes the blocking cell and
-the grid re-renders, re-committing the anchor formula restores the spill. If you
-control the editing loop, re-issue the anchor's stored content after clearing an
-obstruction.
+- the blocker is a formula that depends on the spilling cell, such as `=C1*10`
+  in `C2`, which reads `#SPILL!` while it blocks;
+- the area is held by another spill that goes away, because that formula is
+  cleared or its result shrinks;
+- the blocked engine was saved with `serializeEngine()` and restored with
+  `resetToSerializedEngine()` before the blocker was cleared.
 
 ## Blocking an established spill
 
-Writing into a live spill area also produces `#SPILL!`, and the same recovery
-rule applies.
+Writing into a live spill area also produces `#SPILL!`. Clearing the cell, or
+undoing the write, restores the spill.
 
 ```typescript
 // C1:C3 currently spills 1,2,3
@@ -148,8 +221,56 @@ engine.setCellContent(c2, "block");
 read("C1"); // "#SPILL!"
 
 engine.setCellContent(c2, undefined);
-read("C1"); // still "#SPILL!" — rewrite C1 to recover
+read("C1"); // 1, and C2:C3 spill 2,3 again
 ```
+
+## Example: combinatorial sets
+
+Spilled arrays, `LET` and broadcasting combine to build every pair of values
+from two lists. Given sizes in column A and colors in column B, with repeats and
+blank cells:
+
+| | A | B |
+| --- | --- | --- |
+| 1 | Size | Color |
+| 2 | S | Red |
+| 3 | M | Blue |
+| 4 | S | |
+| 5 | L | Red |
+
+this formula in `D2` spills every pair of a distinct size and a distinct color:
+
+```excel
+=LET(a, UNIQUE(TOCOL(A2:A1000, 1)), b, UNIQUE(TOCOL(B2:B1000, 1)), HSTACK(TOCOL(IF(SEQUENCE(,ROWS(b)), a)), TOCOL(IF(SEQUENCE(ROWS(a)), TOROW(b)))))
+```
+
+| | D | E |
+| --- | --- | --- |
+| 2 | S | Red |
+| 3 | S | Blue |
+| 4 | M | Red |
+| 5 | M | Blue |
+| 6 | L | Red |
+| 7 | L | Blue |
+
+The pairs come in the order of first appearance: the first size with every
+color, then the second size with every color, and so on. Step by step:
+
+| Part | Result here |
+| --- | --- |
+| `a`: `UNIQUE(TOCOL(A2:A1000, 1))` | the distinct sizes as a column: S, M, L. `TOCOL(…, 1)` skips the blank cells, so the empty rows below the data add no empty entry. |
+| `b`: `UNIQUE(TOCOL(B2:B1000, 1))` | the distinct colors as a column: Red, Blue |
+| `SEQUENCE(,ROWS(b))` | a row with one number per color: 1, 2. Every number is true as a condition. |
+| `IF(SEQUENCE(,ROWS(b)), a)` | the 1 × 2 condition broadcast against the 3 × 1 `a`: a 3 × 2 array whose rows are S S, M M and L L |
+| `TOCOL(IF(…, a))` | that array read row by row: S, S, M, M, L, L |
+| `IF(SEQUENCE(ROWS(a)), TOROW(b))` | a 3 × 1 condition broadcast against the 1 × 2 row of colors: three rows of Red Blue |
+| `TOCOL(IF(…, TOROW(b)))` | Red, Blue, Red, Blue, Red, Blue |
+| `HSTACK(…)` | the two columns side by side |
+
+The result recalculates like any other formula. Typing `Green` into `B6` makes
+the spill grow to nine rows; clearing every size makes the anchor show
+`#CALC!`, the error `TOCOL` returns when nothing is left. Open-ended ranges work
+too: `TOCOL(A2:A, 1)` takes every row below the header.
 
 ## Infinite ranges
 
@@ -173,6 +294,6 @@ engine.setSheetContent(
     `#SPILL!` alongside every other error value.
   </Card>
   <Card title="Array functions" icon="table-cells" href="/functions/array">
-    `SEQUENCE` and `UNIQUE` in full.
+    `SEQUENCE`, `UNIQUE`, `TOCOL`, `TOROW` and `HSTACK` in full.
   </Card>
 </CardGroup>

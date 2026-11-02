@@ -59,6 +59,15 @@ does not mutate the engine or require constructing a second engine. Save after
 workbook mutations, not selection/view changes. Neither form persists undo history
 or application-owned UI state outside the engine.
 
+A warm snapshot stores an evaluated result only together with everything it was
+computed from, including the cells a stored spill read, so edits after loading
+recalculate exactly as they would have before saving. Results that cannot be
+stored that way, such as unbounded spills or lazily computed spills whose cells
+were not all read before saving, are left out together with the formulas built
+on them and recalculate on demand. If a warm snapshot's dependency state fails
+to load, for example because it references unknown nodes, the engine logs a
+`[FormulaEngine snapshot]` warning and loads the data cold.
+
 Compact persistence trades file size and save cost for cold recalculation on
 reopen. Large dependency-heavy workbooks can take substantially longer to render
 initial values after a compact restore. Prefer the default warm snapshot for
@@ -201,7 +210,10 @@ formatFormula("=IF(A1>0,SUM(B1,B2),0)", { style: "pretty" });
 //   0
 // )
 
-const result = tryFormatFormula("=SUM(A1,,B1)", { style: "pretty" });
+formatFormula("=SEQUENCE(,3)", { style: "compact" });
+// =SEQUENCE(, 3) - an omitted argument prints as nothing
+
+const result = tryFormatFormula("=SUM(A1;B1)", { style: "pretty" });
 if (!result.ok) {
   // result.formula is the exact original input, safe to retain in an editor.
   console.log(result.error.message, result.error.position);
@@ -332,6 +344,7 @@ normal single engine operation succeeds and creates a non-undoable barrier.
 - Sparse data storage with Map-based implementation
 - Copy/paste operations
 - Named expressions (storage only)
+- Array formulas with Excel-style broadcasting
 
 ### 🚧 In Progress
 
@@ -343,7 +356,6 @@ normal single engine operation succeeds and creates a non-undoable barrier.
 ### 📋 Planned
 
 - Function library (SUM, AVERAGE, etc.)
-- Array formulas with broadcasting
 - Comprehensive error handling
 - React hooks for integration
 - Performance optimizations

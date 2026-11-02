@@ -383,4 +383,36 @@ describe("TEXTJOIN function", () => {
       expect(cell("A1")).toBe("Col1\tCol2\tCol3");
     });
   });
+
+  describe("omitted arguments", () => {
+    test("an omitted ignore_empty is TRUE", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "Red"],
+          ["A3", "Blue"],
+          ["B1", '=TEXTJOIN(", ",, A1:A3)'],
+          ["B2", '=TEXTJOIN(", ",, "x", "", "y")'],
+          ["B3", '=TEXTJOIN(", ", FALSE, "x", "", "y")'],
+        ])
+      );
+
+      expect(cell("B1")).toBe("Red, Blue");
+      expect(cell("B2")).toBe("x, y");
+      expect(cell("B3")).toBe("x, , y");
+    });
+
+    test("an omitted delimiter joins without a delimiter", () => {
+      setCellContent("A1", '=TEXTJOIN(, TRUE, "a", "b", "c")');
+      expect(cell("A1")).toBe("abc");
+    });
+
+    test("an omitted text item is empty text", () => {
+      setCellContent("A1", '=TEXTJOIN("-", FALSE, "a",, "b")');
+      setCellContent("A2", '=TEXTJOIN("-", TRUE, "a",, "b")');
+
+      expect(cell("A1")).toBe("a--b");
+      expect(cell("A2")).toBe("a-b");
+    });
+  });
 });

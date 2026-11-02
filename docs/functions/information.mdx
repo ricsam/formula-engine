@@ -1,6 +1,6 @@
 ---
 title: "Information functions"
-description: "Inspect cell contents, row numbers, and column numbers."
+description: "Inspect cell contents, row and column numbers, and the size of ranges and arrays."
 ---
 
 ## `ROW`
@@ -33,6 +33,61 @@ Returns a 1-based column number.
 ```
 
 A formula in column E returned `5`.
+
+## `ROWS`
+
+Returns the number of rows in a reference or array.
+
+```excel
+=ROWS(array)
+```
+
+```excel
+=ROWS(A1:B10)                     // 10
+=ROWS(SEQUENCE(5,2))              // 5
+=ROWS({1,2;3,4;5,6})              // 3
+=ROWS(5)                          // 1
+=ROWS(UNIQUE(TOCOL(A2:A100, 1)))  // the number of distinct non-blank values
+```
+
+A range is measured without reading its cells, so `=ROWS(A1:B10)` is `10`
+whatever the cells hold, even when the formula sits inside `A1:B10`. A spilled
+result counts the rows of the area it spills onto. A single value is a 1 × 1
+array.
+
+## `COLUMNS`
+
+Returns the number of columns in a reference or array. `COLS` is an alias.
+
+```excel
+=COLUMNS(array)
+```
+
+```excel
+=COLUMNS(A1:C10)         // 3
+=COLS(A1:C10)            // 3
+=COLUMNS(SEQUENCE(5,2))  // 2
+=COLUMNS({1,2,3})        // 3
+```
+
+`COLUMNS` measures ranges, spilled results and single values the same way as
+`ROWS`.
+
+### Differences from Excel
+
+These apply to both `ROWS` and `COLUMNS`:
+
+- A reference to the cell a formula spills from measures the whole spill. With
+  `C1` holding `=SEQUENCE(5)`, `=ROWS(C1)` is `5`, where Excel needs `C1#`
+  for that and returns `1`. The result follows the spill when it changes size,
+  and is `#SPILL!` while the spill is blocked.
+- An unbounded dimension counts as infinity, because the engine has no sheet
+  size limit: `=ROWS(A:A)`, `=ROWS(A2:A)` and `=COLUMNS(1:1)` return
+  `"INFINITY"`. Excel returns `1048576` for `ROWS(A:A)` and `16384` for
+  `COLUMNS(1:1)`.
+- An error argument is returned as the result. A single-cell reference is
+  evaluated to find out whether it spills, so a reference to a cell holding an
+  error returns that error too, where Excel returns `1`.
 
 ## `CELL`
 

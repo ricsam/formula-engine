@@ -85,6 +85,19 @@ function needsParentheses(
   );
 }
 
+/**
+ * Join rendered arguments in compact style. An omitted argument prints as
+ * nothing, so its comma is not followed by a space: `IF(A1, 1,)`,
+ * `SEQUENCE(, 3)`, `IF(A1,, B1)`.
+ */
+function joinCompactArguments(renderedArguments: readonly string[]): string {
+  return renderedArguments
+    .map((text, index) =>
+      index === 0 ? text : text === "" ? "," : `, ${text}`
+    )
+    .join("");
+}
+
 function renderFunction(
   node: FunctionNode,
   context: RenderContext,
@@ -93,19 +106,25 @@ function renderFunction(
   if (node.args.length === 0) return `${node.name}()`;
 
   if (context.style === "compact") {
-    return `${node.name}(${node.args
-      .map((argument) => renderNode(argument, context, depth))
-      .join(", ")})`;
+    return `${node.name}(${joinCompactArguments(
+      node.args.map((argument) => renderNode(argument, context, depth))
+    )})`;
   }
 
   const childIndent = context.indent.repeat(depth + 1);
   const closingIndent = context.indent.repeat(depth);
-  const argumentsText = node.args
-    .map(
-      (argument) => `${childIndent}${renderNode(argument, context, depth + 1)}`
-    )
-    .join(",\n");
-  return `${node.name}(\n${argumentsText}\n${closingIndent})`;
+  const lastIndex = node.args.length - 1;
+  const lines: string[] = [];
+  node.args.forEach((argument, index) => {
+    // An omitted last argument is marked by the preceding comma alone; any
+    // other omitted argument leaves just its comma on its line.
+    if (argument.type === "empty" && index === lastIndex) return;
+    const separator = index === lastIndex ? "" : ",";
+    lines.push(
+      `${childIndent}${renderNode(argument, context, depth + 1)}${separator}`
+    );
+  });
+  return `${node.name}(\n${lines.join("\n")}\n${closingIndent})`;
 }
 
 function renderUnary(
@@ -144,21 +163,21 @@ function renderArray(
   context: RenderContext,
   depth: number
 ): string {
+  const renderRow = (row: ASTNode[], rowDepth: number) =>
+    joinCompactArguments(row.map((cell) => renderNode(cell, context, rowDepth)));
+
   if (context.style === "compact") {
-    const rows = node.elements.map((row) =>
-      row.map((cell) => renderNode(cell, context, depth)).join(", ")
-    );
-    return `{${rows.join("; ")}}`;
+    return `{${node.elements.map((row) => renderRow(row, depth)).join("; ")}}`;
   }
 
-  if (node.elements.length === 0) return "{}";
+  // `{}` parses as one omitted element.
+  if (node.elements.every((row) => row.every((cell) => cell.type === "empty"))) {
+    return "{}";
+  }
   const rowIndent = context.indent.repeat(depth + 1);
   const closingIndent = context.indent.repeat(depth);
   const rows = node.elements.map(
-    (row) =>
-      `${rowIndent}${row
-        .map((cell) => renderNode(cell, context, depth + 1))
-        .join(", ")}`
+    (row) => `${rowIndent}${renderRow(row, depth + 1)}`
   );
   return `{\n${rows.join(";\n")}\n${closingIndent}}`;
 }

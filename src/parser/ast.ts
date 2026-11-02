@@ -180,6 +180,17 @@ export type ErrorNode = ASTNodeBase & {
   message: string;
 };
 
+/**
+ * Nothing at all. The parser produces it for an empty formula, as the only
+ * element of the empty array literal `{}`, and for an omitted function
+ * argument: nothing between the delimiters of an argument list, as in
+ * `SEQUENCE(,3)`, `SUM(1,,2)` or `IF(A1,)`. `F()` is a call with zero
+ * arguments, so an argument list never consists of one empty argument.
+ *
+ * An omitted argument evaluates like a reference to an empty cell. Functions
+ * that give an optional parameter a default check for it with
+ * {@link getSuppliedArgument}.
+ */
 export type EmptyNode = ASTNodeBase & {
   type: "empty";
 };
@@ -206,6 +217,20 @@ export function createEmptyNode(position?: {
   end: number;
 }): EmptyNode {
   return { type: "empty", position };
+}
+
+/**
+ * Returns the argument at `index`, or `undefined` when the call does not supply
+ * it: the argument list is shorter, or the argument is omitted (an
+ * {@link EmptyNode}, as the first argument of `SEQUENCE(,3)`). Functions use it
+ * to apply the default value of an optional parameter.
+ */
+export function getSuppliedArgument(
+  node: FunctionNode,
+  index: number
+): ASTNode | undefined {
+  const argument = node.args[index];
+  return argument && argument.type !== "empty" ? argument : undefined;
 }
 
 /**

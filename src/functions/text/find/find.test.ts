@@ -319,4 +319,22 @@ describe("FIND function", () => {
       expect(cell("B1")).toBe(501);
     });
   });
+
+  describe("omitted arguments", () => {
+    test("an omitted start_num is 0, unlike a missing one", () => {
+      setCellContent("A1", '=FIND("l","Hello",)');
+      setCellContent("A2", '=FIND("l","Hello")');
+
+      expect(cell("A1")).toBe("#VALUE!");
+      expect(cell("A2")).toBe(3);
+    });
+
+    test("an omitted find_text is empty text, found at the start", () => {
+      setCellContent("A1", '=FIND(,"Hello")');
+      setCellContent("A2", '=FIND(,"Hello",3)');
+
+      expect(cell("A1")).toBe(1);
+      expect(cell("A2")).toBe(3);
+    });
+  });
 });

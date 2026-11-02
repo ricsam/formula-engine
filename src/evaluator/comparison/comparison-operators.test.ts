@@ -281,6 +281,46 @@ describe("Comparison Operators", () => {
       expect(cell("C1")).toBe(false); // 5 = 10
       expect(cell("C2")).toBe(false); // 10 = 5
     });
+
+    test("should broadcast a column against a row", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 1],
+          ["A2", 2],
+          ["A3", 3],
+          ["B1", 2],
+          ["C1", 3],
+          ["E1", "=A1:A3>=B1:C1"],
+        ])
+      );
+
+      expect([cell("E1"), cell("F1")]).toEqual([false, false]);
+      expect([cell("E2"), cell("F2")]).toEqual([true, false]);
+      expect([cell("E3"), cell("F3")]).toEqual([true, true]);
+      expect(cell("G1")).toBe("");
+      expect(cell("E4")).toBe("");
+    });
+
+    test("should give #N/A beyond the shorter array", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 5],
+          ["A2", 10],
+          ["A3", 15],
+          ["B1", 5],
+          ["B2", 20],
+          ["B3", 15],
+          ["C1", "=A1:A3=B1:B2"],
+        ])
+      );
+
+      expect(cell("C1")).toBe(true);
+      expect(cell("C2")).toBe(false);
+      // B3 is outside B1:B2, so it is not compared with A3.
+      expect(cell("C3")).toBe("#N/A");
+    });
   });
 
   describe("edge cases", () => {

@@ -382,4 +382,111 @@ describe("IFERROR function", () => {
       expect(cell("C1")).toBe(84); // 42 + 42
     });
   });
+
+  describe("omitted arguments", () => {
+    test("an omitted value_if_error is 0", () => {
+      setCellContent("A1", '=IFERROR(1/"x",)');
+      setCellContent("A2", "=IFERROR(5,)");
+
+      expect(cell("A1")).toBe(0);
+      expect(cell("A2")).toBe(5);
+    });
+
+    test("an omitted value is 0", () => {
+      setCellContent("A1", "=IFERROR(, 1)");
+      expect(cell("A1")).toBe(0);
+    });
+
+    test("an omitted value_if_error is 0 in the error cells of an array", () => {
+      setCellContent("A1", '=IFERROR({1;1/"x";3},)');
+
+      expect(cell("A1")).toBe(1);
+      expect(cell("A2")).toBe(0);
+      expect(cell("A3")).toBe(3);
+    });
+  });
+
+  describe("aggregates over an array value", () => {
+    beforeEach(() => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 4],
+          ["A2", 6],
+          ["A3", 9],
+          ["B1", 2],
+          ["B2", "x"],
+          ["B3", 3],
+        ])
+      );
+    });
+
+    test("SUM and COUNT read every cell once", () => {
+      setCellContent("D1", "=SUM(IFERROR(A1:A3/B1:B3, 0))");
+      setCellContent("D2", "=COUNT(IFERROR(A1:A3/B1:B3, 0))");
+      setCellContent("D3", '=COUNT(IFERROR(A1:A3/B1:B3, ""))');
+      setCellContent("D4", "=SUM(IFERROR(A1:A3/B1:B3,))");
+
+      expect(cell("D1")).toBe(5);
+      expect(cell("D2")).toBe(3);
+      expect(cell("D3")).toBe(2);
+      expect(cell("D4")).toBe(5);
+    });
+
+    test("an array value_if_error supplies the matching cell", () => {
+      setCellContent("D1", "=SUM(IFERROR(A1:A3/B1:B3, {10;20;30}))");
+      setCellContent("E1", "=IFERROR(A1:A3/B1:B3, C1:C3)");
+      setCellContent("C2", 100);
+
+      expect(cell("D1")).toBe(25);
+      expect(cell("E1")).toBe(2);
+      expect(cell("E2")).toBe(100);
+      expect(cell("E3")).toBe(3);
+    });
+
+    test("broadcasts a row against a column", () => {
+      setCellContent("D1", '=IFERROR({1,1/"x"}, {7;8})');
+
+      expect(cell("D1")).toBe(1);
+      expect(cell("E1")).toBe(7);
+      expect(cell("D2")).toBe(1);
+      expect(cell("E2")).toBe(8);
+    });
+
+    test("uses an error value_if_error only in the cells that need it", () => {
+      setCellContent("D1", '=SUM(IFERROR({1;2}, 1/"x"))');
+      setCellContent("D2", '=IFERROR({1;1/"x"}, 1/"y")');
+
+      expect(cell("D1")).toBe(3);
+      expect(cell("D2")).toBe(1);
+      expect(cell("D3")).toBe(FormulaError.VALUE);
+    });
+
+    test("reads a range with blank cells", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 1],
+          ["A2", '=1/"x"'],
+          ["A4", 4],
+          ["C1", "=SUM(IFERROR(A1:A5, 10))"],
+          ["C2", "=COUNT(IFERROR(A:A, 10))"],
+        ])
+      );
+
+      expect(cell("C1")).toBe(15);
+      expect(cell("C2")).toBe(3);
+    });
+
+    test("recalculates when an input changes", () => {
+      setCellContent("D1", "=SUM(IFERROR(A1:A3/B1:B3, 0))");
+      expect(cell("D1")).toBe(5);
+
+      setCellContent("B2", 2);
+      expect(cell("D1")).toBe(8);
+
+      setCellContent("B1", "y");
+      expect(cell("D1")).toBe(6);
+    });
+  });
 });

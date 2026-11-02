@@ -46,6 +46,14 @@ import { CELL } from "./information/cell/cell";
 import { ADDRESS } from "./reference/address/address";
 import { INDIRECT } from "./reference/indirect/indirect";
 import { OFFSET } from "./reference/offset/offset";
+import { LET } from "./logical/let/let";
+import { TOCOL } from "./array/tocol/tocol";
+import { TOROW } from "./array/torow/torow";
+import { HSTACK } from "./array/hstack/hstack";
+import { ROWS } from "./information/rows/rows";
+import { COLUMNS } from "./information/columns/columns";
+import { INT } from "./math/int/int";
+import { COUNTA } from "./lookup/count/counta";
 
 const buildFunctionIndex = (functions: Record<string, FunctionDefinition>) => {
   return Object.fromEntries(
@@ -70,18 +78,23 @@ export const functionDefinitions = {
   CEILING,
   CELL,
   COLUMN,
+  COLUMNS,
   CONCATENATE,
   COUNT,
+  COUNTA,
   COUNTIF,
   COUNTIFS,
   EXACT,
   FIND,
+  HSTACK,
   IF,
   IFERROR,
   INDEX,
   INDIRECT,
+  INT,
   LEFT,
   LEN,
+  LET,
   MATCH,
   MAX,
   MAXIF,
@@ -94,11 +107,14 @@ export const functionDefinitions = {
   OR,
   RIGHT,
   ROW,
+  ROWS,
   SEQUENCE,
   SUM,
   SUMIF,
   SUMIFS,
   TEXTJOIN,
+  TOCOL,
+  TOROW,
   UNIQUE,
   XLOOKUP,
 } satisfies Record<string, FunctionDefinition>;

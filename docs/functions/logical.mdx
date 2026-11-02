@@ -1,6 +1,6 @@
 ---
 title: "Logical functions"
-description: "IF, IFERROR, AND, and OR."
+description: "IF, IFERROR, AND, OR, and LET."
 ---
 
 ## `IF`
@@ -9,12 +9,37 @@ description: "IF, IFERROR, AND, and OR."
 =IF(condition, value_if_true, [value_if_false])
 ```
 
-Only the selected branch is evaluated.
+With a single-value condition, only the selected branch is evaluated.
 
 ```excel
 =IF(B2>5,"big","small") // "big" when B2 is 10
 =IF(A1=0,0,B1/A1)       // safely guard division
 ```
+
+Without `value_if_false`, a false condition returns `FALSE`. An omitted value,
+such as the second argument of `=IF(A1,,"x")` or the third of
+`=IF(A1,"x",)`, is `0`, and an omitted condition counts as `FALSE`, as in
+Excel.
+
+### Array conditions
+
+An array condition makes `IF` choose cell by cell, and the result spills. The
+condition and both values are broadcast against each other like the operands
+of an operator: the result is as large as the largest of the three in each
+dimension, an argument of size 1 in a dimension is repeated along it, and cells
+beyond a shorter argument are `#N/A`. See [Broadcasting](/concepts/spilling#broadcasting).
+
+Given `5`, `15`, `25` in `A1:A3`:
+
+```excel
+=IF(A1:A3>10, "big", "small")  // small, big, big
+=SUM(IF(A1:A3>10, A1:A3, 0))   // 40
+=IF(SEQUENCE(1,3), A1:A2)      // 2 × 3: each row repeats A1 or A2
+```
+
+Each cell reads only the branch its condition chooses. An error in a
+single-value branch therefore shows up only in the cells that choose it:
+`=IF({TRUE,FALSE}, 1, 1+"x")` spills `1` and `#VALUE!`.
 
 ## `IFERROR`
 
@@ -26,6 +51,18 @@ Returns `fallback` when `value` evaluates to a formula error.
 
 ```excel
 =IFERROR(NOSUCHFN(1),"fallback") // "fallback"
+```
+
+An omitted argument is `0`, as in Excel: `=IFERROR(1+"x",)` is `0`.
+
+An array `value` is checked cell by cell and spills. An array `fallback` is
+broadcast against it like the operands of an operator, and an error in a
+single-value `fallback` shows up only in the cells that need it. Aggregates
+read the result directly. Given `10`, `n/a` and `30` in `C2:C4`:
+
+```excel
+=IFERROR(C2:C4*2, 0)       // spills 20, 0, 60
+=SUM(IFERROR(C2:C4*2, 0))  // 80
 ```
 
 <Warning>
@@ -64,6 +101,65 @@ Returns `TRUE` when at least one argument is truthy.
 ```excel
 =OR(B2>100,C2>1) // TRUE when B2=10 and C2=5
 ```
+
+## `LET`
+
+Names intermediate results inside one formula and returns a final calculation
+that can use those names.
+
+```excel
+=LET(name1, name_value1, calculation_or_name2, [name_value2, calculation_or_name3], ...)
+```
+
+The arguments are name/value pairs followed by the calculation. Each value can
+use the names declared before it.
+
+```excel
+=LET(x, 2, y, x*10, x+y)                           // 22
+=LET(total, SUM(B2:B6), n, COUNT(B2:B6), total/n)  // 30 when B2:B6 = 10,20,30,40,50
+```
+
+Names match without regard to case and are local to the formula:
+
+- A name bound to a reference stays a reference: `=LET(r, A1:A3, SUM(r))`
+  sums the range, and `=LET(c, A2, ROW(c))` is `2`.
+- A nested `LET` can declare an outer name again. Inside it, the inner value
+  wins: `=LET(x, 1, LET(x, 2, x) + x)` is `3`.
+- A `LET` name hides a named expression with the same name. With a named
+  expression `TaxRate` of `0.25`, `=LET(TaxRate, 0.1, 100*TaxRate)` is `10`.
+- An array result spills as usual: `=LET(n, 3, SEQUENCE(n))` spills `1`, `2`,
+  `3`.
+
+### `LET` errors
+
+| Formula | Result | Reason |
+| --- | --- | --- |
+| `=LET(x, 1)` | `#VALUE!` | `LET` needs an odd number of at least 3 arguments |
+| `=LET(x, 1,)` | `#VALUE!` | the calculation is omitted |
+| `=LET(x1, 1, x1)` | `#NAME?` | `x1` is a cell reference, not a name |
+| `=LET(x, 1, x, 2, x)` | `#NAME?` | `x` is declared twice in one `LET` |
+
+Excel refuses to enter the last two formulas at all. An error inside a name's
+value matters only where the name is used: `=LET(x, 1+"a", 5)` is `5`.
+
+### Differences from Excel
+
+- Excel calculates each name's value once. Here a name used *n* times
+  evaluates its value *n* times per calculation, as if the expression were
+  written out *n* times. Results are still cached between recalculations.
+- A name whose value is never used is never evaluated.
+- An omitted name value is `0`: `=LET(x, , x+1)` is `1`.
+- `c` and `r` are valid names, because the engine has no R1C1 notation. Excel
+  reserves them.
+- Array literals may contain names: `=LET(x, 5, {x, x+1})` spills `5` and `6`.
+  Excel allows only constants in array literals.
+- Every use of a name repeats the expression bound to it, so names that each
+  use the previous name twice double the expansion with every name. A `LET`
+  that expands to more than 10,000 formula nodes returns `#CALC!`.
+
+Formula analysis marks `LET` names as `variable` tokens, and renaming a named
+expression leaves `LET` names alone. See
+[Formula analysis](/api/formula-analysis#let-names).
 
 ## Errors
 

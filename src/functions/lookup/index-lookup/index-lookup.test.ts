@@ -170,12 +170,13 @@ describe("INDEX function", () => {
       expect(cell("C1")).toBe(FormulaError.REF);
     });
 
-    test("should return #VALUE! for row_num less than 1", () => {
+    test("should return the whole column for row_num 0", () => {
       setCellContent("A1", "Apple");
       setCellContent("A2", "Banana");
       setCellContent("B1", "=INDEX(A1:A2, 0, 1)");
 
-      expect(cell("B1")).toBe(FormulaError.VALUE);
+      expect(cell("B1")).toBe("Apple");
+      expect(cell("B2")).toBe("Banana");
     });
 
     test("should return #VALUE! for negative row_num", () => {
@@ -253,6 +254,99 @@ describe("INDEX function", () => {
       setCellContent("B1", "=INDEX(A1:A3, 2, 1)");
 
       expect(cell("B1")).toBe("");
+    });
+  });
+
+  describe("whole rows and columns", () => {
+    beforeEach(() => {
+      // A 3x3 block in A1:C3: 1..9 row by row
+      const data = new Map<string, SerializedCellValue>();
+      ["A", "B", "C"].forEach((col, x) => {
+        for (let y = 0; y < 3; y++) data.set(`${col}${y + 1}`, y * 3 + x + 1);
+      });
+      engine.setSheetContent(sheetAddress, data);
+    });
+
+    test("row_num 0 selects a column and column_num 0 a row", () => {
+      setCellContent("E1", "=INDEX(A1:C3, 0, 2)");
+      setCellContent("G1", "=INDEX(A1:C3, 3, 0)");
+
+      expect(cell("E1")).toBe(2);
+      expect(cell("E2")).toBe(5);
+      expect(cell("E3")).toBe(8);
+      expect(cell("E4")).toBe("");
+      expect(cell("G1")).toBe(7);
+      expect(cell("H1")).toBe(8);
+      expect(cell("I1")).toBe(9);
+      expect(cell("G2")).toBe("");
+    });
+
+    test("both 0 select the whole array", () => {
+      setCellContent("E1", "=SUM(INDEX(A1:C3, 0, 0))");
+      expect(cell("E1")).toBe(45);
+    });
+
+    test("an omitted row_num or column_num is 0", () => {
+      setCellContent("E1", "=SUM(INDEX(A1:C3,, 2))");
+      setCellContent("E2", "=SUM(INDEX(A1:C3, 2,))");
+      setCellContent("E3", "=SUM(INDEX(A1:C3,,))");
+      setCellContent("E4", "=INDEX(A1:A3, 2,)");
+      setCellContent("E5", "=INDEX(A1:C1,, 3)");
+
+      expect(cell("E1")).toBe(15);
+      expect(cell("E2")).toBe(15);
+      expect(cell("E3")).toBe(45);
+      // One column or row of a single row or column is a single cell.
+      expect(cell("E4")).toBe(4);
+      expect(cell("E5")).toBe(3);
+    });
+
+    test("a selection from a range reads like that range", () => {
+      setCellContent("E1", "=COUNT(INDEX(A1:C3,, 2))");
+      setCellContent("E2", "=MAX(INDEX(A:C,, 2))");
+      setCellContent("E3", "=SUM(INDEX(A1:C3, 2,) * 10)");
+
+      expect(cell("E1")).toBe(3);
+      expect(cell("E2")).toBe(8);
+      expect(cell("E3")).toBe(150);
+    });
+
+    test("selects from computed arrays", () => {
+      setCellContent("E1", "=INDEX(SEQUENCE(3, 3),, 2)");
+      setCellContent("F1", "=SUM(INDEX(SEQUENCE(3, 3), 3,))");
+      setCellContent("G1", "=INDEX({1,2;3,4}, 2,)");
+      setCellContent("F2", "=SUM(-INDEX({1,2;3,4},, 1))");
+
+      expect(cell("E1")).toBe(2);
+      expect(cell("E2")).toBe(5);
+      expect(cell("E3")).toBe(8);
+      expect(cell("F1")).toBe(24);
+      expect(cell("G1")).toBe(3);
+      expect(cell("H1")).toBe(4);
+      expect(cell("F2")).toBe(-4);
+    });
+
+    test("is read by ranges that overlap the spilled selection", () => {
+      setCellContent("E1", "=INDEX(SEQUENCE(3, 3),, 2)");
+      setCellContent("F1", "=SUM(E2:E3)");
+
+      expect(cell("F1")).toBe(13);
+    });
+
+    test("rejects an index beyond the array", () => {
+      setCellContent("E1", "=INDEX(A1:C3, 0, 4)");
+      setCellContent("E2", "=INDEX(A1:C3, 4, 0)");
+
+      expect(cell("E1")).toBe(FormulaError.REF);
+      expect(cell("E2")).toBe(FormulaError.REF);
+    });
+
+    test("recalculates when the selected cells change", () => {
+      setCellContent("E1", "=SUM(INDEX(A1:C3,, 2))");
+      expect(cell("E1")).toBe(15);
+
+      setCellContent("B2", 50);
+      expect(cell("E1")).toBe(60);
     });
   });
 });

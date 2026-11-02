@@ -630,7 +630,10 @@ describe("FormulaEngine", () => {
     // Test case from user: A1:A7 + B1:B6
     // A column: 1, 3, empty, 4, empty, empty, 2
     // B column: empty, 1, empty, empty, empty, 3
-    // Expected: 1, 4, #N/A, 4, #N/A, 3, #N/A
+    // Cells are paired by position. A blank cell reads as empty text, exactly
+    // as in =A1+B1, and arithmetic on text is #VALUE! in this engine. Only the
+    // seventh row, beyond B1:B6, is #N/A (array broadcasting).
+    // Expected: #VALUE!, 4, #VALUE!, #VALUE!, #VALUE!, #VALUE!, #N/A
     engine.setSheetContent(
       sheetAddress,
       new Map<string, SerializedCellValue>([
@@ -646,23 +649,33 @@ describe("FormulaEngine", () => {
         ["B6", 3],
         // B7 doesn't exist (beyond B range)
         ["C1", "=A1:A7+B1:B6"],
+        ["D1", "=A1:A7&B1:B6"],
       ])
     );
 
-    // Row 1: 1 + empty = #N/A (empty within range)
-    expect(cell("C1")).toBe("#N/A");
+    // Row 1: 1 + empty = #VALUE! (like =A1+B1)
+    expect(cell("C1")).toBe("#VALUE!");
     // Row 2: 3 + 1 = 4
     expect(cell("C2")).toBe(4);
-    // Row 3: empty + empty = #N/A
-    expect(cell("C3")).toBe("#N/A");
-    // Row 4: 4 + empty = #N/A (empty within range)
-    expect(cell("C4")).toBe("#N/A");
-    // Row 5: empty + empty = #N/A
-    expect(cell("C5")).toBe("#N/A");
-    // Row 6: empty + 3 = #N/A (empty within range)
-    expect(cell("C6")).toBe("#N/A");
+    // Row 3: empty + empty = #VALUE!
+    expect(cell("C3")).toBe("#VALUE!");
+    // Row 4: 4 + empty = #VALUE!
+    expect(cell("C4")).toBe("#VALUE!");
+    // Row 5: empty + empty = #VALUE!
+    expect(cell("C5")).toBe("#VALUE!");
+    // Row 6: empty + 3 = #VALUE!
+    expect(cell("C6")).toBe("#VALUE!");
     // Row 7: 2 + beyond range = #N/A
     expect(cell("C7")).toBe("#N/A");
+
+    // Concatenation reads the blank cells as empty text, as Excel does.
+    expect(cell("D1")).toBe("1");
+    expect(cell("D2")).toBe("31");
+    expect(cell("D3")).toBe("");
+    expect(cell("D4")).toBe("4");
+    expect(cell("D5")).toBe("");
+    expect(cell("D6")).toBe("3");
+    expect(cell("D7")).toBe("#N/A");
   });
 
   test("evaluation should handle range inputs as gracefully /3", () => {

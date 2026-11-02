@@ -253,4 +253,19 @@ describe("CEILING function", () => {
       expect(cell("C1")).toBe(4.5);
     });
   });
+
+  describe("omitted arguments", () => {
+    test("an omitted significance is 0, like CEILING(number, 0)", () => {
+      setCellContent("A1", "=CEILING(2.5,)");
+      setCellContent("A2", "=CEILING(2.5, 0)");
+
+      expect(cell("A1")).toBe(FormulaError.DIV0);
+      expect(cell("A2")).toBe(FormulaError.DIV0);
+    });
+
+    test("an omitted number is 0", () => {
+      setCellContent("A1", "=CEILING(, 1)");
+      expect(cell("A1")).toBe(0);
+    });
+  });
 });

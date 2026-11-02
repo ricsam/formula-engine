@@ -7,6 +7,7 @@ import {
 } from "../../../core/types";
 import type { EvaluationContext } from "../../../evaluator/evaluation-context";
 import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
+import { getSuppliedArgument } from "../../../parser/ast";
 
 /**
  * TEXTJOIN function - Joins text from multiple ranges and/or strings with a specified delimiter
@@ -25,6 +26,8 @@ import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
  * Note:
  * - Supports type coercion: numbers and booleans are converted to strings
  * - Returns #VALUE! if result exceeds 32,767 characters
+ * - An omitted delimiter (`TEXTJOIN(,TRUE,A1:A3)`) is empty text, and an
+ *   omitted ignore_empty (`TEXTJOIN(",",,A1:A3)`) is TRUE, as in Excel
  */
 
 const MAX_TEXT_LENGTH = 32767;
@@ -147,8 +150,12 @@ export const TEXTJOIN: FunctionDefinition = {
 
     const delimiter = coerceToString(delimiterResult.result);
 
-    // Evaluate ignore_empty (second argument)
-    const ignoreEmptyResult = this.evaluateNode(node.args[1]!, context);
+    // Evaluate ignore_empty (second argument). Excel treats an omitted one as
+    // TRUE, although the argument is required.
+    const ignoreEmptyNode = getSuppliedArgument(node, 1);
+    const ignoreEmptyResult: FunctionEvaluationResult = ignoreEmptyNode
+      ? this.evaluateNode(ignoreEmptyNode, context)
+      : { type: "value", result: { type: "boolean", value: true } };
     if (ignoreEmptyResult.type === "error") {
       return ignoreEmptyResult;
     }

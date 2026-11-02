@@ -1,4 +1,8 @@
-import type { ASTNode } from "../parser/ast";
+import type {
+  ASTNode,
+  FunctionNode,
+  NamedExpressionNode,
+} from "../parser/ast";
 
 /**
  * Visitor function type for AST traversal
@@ -151,4 +155,181 @@ export function transformAST(
   };
 
   return transform(node);
+}
+
+/**
+ * LET is the only function that binds names. Its name arguments and the
+ * references to them parse as `named-expression` nodes, exactly like references
+ * to defined names, so tooling that inspects names must know LET's scoping
+ * rules to tell the two apart.
+ */
+export const LET_FUNCTION_NAME = "LET";
+
+/** LET names match without regard to case, like Excel names. */
+export function normalizeLetName(name: string): string {
+  return name.toUpperCase();
+}
+
+export function isLetCall(
+  node: ASTNode
+): node is FunctionNode & { name: typeof LET_FUNCTION_NAME } {
+  return node.type === "function" && node.name === LET_FUNCTION_NAME;
+}
+
+/**
+ * The name declared by a LET name argument: a plain identifier that parses as
+ * an unqualified named expression. Anything else (a cell reference such as
+ * `x1`, a sheet- or workbook-qualified name, a literal, an expression) is not a
+ * valid LET name.
+ */
+export function getLetDeclaredName(node: ASTNode): string | undefined {
+  return node.type === "named-expression" &&
+    node.sheetName === undefined &&
+    node.workbookName === undefined
+    ? node.name
+    : undefined;
+}
+
+/** One name declared by a LET call. */
+export interface LetBinding {
+  /** The LET call that declares the name. */
+  letCall: FunctionNode;
+  /** Index of the name argument in `letCall.args`. */
+  argIndex: number;
+  /** The name argument itself. */
+  declaration: NamedExpressionNode;
+  /** The binding of the same name that this one shadows, if any. */
+  shadows?: LetBinding;
+}
+
+/** The LET bindings in scope, keyed by {@link normalizeLetName}. */
+export type LetScope = ReadonlyMap<string, LetBinding>;
+
+/**
+ * What a `named-expression` node means at its position:
+ * - `declaration`: the name argument of a LET pair;
+ * - `local`: a reference to a LET name in scope;
+ * - `defined`: a reference to a defined name (named expression). Sheet- or
+ *   workbook-qualified names are always defined names.
+ */
+export type NameRole =
+  | { kind: "declaration"; binding: LetBinding }
+  | { kind: "local"; binding: LetBinding }
+  | { kind: "defined" };
+
+/**
+ * Rebuild an AST, letting `mapName` replace each `named-expression` node with
+ * knowledge of LET scoping. Other nodes are copied with their mapped children.
+ *
+ * Scoping follows LET's evaluation rules: a name is visible in the values of
+ * later pairs and in the final calculation of its LET, not in its own value;
+ * nested LETs shadow outer names. The walk is lenient so that tooling can run
+ * on LET calls that would fail to evaluate: an even-indexed argument followed
+ * by another argument is a name position, a name position holding something
+ * other than a plain name declares nothing and is walked as an expression, and
+ * a repeated name shadows the earlier one.
+ */
+export function mapNamesWithLetScopes(
+  node: ASTNode,
+  mapName: (
+    node: NamedExpressionNode,
+    role: NameRole,
+    scope: LetScope
+  ) => ASTNode,
+  scope: LetScope = new Map()
+): ASTNode {
+  const map = (child: ASTNode, childScope: LetScope = scope) =>
+    mapNamesWithLetScopes(child, mapName, childScope);
+
+  switch (node.type) {
+    case "named-expression": {
+      const binding =
+        getLetDeclaredName(node) === undefined
+          ? undefined
+          : scope.get(normalizeLetName(node.name));
+      return mapName(
+        node,
+        binding ? { kind: "local", binding } : { kind: "defined" },
+        scope
+      );
+    }
+
+    case "function": {
+      if (!isLetCall(node)) {
+        return { ...node, args: node.args.map((arg) => map(arg)) };
+      }
+
+      const args: ASTNode[] = [];
+      let letScope = scope;
+      for (let index = 0; index < node.args.length; index += 2) {
+        const nameArgument = node.args[index]!;
+        if (index === node.args.length - 1) {
+          // The final calculation sees every name of this LET.
+          args.push(map(nameArgument, letScope));
+          break;
+        }
+
+        const valueArgument = node.args[index + 1]!;
+        const name = getLetDeclaredName(nameArgument);
+        if (name === undefined) {
+          args.push(map(nameArgument, letScope), map(valueArgument, letScope));
+          continue;
+        }
+
+        const key = normalizeLetName(name);
+        const binding: LetBinding = {
+          letCall: node,
+          argIndex: index,
+          declaration: nameArgument as NamedExpressionNode,
+          shadows: letScope.get(key),
+        };
+        args.push(
+          mapName(
+            nameArgument as NamedExpressionNode,
+            { kind: "declaration", binding },
+            letScope
+          ),
+          // A value sees the names declared before its own.
+          map(valueArgument, letScope)
+        );
+        letScope = new Map(letScope).set(key, binding);
+      }
+      return { ...node, args };
+    }
+
+    case "binary-op":
+      return { ...node, left: map(node.left), right: map(node.right) };
+
+    case "unary-op":
+      return { ...node, operand: map(node.operand) };
+
+    case "array":
+      return {
+        ...node,
+        elements: node.elements.map((row) => row.map((element) => map(element))),
+      };
+
+    case "3d-range":
+      return {
+        ...node,
+        reference: map(node.reference) as typeof node.reference,
+      };
+
+    default:
+      return node;
+  }
+}
+
+/**
+ * Visit each `named-expression` node with its LET-scoped role. See
+ * {@link mapNamesWithLetScopes} for the scoping rules.
+ */
+export function forEachNameWithLetScopes(
+  node: ASTNode,
+  visit: (node: NamedExpressionNode, role: NameRole, scope: LetScope) => void
+): void {
+  mapNamesWithLetScopes(node, (name, role, scope) => {
+    visit(name, role, scope);
+    return name;
+  });
 }

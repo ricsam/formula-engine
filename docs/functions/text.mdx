@@ -32,6 +32,12 @@ Every result below was verified against the engine.
 ```
 
 When `ignore_empty` is `TRUE`, empty cells do not create extra delimiters.
+As in Excel, an omitted `delimiter` is empty text and an omitted
+`ignore_empty` is `TRUE`:
+
+```excel
+=TEXTJOIN(,,A2:A4) // "NorthSouthNorth"
+```
 
 ## Compare and locate
 
@@ -57,7 +63,9 @@ Returns a **1-based** position and is case-sensitive.
 ```
 
 Use `start_num` to begin later in the string. Missing text returns a formula
-error.
+error. Leaving `start_num` out makes it `1`, but an omitted `start_num`,
+written as a trailing comma, is `0`, as in Excel, so `=FIND("o","North",)`
+returns `#VALUE!`.
 
 ## Slice text
 
@@ -83,6 +91,19 @@ error.
 ```
 
 `start_num` is 1-based.
+
+### Omitted counts
+
+Leaving `num_chars` out of `LEFT` or `RIGHT` takes one character. An argument
+left empty, as in `=LEFT("North",)`, is `0`, as in Excel:
+
+```excel
+=LEFT("North")    // "N"
+=LEFT("North",)   // ""
+=RIGHT("North",)  // ""
+=MID("North",2,)  // ""
+=MID("North",,3)  // #VALUE!, start_num 0 is before the first character
+```
 
 ## Measure text
 

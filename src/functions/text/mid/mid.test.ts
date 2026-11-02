@@ -300,4 +300,16 @@ describe("MID function", () => {
       expect(cell("A1")).toBe("");
     });
   });
+
+  describe("omitted arguments", () => {
+    test("an omitted num_chars is 0", () => {
+      setCellContent("A1", '=MID("Hello",2,)');
+      expect(cell("A1")).toBe("");
+    });
+
+    test("an omitted start_num is 0, which is out of range", () => {
+      setCellContent("A1", '=MID("Hello",,2)');
+      expect(cell("A1")).toBe("#VALUE!");
+    });
+  });
 });

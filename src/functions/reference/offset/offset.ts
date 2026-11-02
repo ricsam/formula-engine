@@ -10,10 +10,91 @@ import {
   type SpilledValuesEvaluationResult,
   type SingleEvaluationResult,
   type SpreadsheetRangeEnd,
+  type ErrorEvaluationResult,
 } from "../../../core/types";
 import type { EvaluationContext } from "../../../evaluator/evaluation-context";
-import type { ReferenceNode, RangeNode } from "../../../parser/ast";
+import type { FormulaEvaluator } from "../../../evaluator/formula-evaluator";
+import {
+  getSuppliedArgument,
+  type FunctionNode,
+  type ReferenceNode,
+  type RangeNode,
+} from "../../../parser/ast";
 import { isCellAddress, isRangeAddress } from "../../../core/utils";
+
+function offsetArgumentError(
+  message: string,
+  context: EvaluationContext
+): ErrorEvaluationResult {
+  return {
+    type: "error",
+    err: FormulaError.VALUE,
+    message,
+    errAddress: context.dependencyNode,
+  };
+}
+
+/**
+ * Reads the rows or cols offset as a whole number. An omitted offset is 0.
+ */
+function readOffsetArgument(
+  this: FormulaEvaluator,
+  node: FunctionNode,
+  index: number,
+  name: "rows" | "cols",
+  context: EvaluationContext
+): number | ErrorEvaluationResult {
+  const argument = getSuppliedArgument(node, index);
+  if (!argument) {
+    return 0;
+  }
+  const result = this.evaluateNode(argument, context);
+  if (result.type === "error" || result.type === "awaiting-evaluation") {
+    return result;
+  }
+  if (result.type !== "value" || result.result.type !== "number") {
+    return offsetArgumentError(
+      `OFFSET function ${name} must be a number`,
+      context
+    );
+  }
+  return Math.floor(result.result.value);
+}
+
+/**
+ * Reads the height or width as a positive whole number, or `undefined` when
+ * the call omits it so that the size of reference is kept.
+ */
+function readSizeArgument(
+  this: FormulaEvaluator,
+  node: FunctionNode,
+  index: number,
+  name: "height" | "width",
+  context: EvaluationContext
+): number | undefined | ErrorEvaluationResult {
+  const argument = getSuppliedArgument(node, index);
+  if (!argument) {
+    return undefined;
+  }
+  const result = this.evaluateNode(argument, context);
+  if (result.type === "error" || result.type === "awaiting-evaluation") {
+    return result;
+  }
+  if (result.type !== "value" || result.result.type !== "number") {
+    return offsetArgumentError(
+      `OFFSET function ${name} must be a number`,
+      context
+    );
+  }
+  const size = Math.floor(result.result.value);
+  if (size < 1) {
+    return offsetArgumentError(
+      `OFFSET function ${name} must be positive`,
+      context
+    );
+  }
+  return size;
+}
 
 /**
  * OFFSET function - Returns a reference offset from a given reference
@@ -35,6 +116,9 @@ import { isCellAddress, isRangeAddress } from "../../../core/utils";
  * - If rows or cols offset reference from the edge of the worksheet, returns #REF! error
  * - Height and width must be positive
  * - If height or width is omitted, the same height or width as reference is used
+ * - Omitted arguments (a comma with nothing) follow Excel: an omitted rows or
+ *   cols is 0 (`OFFSET(A1,,1)` is B1), and an omitted height or width keeps the
+ *   size of reference
  */
 export const OFFSET: FunctionDefinition = {
   name: "OFFSET",
@@ -57,91 +141,24 @@ export const OFFSET: FunctionDefinition = {
       return refResult;
     }
 
-    // Evaluate rows offset
-    const rowsResult = this.evaluateNode(node.args[1]!, context);
-    if (
-      rowsResult.type === "error" ||
-      rowsResult.type === "awaiting-evaluation"
-    ) {
-      return rowsResult;
+    // Evaluate rows and cols offsets; an omitted offset is 0
+    const rowsOffset = readOffsetArgument.call(this, node, 1, "rows", context);
+    if (typeof rowsOffset !== "number") {
+      return rowsOffset;
+    }
+    const colsOffset = readOffsetArgument.call(this, node, 2, "cols", context);
+    if (typeof colsOffset !== "number") {
+      return colsOffset;
     }
 
-    if (rowsResult.type !== "value" || rowsResult.result.type !== "number") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "OFFSET function rows must be a number",
-        errAddress: context.dependencyNode,
-      };
+    // Optional height and width; an omitted one keeps the size of reference
+    const height = readSizeArgument.call(this, node, 3, "height", context);
+    if (typeof height === "object") {
+      return height;
     }
-
-    // Evaluate cols offset
-    const colsResult = this.evaluateNode(node.args[2]!, context);
-    if (
-      colsResult.type === "error" ||
-      colsResult.type === "awaiting-evaluation"
-    ) {
-      return colsResult;
-    }
-
-    if (colsResult.type !== "value" || colsResult.result.type !== "number") {
-      return {
-        type: "error",
-        err: FormulaError.VALUE,
-        message: "OFFSET function cols must be a number",
-        errAddress: context.dependencyNode,
-      };
-    }
-
-    const rowsOffset = Math.floor(rowsResult.result.value);
-    const colsOffset = Math.floor(colsResult.result.value);
-
-    // Optional height parameter
-    let height: number | undefined;
-    if (node.args.length >= 4) {
-      const heightResult = this.evaluateNode(node.args[3]!, context);
-      if (
-        heightResult.type === "error" ||
-        heightResult.type === "awaiting-evaluation"
-      ) {
-        return heightResult;
-      }
-
-      if (heightResult.type === "value" && heightResult.result.type === "number") {
-        height = Math.floor(heightResult.result.value);
-        if (height < 1) {
-          return {
-            type: "error",
-            err: FormulaError.VALUE,
-            message: "OFFSET function height must be positive",
-            errAddress: context.dependencyNode,
-          };
-        }
-      }
-    }
-
-    // Optional width parameter
-    let width: number | undefined;
-    if (node.args.length === 5) {
-      const widthResult = this.evaluateNode(node.args[4]!, context);
-      if (
-        widthResult.type === "error" ||
-        widthResult.type === "awaiting-evaluation"
-      ) {
-        return widthResult;
-      }
-
-      if (widthResult.type === "value" && widthResult.result.type === "number") {
-        width = Math.floor(widthResult.result.value);
-        if (width < 1) {
-          return {
-            type: "error",
-            err: FormulaError.VALUE,
-            message: "OFFSET function width must be positive",
-            errAddress: context.dependencyNode,
-          };
-        }
-      }
+    const width = readSizeArgument.call(this, node, 4, "width", context);
+    if (typeof width === "object") {
+      return width;
     }
 
     // Get the base cell/range from the evaluated reference

@@ -87,6 +87,12 @@ export type SerializedEvaluateAllCellsResultSnapshot =
       values: SerializedCellInRangeResultSnapshot[];
     };
 
+/**
+ * A spilled result stored as fixed values: every cell read through the spill's
+ * `evaluate` when the snapshot was taken. The values of a lazy spill such as
+ * `A1:A2*1` come from cells its node never depended on, so the dependencies of
+ * the node storing them also list the nodes those cells were read from.
+ */
 export type SerializedMaterializedSpillSnapshot = {
   kind: "materialized";
   relativeSpillArea: RelativeRange;
@@ -127,6 +133,14 @@ export type SerializedSpillMetaEvaluationResultSnapshot =
 type SerializedBaseNodeSnapshot = {
   snapshotId: NodeSnapshotId;
   key: string;
+  /**
+   * The nodes this node's result was computed from. A restored node is trusted
+   * as resolved and is only invalidated through these edges, so a snapshot
+   * stores a node only together with every node it references (its
+   * dependencies, its spill-meta node and the error addresses in its result);
+   * a node that cannot be stored that way is left out, together with the nodes
+   * that reference it, and recomputed on demand after a restore.
+   */
   dependencies: NodeSnapshotId[];
 };
 
@@ -172,6 +186,8 @@ export type SerializedDependencyNodeSnapshot =
 export type DependencyManagerSnapshot = {
   nodes: SerializedDependencyNodeSnapshot[];
   spilledValues: Array<[string, { origin: CellAddress; spillOnto: SpreadsheetRange }]>;
+  /** Spills that evaluated to #SPILL!, with the area they would occupy. */
+  blockedSpills: Array<[string, { origin: CellAddress; spillOnto: SpreadsheetRange }]>;
 };
 
 export type SerializedSCCSnapshot = {

@@ -1,19 +1,20 @@
 ---
 title: "Function reference"
-description: "The exact 40 functions registered by FormulaEngine."
+description: "The exact 47 functions, plus two aliases, registered by FormulaEngine."
 ---
 
-FormulaEngine currently registers **40 function names** across seven categories.
-Function names are case-insensitive in formulas.
+FormulaEngine currently registers **47 functions** across seven categories, plus
+two aliases: `CONCAT` for `CONCATENATE` and `COLS` for `COLUMNS`. That makes 49
+function names. Function names are case-insensitive in formulas.
 
 | Category | Functions |
 | --- | --- |
-| [Math](/functions/math) | `SUM`, `SUMIF`, `SUMIFS`, `AVERAGE`, `AVERAGEIF`, `AVERAGEIFS`, `MIN`, `MINIF`, `MINIFS`, `MAX`, `MAXIF`, `MAXIFS`, `CEILING` |
-| [Logical](/functions/logical) | `IF`, `IFERROR`, `AND`, `OR` |
+| [Math](/functions/math) | `SUM`, `SUMIF`, `SUMIFS`, `AVERAGE`, `AVERAGEIF`, `AVERAGEIFS`, `MIN`, `MINIF`, `MINIFS`, `MAX`, `MAXIF`, `MAXIFS`, `CEILING`, `INT` |
+| [Logical](/functions/logical) | `IF`, `IFERROR`, `AND`, `OR`, `LET` |
 | [Text](/functions/text) | `CONCATENATE`, `CONCAT`, `EXACT`, `FIND`, `LEFT`, `RIGHT`, `MID`, `LEN`, `TEXTJOIN` |
-| [Lookup](/functions/lookup) | `COUNT`, `COUNTIF`, `COUNTIFS`, `INDEX`, `MATCH`, `XLOOKUP` |
-| [Array](/functions/array) | `SEQUENCE`, `UNIQUE` |
-| [Information](/functions/information) | `CELL`, `COLUMN`, `ROW` |
+| [Lookup](/functions/lookup) | `COUNT`, `COUNTA`, `COUNTIF`, `COUNTIFS`, `INDEX`, `MATCH`, `XLOOKUP` |
+| [Array](/functions/array) | `SEQUENCE`, `UNIQUE`, `TOCOL`, `TOROW`, `HSTACK` |
+| [Information](/functions/information) | `CELL`, `COLUMN`, `COLUMNS`, `COLS`, `ROW`, `ROWS` |
 | [Reference](/functions/reference) | `ADDRESS`, `INDIRECT`, `OFFSET` |
 
 ## Formula syntax
@@ -32,6 +33,31 @@ engine.setCellContent(address, '=IF(A1>10,"large","small")');
 
 Named-expression definitions are the exception: their `expression` omits the
 leading `=`.
+
+### Omitted arguments
+
+An argument can be left out by writing nothing between its commas:
+
+```excel
+=SEQUENCE(,3)   // rows omitted: one row, 1,2,3
+=SUM(1,,2)      // 3
+```
+
+Many functions with optional parameters follow Excel's rules for an omitted
+argument. Most use the parameter's default, as `SEQUENCE` does for its `rows`,
+`columns`, `start` and `step`. Where Excel reads the omitted argument as `0`,
+so does this engine: `=MATCH(25,B2:B6,)` is an exact match, `=LEFT("North",)`
+is empty text, and `=IF(A1,,"x")` returns `0` when `A1` is true. Each
+function page describes these cases.
+
+In other functions, such as `SUM`, `COUNT`, `CONCATENATE` and the `*IF`
+family, an omitted argument reads like a reference to an empty cell, so `SUM`
+skips it. Excel reads it as `0`, so results can differ where a function treats
+an empty cell differently from `0`: in this engine `=COUNT(1,,2)` is `2`, where
+Excel returns `3`.
+
+`F()` is a call with no arguments, not a call with one omitted argument. Array
+literals don't accept omitted elements: `{1,,2}` is a syntax error.
 
 ## Values and ranges
 
@@ -61,9 +87,19 @@ Criteria can be literals or comparison strings. Multi-criteria functions use
 
 ## Array results
 
-`SEQUENCE`, `UNIQUE`, range references and range arithmetic may spill into
-neighbouring cells. A blocked output area produces `#SPILL!`. See
-[Spilling](/concepts/spilling).
+`SEQUENCE`, `UNIQUE`, `TOCOL`, `TOROW`, `HSTACK`, range references, array
+literals, `INT` over an array, and operators or `IF` applied to arrays may
+spill into neighbouring cells. Operators and `IF` broadcast arrays of
+different shapes the way Excel does, so `=SEQUENCE(3)*SEQUENCE(,4)` spills a
+3 × 4 multiplication table. A blocked output area produces `#SPILL!` until the
+blocking content is removed. See [Spilling](/concepts/spilling).
+
+Aggregates accept these results directly:
+
+```excel
+=SUM(SEQUENCE(4)/2)                       // 5
+=SUM(HSTACK(SEQUENCE(2), SEQUENCE(2)*10)) // 33
+```
 
 ## Errors
 
@@ -73,6 +109,6 @@ rather than an error, so it is not caught. See [Errors](/concepts/errors).
 
 <Note>
   Functions familiar from Excel but absent from the table above are not
-  registered. For example, `VLOOKUP`, `SQRT`, `NA` and `UPPER` currently return
-  `#NAME?`.
+  registered. For example, `VLOOKUP`, `VSTACK`, `SQRT`, `NA` and `UPPER`
+  currently return `#NAME?`.
 </Note>
