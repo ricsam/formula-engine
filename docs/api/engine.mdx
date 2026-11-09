@@ -94,7 +94,7 @@ Values are then recalculated on demand.
 
 | Method | Signature | Purpose |
 | --- | --- | --- |
-| `transact` | `<T>(callback: () => T) => T` | group mutations into one undo checkpoint |
+| `transact` | `<T>(callback: () => T) => T` | group mutations into one undo checkpoint and one update |
 | `undo` | `() => boolean` | restore the previous checkpoint |
 | `redo` | `() => boolean` | reapply an undone checkpoint |
 | `canUndo` | `() => boolean` | whether undo is available |

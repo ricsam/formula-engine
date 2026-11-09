@@ -26,14 +26,15 @@ engine.addTable({
   workbookName: "Budget",
   sheetName: "Q1",
   start: "A1",
-  numRows: { type: "number", value: 3 }, // header + 2 data rows
+  numRows: { type: "number", value: 2 }, // 2 data rows below the header
   numCols: 3,
 });
 ```
 
 <Note>
   `start` is an A1 string such as `"A1"` or `"C3"`, not a `CellAddress`.
-  `numRows` uses the tagged `SpreadsheetRangeEnd` type; `numCols` is a number.
+  `numRows` uses the tagged `SpreadsheetRangeEnd` type and counts the data rows
+  below the header row; `numCols` is a number.
 </Note>
 
 ## Structured references
@@ -157,6 +158,49 @@ Changing the size invalidates formulas that use the table.
 Existing values and formulas in newly included cells are preserved and become
 table data. Tables may be adjacent, but resizing a table so that it overlaps
 another table throws an error.
+
+### Resize and replace the contents
+
+To load data of another shape into a table, such as a new dataset, resize the
+table and write its cells in one [`transact`](/guides/undo-redo#group-edits-with-transact)
+call. Listeners get one update, and the edit is one undo step: undo restores
+the old shape and the old contents together.
+
+```typescript
+// Replace Orders (Product, Qty, Price, ...) with two columns of new data.
+engine.transact(() => {
+  engine.updateTable({
+    workbookName: "Budget",
+    tableName: "Orders",
+    numRows: { type: "number", value: 3 },
+    numCols: 2,
+  });
+  // Replaces every cell of the sheet, so include any content outside the table.
+  engine.setSheetContent(
+    sheet,
+    new Map([
+      ["A1", "Item"],  ["B1", "Amount"],
+      ["A2", "Rent"],  ["B2", 900],
+      ["A3", "Power"], ["B3", 80],
+      ["A4", "Water"], ["B4", 30],
+    ]),
+  );
+});
+
+engine.undo(); // Orders has its old columns and cells again
+```
+
+The new header row renames the columns it covers, and structured references
+follow their column: `Orders[Product]` becomes `Orders[Item]`.
+
+Resize first, then write. The resize gives new columns default names such as
+`Column 3` in empty header cells, and the write replaces them with the new
+header row. In the other order, the write gives the old shape's surplus columns
+default names, and the resize leaves those names behind in cells outside the
+table.
+
+If a step throws, for example because the new header row repeats a name, the
+transaction is rolled back and the table keeps its shape and contents.
 
 ### Remove
 

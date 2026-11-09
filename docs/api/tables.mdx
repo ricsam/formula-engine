@@ -28,7 +28,8 @@ engine.addTable({
 ```
 
 `start` is A1 text. The first row supplies column headers. `numRows` can be
-finite or `{ type: "infinity" }`.
+finite or `{ type: "infinity" }`; a finite value counts the data rows below
+the header row.
 
 ## Read
 
@@ -80,6 +81,10 @@ Moves or resizes an existing definition and invalidates dependent formulas.
 Header names are re-read from cell values. Existing cell contents in newly
 included rows or columns are preserved and become part of the table. A resize
 is rejected if the resulting table would overlap another table.
+
+To resize a table and write its new contents as one update and one undo step,
+make both calls inside `transact`, resizing first. See
+[Resize and replace the contents](/concepts/tables#resize-and-replace-the-contents).
 
 ## Remove
 
