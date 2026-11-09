@@ -1,30 +1,71 @@
 import { parseFormula } from "../parser/parser";
 import { astToString } from "../parser/formatter";
+import type { StructuredReferenceNode } from "../parser/ast";
 import { transformAST } from "./ast-traverser";
 
 /**
- * Renames table references in a formula string
- * @param formula - The formula string (without the leading =)
- * @param oldTableName - The current table name to replace
- * @param newTableName - The new table name
- * @returns The updated formula string, or the original if no changes were made
+ * Whether a structured reference that names a table refers to the table
+ * `tableName` of workbook `tableWorkbookName`. Tables are workbook resources:
+ * `[Book]Sales[Qty]` names the table in Book from any workbook, and an
+ * unqualified `Sales[Qty]` names the table in the formula's own workbook.
+ * Without `formulaWorkbookName` (a global named expression is evaluated in the
+ * workbook of the cell that uses it) an unqualified reference can refer to any
+ * workbook's table, so it matches.
  */
-export function renameTableInFormula(
-  formula: string,
-  oldTableName: string,
-  newTableName: string,
-  workbookName?: string
-): string {
+function namesWorkbookTable(
+  node: StructuredReferenceNode,
+  tableName: string,
+  tableWorkbookName: string,
+  formulaWorkbookName: string | undefined
+): boolean {
+  if (node.tableName !== tableName) {
+    return false;
+  }
+  const referencedWorkbookName = node.workbookName ?? formulaWorkbookName;
+  return (
+    referencedWorkbookName === undefined ||
+    referencedWorkbookName === tableWorkbookName
+  );
+}
+
+/**
+ * Renames references to one workbook-scoped table in a formula string.
+ * References to a table of the same name in another workbook are unchanged.
+ * @returns The updated formula string, or the original if it cannot be parsed
+ */
+export function renameTableInFormula(options: {
+  /** The formula string (without the leading =) */
+  formula: string;
+  oldTableName: string;
+  newTableName: string;
+  /** The workbook that owns the renamed table. */
+  tableWorkbookName: string;
+  /**
+   * The workbook the formula belongs to, which unqualified references resolve
+   * in. Omit it for a formula that belongs to no workbook, such as a global
+   * named expression.
+   */
+  formulaWorkbookName?: string;
+}): string {
+  const {
+    formula,
+    oldTableName,
+    newTableName,
+    tableWorkbookName,
+    formulaWorkbookName,
+  } = options;
   try {
     const ast = parseFormula(formula);
     
     const transformedAST = transformAST(ast, (node) => {
       if (
         node.type === "structured-reference" &&
-        node.tableName === oldTableName &&
-        (workbookName === undefined ||
-          node.workbookName === undefined ||
-          node.workbookName === workbookName)
+        namesWorkbookTable(
+          node,
+          oldTableName,
+          tableWorkbookName,
+          formulaWorkbookName
+        )
       ) {
         return {
           ...node,
@@ -100,11 +141,12 @@ export function renameTableColumnsInFormula(options: {
       }
 
       const referencesTargetTable = node.tableName
-        ? node.tableName === tableName &&
-          (node.workbookName
-            ? node.workbookName === tableWorkbookName
-            : formulaWorkbookName === undefined ||
-              formulaWorkbookName === tableWorkbookName)
+        ? namesWorkbookTable(
+            node,
+            tableName,
+            tableWorkbookName,
+            formulaWorkbookName
+          )
         : includeImplicitReferences;
       if (!referencesTargetTable) {
         return node;

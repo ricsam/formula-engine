@@ -388,6 +388,146 @@ describe("FormulaEngine.analyzeFormula", () => {
       expect.objectContaining({ code: "function.unknown" })
     );
   });
+
+  describe("tables in other workbooks", () => {
+    function buildBatchEngine(): FormulaEngine {
+      const engine = buildEngine();
+      engine.addWorkbook({ workbookName: "Batch 1" });
+      engine.addSheet({ workbookName: "Batch 1", sheetName: "Data" });
+      engine.setCellContent(
+        { workbookName: "Batch 1", sheetName: "Data", colIndex: 0, rowIndex: 0 },
+        "Sample"
+      );
+      engine.setCellContent(
+        { workbookName: "Batch 1", sheetName: "Data", colIndex: 1, rowIndex: 0 },
+        "Value"
+      );
+      engine.addTable({
+        tableName: "Results",
+        workbookName: "Batch 1",
+        sheetName: "Data",
+        start: "A1",
+        numRows: { type: "number", value: 3 },
+        numCols: 2,
+      });
+      return engine;
+    }
+
+    /** Each token of the reference as `text:kind`, with its modifiers. */
+    function referenceTokens(analysis: FormulaAnalysis): string[] {
+      const reference = analysis.references[0]!;
+      return analysis.tokens
+        .filter((token) => token.referenceId === reference.id)
+        .map(
+          (token) =>
+            `${analysis.formula.slice(token.span.start, token.span.end)}:${
+              token.kind
+            }:${token.modifiers.join("+")}`
+        );
+    }
+
+    test("resolves [Workbook]Table[Column] against the other workbook", () => {
+      const engine = buildBatchEngine();
+      const formula = "=SUM([Batch 1]Results[Value])";
+      const analysis = engine.analyzeFormula({ formula, origin });
+
+      expect(onlyTarget(analysis)).toEqual({
+        type: "table",
+        workbookName: "Batch 1",
+        sheetName: "Data",
+        tableName: "Results",
+        range: {
+          start: { col: 1, row: 1 },
+          end: {
+            col: { type: "number", value: 1 },
+            row: { type: "number", value: 3 },
+          },
+        },
+      });
+      expect(analysis.references[0]).toMatchObject({
+        kind: "structured-reference",
+        span: { start: 5, end: formula.length - 1 },
+      });
+      expect(referenceTokens(analysis)).toEqual([
+        "[:delimiter:external",
+        "Batch:workbook-name:external",
+        "1:workbook-name:external",
+        "]:delimiter:external",
+        "Results:table-name:external",
+        "[:delimiter:external",
+        "Value:table-column:external",
+        "]:delimiter:external",
+      ]);
+      expect(analysis.diagnostics).toEqual([]);
+    });
+
+    test("resolves current-row references at the origin row", () => {
+      const engine = buildBatchEngine();
+      const analysis = engine.analyzeFormula({
+        formula: "=[Batch 1]Results[@[Sample]:[Value]]",
+        origin: { ...origin, rowIndex: 2 },
+      });
+
+      expect(onlyTarget(analysis)).toEqual({
+        type: "table",
+        workbookName: "Batch 1",
+        sheetName: "Data",
+        tableName: "Results",
+        range: {
+          start: { col: 0, row: 2 },
+          end: {
+            col: { type: "number", value: 1 },
+            row: { type: "number", value: 2 },
+          },
+        },
+      });
+    });
+
+    test("reports missing workbooks, tables and columns", () => {
+      const engine = buildBatchEngine();
+      const resolution = (formula: string) =>
+        engine.analyzeFormula({ formula, origin }).references[0]?.resolution;
+
+      expect(resolution("=[Missing]Results[Value]")).toEqual({
+        status: "unresolved",
+        reason: "missing-workbook",
+      });
+      expect(resolution("=[Batch 1]Missing[Value]")).toEqual({
+        status: "unresolved",
+        reason: "missing-table",
+      });
+      expect(resolution("=[Batch 1]Results[Missing]")).toEqual({
+        status: "unresolved",
+        reason: "missing-column",
+      });
+      // Tables are workbook resources: Book has no Results table.
+      expect(resolution("=Results[Value]")).toEqual({
+        status: "unresolved",
+        reason: "missing-table",
+      });
+    });
+
+    test("diagnoses [Workbook]!Table[Column] without claiming a bare column", () => {
+      const engine = buildBatchEngine();
+      const analysis = engine.analyzeFormula({
+        formula: "=[Batch 1]!Results[Value]",
+        origin,
+      });
+
+      expect(analysis.diagnostics).toContainEqual(
+        expect.objectContaining({
+          code: "syntax.parse-error",
+          message:
+            "Cross-workbook table references use [Batch 1]Results[...] instead of [Batch 1]!Results[...]",
+        })
+      );
+      expect(
+        analysis.tokens
+          .filter((token) => token.kind === "table-column")
+          .map((token) => analysis.formula.slice(token.span.start, token.span.end))
+      ).toEqual(["Value"]);
+    });
+  });
 });
 
 describe("LET names in formula analysis", () => {

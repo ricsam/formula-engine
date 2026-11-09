@@ -1590,16 +1590,17 @@ describe("Parser - Workbook References", () => {
   });
 
   test("should parse workbook table reference", () => {
-    const ast = parseFormula("[MyWorkbook]!Table1[Column1]");
+    const ast = parseFormula("[MyWorkbook]Table1[Column1]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.workbookName).toBe("MyWorkbook");
     expect(ast.sheetName).toBeUndefined();
     expect(ast.tableName).toBe("Table1");
     expect(ast.cols).toEqual({ startCol: "Column1", endCol: "Column1" });
+    expect(ast.isCurrentRow).toBe(false);
   });
 
   test("should parse workbook table reference with spaces in the workbook name", () => {
-    const ast = parseFormula("[Quarterly Model]!Products[Price]");
+    const ast = parseFormula("[Quarterly Model]Products[Price]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.workbookName).toBe("Quarterly Model");
     expect(ast.sheetName).toBeUndefined();
@@ -1607,20 +1608,93 @@ describe("Parser - Workbook References", () => {
     expect(ast.cols).toEqual({ startCol: "Price", endCol: "Price" });
   });
 
+  test("should parse workbook table references inside functions", () => {
+    const ast = parseFormula("INDEX([B b]RDA_1[Val],2)");
+    expect(ast.type).toBe("function");
+    expect(ast.args[0]).toMatchObject({
+      type: "structured-reference",
+      workbookName: "B b",
+      tableName: "RDA_1",
+      cols: { startCol: "Val", endCol: "Val" },
+    });
+  });
+
   test("should parse workbook table references with selectors and column ranges", () => {
-    const ast = parseFormula("[MyWorkbook]!Table1[[#Data],[Column1]:[Column2]]");
+    const ast = parseFormula("[MyWorkbook]Table1[[#Data],[Column1]:[Column2]]");
     expect(ast.type).toBe("structured-reference");
     expect(ast.workbookName).toBe("MyWorkbook");
     expect(ast.selector).toBe("#Data");
     expect(ast.cols).toEqual({ startCol: "Column1", endCol: "Column2" });
+
+    const headers = parseFormula("[MyWorkbook]Table1[#Headers]");
+    expect(headers).toMatchObject({
+      type: "structured-reference",
+      workbookName: "MyWorkbook",
+      tableName: "Table1",
+      selector: "#Headers",
+    });
+
+    const span = parseFormula("[MyWorkbook]Table1[[Column 1]:[Column 2]]");
+    expect(span).toMatchObject({
+      type: "structured-reference",
+      workbookName: "MyWorkbook",
+      cols: { startCol: "Column 1", endCol: "Column 2" },
+    });
   });
 
-  test("should reject legacy workbook sheet table references", () => {
+  test("should parse workbook current-row table references", () => {
+    expect(parseFormula("[My Book]Table1[@Column1]")).toMatchObject({
+      type: "structured-reference",
+      workbookName: "My Book",
+      tableName: "Table1",
+      cols: { startCol: "Column1", endCol: "Column1" },
+      isCurrentRow: true,
+    });
+    expect(parseFormula("[My Book]Table1[@[Column 1]]")).toMatchObject({
+      workbookName: "My Book",
+      cols: { startCol: "Column 1", endCol: "Column 1" },
+      isCurrentRow: true,
+    });
+    expect(parseFormula("[My Book]Table1[@[Column1]:[Column2]]")).toMatchObject({
+      workbookName: "My Book",
+      cols: { startCol: "Column1", endCol: "Column2" },
+      isCurrentRow: true,
+    });
+  });
+
+  test("should reject workbook table references with an exclamation mark", () => {
+    expect(() => parseFormula("[MyWorkbook]!Table1[Column1]")).toThrow(
+      "Cross-workbook table references use [MyWorkbook]Table1[...] instead of [MyWorkbook]!Table1[...]"
+    );
+    expect(() => parseFormula("[MyWorkbook]!TaxRate")).toThrow(
+      "Expected a sheet or table name after [MyWorkbook]"
+    );
+  });
+
+  test("should reject workbook sheet table references", () => {
     expect(() =>
       parseFormula("[MyWorkbook]Sheet1!Table1[Column1]")
     ).toThrow(
-      "Cross-workbook table references use [MyWorkbook]!Table1[...] instead of [MyWorkbook]Sheet1!Table1[...]"
+      "Cross-workbook table references use [MyWorkbook]Table1[...] instead of [MyWorkbook]Sheet1!Table1[...]"
     );
+  });
+
+  test("should parse long workbook names and sheet aliases followed by many tokens", () => {
+    const longName = parseFormula(
+      "[A workbook name with more than ten separate words in it]Sheet1!A1"
+    );
+    expect(longName.type).toBe("reference");
+    expect(longName.workbookName).toBe(
+      "A workbook name with more than ten separate words in it"
+    );
+
+    const alias = parseFormula("SUM([MyWorkbook]Sheet1, 1, 2, 3, 4, 5, 6)");
+    expect(alias.type).toBe("function");
+    expect(alias.args[0]).toMatchObject({
+      type: "range",
+      workbookName: "MyWorkbook",
+      sheetName: "Sheet1",
+    });
   });
 
   test("should parse workbook infinite ranges", () => {

@@ -2380,13 +2380,29 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
 
       this.tableManager.renameTable(workbookName, names);
 
-      const changedCells = this.workbookManager.updateAllFormulas((formula) =>
-        renameTableInFormula(formula, names.oldName, names.newName)
+      // Tables are workbook-scoped: only references that resolve to this
+      // workbook's table change, wherever they are written.
+      const changedCells = this.workbookManager.updateAllFormulas(
+        (formula, formulaAddress) =>
+          renameTableInFormula({
+            formula,
+            oldTableName: names.oldName,
+            newTableName: names.newName,
+            tableWorkbookName: workbookName,
+            formulaWorkbookName: formulaAddress.workbookName,
+          })
       );
 
       const changedNamedExpressions =
-        this.namedExpressionManager.updateAllNamedExpressions((formula) =>
-          renameTableInFormula(formula, names.oldName, names.newName)
+        this.namedExpressionManager.updateAllNamedExpressions(
+          (formula, scope) =>
+            renameTableInFormula({
+              formula,
+              oldTableName: names.oldName,
+              newTableName: names.newName,
+              tableWorkbookName: workbookName,
+              formulaWorkbookName: scope.workbookName,
+            })
         );
 
       const newTable = this.tableManager.getTable({
@@ -3162,12 +3178,13 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
               workbookName: opts.workbookName,
             });
             for (const [oldTableName, newTableName] of tableNameMap) {
-              rewritten = renameTableInFormula(
-                rewritten,
+              rewritten = renameTableInFormula({
+                formula: rewritten,
                 oldTableName,
                 newTableName,
-                opts.workbookName
-              );
+                tableWorkbookName: opts.workbookName,
+                formulaWorkbookName: opts.workbookName,
+              });
             }
             return rewritten;
           };
@@ -3407,12 +3424,17 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
         opts.sheetName,
         opts.newSheetName
       );
-      const changedCells = this.workbookManager.updateAllFormulas((formula) =>
-        renameSheetInFormula({
-          formula,
-          oldSheetName: opts.sheetName,
-          newSheetName: opts.newSheetName,
-        })
+      // Only references that resolve to this workbook's sheet change; another
+      // workbook may have a sheet of the same name.
+      const changedCells = this.workbookManager.updateAllFormulas(
+        (formula, formulaAddress) =>
+          renameSheetInFormula({
+            formula,
+            oldSheetName: opts.sheetName,
+            newSheetName: opts.newSheetName,
+            workbookName: opts.workbookName,
+            formulaWorkbookName: formulaAddress.workbookName,
+          })
       );
       this.referenceManager.updateSheetName(
         opts.workbookName,
@@ -3897,9 +3919,11 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
             })
         );
 
+        // Formulas elsewhere may already refer to the new workbook's sheets,
+        // tables and names, as in [Copy]Table[Column], and wait for them.
         this.emitMutation({
           touchedCells: [],
-          resourceKeys: [getWorkbookResourceKey(toWorkbookName)],
+          resourceKeys: this.getWorkbookResourceKeys(toWorkbookName),
         });
       });
     });

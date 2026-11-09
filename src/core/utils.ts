@@ -586,6 +586,12 @@ function mapJSErrorToFormulaError(error: Error): FormulaError {
     return error.message;
   }
 
+  // A formula that does not parse is a syntax error, whatever its message
+  // mentions ("Expected cell reference ..." is not a #REF! error).
+  if (error.name === "ParseError") {
+    return FormulaError.ERROR;
+  }
+
   if (
     message.includes("division by zero") ||
     message.includes("divide by zero")

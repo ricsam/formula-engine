@@ -53,62 +53,57 @@ export class Parser {
   }
 
   /**
-   * Look ahead to determine if this is a workbook reference like
-   * [Workbook]!Table[...] or [Workbook]Sheet...
+   * Look ahead to determine if the `[` at the current position opens a
+   * workbook qualifier, as in [Workbook]Sheet!A1, [Workbook]Sheet or
+   * [Workbook]Table[Column], rather than a bare column reference such as
+   * [Column].
    */
   private lookAheadForWorkbookReference(): { isWorkbookReference: boolean } {
-    let pos = 1; // Start after the opening [
-    
-    // Skip through the workbook name (could be multiple tokens)
-    while (pos < 10) { // Reasonable lookahead limit
+    // Skip through the workbook name, which can span many tokens.
+    for (let pos = 1; ; pos++) {
       const token = this.tokens.peekAhead(pos);
       if (!token || token.type === "EOF") {
         return { isWorkbookReference: false };
       }
-      
+
       if (token.type === "RBRACKET") {
+        // A bare column reference is never followed directly by a name, so a
+        // name means a sheet or table in another workbook. `]!` is not valid
+        // after a bare column reference either; it is parsed as a workbook
+        // qualifier so that the parser can explain the expected syntax.
         const nextToken = this.tokens.peekAhead(pos + 1);
-        if (nextToken?.type === "EXCLAMATION") {
-          return { isWorkbookReference: true };
-        }
-        if (nextToken && nextToken.type === "IDENTIFIER") {
-          // Look ahead further to find an exclamation mark or end of tokens
-          // This handles both simple sheet references and 3D ranges
-          let lookPos = pos + 2;
-          while (lookPos < pos + 10) { // Reasonable limit
-            const lookToken = this.tokens.peekAhead(lookPos);
-            if (!lookToken || lookToken.type === "EOF") {
-              // End of tokens - this is a sheet alias
-              return { isWorkbookReference: true };
-            }
-            if (lookToken.type === "EXCLAMATION") {
-              // Found exclamation mark - this is a workbook reference
-              return { isWorkbookReference: true };
-            }
-            // Continue looking for exclamation mark
-            lookPos++;
-          }
-        }
-        return { isWorkbookReference: false };
+        return {
+          isWorkbookReference:
+            nextToken?.type === "IDENTIFIER" ||
+            nextToken?.type === "EXCLAMATION",
+        };
       }
-      
+
       // Continue if it's part of the workbook name
-      if (token.type === "IDENTIFIER" || token.type === "FUNCTION" || token.type === "NUMBER" || 
-          (token.type === "OPERATOR" && (token.value === "-" || token.value === "=" || token.value === "%")) ||
-          token.type === "LPAREN" || token.type === "RPAREN") {
-        pos++;
+      if (
+        token.type === "IDENTIFIER" ||
+        token.type === "FUNCTION" ||
+        token.type === "NUMBER" ||
+        (token.type === "OPERATOR" &&
+          (token.value === "-" || token.value === "=" || token.value === "%")) ||
+        token.type === "LPAREN" ||
+        token.type === "RPAREN"
+      ) {
         continue;
       }
-      
+
       // If we hit something unexpected, it's not a workbook reference
       return { isWorkbookReference: false };
     }
-    
-    return { isWorkbookReference: false };
   }
 
   /**
-   * Parse workbook reference like [Workbook]!Table[Column] or [Workbook]Sheet!A1
+   * Parse a reference qualified by another workbook: [Workbook]Sheet!A1,
+   * [Workbook]Sheet!A1:B2, [Workbook]Sheet1:Sheet3!A1, [Workbook]Sheet!Name,
+   * the whole-sheet alias [Workbook]Sheet, or the table reference
+   * [Workbook]Table[Column]. Tables are workbook resources, so a table in
+   * another workbook is named without a sheet, exactly as it is named inside
+   * its own workbook.
    */
   private parseWorkbookReference(): ASTNode {
     const start = this.tokens.peek().position.start;
@@ -148,20 +143,40 @@ export class Parser {
     this.tokens.consume(); // ]
     
     if (this.tokens.match("EXCLAMATION")) {
-      this.tokens.consume(); // !
-      return this.parseWorkbookQualifiedTableReference(workbookName, start);
+      const tableToken = this.tokens.peekAhead(1);
+      if (
+        tableToken?.type === "IDENTIFIER" &&
+        this.tokens.peekAhead(2)?.type === "LBRACKET"
+      ) {
+        throw new ParseError(
+          `Cross-workbook table references use [${workbookName}]${tableToken.value}[...] instead of [${workbookName}]!${tableToken.value}[...]`,
+          this.tokens.peek().position
+        );
+      }
+      throw new ParseError(
+        `Expected a sheet or table name after [${workbookName}], as in [${workbookName}]Sheet!A1 or [${workbookName}]Table[Column]`,
+        this.tokens.peek().position
+      );
     }
 
-    // Parse sheet name - could be start of 3D range
+    // Parse sheet or table name - a sheet could be the start of a 3D range
     if (!this.tokens.match("IDENTIFIER")) {
       throw new ParseError(
-        "Expected sheet name after workbook reference",
+        "Expected sheet or table name after workbook reference",
         this.tokens.peek().position
       );
     }
     
-    const sheetToken = this.tokens.consume();
-    let sheetName = sheetToken.value;
+    const nameToken = this.tokens.consume();
+
+    // [Workbook]Table[Column]
+    if (this.tokens.match("LBRACKET")) {
+      return this.parseTableReference(nameToken.value, start, {
+        workbookName,
+      });
+    }
+
+    let sheetName = nameToken.value;
     
     // Handle quoted sheet names
     if (sheetName.startsWith("'") && sheetName.endsWith("'")) {
@@ -246,28 +261,6 @@ export class Parser {
         },
       });
     }
-  }
-
-  private parseWorkbookQualifiedTableReference(
-    workbookName: string,
-    startPos: number
-  ): ASTNode {
-    if (!this.tokens.match("IDENTIFIER")) {
-      throw new ParseError(
-        `Expected table name after [${workbookName}]!`,
-        this.tokens.peek().position
-      );
-    }
-
-    const tableName = this.tokens.consume().value;
-    if (!this.tokens.match("LBRACKET")) {
-      throw new ParseError(
-        `Workbook-qualified references without a sheet only support tables. Use [${workbookName}]!${tableName}[...] for tables or [${workbookName}]Sheet!A1 for sheet references`,
-        this.tokens.peek().position
-      );
-    }
-
-    return this.parseTableReference(tableName, startPos, { workbookName });
   }
 
   /**
@@ -2285,10 +2278,10 @@ export class Parser {
       const identifier = this.tokens.consume();
       ref += identifier.value;
 
-      // Workbook-qualified table references use [Workbook]!Table1[...]
+      // Tables are workbook resources: [Workbook]Table1[...] names no sheet
       if (this.tokens.match("LBRACKET")) {
         throw new ParseError(
-          `Cross-workbook table references use [${workbookName}]!${identifier.value}[...] instead of [${workbookName}]${sheetName}!${identifier.value}[...]`,
+          `Cross-workbook table references use [${workbookName}]${identifier.value}[...] instead of [${workbookName}]${sheetName}!${identifier.value}[...]`,
           this.tokens.peek().position
         );
       }

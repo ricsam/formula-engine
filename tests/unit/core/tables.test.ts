@@ -399,7 +399,7 @@ describe("Tables", () => {
       numCols: 2,
     });
 
-    setCellContent("D1", "=SUM([Quarterly Model]!Products[Price])");
+    setCellContent("D1", "=SUM([Quarterly Model]Products[Price])");
 
     expect(cell("D1", true)).toBe(25);
   });

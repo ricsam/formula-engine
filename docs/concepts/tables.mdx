@@ -53,6 +53,7 @@ The engine supports the forms used most often by spreadsheet applications:
 | `Sales[#Headers]` | header area |
 | `Sales[#Data]` | data area |
 | `Sales[[#Headers],[Qty]]` | `Qty` header cell |
+| `[Budget]Sales[Qty]` | the `Qty` column of table `Sales` in workbook `Budget`; see [Tables in other workbooks](#tables-in-other-workbooks) |
 
 A current-row formula can be repeated down a table:
 
@@ -124,7 +125,11 @@ engine.renameTable("Budget", {
 });
 
 // "=SUM(Sales[Qty])" becomes "=SUM(Orders[Qty])"
+// "=SUM([Budget]Sales[Qty])" in another workbook becomes "=SUM([Budget]Orders[Qty])"
 ```
+
+Only references to the renamed workbook's table change. Another workbook can
+have its own `Sales` table, and its formulas keep referring to it.
 
 ### Resize
 
@@ -159,6 +164,46 @@ name — tables are workbook resources.
 ```typescript
 // Table Sales is on Data; formula is on Summary
 "=SUM(Sales[Qty])"
+```
+
+## Tables in other workbooks
+
+Without a workbook name, a structured reference names a table in the formula's
+own workbook. To use a table in another workbook loaded into the same engine,
+put the workbook name in square brackets in front of the table name, as in
+`[Budget]Sheet1!A1` for a cell:
+
+```typescript
+// Each batch workbook has its own Results table; a collation workbook reads them
+"=SUM([Batch 1]Results[Yield])+SUM([Batch 2]Results[Yield])"
+"=INDEX([Batch 1]Results[Yield], 2)"
+```
+
+Every structured reference form works across workbooks:
+
+| Syntax | Meaning |
+| --- | --- |
+| `[Batch 1]Results[Yield]` | all data cells in the `Yield` column |
+| `[Batch 1]Results[@Yield]` | `Yield` in the row of the formula cell |
+| `[Batch 1]Results[[Sample]:[Yield]]` | data cells of the columns `Sample` to `Yield` |
+| `[Batch 1]Results[#Headers]` | header area; also `[#Data]` and `[#All]` |
+| `[Batch 1]Results[[#Headers],[Yield]]` | `Yield` header cell |
+
+No sheet name is written: `[Batch 1]Data!Results[Yield]` and
+`[Batch 1]!Results[Yield]` are syntax errors. Without the workbook name,
+`Results[Yield]` in the collation workbook names a `Results` table there.
+
+These references are tracked like cross-workbook cell references. A formula
+recalculates when the table's data or size changes. While the workbook, table
+or column does not exist, a reference such as `INDEX([Batch 1]Results[Yield], 2)`
+is `#REF!` (aggregates behave as described under [Edge behavior](#edge-behavior)),
+and it resolves again once the table is added. Renaming the workbook, the table
+or a column header rewrites the reference; renaming the table's sheet does not
+affect it.
+
+```typescript
+engine.renameWorkbook({ workbookName: "Batch 1", newWorkbookName: "Batch A" });
+// "=SUM([Batch 1]Results[Yield])" becomes "=SUM([Batch A]Results[Yield])"
 ```
 
 ## Edge behavior

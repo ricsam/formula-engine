@@ -68,13 +68,26 @@ describe("Workbook Renamer", () => {
     });
 
     test("should handle table references with workbook names", () => {
-      const formula = "[MyWorkbook]!Table1[Column1]";
+      const formula = "[MyWorkbook]Table1[Column1]";
       const result = renameWorkbookInFormula({ 
         formula, 
         oldWorkbookName: "MyWorkbook", 
         newWorkbookName: "NewWorkbook" 
       });
-      expect(result).toBe("[NewWorkbook]!Table1[Column1]");
+      expect(result).toBe("[NewWorkbook]Table1[Column1]");
+    });
+
+    test("should rename every structured reference form", () => {
+      const formula =
+        "[My Book]T[@Qty]+SUM([My Book]T[[Qty]:[Price]])+[My Book]T[[#Headers],[Qty]]+COUNTA([Other]T[#Data])";
+      const result = renameWorkbookInFormula({
+        formula,
+        oldWorkbookName: "My Book",
+        newWorkbookName: "Your Book",
+      });
+      expect(result).toBe(
+        "[Your Book]T[@Qty]+SUM([Your Book]T[[Qty]:[Price]])+[Your Book]T[[#Headers],[Qty]]+COUNTA([Other]T[#Data])"
+      );
     });
 
     test("should handle complex workbook names with spaces and special characters", () => {
@@ -160,7 +173,7 @@ describe("Workbook Renamer", () => {
     });
 
     test("should return true for formula with table reference", () => {
-      const formula = "[MyWorkbook]!Table1[Column1]";
+      const formula = "[MyWorkbook]Table1[Column1]";
       expect(formulaReferencesWorkbook(formula, "MyWorkbook")).toBe(true);
     });
 
@@ -208,7 +221,7 @@ describe("Workbook Renamer", () => {
     });
 
     test("should handle table references", () => {
-      const formula = "[MyWorkbook]!Table1[Column1]+[OtherWorkbook]!Table2[Column2]";
+      const formula = "[MyWorkbook]Table1[Column1]+[OtherWorkbook]Table2[Column2]";
       const result = getReferencedWorkbookNames(formula);
       expect(result.sort()).toEqual(["MyWorkbook", "OtherWorkbook"]);
     });

@@ -53,7 +53,11 @@ The engine also resolves workbook-qualified references:
 ```typescript
 "=[Rates]Sheet1!A1"
 "=SUM([Actuals]January!B2:B10)"
+"=SUM([Actuals]Sales[Amount])" // table Sales in workbook Actuals
 ```
+
+Tables are workbook resources, so a table in another workbook is named without
+a sheet; see [Tables in other workbooks](/concepts/tables#tables-in-other-workbooks).
 
 Both workbooks must be loaded into the **same** `FormulaEngine` instance.
 There is no external-file loader; names inside square brackets select another
@@ -84,6 +88,9 @@ engine.renameSheet({
 ```
 
 A rename rewrites formulas that refer to the old name. It is safe and undoable.
+Only references to the renamed workbook's sheet change: in another workbook,
+`=Inputs!A1` names that workbook's own `Inputs` sheet and is left alone, while
+`=[Budget]Inputs!A1` becomes `=[Budget]Assumptions!A1`.
 
 ## Remove and recreate
 

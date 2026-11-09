@@ -36,6 +36,31 @@ describe("Sheet Renamer", () => {
       expect(result).toBe("[Book]DataSheet!A1+[Other]Sheet1!B1");
     });
 
+    test("should leave unqualified references of another workbook's formula alone", () => {
+      // The formula belongs to Other, so Sheet1!A1 is Other's own Sheet1.
+      const formula = "Sheet1!A1+[Book]Sheet1!B1";
+      const result = renameSheetInFormula({
+        formula,
+        oldSheetName: "Sheet1",
+        newSheetName: "DataSheet",
+        workbookName: "Book",
+        formulaWorkbookName: "Other",
+      });
+      expect(result).toBe("Sheet1!A1+[Book]DataSheet!B1");
+    });
+
+    test("should rename unqualified references of a formula in the same workbook", () => {
+      const formula = "Sheet1!A1+[Other]Sheet1!B1";
+      const result = renameSheetInFormula({
+        formula,
+        oldSheetName: "Sheet1",
+        newSheetName: "DataSheet",
+        workbookName: "Book",
+        formulaWorkbookName: "Book",
+      });
+      expect(result).toBe("DataSheet!A1+[Other]Sheet1!B1");
+    });
+
     test("should handle range references with sheet names", () => {
       const formula = "SUM(Sheet1!A1:B10)";
       const result = renameSheetInFormula({ formula, oldSheetName: "Sheet1", newSheetName: "DataSheet" });

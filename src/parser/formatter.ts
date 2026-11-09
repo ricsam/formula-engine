@@ -392,7 +392,9 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
   let result = "";
 
   if (workbookName) {
-    result += `[${workbookName}]!`;
+    // Tables are workbook resources, so a table in another workbook is named
+    // without a sheet: [Workbook]Table[Column].
+    result += `[${workbookName}]`;
   } else if (sheetName !== undefined) {
     result += `${formatSheetName(sheetName)}!`;
   }
