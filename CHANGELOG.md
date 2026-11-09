@@ -1,5 +1,132 @@
 # @ricsam/formula-engine
 
+## 0.5.0
+
+### Minor Changes
+
+- 6993906: Reference tables in other workbooks as `[Workbook]Table[Column]`, the way
+  `[Workbook]Sheet!A1` references a cell there:
+  `=INDEX([Batch 1]Results[Yield], 2)` or
+  `=SUM([Batch 1]Results[Yield])+SUM([Batch 2]Results[Yield])`. Every structured
+  reference form works: `[Workbook]Table[@Column]` (the row of the formula cell),
+  column spans such as `[Workbook]Table[[Sample]:[Yield]]`, and the `#Headers`,
+  `#Data` and `#All` selectors with or without columns. These formulas were
+  syntax errors that showed `#ERROR!`. As before, a reference without the
+  workbook names a table in the formula's own workbook.
+
+  The references are tracked like cross-workbook cell references. They
+  recalculate when the table's data or size changes, a reference such as
+  `INDEX([Batch 1]Results[Yield], 1)` is `#REF!` while the workbook, table or
+  column is missing and resolves again once it is added, and renaming the
+  workbook, the table or a column header rewrites them. Formula analysis
+  resolves them to the other workbook's table and marks all of their tokens
+  `external`, like other references into another workbook.
+
+  Breaking: the previous spelling `[Workbook]!Table[Column]` is now a syntax
+  error whose message names the new spelling, and formulas are stored as
+  `[Workbook]Table[Column]`. Remove the `!` from stored formulas that use it. A
+  warm snapshot saved with such a reference restores cold, with a
+  `[FormulaEngine snapshot]` warning.
+
+- 50a205e: Add the functions the Operations workbooks evaluated to `#NAME?`: `IFS`,
+  `FILTER`, `TRANSPOSE`, `STDEV.S` (alias `STDEV`), `ROUND`, `ROUNDUP`,
+  `ROUNDDOWN`, `ISNUMBER`, `ISBLANK`, `SUMPRODUCT`, `VLOOKUP` and `TEXT`, for 59
+  functions in all. `GETPIVOTDATA` is not added: the engine has no pivot tables.
+
+  `IFS(test1, value1, ...)` returns the value of the first true condition and
+  `#N/A` when none is. Conditions are tested like `IF`'s and only the chosen
+  value is evaluated; an array condition chooses cell by cell and broadcasts like
+  `IF`. An odd number of arguments is `#VALUE!`.
+
+  `FILTER(array, include, [if_empty])` returns the rows of `array` selected by a
+  column `include`, or its columns for a row `include`. Nothing selected is
+  `if_empty`, or `#CALC!` without it; an error in `include` is the result. Whole
+  columns such as `FILTER(B:B, A:A="x")` work. Booleans are not numbers in this
+  engine, so Excel's `(A2:A9="x")*(B2:B9>5)` is `#VALUE!`; combine conditions
+  with `IF(A2:A9="x", B2:B9>5)`. `TRANSPOSE(array)` swaps rows and columns lazily
+  and spills.
+
+  `ROUND`, `ROUNDUP` and `ROUNDDOWN` round the decimal value Excel shows, with 15
+  significant digits, so `ROUND(2.675, 2)` is 2.68, `ROUNDUP(0.1+0.2, 1)` is 0.3
+  and `ROUNDDOWN(4.35*100, 0)` is 435. A negative `num_digits` rounds to tens,
+  hundreds and so on. Like `INT`, they accept only numbers, and array arguments
+  broadcast.
+
+  `STDEV.S` is the sample standard deviation of the numbers in its arguments,
+  ranges and spills, such as `STDEV.S(FILTER(...))`. Errors propagate and fewer
+  than two numbers is `#DIV/0!`. `SUMPRODUCT` adds the products of same-sized
+  arrays: a different size is `#VALUE!`, a cell that is not a number counts as 0,
+  and an error anywhere is the result. The `--(...)` idiom is `#VALUE!` here;
+  choose values with `IF` instead.
+
+  `VLOOKUP` searches the first column of a table like `MATCH`: exact for `FALSE`
+  or `0` (text ignores case, no wildcards) and, for `TRUE`, the default, with
+  `MATCH`'s binary search, which finds the largest value less than or equal to
+  the lookup value in a sorted column and Excel's row in an unsorted one.
+  `col_index_num` below 1 is `#VALUE!` and beyond the table `#REF!`, and a blank
+  result cell is `""`. Array lookup values and column numbers spill.
+
+  `ISNUMBER` and `ISBLANK` test a value without propagating errors and test
+  arrays element by element. Aggregates read every cell of a bounded result, so
+  `SUM(IF(ISBLANK(A1:A9), 1, 0))` counts the empty cells. `ISBLANK` is `TRUE` for
+  everything that reads as `""`, including a formula returning `""` and `""`
+  itself, where Excel is `TRUE` only for an empty cell.
+
+  `TEXT(value, format_text)` formats numbers, dates and times with Excel number
+  format codes: digit placeholders, thousands separators and scaling,
+  percentages, scientific notation, fractions, `General`, literal text, up to
+  four sections with conditions, currency tags, and date and time codes on
+  Excel's 1900 date system, including elapsed time. Numbers are rounded as Excel
+  shows them (`TEXT(2.675,"0.00")` is "2.68"). Following the engine's strict
+  typing, text is never converted to a number, an empty cell formats as `""`, and
+  `format_text` must be text. Array arguments broadcast.
+
+### Patch Changes
+
+- 6993906: Recalculate references to a workbook's tables when `cloneWorkbook` creates it.
+  A reference written before the clone, such as `=INDEX([Copy]Results[Yield], 1)`,
+  stayed `#REF!`, and formulas in the clone that refer to its own tables could
+  reuse that stale result.
+- 898e688: Fix unqualified current-row column spans such as `[@[pep_concentration]:[gate]]`,
+  which read only their first column. Formatting wrote the span as
+  `[@pep_concentration]`, and since the engine normalizes formula content when it
+  stores it, `=TEXTJOIN(", ", TRUE, [@[pep_concentration]:[gate]])` returned
+  `"10uM"` instead of `"10uM, RFP+"` and the stored formula lost the rest of the
+  span. `SUM([@[a]:[b]])` and other functions over such spans were affected the
+  same way. Table-qualified spans such as `Table1[@[a]:[b]]` already worked.
+- 6993906: Parse workbook names of any length. A workbook qualifier whose name had more
+  than eight words, or a whole-sheet alias such as `[Book]Sheet1` followed by
+  many more tokens, as in `SUM([Book]Sheet1, 1, 2, 3, 4, 5)`, was a syntax error.
+- b597c5a: Search like Excel in `MATCH` with match type `1` (the default) and `-1`. Excel
+  does a binary search there without checking the order, and so does `MATCH`
+  now, so unsorted data returns the position Excel returns instead of `#N/A`.
+  Workbooks that leave out the `,0` of an exact match, such as
+  `=INDEX(MAPcondition[MAP Payload],MATCH([@MAP ID],MAPcondition[MAP ID]),0)`
+  over unsorted IDs, now give Excel's results: with `MAP-994`, `MAP-10977` and
+  `MAP-320` in `A1:A3`, `=MATCH("MAP-994",A1:A3)` is `3`, as in Excel. Sorted
+  data finds the same positions as before. Blank cells, errors and values of
+  another type are stepped over the way Excel steps over them, so
+  `=MATCH(9.99E+307,B:B)` finds the last number in column B whatever the order.
+  An unbounded range such as `B:B` is searched up to its last non-empty cell.
+- 6993906: Scope table and sheet renames to their workbook. Renaming a table or sheet
+  rewrote every reference to that name in every workbook, so with two batch
+  workbooks that each have a `Results` table or a `Data` sheet, renaming one
+  broke `=SUM(Results[Yield])` and `=Data!A1` in the other, and even references
+  qualified with the other workbook's name. Only references that resolve to the
+  renamed workbook's table or sheet change now. An unqualified reference in a
+  global named expression, which can resolve in any workbook, is still renamed.
+- 6993906: A formula that does not parse shows `#ERROR!`. Some syntax errors showed
+  another error value because their message mentioned it, such as `#REF!` for
+  `=Sheet1!` ("Expected cell reference after Sheet1!").
+- 025424f: Keep every table column when `setSheetContent` reorders a table's header names.
+  The columns were renamed one at a time, so writing `Price, Qty` over the header
+  row `Qty, Price` gave both columns the name `Price` midway and the table lost
+  one of them; structured references to the lost column read as empty. The
+  columns are now renamed together, and references follow their columns as with
+  any other header edit. This affected writing a dataset whose columns come in a
+  different order into a table, for example with `updateTable` and
+  `setSheetContent` in one `transact` call.
+
 ## 0.4.0
 
 ### Minor Changes
