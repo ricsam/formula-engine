@@ -1,7 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { createStructuredReferenceNode } from "../../../src/parser/ast";
+import {
+  createStructuredReferenceNode,
+  type ASTNode,
+} from "../../../src/parser/ast";
 import { astToString, formatFormula } from "../../../src/parser/formatter";
 import { parseFormula } from "../../../src/parser/parser";
+
+/** The AST without the source positions of its nodes, for comparing trees. */
+function withoutPositions(ast: ASTNode): unknown {
+  return JSON.parse(
+    JSON.stringify(ast, (key, value) => (key === "position" ? undefined : value))
+  );
+}
 
 describe("Formula Formatter", () => {
   describe("Basic Values", () => {
@@ -358,6 +368,17 @@ describe("Formula Formatter", () => {
         // Single-bracket syntax treated as single column name
         expect(formatFormula("Table1[@CAR ID:ORDER ID]")).toBe("Table1[@CAR ID:ORDER ID]");
       });
+
+      test("should keep both ends of an unqualified current row column range", () => {
+        // Writing only the first column would turn the span into one cell.
+        expect(formatFormula("[@[num]:[result]]")).toBe("[@[num]:[result]]");
+        expect(formatFormula("[@[CAR ID]:[ORDER ID]]")).toBe("[@[CAR ID]:[ORDER ID]]");
+        expect(
+          formatFormula('TEXTJOIN(", ", TRUE, [@[pep_concentration]:[gate]])')
+        ).toBe('TEXTJOIN(", ",TRUE,[@[pep_concentration]:[gate]])');
+        // A single column needs no inner brackets.
+        expect(formatFormula("[@[num]:[num]]")).toBe("[@num]");
+      });
     });
 
     describe("Complex Real-World Formulas", () => {
@@ -528,6 +549,7 @@ describe("Formula Formatter", () => {
       "'My Sheet'!TaxRate",
       "Table1[[num]:[result]]",
       "Table1[@[num]:[result]]",
+      "[@[num]:[result]]",
       "[result]",
       "[num:result]",
       "[#Data]",
@@ -542,6 +564,8 @@ describe("Formula Formatter", () => {
       "[@[Net Sales]]",
       "Table1[[CAR ID]:[ORDER ID]]",
       "Table1[@[Net Sales]:[Gross Profit]]",
+      "[@[Net Sales]:[Gross Profit]]",
+      'IF(OR([@pep_concentration]="np",[@pep_concentration]="null",[@pep_concentration]="MAP"),[@gate],TEXTJOIN(", ",TRUE,[@[pep_concentration]:[gate]]))',
       "INDEX(Table1[CAR ID],MATCH([@CUSTOMER-ID],Table1[CUSTOMER-ID],0))",
       "VLOOKUP([@Customer Name],CustomerTable[[Customer Name]:[Phone Number]],3,FALSE)",
       // Excel-style selector with column range
@@ -575,6 +599,10 @@ describe("Formula Formatter", () => {
 
       // The formatted string should be stable (formatting twice should give same result)
       expect(reformatted).toBe(formatted);
+      // ...and lossless: it must parse back to the same expression. Stability
+      // alone would accept a form that drops part of a node, since the shorter
+      // form is stable too.
+      expect(withoutPositions(reparsed)).toEqual(withoutPositions(ast));
     });
   });
 
