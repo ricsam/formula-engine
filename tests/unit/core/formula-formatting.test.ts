@@ -80,4 +80,17 @@ describe("formula content formatting", () => {
     engine.setCellContent(address, invalidFormula);
     expect(stored(engine)).toBe(invalidFormula);
   });
+
+  test("keeps both ends of a current-row column span", () => {
+    const engine = buildEngine();
+
+    engine.setCellContent(
+      address,
+      '=TEXTJOIN(", ",TRUE,[@[pep_concentration]:[gate]])'
+    );
+
+    expect(stored(engine)).toBe(
+      '=TEXTJOIN(", ", TRUE, [@[pep_concentration]:[gate]])'
+    );
+  });
 });

@@ -48,8 +48,10 @@ The engine supports the forms used most often by spreadsheet applications:
 | Syntax | Meaning |
 | --- | --- |
 | `Sales[Qty]` | all data cells in the `Qty` column |
+| `Sales[[Qty]:[Price]]` | all data cells in the columns from `Qty` to `Price` |
 | `[@Qty]` | `Qty` in the current table row |
 | `Sales[@Qty]` | same, with an explicit table name |
+| `[@[Qty]:[Price]]` | the columns from `Qty` to `Price` in the current table row |
 | `Sales[#Headers]` | header area |
 | `Sales[#Data]` | data area |
 | `Sales[[#Headers],[Qty]]` | `Qty` header cell |
@@ -59,6 +61,15 @@ A current-row formula can be repeated down a table:
 ```typescript
 // In C2 and C3, inside a table with columns Qty and Price:
 "=[@Qty]*[@Price]"
+```
+
+A current-row column span reads every column in the span, so it can be joined
+or aggregated:
+
+```typescript
+// In the Widget row, in a fourth table column after Product, Qty and Price:
+'=TEXTJOIN(", ", TRUE, [@[Product]:[Qty]])' // "Widget, 2"
+"=SUM([@[Qty]:[Price]])" // 7
 ```
 
 ## Tables can be anywhere
