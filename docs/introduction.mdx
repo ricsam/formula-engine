@@ -63,7 +63,8 @@ recalculate the entire workbook on every keystroke. FormulaEngine does neither.
   [function reference](/functions/overview).
 - **Multi-sheet workbooks** with cross-sheet references such as `=Sheet2!A1*2`.
 - **Named expressions** with workbook and sheet scope.
-- **Tables** with structured references such as `=SUM(Sales[Qty])`.
+- **Tables** with structured references such as `=SUM(Sales[Qty])`, also to
+  tables in other workbooks: `=SUM([Book2]Sales[Qty])`.
 - **Search and replace** across raw stored content, including formulas.
 - **Undo/redo** with a bounded, incremental history.
 - **Cell styles and metadata**, including conditional styles.

@@ -472,8 +472,18 @@ describe("Formula Formatter", () => {
     });
 
     test("should format workbook table references", () => {
-      expect(formatFormula("[MyWorkbook]!Table1[Column1]")).toBe("[MyWorkbook]!Table1[Column1]");
-      expect(formatFormula("[Quarterly Model]!Products[Price]")).toBe("[Quarterly Model]!Products[Price]");
+      expect(formatFormula("[MyWorkbook]Table1[Column1]")).toBe("[MyWorkbook]Table1[Column1]");
+      expect(formatFormula("[Quarterly Model]Products[Price]")).toBe("[Quarterly Model]Products[Price]");
+      expect(formatFormula("INDEX([B b]RDA_1[Val],2)")).toBe("INDEX([B b]RDA_1[Val],2)");
+    });
+
+    test("should format every workbook table reference form", () => {
+      expect(formatFormula("[Book]Sales[@Qty]")).toBe("[Book]Sales[@Qty]");
+      expect(formatFormula("[Book]Sales[@[Unit Price]]")).toBe("[Book]Sales[@Unit Price]");
+      expect(formatFormula("[Book]Sales[@[Qty]:[Price]]")).toBe("[Book]Sales[@[Qty]:[Price]]");
+      expect(formatFormula("[Book]Sales[[Qty]:[Price]]")).toBe("[Book]Sales[[Qty]:[Price]]");
+      expect(formatFormula("[Book]Sales[#Headers]")).toBe("[Book]Sales[#Headers]");
+      expect(formatFormula("[Book]Sales[[#Data],[Qty]:[Price]]")).toBe("[Book]Sales[[#Data],[Qty]:[Price]]");
     });
 
     test("should canonicalize workbook table references without sheet qualifiers", () => {
@@ -484,7 +494,7 @@ describe("Formula Formatter", () => {
         cols: { startCol: "Column1", endCol: "Column1" },
       });
 
-      expect(astToString(ast)).toBe("[MyWorkbook]!Table1[Column1]");
+      expect(astToString(ast)).toBe("[MyWorkbook]Table1[Column1]");
     });
 
     test("should format complex workbook names", () => {
@@ -587,8 +597,10 @@ describe("Formula Formatter", () => {
       "[MyWorkbook]Sheet1!A1:C5",
       "[MyWorkbook]Sheet1!A1:INFINITY",
       "[MyWorkbook]Sheet1!TaxRate",
-      "[MyWorkbook]!Table1[Column1]",
-      "[Quarterly Model]!Products[Price]"
+      "[MyWorkbook]Table1[Column1]",
+      "[Quarterly Model]Products[Price]",
+      "[Quarterly Model]Products[@Price]",
+      "[Quarterly Model]Products[[#Data],[Product]:[Price]]"
     ];
 
     test.each(testCases)("should round-trip formula: %s", (formula: string) => {

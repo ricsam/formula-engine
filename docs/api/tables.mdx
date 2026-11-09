@@ -59,7 +59,9 @@ renameTable(
 ): void
 ```
 
-Rewrites structured references in formulas and named expressions.
+Rewrites structured references to the table in formulas and named expressions,
+including `[Budget]Sales[Qty]` references in other workbooks. References to a
+table of the same name in another workbook are left alone.
 
 ## Update
 
@@ -107,7 +109,8 @@ but `resetToSerializedEngine` is easier for whole-engine persistence.
 =Sales[@Qty]
 =Sales[#Headers]
 =Sales[#Data]
+=SUM([Budget]Sales[Qty])
 ```
 
-See [Tables](/concepts/tables) for current-row behavior, infinite tables and
-edge cases.
+See [Tables](/concepts/tables) for current-row behavior, infinite tables,
+tables in other workbooks and edge cases.

@@ -46,6 +46,27 @@ describe("FormulaEngine.getCellErrorDetails", () => {
     });
   });
 
+  test("reports a syntax error as #ERROR! whatever its message mentions", () => {
+    const engine = createEngine();
+    engine.setCellContent(address("A1"), `=${sheetName}!`);
+    engine.setCellContent(address("A2"), "=SUM([Book]!Sales[Qty])");
+
+    expect(engine.getCellErrorDetails(address("A1"))).toEqual({
+      code: FormulaError.ERROR,
+      message: expect.stringContaining(
+        `ParseError: Expected cell reference after ${sheetName}!`
+      ),
+      failingCellAddress: address("A1"),
+    });
+    expect(engine.getCellErrorDetails(address("A2"))).toEqual({
+      code: FormulaError.ERROR,
+      message: expect.stringContaining(
+        "ParseError: Cross-workbook table references use [Book]Sales[...] instead of [Book]!Sales[...]"
+      ),
+      failingCellAddress: address("A2"),
+    });
+  });
+
   test("omits the failing cell for an error attributed to an expression node", () => {
     const engine = createEngine();
     engine.setCellContent(address("A1"), "=UNKNOWN_FUNCTION()");
