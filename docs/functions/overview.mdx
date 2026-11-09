@@ -85,6 +85,36 @@ The `*IF` and `*IFS` families use spreadsheet criteria strings:
 Criteria can be literals or comparison strings. Multi-criteria functions use
 `criteria_range, criteria` pairs.
 
+## Comparing text
+
+The comparison operators are strict about type and case. `=` and `<>` compare
+text case-sensitively, and `<`, `>`, `<=`, `>=` accept only numbers, so text on
+either side gives `#VALUE!`. Excel compares text case-insensitively and orders
+it alphabetically.
+
+Given `NP` in `A1`:
+
+```excel
+=A1="NP"     // TRUE
+=A1="np"     // FALSE   (Excel: TRUE)
+=A1<>"np"    // TRUE    (Excel: FALSE)
+="a"<"b"     // #VALUE! (Excel: TRUE)
+=EXACT(A1,"NP") // TRUE
+```
+
+Lookup and criteria matching does not follow the operators. With `NP`, `x` and
+`np` in `A1:A3`:
+
+| Case-insensitive, as in Excel | Case-sensitive |
+| --- | --- |
+| `COUNTIF(A1:A3,"np")` is `2`, and so are the other `*IF` and `*IFS` criteria | the `=` and `<>` operators |
+| `MATCH("np",A1:A3,0)` is `1` | `XLOOKUP("np",A1:A3,…)` finds `A3` |
+| `UNIQUE` folds `"a"` and `"A"` into one entry | `EXACT`, `FIND` |
+
+A workbook that compares a cell with text written in a different case, such as
+`=IF(A1="np",…)` against data containing `NP`, needs the literal to match the
+data exactly.
+
 ## Array results
 
 `SEQUENCE`, `UNIQUE`, `TOCOL`, `TOROW`, `HSTACK`, range references, array

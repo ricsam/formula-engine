@@ -43,6 +43,38 @@ read("H1"); // "#NAME?"
 read("I1"); // "#NUM!"
 ```
 
+## Arithmetic on an empty cell is `#VALUE!`
+
+The engine reads an empty cell as `""` and does not convert it to `0`, so
+arithmetic and unary minus on an empty cell return `#VALUE!`. Excel treats the
+empty cell as `0`. This is deliberate: a missing input surfaces as an error
+instead of a silent zero.
+
+```typescript
+// A1 empty, A2 holds 0
+engine.setSheetContent(
+  sheet,
+  new Map([
+    ["A2", 0],
+    ["B1", "=A1+1"],
+    ["B2", "=A1*2"],
+    ["B3", "=-A1"],
+    ["B4", "=SUM(A1,1)"],
+    ["B5", "=A2+1"],
+  ]),
+);
+
+read("B1"); // "#VALUE!"  (Excel: 1)
+read("B2"); // "#VALUE!"  (Excel: 0)
+read("B3"); // "#VALUE!"  (Excel: 0)
+read("B4"); // 1          — aggregates such as SUM skip empty cells
+read("B5"); // 1
+```
+
+A workbook that relies on empty cells counting as zero needs a `0` in those
+cells, or a guard such as `=IF(A1="",0,A1)+1`. The same applies inside arrays;
+see [Spilling](/concepts/spilling#blank-cells).
+
 ## Division by zero is not an error
 
 <Warning>

@@ -74,6 +74,29 @@ Given `North`, `10`, `TRUE`, a formula returning `""`, an empty cell and
 
 All criteria must match the same row/position.
 
+### Empty criteria
+
+A criterion that is empty matches empty cells. That holds for a reference to an
+empty cell, for `""` and for `"="`. `"<>"` matches the cells that are not
+empty. Given `x`, `y` and three empty cells in `A1:A5`, with `C1` empty:
+
+```excel
+=COUNTIF(A1:A5,C1)    // 3
+=COUNTIF(A1:A5,"")    // 3
+=COUNTIF(A1:A5,"=")   // 3
+=COUNTIF(A1:A5,"<>")  // 2
+```
+
+<Warning>
+  Excel reads a reference to an empty cell as the criterion `0`, so
+  `=COUNTIF(A1:A5,C1)` is `0` there and only `""` or `"="` count the blanks.
+  This engine does not turn an empty cell into `0` anywhere, criteria
+  included. The same rule applies to `COUNTIFS`, `SUMIF(S)`, `AVERAGEIF(S)`,
+  `MAXIFS`, `MINIFS`, `MAXIF` and `MINIF`. Guard a criterion that can be
+  empty, such as `=IF(C1="","",COUNTIF(A1:A5,C1))`, or put a value in the
+  criteria cell.
+</Warning>
+
 ## `INDEX`
 
 Returns the value at a position in a range.

@@ -146,7 +146,8 @@ Each cell evaluates only the branch its condition chooses. See
 
 A blank cell inside an array behaves as it does in a single-cell formula. The
 engine reads it as `""`, so `&` treats it as empty text and arithmetic returns
-`#VALUE!`, where Excel would use `0`:
+`#VALUE!`, where Excel would use `0` (see
+[Arithmetic on an empty cell](/concepts/errors#arithmetic-on-an-empty-cell-is-value)):
 
 ```typescript
 // A1=1, A2 empty, A3=3
