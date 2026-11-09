@@ -181,6 +181,62 @@ describe("Tables", () => {
     expect(cell("D1")).toBe(10);
   });
 
+  test("should keep every column when a full sheet update swaps header names", () => {
+    engine.setSheetContent(
+      { workbookName, sheetName },
+      new Map<string, SerializedCellValue>([
+        ["A1", "Qty"],
+        ["B1", "Price"],
+        ["A2", 2],
+        ["B2", 10],
+        ["A3", 3],
+        ["B3", 15],
+        ["D1", "=SUM(Products[Qty])"],
+        ["D2", "=SUM(Products[Price])"],
+      ])
+    );
+    engine.addTable({
+      tableName: "Products",
+      sheetName,
+      workbookName,
+      start: "A1",
+      numRows: { type: "number", value: 2 },
+      numCols: 2,
+    });
+    engine.clearUndoRedoHistory();
+
+    const swapped = new Map(engine.getSheetSerialized({ workbookName, sheetName }));
+    swapped.set("A1", "Price");
+    swapped.set("B1", "Qty");
+    engine.setSheetContent({ workbookName, sheetName }, swapped);
+
+    const headers = () =>
+      Array.from(
+        engine.getTable({ tableName: "Products", workbookName })!.headers.values()
+      );
+    expect(headers()).toEqual([
+      { name: "Price", index: 0 },
+      { name: "Qty", index: 1 },
+    ]);
+    // Each reference follows its column to the column's new name.
+    const content = engine.getSheetSerialized({ workbookName, sheetName });
+    expect(content.get("D1")).toBe("=SUM(Products[Price])");
+    expect(content.get("D2")).toBe("=SUM(Products[Qty])");
+    expect(cell("D1")).toBe(5);
+    expect(cell("D2")).toBe(25);
+
+    expect(engine.undo()).toBe(true);
+    expect(headers()).toEqual([
+      { name: "Qty", index: 0 },
+      { name: "Price", index: 1 },
+    ]);
+    expect(cell("D1")).toBe(5);
+    expect(cell("D2")).toBe(25);
+    expect(
+      engine.getSheetSerialized({ workbookName, sheetName }).get("D1")
+    ).toBe("=SUM(Products[Qty])");
+  });
+
   test("should populate unique default names for blank table headers", () => {
     engine.setSheetContent(
       { workbookName, sheetName },
@@ -399,7 +455,7 @@ describe("Tables", () => {
       numCols: 2,
     });
 
-    setCellContent("D1", "=SUM([Quarterly Model]!Products[Price])");
+    setCellContent("D1", "=SUM([Quarterly Model]Products[Price])");
 
     expect(cell("D1", true)).toBe(25);
   });

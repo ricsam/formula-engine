@@ -28,7 +28,8 @@ engine.addTable({
 ```
 
 `start` is A1 text. The first row supplies column headers. `numRows` can be
-finite or `{ type: "infinity" }`.
+finite or `{ type: "infinity" }`; a finite value counts the data rows below
+the header row.
 
 ## Read
 
@@ -59,7 +60,9 @@ renameTable(
 ): void
 ```
 
-Rewrites structured references in formulas and named expressions.
+Rewrites structured references to the table in formulas and named expressions,
+including `[Budget]Sales[Qty]` references in other workbooks. References to a
+table of the same name in another workbook are left alone.
 
 ## Update
 
@@ -78,6 +81,10 @@ Moves or resizes an existing definition and invalidates dependent formulas.
 Header names are re-read from cell values. Existing cell contents in newly
 included rows or columns are preserved and become part of the table. A resize
 is rejected if the resulting table would overlap another table.
+
+To resize a table and write its new contents as one update and one undo step,
+make both calls inside `transact`, resizing first. See
+[Resize and replace the contents](/concepts/tables#resize-and-replace-the-contents).
 
 ## Remove
 
@@ -107,7 +114,8 @@ but `resetToSerializedEngine` is easier for whole-engine persistence.
 =Sales[@Qty]
 =Sales[#Headers]
 =Sales[#Data]
+=SUM([Budget]Sales[Qty])
 ```
 
-See [Tables](/concepts/tables) for current-row behavior, infinite tables and
-edge cases.
+See [Tables](/concepts/tables) for current-row behavior, infinite tables,
+tables in other workbooks and edge cases.

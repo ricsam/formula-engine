@@ -89,6 +89,18 @@ describe("current-row structured references", () => {
     expect(evaluate("=[@[Amount]]")).toBe(10);
   });
 
+  test("[@[Column1]:[Column2]] — unqualified, a span of the current row", () => {
+    expect(evaluate('=TEXTJOIN("|", TRUE, [@[Payload]:[Amount]])')).toBe(
+      "alpha,beta|10"
+    );
+  });
+
+  test("Table[@[Column1]:[Column2]] — qualified, a span of the current row", () => {
+    expect(evaluate('=TEXTJOIN("|", TRUE, TTRinput[@[Payload]:[Amount]])')).toBe(
+      "alpha,beta|10"
+    );
+  });
+
   /**
    * The `[#This Row]` selector is NOT supported, in either spelling.
    *

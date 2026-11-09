@@ -17,6 +17,14 @@ import type {
 import { getOperatorPrecedence, getOperatorAssociativity } from "./grammar";
 import { parseFormula } from "./parser";
 
+/**
+ * Renders an AST as formula text, without the leading `=`.
+ *
+ * The text must parse back to the same AST. The engine stores it when it
+ * normalizes formula content, and it identifies an AST in the evaluation caches
+ * and in engine snapshots, so a rendering that drops part of a node (such as a
+ * column span written as its first column) changes what a formula computes.
+ */
 export function astToString(ast: ASTNode): string {
   switch (ast.type) {
     case "value":
@@ -359,9 +367,14 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
     ast;
 
   if (!tableName && isCurrentRow) {
-    // Current row reference like [@Column] or @Column
+    // Current row reference like [@Column] or [@[Column1]:[Column2]]
     if (cols && cols.startCol) {
-      return `[@${cols.startCol}]`;
+      if (cols.startCol === cols.endCol) {
+        return `[@${cols.startCol}]`;
+      }
+      // Column span - always use double-bracket syntax to avoid ambiguity
+      // with column names that contain colons
+      return `[@[${cols.startCol}]:[${cols.endCol}]]`;
     }
     return "@";
   }
@@ -392,7 +405,9 @@ function formatStructuredReference(ast: StructuredReferenceNode): string {
   let result = "";
 
   if (workbookName) {
-    result += `[${workbookName}]!`;
+    // Tables are workbook resources, so a table in another workbook is named
+    // without a sheet: [Workbook]Table[Column].
+    result += `[${workbookName}]`;
   } else if (sheetName !== undefined) {
     result += `${formatSheetName(sheetName)}!`;
   }

@@ -233,7 +233,7 @@ describe("MATCH function", () => {
       expect(cell("D1")).toBe(FormulaError.NA);
     });
 
-    test("should return #N/A when approximate lookup_array is not sorted", () => {
+    test("should search unsorted data the way Excel does", () => {
       engine.setSheetContent(
         sheetAddress,
         new Map<string, SerializedCellValue>([
@@ -248,8 +248,10 @@ describe("MATCH function", () => {
         ])
       );
 
-      expect(cell("B1")).toBe(FormulaError.NA);
-      expect(cell("D1")).toBe(FormulaError.NA);
+      // The middle value sends the search to the first cell. Excel does not
+      // check the order and returns the same positions.
+      expect(cell("B1")).toBe(1);
+      expect(cell("D1")).toBe(1);
     });
 
     test("should perform case-insensitive approximate text matching", () => {
@@ -560,6 +562,305 @@ describe("MATCH function", () => {
       });
 
       expect(cell("B1")).toBe(FormulaError.NA); // Should return error for empty table
+    });
+  });
+
+  describe("approximate match follows Excel's binary search", () => {
+    // Expected values are Excel's results, from the sources named in each test.
+
+    test("finds Excel's position on unsorted text when match_type is left out", () => {
+      // The workbook from the issue left out the `,0` of an exact match.
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "MAP-994"],
+          ["A2", "MAP-10977"],
+          ["A3", "MAP-320"],
+          ["B1", '=MATCH("MAP-994", A1:A3)'],
+          ["B2", '=MATCH("MAP-994", A1:A3, 1)'],
+          ["B3", '=MATCH("MAP-10977", A1:A3)'],
+          ["B4", '=MATCH("MAP-320", A1:A3)'],
+          ["B5", '=MATCH("b", {"a";"b";"c"})'],
+        ])
+      );
+
+      expect(cell("B1")).toBe(3);
+      expect(cell("B2")).toBe(3);
+      expect(cell("B3")).toBe(2);
+      expect(cell("B4")).toBe(3);
+      expect(cell("B5")).toBe(2);
+    });
+
+    test("returns Excel's rows for INDEX/MATCH over an unsorted table column", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "MAP ID"],
+          ["B1", "MAP Payload"],
+          ["A2", "MAP-994"],
+          ["B2", "payload 994"],
+          ["A3", "MAP-10977"],
+          ["B3", "payload 10977"],
+          ["A4", "MAP-320"],
+          ["B4", "payload 320"],
+          ["D1", "MAP ID"],
+          ["E1", "Payload"],
+          ["D2", "MAP-994"],
+          ["D3", "MAP-10977"],
+          ["D4", "MAP-320"],
+          ...["E2", "E3", "E4"].map(
+            (ref): [string, SerializedCellValue] => [
+              ref,
+              "=INDEX(MAPcondition[MAP Payload],MATCH([@[MAP ID]],MAPcondition[MAP ID]),0)",
+            ]
+          ),
+        ])
+      );
+      engine.addTable({
+        tableName: "MAPcondition",
+        sheetName,
+        workbookName,
+        start: "A1",
+        numRows: { type: "number", value: 3 },
+        numCols: 2,
+      });
+      engine.addTable({
+        tableName: "Arranged",
+        sheetName,
+        workbookName,
+        start: "D1",
+        numRows: { type: "number", value: 3 },
+        numCols: 2,
+      });
+
+      expect(cell("E2")).toBe("payload 320");
+      expect(cell("E3")).toBe("payload 10977");
+      expect(cell("E4")).toBe("payload 320");
+    });
+
+    test("reproduces Excel's VLOOKUP(..., TRUE) results on an unsorted table", () => {
+      // Excel 2010 results posted on the MrExcel forum ("Understanding Binary
+      // Search", 2015): VLOOKUP(A2, $E$2:$F$18, 2, TRUE) over unsorted names.
+      const table = [
+        ["Yvonne", "Orlando"],
+        ["Freddi", "Gdansk"],
+        ["Danielle", "Buffalo"],
+        ["Samantha", "Dallas"],
+        ["Karen", "Seattle"],
+        ["Bette", "Mexico City"],
+        ["Kate", "Milwaukee"],
+        ["Jo", "Austin"],
+        ["Lou", "Montevideo"],
+        ["Lee", "Pedacuh"],
+        ["Rudy", "LaCrosse"],
+        ["Zed", "Baltimore"],
+        ["Thomas", "Los Angeles"],
+        ["Todd", "Jacksonville"],
+        ["Harrison", "Leipzig"],
+        ["Craig", "Miami"],
+        ["Maurice", "Montreal"],
+      ];
+      const excelResults = [
+        ["Samantha", "LaCrosse"],
+        ["Craig", FormulaError.NA],
+        ["Kate", "Buffalo"],
+        ["Jo", "Buffalo"],
+        ["Rudy", "LaCrosse"],
+        ["Lou", "Montevideo"],
+        ["Todd", "Montreal"],
+        ["Harrison", "Buffalo"],
+        ["Yvonne", "Montreal"],
+        ["Bette", FormulaError.NA],
+        ["Lee", "Buffalo"],
+        ["Thomas", "Los Angeles"],
+        ["Zed", "Montreal"],
+        ["Maurice", "Pedacuh"],
+        ["Danielle", FormulaError.NA],
+        ["Karen", "Buffalo"],
+        ["Freddi", "Gdansk"],
+        ["Xavier", "Montreal"],
+      ];
+      const content = new Map<string, SerializedCellValue>();
+      table.forEach(([name, city], index) => {
+        content.set(`E${index + 2}`, name);
+        content.set(`F${index + 2}`, city);
+      });
+      excelResults.forEach(([name], index) => {
+        content.set(`A${index + 2}`, name);
+        content.set(
+          `B${index + 2}`,
+          `=INDEX($F$2:$F$18, MATCH(A${index + 2}, $E$2:$E$18))`
+        );
+      });
+      engine.setSheetContent(sheetAddress, content);
+
+      expect(
+        excelResults.map((_, index) => cell(`B${index + 2}`))
+      ).toEqual(excelResults.map(([, city]) => city));
+    });
+
+    test("moves on from an exact hit while the next values are equal", () => {
+      // Microsoft Q&A, "Binary search explain in Lookup with duplicates?"
+      // (2023), and the unsorted tables of Apache POI's lookup test workbook,
+      // whose expected values are cached by Excel.
+      const cases: [string, number][] = [
+        ["=MATCH(1,{1,1,1,1,1,0,1})", 5],
+        ["=MATCH(1,{1,1,1,1,1,0,1,-1,1,1,1,1,1,0,1})", 13],
+        ["=MATCH(1,{1,1,1,1,1,0,1,2,1,1,1,1,1,0,1})", 5],
+        ["=MATCH(1,{1;1;1;1;1})", 5],
+        ["=MATCH(33,{33;33;33;100;33;33;33;33;33;33})", 10],
+        ["=MATCH(33,{33;33;33;33;100;33;33;33;33;33})", 4],
+        ["=MATCH(33,{33;33;33;33;33;33;5;33;100;33})", 6],
+        ["=MATCH(33,{32;32;32;31;100;32;32;32;32;32})", 4],
+        [
+          "=MATCH(33,{33;33;33;33;33;33;33;33;33;33;8;33;33;6;33;33;4;33;33;33;33})",
+          16,
+        ],
+        [
+          "=MATCH(10,{33;33;33;33;33;33;33;33;33;33;8;33;33;6;33;33;4;33;33;33;33})",
+          11,
+        ],
+        [
+          "=MATCH(33,{33;33;33;33;10;33;33;33;5;33;100;33;33;33;33;33;33;33;33;33;22})",
+          8,
+        ],
+      ];
+      engine.setSheetContent(
+        sheetAddress,
+        new Map(cases.map(([formula], index) => [`A${index + 1}`, formula]))
+      );
+
+      expect(cases.map((_, index) => cell(`A${index + 1}`))).toEqual(
+        cases.map(([, expected]) => expected)
+      );
+    });
+
+    test("steps over blank cells", () => {
+      // MrExcel forum, "MATCH Omega Text Issue" (2016): Excel returned 4 and 6
+      // with A9:A10 filled, 15 and 17 with them blank.
+      const column: (string | undefined)[] = [
+        "w", "x", "y", "z", "zz", "Ω", "ΩΩ", undefined, "ΩΩ",
+        "ΩΩ", undefined, "w", "x", "y", "z", "zz", "Ω", "ΩΩ",
+      ];
+      const fill = (values: (string | undefined)[]) => {
+        const content = new Map<string, SerializedCellValue>([
+          ["B1", '=MATCH("z", A1:A18)'],
+          ["B2", '=MATCH("Ω", A1:A18)'],
+        ]);
+        values.forEach((value, index) => {
+          if (value !== undefined) content.set(`A${index + 1}`, value);
+        });
+        engine.setSheetContent(sheetAddress, content);
+      };
+
+      fill(column);
+      expect(cell("B1")).toBe(4);
+      expect(cell("B2")).toBe(6);
+
+      fill(column.map((value, index) => (index === 8 || index === 9 ? undefined : value)));
+      expect(cell("B1")).toBe(15);
+      expect(cell("B2")).toBe(17);
+    });
+
+    test("finds the last value of a type in a whole column", () => {
+      // Excel's results: A1 "z" and A10 "a" give 10 (Microsoft Tech Community,
+      // "MATCH vs XMATCH: Binary Search to Find the Last Entry within a
+      // Range", 2023); the last number or text of a column, whatever its
+      // order (Excel Evolution, "Lookups - understanding the binary search
+      // algorithm", 2016).
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "z"],
+          ["A10", "a"],
+          ["B1", 54],
+          ["B2", 3],
+          ["B3", 8],
+          ["C1", "Yellow"],
+          ["C2", "Green"],
+          ["C3", "Blue"],
+          ["C4", "Black"],
+          ["C5", "Purple"],
+          ["C6", "White"],
+          ["E1", '=MATCH("Ω", A:A)'],
+          ["E2", "=MATCH(9.99E+307, B:B)"],
+          ["E3", '=MATCH("zzzz", C:C)'],
+        ])
+      );
+
+      expect(cell("E1")).toBe(10);
+      expect(cell("E2")).toBe(3);
+      expect(cell("E3")).toBe(6);
+    });
+
+    test("steps over errors and values of another type", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", 1],
+          ["A2", "one"],
+          ["A3", 2],
+          ["A4", "=TRUE"],
+          ["A5", "=INVALID_FUNCTION()"],
+          ["A6", 3],
+          ["A7", "three"],
+          ["B1", "=MATCH(9.99E+307, A1:A7)"],
+          ["B2", '=MATCH("zzz", A1:A7)'],
+          ["B3", "=MATCH(2, A1:A7)"],
+          ["B4", '=MATCH("one", A1:A7)'],
+          ["B5", '=MATCH("a", A1:A7)'],
+        ])
+      );
+
+      expect(cell("B1")).toBe(6);
+      expect(cell("B2")).toBe(7);
+      expect(cell("B3")).toBe(3);
+      expect(cell("B4")).toBe(2);
+      expect(cell("B5")).toBe(FormulaError.NA);
+    });
+
+    test("searches descending data with match_type -1", () => {
+      // Microsoft Tech Community, "XMATCH and MATCH return different result for
+      // approximate search lookup_array with repetitive values" (2023).
+      setCellContent("A1", "=MATCH(0, {3,2,2}, -1)");
+      setCellContent("A2", "=MATCH(4, {3,2,2}, -1)");
+      setCellContent("A3", "=MATCH(2.5, {3,2,2}, -1)");
+
+      expect(cell("A1")).toBe(3);
+      expect(cell("A2")).toBe(FormulaError.NA);
+      expect(cell("A3")).toBe(1);
+    });
+
+    test("searches a row by column position", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "MAP-994"],
+          ["B1", "MAP-10977"],
+          ["D1", "MAP-320"],
+          ["A2", '=MATCH("MAP-994", A1:D1)'],
+          ["A3", '=MATCH("MAP-994", 1:1)'],
+        ])
+      );
+
+      expect(cell("A2")).toBe(4);
+      expect(cell("A3")).toBe(4);
+    });
+
+    test("recalculates when a cell of the lookup array changes", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "MAP-994"],
+          ["A2", "MAP-10977"],
+          ["A3", '="MAP-" & "320"'],
+          ["B1", '=MATCH("MAP-994", A1:A3)'],
+        ])
+      );
+      expect(cell("B1")).toBe(3);
+
+      setCellContent("A2", "MAP-999");
+      expect(cell("B1")).toBe(1);
     });
   });
 

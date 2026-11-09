@@ -19,6 +19,7 @@ When a formula is parsed, its references are extracted:
 | Cross-workbook | `=[Book2]Sheet1!A1` | a cell node in another workbook |
 | Named expression | `=TaxRate` | the named expression's own graph |
 | Structured | `=SUM(Sales[Qty])` | the table's resolved area |
+| Cross-workbook structured | `=SUM([Book2]Sales[Qty])` | the resolved area of a table in another workbook |
 
 Ranges are stored as ranges, not expanded into their members. `=SUM(A:A)` adds
 one edge, not a million.

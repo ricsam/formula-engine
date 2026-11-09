@@ -415,4 +415,124 @@ describe("TEXTJOIN function", () => {
       expect(cell("A2")).toBe("a-b");
     });
   });
+
+  describe("structured references", () => {
+    test("joins every column of a current-row column span", () => {
+      engine.setSheetContent(
+        sheetAddress,
+        new Map<string, SerializedCellValue>([
+          ["A1", "a"],
+          ["B1", "b"],
+          ["C1", "c"],
+          ["D1", "joined"],
+          ["A2", 1],
+          ["B2", 2],
+          ["C2", 3],
+          ["D2", '=TEXTJOIN("-", TRUE, [@[a]:[c]])'],
+          ["A3", "x"],
+          ["C3", "z"],
+          ["D3", '=TEXTJOIN("-", TRUE, [@[a]:[c]])'],
+        ])
+      );
+      engine.addTable({
+        tableName: "Spans",
+        workbookName,
+        sheetName,
+        start: "A1",
+        numRows: { type: "number", value: 2 },
+        numCols: 4,
+      });
+
+      expect(cell("D2")).toBe("1-2-3");
+      expect(cell("D3")).toBe("x-z");
+    });
+
+    /**
+     * The experiment_metadata column (J) of the ted_export_rfp and
+     * ted_export_cd3- sheets of the Responder Peptide Pulse batch workbook,
+     * imported as WorkbookData the way the excel-to-formula-engine importer
+     * does. The formula and the pep_concentration (H) and gate (I) columns it
+     * reads come from the workbook; columns A–G stand in for the rest of the
+     * export.
+     */
+    test("computes the experiment_metadata column of the peptide pulse export sheets", () => {
+      const experimentMetadata =
+        '=IF(OR([@pep_concentration]="np",[@pep_concentration]="null",[@pep_concentration]="MAP"),[@gate],TEXTJOIN(", ",TRUE,[@[pep_concentration]:[gate]]))';
+      const exportWorkbook = "Responder Peptide Pulse";
+      const exportSheet = (gate: string, concentrations: string[]) => {
+        const content = new Map<string, SerializedCellValue>();
+        "ABCDEFG".split("").forEach((column, index) => {
+          content.set(`${column}1`, `field_${index + 1}`);
+        });
+        content.set("H1", "pep_concentration");
+        content.set("I1", "gate");
+        content.set("J1", "experiment_metadata");
+        concentrations.forEach((concentration, index) => {
+          const row = index + 2;
+          content.set(`A${row}`, `sample ${index + 1}`);
+          content.set(`H${row}`, concentration);
+          content.set(`I${row}`, gate);
+          content.set(`J${row}`, experimentMetadata);
+        });
+        return content;
+      };
+      const concentrations = ["10uM", "1uM", "np", "null", "MAP"];
+
+      engine.addWorkbook({
+        workbookName: exportWorkbook,
+        data: {
+          sheets: [
+            { name: "ted_export_rfp", content: exportSheet("RFP+", concentrations) },
+            { name: "ted_export_cd3-", content: exportSheet("CD3-", concentrations) },
+          ],
+          tables: [
+            {
+              name: "ted_export_rfp",
+              sheetName: "ted_export_rfp",
+              start: "A1",
+              numRows: { type: "number", value: concentrations.length },
+              numCols: 10,
+            },
+            {
+              name: "ted_export_cd3",
+              sheetName: "ted_export_cd3-",
+              start: "A1",
+              numRows: { type: "number", value: concentrations.length },
+              numCols: 10,
+            },
+          ],
+        },
+      });
+
+      const experimentMetadataColumn = (sheet: string) =>
+        concentrations.map((_, index) =>
+          engine.getCellValue({
+            workbookName: exportWorkbook,
+            sheetName: sheet,
+            ...parseCellReference(`J${index + 2}`),
+          })
+        );
+
+      expect(experimentMetadataColumn("ted_export_rfp")).toEqual([
+        "10uM, RFP+",
+        "1uM, RFP+",
+        "RFP+",
+        "RFP+",
+        "RFP+",
+      ]);
+      expect(experimentMetadataColumn("ted_export_cd3-")).toEqual([
+        "10uM, CD3-",
+        "1uM, CD3-",
+        "CD3-",
+        "CD3-",
+        "CD3-",
+      ]);
+      // The imported formula is stored with its whole span.
+      expect(
+        engine
+          .getSheetSerialized({ workbookName: exportWorkbook, sheetName: "ted_export_rfp" })
+          .get("J2")
+      ).toContain('TEXTJOIN(", ", TRUE, [@[pep_concentration]:[gate]])');
+    });
+  });
 });

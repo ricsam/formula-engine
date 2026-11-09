@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { astToString } from "../parser/formatter";
+import type { ASTNode } from "../parser/ast";
 import { ParseError, parseFormula } from "../parser/parser";
 import {
   formatFormula,
@@ -11,9 +11,20 @@ function formulaBody(formula: string): string {
   return formula.startsWith("=") ? formula.slice(1) : formula;
 }
 
+/** The AST without the source positions of its nodes, for comparing trees. */
+function withoutPositions(ast: ASTNode): unknown {
+  return JSON.parse(
+    JSON.stringify(ast, (key, value) => (key === "position" ? undefined : value))
+  );
+}
+
+/**
+ * Compares the parsed trees rather than their `astToString` text, so a
+ * rendering that loses part of a node cannot make two formulas look equal.
+ */
 function expectSameExpression(left: string, right: string): void {
-  expect(astToString(parseFormula(formulaBody(left)))).toBe(
-    astToString(parseFormula(formulaBody(right)))
+  expect(withoutPositions(parseFormula(formulaBody(left)))).toEqual(
+    withoutPositions(parseFormula(formulaBody(right)))
   );
 }
 
@@ -92,6 +103,7 @@ describe("public formula formatter", () => {
       '=IFERROR(INDEX(Table1[Value],MATCH(A1,Table1[Key],0)),"missing")',
       "=Sheet1:Sheet3!A1+B1*C1",
       "={SUM(A1,A2),MAX(B1,B2);TRUE,#N/A}",
+      '=IF(OR([@pep_concentration]="np",[@pep_concentration]="null",[@pep_concentration]="MAP"),[@gate],TEXTJOIN(", ",TRUE,[@[pep_concentration]:[gate]]))',
     ];
 
     for (const formula of formulas) {
@@ -104,6 +116,17 @@ describe("public formula formatter", () => {
       expectSameExpression(formula, compact);
       expectSameExpression(formula, pretty);
     }
+  });
+
+  test("keeps every column of a current-row column span", () => {
+    // The engine stores this output, so a span written as its first column
+    // would make TEXTJOIN read one cell instead of the row's span.
+    expect(
+      formatFormula('=TEXTJOIN(", ",TRUE,[@[pep_concentration]:[gate]])')
+    ).toBe('=TEXTJOIN(", ", TRUE, [@[pep_concentration]:[gate]])');
+    expect(formatFormula("=SUM( [@[Net Sales]:[Gross Profit]] )")).toBe(
+      "=SUM([@[Net Sales]:[Gross Profit]])"
+    );
   });
 
   test("returns invalid formulas verbatim from the safe API", () => {

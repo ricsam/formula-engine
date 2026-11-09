@@ -405,7 +405,7 @@ describe("FormulaEngine", () => {
     // num	result	                    sum	                        extras
     // 1	=[@num] * 10	            =SUM([result])
     // 3	=[@num] * 10	            =SUM(Table1[[num]:[result]])
-    // 4	=[@num] * 10	            =SUM(Table1[@[num]:[result]])
+    // 4	=[@num] * 10	            =SUM(Table1[@[num]:[result]])  =SUM([@[num]:[result]])
     engine.setSheetContent(
       sheetAddress,
       new Map<string, SerializedCellValue>([
@@ -424,6 +424,7 @@ describe("FormulaEngine", () => {
         ["A4", 4],
         ["B4", "=[@num] * 10"], // Current row reference
         ["C4", "=SUM(Table1[@[num]:[result]])"], // Bracketed current row range
+        ["D4", "=SUM([@[num]:[result]])"], // Unqualified current row range
       ])
     );
 
@@ -456,6 +457,9 @@ describe("FormulaEngine", () => {
 
     // C4: SUM(Table1[@[num]:[result]]) = SUM(A4:B4) = 4 + 40 = 44
     expect(cell("C4")).toBe(44);
+
+    // D4: SUM([@[num]:[result]]) = SUM(A4:B4) = 4 + 40 = 44
+    expect(cell("D4")).toBe(44);
   });
 
   test("should handle complex formula with LEFT and FIND in table", () => {

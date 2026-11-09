@@ -12,6 +12,11 @@ import type { ASTNode } from "../parser/ast";
  * @param formula The formula string (without the leading =)
  * @param oldSheetName The old sheet name to replace
  * @param newSheetName The new sheet name to use
+ * @param workbookName The workbook that owns the renamed sheet. Without it,
+ * references to a sheet of that name in any workbook are renamed.
+ * @param formulaWorkbookName The workbook the formula belongs to, which
+ * unqualified references such as `Sheet1!A1` point into. Without it,
+ * unqualified references are renamed.
  * @returns The updated formula string
  */
 export function renameSheetInFormula(options: {
@@ -19,15 +24,26 @@ export function renameSheetInFormula(options: {
   oldSheetName: string;
   newSheetName: string;
   workbookName?: string;
+  formulaWorkbookName?: string;
 }): string {
-  const { formula, oldSheetName, newSheetName, workbookName } = options;
+  const {
+    formula,
+    oldSheetName,
+    newSheetName,
+    workbookName,
+    formulaWorkbookName,
+  } = options;
   try {
     const ast = parseFormula(formula);
 
-    const referencesTargetWorkbook = (nodeWorkbookName?: string) =>
-      workbookName === undefined ||
-      nodeWorkbookName === undefined ||
-      nodeWorkbookName === workbookName;
+    const referencesTargetWorkbook = (nodeWorkbookName?: string) => {
+      const referencedWorkbookName = nodeWorkbookName ?? formulaWorkbookName;
+      return (
+        workbookName === undefined ||
+        referencedWorkbookName === undefined ||
+        referencedWorkbookName === workbookName
+      );
+    };
     
     const updatedAst = transformAST(ast, (node) => {
       // Handle regular cross-sheet references (e.g., Sheet1!A1)

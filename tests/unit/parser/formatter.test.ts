@@ -1,7 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { createStructuredReferenceNode } from "../../../src/parser/ast";
+import {
+  createStructuredReferenceNode,
+  type ASTNode,
+} from "../../../src/parser/ast";
 import { astToString, formatFormula } from "../../../src/parser/formatter";
 import { parseFormula } from "../../../src/parser/parser";
+
+/** The AST without the source positions of its nodes, for comparing trees. */
+function withoutPositions(ast: ASTNode): unknown {
+  return JSON.parse(
+    JSON.stringify(ast, (key, value) => (key === "position" ? undefined : value))
+  );
+}
 
 describe("Formula Formatter", () => {
   describe("Basic Values", () => {
@@ -358,6 +368,17 @@ describe("Formula Formatter", () => {
         // Single-bracket syntax treated as single column name
         expect(formatFormula("Table1[@CAR ID:ORDER ID]")).toBe("Table1[@CAR ID:ORDER ID]");
       });
+
+      test("should keep both ends of an unqualified current row column range", () => {
+        // Writing only the first column would turn the span into one cell.
+        expect(formatFormula("[@[num]:[result]]")).toBe("[@[num]:[result]]");
+        expect(formatFormula("[@[CAR ID]:[ORDER ID]]")).toBe("[@[CAR ID]:[ORDER ID]]");
+        expect(
+          formatFormula('TEXTJOIN(", ", TRUE, [@[pep_concentration]:[gate]])')
+        ).toBe('TEXTJOIN(", ",TRUE,[@[pep_concentration]:[gate]])');
+        // A single column needs no inner brackets.
+        expect(formatFormula("[@[num]:[num]]")).toBe("[@num]");
+      });
     });
 
     describe("Complex Real-World Formulas", () => {
@@ -451,8 +472,18 @@ describe("Formula Formatter", () => {
     });
 
     test("should format workbook table references", () => {
-      expect(formatFormula("[MyWorkbook]!Table1[Column1]")).toBe("[MyWorkbook]!Table1[Column1]");
-      expect(formatFormula("[Quarterly Model]!Products[Price]")).toBe("[Quarterly Model]!Products[Price]");
+      expect(formatFormula("[MyWorkbook]Table1[Column1]")).toBe("[MyWorkbook]Table1[Column1]");
+      expect(formatFormula("[Quarterly Model]Products[Price]")).toBe("[Quarterly Model]Products[Price]");
+      expect(formatFormula("INDEX([B b]RDA_1[Val],2)")).toBe("INDEX([B b]RDA_1[Val],2)");
+    });
+
+    test("should format every workbook table reference form", () => {
+      expect(formatFormula("[Book]Sales[@Qty]")).toBe("[Book]Sales[@Qty]");
+      expect(formatFormula("[Book]Sales[@[Unit Price]]")).toBe("[Book]Sales[@Unit Price]");
+      expect(formatFormula("[Book]Sales[@[Qty]:[Price]]")).toBe("[Book]Sales[@[Qty]:[Price]]");
+      expect(formatFormula("[Book]Sales[[Qty]:[Price]]")).toBe("[Book]Sales[[Qty]:[Price]]");
+      expect(formatFormula("[Book]Sales[#Headers]")).toBe("[Book]Sales[#Headers]");
+      expect(formatFormula("[Book]Sales[[#Data],[Qty]:[Price]]")).toBe("[Book]Sales[[#Data],[Qty]:[Price]]");
     });
 
     test("should canonicalize workbook table references without sheet qualifiers", () => {
@@ -463,7 +494,7 @@ describe("Formula Formatter", () => {
         cols: { startCol: "Column1", endCol: "Column1" },
       });
 
-      expect(astToString(ast)).toBe("[MyWorkbook]!Table1[Column1]");
+      expect(astToString(ast)).toBe("[MyWorkbook]Table1[Column1]");
     });
 
     test("should format complex workbook names", () => {
@@ -528,6 +559,7 @@ describe("Formula Formatter", () => {
       "'My Sheet'!TaxRate",
       "Table1[[num]:[result]]",
       "Table1[@[num]:[result]]",
+      "[@[num]:[result]]",
       "[result]",
       "[num:result]",
       "[#Data]",
@@ -542,6 +574,8 @@ describe("Formula Formatter", () => {
       "[@[Net Sales]]",
       "Table1[[CAR ID]:[ORDER ID]]",
       "Table1[@[Net Sales]:[Gross Profit]]",
+      "[@[Net Sales]:[Gross Profit]]",
+      'IF(OR([@pep_concentration]="np",[@pep_concentration]="null",[@pep_concentration]="MAP"),[@gate],TEXTJOIN(", ",TRUE,[@[pep_concentration]:[gate]]))',
       "INDEX(Table1[CAR ID],MATCH([@CUSTOMER-ID],Table1[CUSTOMER-ID],0))",
       "VLOOKUP([@Customer Name],CustomerTable[[Customer Name]:[Phone Number]],3,FALSE)",
       // Excel-style selector with column range
@@ -563,8 +597,10 @@ describe("Formula Formatter", () => {
       "[MyWorkbook]Sheet1!A1:C5",
       "[MyWorkbook]Sheet1!A1:INFINITY",
       "[MyWorkbook]Sheet1!TaxRate",
-      "[MyWorkbook]!Table1[Column1]",
-      "[Quarterly Model]!Products[Price]"
+      "[MyWorkbook]Table1[Column1]",
+      "[Quarterly Model]Products[Price]",
+      "[Quarterly Model]Products[@Price]",
+      "[Quarterly Model]Products[[#Data],[Product]:[Price]]"
     ];
 
     test.each(testCases)("should round-trip formula: %s", (formula: string) => {
@@ -575,6 +611,10 @@ describe("Formula Formatter", () => {
 
       // The formatted string should be stable (formatting twice should give same result)
       expect(reformatted).toBe(formatted);
+      // ...and lossless: it must parse back to the same expression. Stability
+      // alone would accept a form that drops part of a node, since the shorter
+      // form is stable too.
+      expect(withoutPositions(reparsed)).toEqual(withoutPositions(ast));
     });
   });
 

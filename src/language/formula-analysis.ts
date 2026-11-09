@@ -878,18 +878,18 @@ function structuredCandidateEnd(
   if (token.source.type === "LBRACKET") {
     const close = findMatchingBracket(tokens, startIndex);
     if (close < 0) return -1;
-    if (
-      tokens[close + 1]?.source.type === "EXCLAMATION" &&
-      tokens[close + 2]?.source.type === "IDENTIFIER" &&
-      tokens[close + 3]?.source.type === "LBRACKET"
-    ) {
-      return findMatchingBracket(tokens, close + 3);
+    const next = tokens[close + 1]?.source.type;
+    const afterNext = tokens[close + 2]?.source.type;
+    // [Book]Table[Column] names a table in another workbook.
+    if (next === "IDENTIFIER" && afterNext === "LBRACKET") {
+      return findMatchingBracket(tokens, close + 2);
     }
-    // [Book]Sheet!A1 is a workbook qualifier, not a bare table column.
+    // [Book]Sheet!A1 is a workbook qualifier, not a bare table column, and
+    // `]!` cannot follow a bare table column either.
     if (
-      tokens[close + 1]?.source.type === "IDENTIFIER" &&
-      (tokens[close + 2]?.source.type === "EXCLAMATION" ||
-        tokens[close + 2]?.source.type === "COLON")
+      next === "EXCLAMATION" ||
+      (next === "IDENTIFIER" &&
+        (afterNext === "EXCLAMATION" || afterNext === "COLON"))
     ) {
       return -1;
     }
@@ -908,6 +908,16 @@ function markStructuredSyntax(
 ): void {
   assignReferenceId(tokens, startIndex, endIndex + 1, referenceId);
   if (node.workbookName) {
+    // Like other references into another workbook, the whole reference is
+    // external: [Book]Table[Column].
+    addModifier(
+      tokens,
+      Array.from(
+        { length: endIndex - startIndex + 1 },
+        (_, i) => startIndex + i
+      ),
+      "external"
+    );
     const firstClose = tokens.findIndex(
       (token, index) =>
         index >= startIndex &&
@@ -921,14 +931,6 @@ function markStructuredSyntax(
         firstClose,
         "workbook-name",
         referenceId
-      );
-      addModifier(
-        tokens,
-        Array.from(
-          { length: firstClose - startIndex - 1 },
-          (_, i) => startIndex + i + 1
-        ),
-        "external"
       );
     }
   }

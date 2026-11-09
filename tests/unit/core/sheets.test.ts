@@ -263,6 +263,49 @@ describe("Sheets", () => {
     expect(cell("Sheet2", "C1")).toBe(300);
   });
 
+  test("should only update references to the renamed workbook's sheet", () => {
+    engine.addSheet({ workbookName, sheetName: "Sheet1" });
+    engine.addWorkbook({ workbookName: "Other" });
+    engine.addSheet({ workbookName: "Other", sheetName: "Sheet1" });
+    engine.addSheet({ workbookName: "Other", sheetName: "Sheet2" });
+    setCellContent("Sheet1", "A1", 1);
+    engine.setCellContent(
+      { workbookName: "Other", sheetName: "Sheet1", ...parseCellReference("A1") },
+      2
+    );
+    const otherSheet = { workbookName: "Other", sheetName: "Sheet2" };
+    engine.setSheetContent(
+      otherSheet,
+      new Map([
+        // Other's own Sheet1
+        ["A1", "=Sheet1!A1"],
+        ["B1", `=[${workbookName}]Sheet1!A1`],
+      ])
+    );
+    const otherValue = (ref: string) =>
+      engine.getCellValue({ ...otherSheet, ...parseCellReference(ref) });
+
+    engine.renameSheet({
+      workbookName,
+      sheetName: "Sheet1",
+      newSheetName: "Renamed",
+    });
+
+    expect(engine.getSheetSerialized(otherSheet).get("A1")).toBe("=Sheet1!A1");
+    expect(engine.getSheetSerialized(otherSheet).get("B1")).toBe(
+      `=[${workbookName}]Renamed!A1`
+    );
+    expect(otherValue("A1")).toBe(2);
+    expect(otherValue("B1")).toBe(1);
+
+    engine.undo();
+    expect(engine.getSheetSerialized(otherSheet).get("B1")).toBe(
+      `=[${workbookName}]Sheet1!A1`
+    );
+    expect(otherValue("A1")).toBe(2);
+    expect(otherValue("B1")).toBe(1);
+  });
+
   test("should update named expressions when renaming sheet", () => {
     engine.addSheet({ workbookName, sheetName: "Sheet1" });
 

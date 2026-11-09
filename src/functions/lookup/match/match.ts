@@ -6,8 +6,13 @@ import {
   type FunctionDefinition,
   type FunctionEvaluationResult,
 } from "../../../core/types";
+import { getSpillAreaShape } from "../../../evaluator/array-shape";
 import type { EvaluationContext } from "../../../evaluator/evaluation-context";
 import { getSuppliedArgument } from "../../../parser/ast";
+import {
+  findApproximateMatch,
+  type ApproximateMatchCell,
+} from "../approximate-match";
 
 /**
  * MATCH function - Returns the position of a value in an array
@@ -18,6 +23,16 @@ import { getSuppliedArgument } from "../../../parser/ast";
  * - lookup_value: string or number only
  * - lookup_array: array of strings or numbers only
  * - match_type: number only (must be -1, 0, or 1)
+ *
+ * Match types 1 and -1 search like Excel, with its binary search (see
+ * approximate-match.ts) rather than a scan for the closest value. On data
+ * sorted ascending (1) or descending (-1) that finds the closest value, the
+ * last one of duplicates. On unsorted data it returns the position Excel
+ * returns, which workbooks that leave out the `,0` of an exact match depend
+ * on: `MATCH("MAP-994", A1:A3)` over `MAP-994`, `MAP-10977`, `MAP-320` is 3.
+ * Blank cells, errors and values of another type than lookup_value are
+ * stepped over, as in Excel. An unbounded range such as A:A is searched up to
+ * its last non-empty cell.
  *
  * Omitted arguments (a comma with nothing) follow Excel, where an omitted
  * value is 0: `MATCH(x, range,)` is an exact match, unlike `MATCH(x, range)`
@@ -62,13 +77,74 @@ function matchPosition(
   };
 }
 
+function notFound(context: EvaluationContext): FunctionEvaluationResult {
+  return {
+    type: "error",
+    err: FormulaError.NA,
+    message: "MATCH: lookup_value not found in lookup_array",
+    errAddress: context.dependencyNode,
+  };
+}
+
+/**
+ * Match types 1 and -1: Excel's binary search over the cells of lookup_array.
+ * Positions are read from the cells, so the blank cells a range leaves out
+ * keep their place. `length` is the number of cells along lookup_array,
+ * Infinity for an unbounded range, which is searched up to its last cell.
+ */
+function approximateMatch(
+  lookupValue: CellValue,
+  values: CellInRangeResult[],
+  order: "ascending" | "descending",
+  context: EvaluationContext,
+  isHorizontal: boolean,
+  length: number
+): FunctionEvaluationResult {
+  const cells: ApproximateMatchCell[] = [];
+  for (const { result, relativePos } of values) {
+    const position = isHorizontal ? relativePos.x : relativePos.y;
+    const across = isHorizontal ? relativePos.y : relativePos.x;
+    if (position < 0 || across !== 0) continue;
+    // The search may read any cell, so it needs them all.
+    if (result.type === "awaiting-evaluation") return result;
+    cells.push({
+      position,
+      comparison:
+        result.type === "value"
+          ? compareMatchValues(result.result, lookupValue)
+          : null,
+    });
+  }
+  cells.sort((a, b) => a.position - b.position);
+  // Keep the first cell reported for a position.
+  const sortedCells = cells.filter(
+    (cell, index) => index === 0 || cell.position !== cells[index - 1]!.position
+  );
+
+  const lastPosition = sortedCells[sortedCells.length - 1]?.position ?? -1;
+  const position = findApproximateMatch(
+    sortedCells,
+    Number.isFinite(length) ? length : lastPosition + 1,
+    order
+  );
+  if (position === undefined) {
+    return notFound(context);
+  }
+
+  return {
+    type: "value",
+    result: { type: "number", value: position + 1 },
+  };
+}
+
 // Helper function to perform MATCH operation
 export function matchOperation(
   lookupValue: CellValue,
   lookupArray: EvaluateAllCellsResult,
   matchType: number,
   context: EvaluationContext,
-  isHorizontal: boolean
+  isHorizontal: boolean,
+  length: number
 ): FunctionEvaluationResult {
   // Strict type checking for lookup_value
   if (lookupValue.type !== "string" && lookupValue.type !== "number") {
@@ -96,77 +172,35 @@ export function matchOperation(
     return lookupArray;
   }
 
-  let bestApproximateMatch: CellInRangeResult | undefined;
-  let previousComparableValue: CellValue | undefined;
+  if (matchType !== 0) {
+    return approximateMatch(
+      lookupValue,
+      lookupArray.values,
+      matchType === 1 ? "ascending" : "descending",
+      context,
+      isHorizontal,
+      length
+    );
+  }
 
   for (const value of lookupArray.values) {
     if (value.result.type === "value") {
-      if (matchType === 0) {
-        // Exact match (case-insensitive for strings, matching Excel behavior)
-        const arrayValue = value.result.result;
+      // Exact match (case-insensitive for strings, matching Excel behavior)
+      const arrayValue = value.result.result;
 
-        const isMatch =
-          arrayValue.type === lookupValue.type &&
-          (arrayValue.type === "string" && lookupValue.type === "string"
-            ? arrayValue.value.toLowerCase() === lookupValue.value.toLowerCase()
-            : arrayValue.value === lookupValue.value);
+      const isMatch =
+        arrayValue.type === lookupValue.type &&
+        (arrayValue.type === "string" && lookupValue.type === "string"
+          ? arrayValue.value.toLowerCase() === lookupValue.value.toLowerCase()
+          : arrayValue.value === lookupValue.value);
 
-        if (isMatch) {
-          return matchPosition(value, isHorizontal);
-        }
-      } else {
-        const arrayValue = value.result.result;
-        const lookupComparison = compareMatchValues(arrayValue, lookupValue);
-
-        // Ignore values of a different type, just as exact MATCH does when
-        // strict type checking prevents them from matching lookupValue.
-        if (lookupComparison === null) continue;
-
-        if (previousComparableValue !== undefined) {
-          const orderComparison = compareMatchValues(
-            arrayValue,
-            previousComparableValue
-          )!;
-          const isOutOfOrder =
-            matchType === 1 ? orderComparison < 0 : orderComparison > 0;
-
-          if (isOutOfOrder) {
-            return {
-              type: "error",
-              err: FormulaError.NA,
-              message:
-                matchType === 1
-                  ? "MATCH lookup_array must be sorted in ascending order for match_type 1"
-                  : "MATCH lookup_array must be sorted in descending order for match_type -1",
-              errAddress: context.dependencyNode,
-            };
-          }
-        }
-
-        previousComparableValue = arrayValue;
-
-        // Updating on equality intentionally returns the last duplicate, which
-        // is the boundary value selected by approximate MATCH.
-        if (
-          (matchType === 1 && lookupComparison <= 0) ||
-          (matchType === -1 && lookupComparison >= 0)
-        ) {
-          bestApproximateMatch = value;
-        }
+      if (isMatch) {
+        return matchPosition(value, isHorizontal);
       }
     }
   }
 
-  if (bestApproximateMatch !== undefined) {
-    return matchPosition(bestApproximateMatch, isHorizontal);
-  }
-
-  return {
-    type: "error",
-    err: FormulaError.NA,
-    message: "MATCH: lookup_value not found in lookup_array",
-    errAddress: context.dependencyNode,
-  };
+  return notFound(context);
 }
 
 export const MATCH: FunctionDefinition = {
@@ -249,6 +283,8 @@ export const MATCH: FunctionDefinition = {
       errAddress: context.dependencyNode,
     };
     let isHorizontal = false;
+    // Cells along lookup_array; Infinity for an unbounded range such as A:A.
+    let length = 1;
 
     // Handle direct range arguments (like A:A) before extracting lookup_array values
 
@@ -293,6 +329,8 @@ export const MATCH: FunctionDefinition = {
         // Horizontal if it's a single row
         isHorizontal = isSingleRow;
       }
+      const shape = getSpillAreaShape(spillArea);
+      length = isHorizontal ? shape.cols : shape.rows;
 
       // Extract values from spilled array
       lookupArray = lookupArrayResult.evaluateAllCells.call(this, {
@@ -309,7 +347,8 @@ export const MATCH: FunctionDefinition = {
       lookupArray,
       Math.floor(matchTypeResult.result.value), // Floor to handle decimal inputs
       context,
-      isHorizontal
+      isHorizontal,
+      length
     );
   },
 };
