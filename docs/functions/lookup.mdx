@@ -150,6 +150,40 @@ the largest value less than or equal to the lookup value. An omitted
 An omitted `lookup_value` is the number `0`: `=MATCH(,B2:B6,0)` looks for a
 `0`.
 
+### Approximate match
+
+Match types `1` and `-1` search the way Excel does, with a binary search: they
+look at the middle cell, go on in the half where the value would be, and
+return where the search ends. On data sorted ascending (`1`) or descending
+(`-1`) that is the closest value, the largest one less than or equal to the
+lookup value or the smallest one greater than or equal to it, and the last of
+equal values next to each other. Neither Excel nor this engine checks the
+order, so unsorted data gives the position Excel gives. Given `MAP-994`,
+`MAP-10977` and `MAP-320` in `A1:A3`:
+
+```excel
+=MATCH("MAP-994",A1:A3)    // 3, as in Excel
+=MATCH("MAP-994",A1:A3,0)  // 1
+```
+
+Use match type `0` to find a value in unsorted data. Blank cells, errors and
+values of another type than the lookup value are stepped over, so a lookup
+value larger than any in a column finds the column's last number or text,
+whatever the order:
+
+```excel
+=MATCH(9.99E+307,B:B)  // the position of the last number in column B
+=MATCH("Ω",A:A)        // the position of the last text in column A
+```
+
+<Note>
+  Where the search goes depends on the length of the range. This engine has no
+  sheet limit and searches an unbounded range such as `B:B` up to its last
+  non-empty cell, so on unsorted data a whole-column `MATCH` can return a
+  different position than Excel. Bounded ranges and table columns are
+  searched like in Excel.
+</Note>
+
 ## `XLOOKUP`
 
 ```excel
