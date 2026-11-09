@@ -17,7 +17,7 @@ describe("formula function catalog", () => {
     );
 
     expect(catalog.map(({ name }) => name)).toEqual(registeredNames);
-    expect(catalog).toHaveLength(47);
+    expect(catalog).toHaveLength(59);
 
     for (const descriptor of catalog) {
       expect(descriptor.description.length).toBeGreaterThan(0);
@@ -35,6 +35,18 @@ describe("formula function catalog", () => {
     expect(findFormulaFunction("CoNcAt")).toBe(canonical!);
     expect(canonical?.aliases).toEqual(["CONCAT"]);
     expect(findFormulaFunction("missing")).toBeUndefined();
+  });
+
+  test("finds dotted names and their aliases", () => {
+    const canonical = findFormulaFunction("stdev.s");
+
+    expect(canonical).toMatchObject({
+      name: "STDEV.S",
+      aliases: ["STDEV"],
+      category: "math",
+      signature: "STDEV.S(number1, [number2], ...)",
+    });
+    expect(findFormulaFunction("STDEV")).toBe(canonical!);
   });
 
   test("exposes structured arguments for completion snippets", () => {

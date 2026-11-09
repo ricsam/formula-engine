@@ -159,7 +159,7 @@ function LiveWorkbook() {
         <div className="metric-strip">
           <div><span>Current revenue</span><strong>${formatNumber(totalRevenue)}</strong></div>
           <div><span>Next period</span><strong>${formatNumber(nextRevenue)}</strong></div>
-          <div><span>Functions loaded</span><strong>47</strong></div>
+          <div><span>Functions loaded</span><strong>59</strong></div>
           <div className="recalc"><span>Calculation</span><strong><i/> Live</strong></div>
         </div>
         <div className="workbook-stage">
@@ -292,7 +292,7 @@ function App() {
               <p className="hero-lede">A TypeScript formula engine with lazy evaluation, dynamic arrays, structured references and undo-ready mutations. Bring your own UI—or use ours.</p>
               <div className="hero-actions"><a className="button primary" href="#playground">Try the live model <Icon name="arrow"/></a><a className="button secondary" href={DOCS_URL}>Read the docs</a></div>
               <CopyInstall />
-              <div className="hero-proof"><span><Icon name="check" size={15}/>47 built-in functions</span><span><Icon name="check" size={15}/>2,699 tests</span><span><Icon name="check" size={15}/>Zero DOM dependencies</span></div>
+              <div className="hero-proof"><span><Icon name="check" size={15}/>59 built-in functions</span><span><Icon name="check" size={15}/>3,162 tests</span><span><Icon name="check" size={15}/>Zero DOM dependencies</span></div>
             </div>
             <div className="hero-code-card" aria-label="FormulaEngine code example">
               <div className="code-card-bar"><div><span/><span/><span/></div><span>forecast.ts</span><small>TypeScript</small></div>

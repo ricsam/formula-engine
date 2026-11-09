@@ -1,6 +1,6 @@
 ---
 title: "Array functions"
-description: "Generate and reshape dynamic arrays with SEQUENCE, UNIQUE, TOCOL, TOROW and HSTACK."
+description: "Generate, filter and reshape dynamic arrays with SEQUENCE, UNIQUE, FILTER, TOCOL, TOROW, HSTACK and TRANSPOSE."
 ---
 
 ## `SEQUENCE`
@@ -125,6 +125,76 @@ removes every entry, `UNIQUE` returns `#CALC!`.
 =UNIQUE(A1:A4, FALSE, TRUE) // #CALC! when every value repeats
 ```
 
+## `FILTER`
+
+Returns the rows of an array for which a condition is true, or its columns.
+
+```excel
+=FILTER(array, include, [if_empty])
+```
+
+| Argument | Meaning | Default |
+| --- | --- | --- |
+| `array` | range or array to filter | required |
+| `include` | one column as tall as `array`, which selects rows, or one row as wide as `array`, which selects columns | required |
+| `if_empty` | returned when nothing is selected | `#CALC!` |
+
+Given regions `North`, `South`, `North`, `East`, `North` in `A2:A6`, units
+`10`, `20`, `30`, `40`, `50` in `B2:B6` and prices `1.5`, `2.5`, `3.5`, `4.5`,
+`5.5` in `C2:C6`, `=FILTER(A2:C6, A2:A6="North")` spills:
+
+| | | |
+| --- | --- | --- |
+| North | 10 | 1.5 |
+| North | 30 | 3.5 |
+| North | 50 | 5.5 |
+
+```excel
+=FILTER(B2:B6, C2:C6>3)                   // 30, 40, 50
+=FILTER(B2:B6, A2:A6="West", "none")      // "none"
+=FILTER(B2:B6, A2:A6="West")              // #CALC!
+=SUM(FILTER(B2:B6, A2:A6="North"))        // 90
+=STDEV.S(FILTER(B2:B6, A2:A6="North"))    // 20
+=ROWS(FILTER(A2:C6, A2:A6="North"))       // 3
+=FILTER(A2:C6, {TRUE,FALSE,TRUE})         // columns A and C
+```
+
+`include` values are tested like `IF` conditions: `FALSE`, `0` and empty
+cells exclude, every other value includes. `if_empty` is evaluated only when
+nothing is selected; an omitted one, written as a trailing comma, keeps the
+`#CALC!` default. A one-cell result is a single value rather than a spill.
+
+An error in `include` is the result, even in a row that would not be selected,
+as in Excel. Errors in `array` stay in their cells. An `include` that is not
+one row or one column of the right size returns `#VALUE!`.
+
+### Combining conditions
+
+Excel workbooks usually combine conditions by multiplying them, as in
+`(A2:A6="North")*(B2:B6>20)`. Booleans are not numbers in this engine, so that
+returns `#VALUE!`. Combine conditions with `IF` instead:
+
+```excel
+=FILTER(B2:B6, IF(A2:A6="North", B2:B6>20))          // both: 30, 50
+=FILTER(B2:B6, IF(A2:A6="South", TRUE, A2:A6="East")) // either: 20, 40
+```
+
+### Unbounded ranges
+
+Whole columns work: `=FILTER(B:B, A:A="North")` spills `10`, `30`, `50` and
+grows as rows are added. `include` is read by its populated cells, and the
+cells it leaves out count as blank, so they are never selected. Both heights
+are unbounded, so ranges such as `B2:B` and `A2:A` must start in the same row
+to line up.
+
+<Warning>
+  - Excel returns `#VALUE!` for text in `include`; this engine selects the rows
+    with non-empty text, as `IF` treats it as `TRUE`.
+  - Selected cells that are empty read as `""`, where Excel shows `0`, and
+    aggregates skip them: `COUNTA(FILTER(...))` counts the populated selected
+    cells of a range. `ROWS(FILTER(...))` counts every selected row.
+</Warning>
+
 ## `TOCOL`
 
 Returns the cells of a range or array as a single column.
@@ -237,6 +307,36 @@ An argument with unbounded rows, such as `A:A`, makes the result unbounded, with
 `#N/A` below the shorter arguments. Only the last argument may have unbounded
 columns, such as `1:1`, since no column could follow it; otherwise the result is
 `#VALUE!`.
+
+## `TRANSPOSE`
+
+Swaps the rows and columns of a range or array: the first row becomes the first
+column.
+
+```excel
+=TRANSPOSE(array)
+```
+
+Given `1`, `2`, `3` in `A1:C1` and `4`, `5`, `6` in `A2:C2`,
+`=TRANSPOSE(A1:C2)` spills:
+
+| | |
+| --- | --- |
+| 1 | 4 |
+| 2 | 5 |
+| 3 | 6 |
+
+```excel
+=TRANSPOSE(SEQUENCE(1,3))       // 1, 2, 3 down a column
+=SUM(TRANSPOSE(A1:C2))          // 21
+=A1:A2*TRANSPOSE(A1:A2)         // 2 × 2: 1, 4 in the first row, 4, 16 in the second
+```
+
+Each cell of the result reads its source cell when it is read, so the spill
+follows edits like the range itself. A single value is returned as is, errors
+stay in their cells, and empty cells read as `""`, where Excel shows `0`.
+Aggregates read the cells the argument provides, for a range its populated
+cells. `=TRANSPOSE(A:A)` is a single row with unbounded columns.
 
 ## Spill obstruction
 

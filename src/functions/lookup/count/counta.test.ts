@@ -300,4 +300,73 @@ describe("COUNTA function", () => {
       expect(cell("C1")).toBe(5);
     });
   });
+
+  describe("results of array functions", () => {
+    // Wells in A1:A6 with a treatment in B1:B6; the IDs of untreated wells are
+    // missing, as in a layout map.
+    const layout: Array<[string, SerializedCellValue]> = [
+      ["A1", "W1"],
+      ["B1", "MAP"],
+      ["A2", "W2"],
+      ["B2", "control"],
+      ["A3", "W3"],
+      ["B3", "MAP"],
+      // A4 is empty
+      ["B4", "MAP"],
+      ["A5", '=""'],
+      ["B5", "MAP"],
+      ["A6", "=NOSUCHFN()"],
+      ["B6", "control"],
+    ];
+
+    test("counts the populated cells a FILTER selects", () => {
+      setContent([
+        ...layout,
+        ["D1", '=COUNTA(FILTER(A1:A6, B1:B6="MAP"))'],
+        ["D2", '=COUNTA(FILTER(A1:A6, B1:B6="control"))'],
+        ["D3", '=COUNTA(FILTER(A1:B6, B1:B6="MAP"))'],
+        ["D4", '=ROWS(FILTER(A1:A6, B1:B6="MAP"))'],
+      ]);
+
+      // W1, W3 and the formula returning "" in A5; A4 is empty
+      expect(cell("D1")).toBe(3);
+      // W2 and the error in A6
+      expect(cell("D2")).toBe(2);
+      // the four MAP rows of B and three cells of A
+      expect(cell("D3")).toBe(7);
+      // every selected row, whatever it holds
+      expect(cell("D4")).toBe(4);
+
+      setCellContent("A4", "W4");
+      expect(cell("D1")).toBe(4);
+    });
+
+    test("counts the cells of TRANSPOSE, IFS and VLOOKUP results", () => {
+      setContent([
+        ...layout,
+        ["D1", "=COUNTA(TRANSPOSE(A1:B6))"],
+        ["D2", '=COUNTA(IFS(B1:B6="MAP", A1:A6, TRUE, "none"))'],
+        ["D3", '=COUNTA(VLOOKUP({"W1";"W2";"W9"}, A1:B6, 2, FALSE))'],
+      ]);
+
+      // the populated cells of A1:B6
+      expect(cell("D1")).toBe(11);
+      // one cell per row of the broadcast result
+      expect(cell("D2")).toBe(6);
+      // MAP, control and #N/A
+      expect(cell("D3")).toBe(3);
+    });
+
+    test("counts every cell of an IS function over a bounded range", () => {
+      setContent([
+        ...layout,
+        ["D1", "=COUNTA(ISBLANK(A1:A6))"],
+        ["D2", "=SUM(IF(ISBLANK(A1:A6), 1, 0))"],
+      ]);
+
+      expect(cell("D1")).toBe(6);
+      // A4, and A5 whose formula returns ""
+      expect(cell("D2")).toBe(2);
+    });
+  });
 });

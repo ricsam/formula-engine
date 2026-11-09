@@ -70,9 +70,10 @@ read("C1"); // 3
 
 ## Broadcasting
 
-Operators (arithmetic, comparisons and `&`), `IF` and `IFERROR` combine arrays
-cell by cell, the way Excel does. In each dimension the result is as large as
-the largest operand:
+Operators (arithmetic, comparisons and `&`), `IF`, `IFS` and `IFERROR` combine
+arrays cell by cell, the way Excel does, and so do functions of several values
+such as `ROUND`, `TEXT` and the array arguments of `VLOOKUP`. In each
+dimension the result is as large as the largest operand:
 
 - a single value is repeated over the whole result;
 - an operand with one row, or one column, is repeated along that dimension;
@@ -295,6 +296,7 @@ engine.setSheetContent(
     `#SPILL!` alongside every other error value.
   </Card>
   <Card title="Array functions" icon="table-cells" href="/functions/array">
-    `SEQUENCE`, `UNIQUE`, `TOCOL`, `TOROW` and `HSTACK` in full.
+    `SEQUENCE`, `UNIQUE`, `FILTER`, `TOCOL`, `TOROW`, `HSTACK` and `TRANSPOSE`
+    in full.
   </Card>
 </CardGroup>

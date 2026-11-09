@@ -1,6 +1,6 @@
 ---
 title: "Logical functions"
-description: "IF, IFERROR, AND, OR, and LET."
+description: "IF, IFS, IFERROR, AND, OR, and LET."
 ---
 
 ## `IF`
@@ -40,6 +40,43 @@ Given `5`, `15`, `25` in `A1:A3`:
 Each cell reads only the branch its condition chooses. An error in a
 single-value branch therefore shows up only in the cells that choose it:
 `=IF({TRUE,FALSE}, 1, 1+"x")` spills `1` and `#VALUE!`.
+
+## `IFS`
+
+```excel
+=IFS(condition1, value1, [condition2, value2], ...)
+```
+
+Returns the value of the first true condition, like nested `IF`s. Add
+`TRUE, fallback` as the last pair for a default; without one, a formula where
+no condition is true returns `#N/A`.
+
+```excel
+=IFS(B2>=90,"A",B2>=80,"B",B2>=70,"C",TRUE,"F") // "B" when B2 is 85
+=IFS(B2>100,"high",B2<0,"negative")            // #N/A when B2 is 50
+```
+
+Conditions are tested like `IF`'s and evaluated in order up to the first true
+one. Only that condition's value is evaluated, so `=IFS(TRUE,1,NOSUCHFN(),2)`
+is `1`. The arguments come in pairs: an odd number of arguments returns
+`#VALUE!`. An omitted condition is `FALSE` and an omitted value is `0`, as in
+`IF`.
+
+An array condition makes `IFS` choose cell by cell, and the result spills. The
+conditions and values are broadcast against each other like the arguments of
+`IF`; each cell reads its conditions in order and only the value it chooses,
+and a cell without a true condition is `#N/A`. Given `5`, `15`, `25` in
+`A1:A3`:
+
+```excel
+=IFS(A1:A3>20,"big",A1:A3>10,"medium",TRUE,"small") // small, medium, big
+=SUM(IFS(A1:A3>10, A1:A3, TRUE, 0))                  // 40
+```
+
+<Warning>
+  Excel returns `#VALUE!` for a text condition, such as `=IFS("yes",1)`. This
+  engine treats non-empty text as `TRUE`, as `IF` does, and returns `1`.
+</Warning>
 
 ## `IFERROR`
 
