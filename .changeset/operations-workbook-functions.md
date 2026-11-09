@@ -34,10 +34,11 @@ and an error anywhere is the result. The `--(...)` idiom is `#VALUE!` here;
 choose values with `IF` instead.
 
 `VLOOKUP` searches the first column of a table like `MATCH`: exact for `FALSE`
-or `0` (text ignores case, no wildcards) and the largest value less than or
-equal to the lookup value for `TRUE`, the default. `col_index_num` below 1 is
-`#VALUE!` and beyond the table `#REF!`, and a blank result cell is `""`. Array
-lookup values and column numbers spill.
+or `0` (text ignores case, no wildcards) and, for `TRUE`, the default, with
+`MATCH`'s binary search, which finds the largest value less than or equal to
+the lookup value in a sorted column and Excel's row in an unsorted one.
+`col_index_num` below 1 is `#VALUE!` and beyond the table `#REF!`, and a blank
+result cell is `""`. Array lookup values and column numbers spill.
 
 `ISNUMBER` and `ISBLANK` test a value without propagating errors and test
 arrays element by element. Aggregates read every cell of a bounded result, so

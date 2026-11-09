@@ -49,6 +49,9 @@ function describeValue(value: CellValue): string {
  *   without regard to case, values only match values of the same type, and
  *   `lookup_value` must be a number or text. Wildcards (`*`, `?`) are not
  *   supported, as in MATCH; Excel supports them in an exact VLOOKUP.
+ * - Type 1 is Excel's binary search (see approximate-match.ts) over every row
+ *   of the table, blank rows included, so an unsorted first column gives the
+ *   row Excel gives.
  * - `range_lookup` defaults to TRUE when it is left out, as in Excel, and an
  *   omitted one (a trailing comma) is FALSE: `VLOOKUP(x, t, 2,)` is exact. An
  *   empty cell is FALSE too; text gives #VALUE!.
@@ -144,12 +147,13 @@ export const VLOOKUP: FunctionDefinition = {
     }
 
     // The table's shape and its first column, positioned from the table's
-    // top-left cell.
+    // top-left cell. Rows are Infinity for an unbounded table such as A:B.
+    let rows = 1;
     let cols = 1;
     let firstColumn: EvaluateAllCellsResult;
     if (tableResult.type === "spilled-values") {
       const area = tableResult.spillArea(context.cellAddress);
-      cols = getSpillAreaShape(area).cols;
+      ({ rows, cols } = getSpillAreaShape(area));
       const firstColumnArea: SpreadsheetRange = {
         start: area.start,
         end: {
@@ -205,12 +209,15 @@ export const VLOOKUP: FunctionDefinition = {
         );
       }
 
+      // The approximate search depends on the length of the column, so it
+      // covers every row of the table, blank ones included, as in Excel.
       const position = matchOperation(
         lookupValue,
         firstColumn,
         approximate ? 1 : 0,
         context,
-        false
+        false,
+        rows
       );
       if (position.type === "error") {
         return { ...position, message: `VLOOKUP: ${position.message}` };

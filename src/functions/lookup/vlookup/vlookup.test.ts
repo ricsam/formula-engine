@@ -217,6 +217,88 @@ describe("VLOOKUP function", () => {
       expect(cell("D2")).toBe("C");
       expect(cell("D3")).toBe(FormulaError.NA);
     });
+
+    test("reproduces Excel's results on an unsorted table", () => {
+      // Excel 2010 results posted on the MrExcel forum ("Understanding Binary
+      // Search", 2015): VLOOKUP(A2, $E$2:$F$18, 2, TRUE) over unsorted names.
+      // match.test.ts checks the same results through INDEX/MATCH.
+      const table = [
+        ["Yvonne", "Orlando"],
+        ["Freddi", "Gdansk"],
+        ["Danielle", "Buffalo"],
+        ["Samantha", "Dallas"],
+        ["Karen", "Seattle"],
+        ["Bette", "Mexico City"],
+        ["Kate", "Milwaukee"],
+        ["Jo", "Austin"],
+        ["Lou", "Montevideo"],
+        ["Lee", "Pedacuh"],
+        ["Rudy", "LaCrosse"],
+        ["Zed", "Baltimore"],
+        ["Thomas", "Los Angeles"],
+        ["Todd", "Jacksonville"],
+        ["Harrison", "Leipzig"],
+        ["Craig", "Miami"],
+        ["Maurice", "Montreal"],
+      ];
+      const excelResults = [
+        ["Samantha", "LaCrosse"],
+        ["Craig", FormulaError.NA],
+        ["Kate", "Buffalo"],
+        ["Jo", "Buffalo"],
+        ["Rudy", "LaCrosse"],
+        ["Lou", "Montevideo"],
+        ["Todd", "Montreal"],
+        ["Harrison", "Buffalo"],
+        ["Yvonne", "Montreal"],
+        ["Bette", FormulaError.NA],
+        ["Lee", "Buffalo"],
+        ["Thomas", "Los Angeles"],
+        ["Zed", "Montreal"],
+        ["Maurice", "Pedacuh"],
+        ["Danielle", FormulaError.NA],
+        ["Karen", "Buffalo"],
+        ["Freddi", "Gdansk"],
+        ["Xavier", "Montreal"],
+      ];
+      const content: Array<[string, SerializedCellValue]> = [];
+      table.forEach(([name, city], index) => {
+        content.push([`E${index + 2}`, name!], [`F${index + 2}`, city!]);
+      });
+      excelResults.forEach(([name], index) => {
+        content.push(
+          [`A${index + 2}`, name!],
+          [`B${index + 2}`, `=VLOOKUP(A${index + 2}, $E$2:$F$18, 2, TRUE)`]
+        );
+      });
+      setContent(content);
+
+      expect(excelResults.map((_, index) => cell(`B${index + 2}`))).toEqual(
+        excelResults.map(([, city]) => city)
+      );
+    });
+
+    test("searches every row of a bounded table, like MATCH", () => {
+      // Where the binary search goes depends on the number of rows, blank rows
+      // at the end of the table included. A 2-row table first probes 20 and
+      // stops; a 3-row table first probes the second row and finds 10.
+      setContent([
+        ["A1", 20],
+        ["B1", "twenty"],
+        ["A2", 10],
+        ["B2", "ten"],
+        // A3:B3 are empty
+        ["D1", "=VLOOKUP(10, A1:B2, 2)"],
+        ["D2", "=INDEX(B1:B2, MATCH(10, A1:A2))"],
+        ["D3", "=VLOOKUP(10, A1:B3, 2)"],
+        ["D4", "=INDEX(B1:B3, MATCH(10, A1:A3))"],
+      ]);
+
+      expect(cell("D1")).toBe(FormulaError.NA);
+      expect(cell("D2")).toBe(FormulaError.NA);
+      expect(cell("D3")).toBe("ten");
+      expect(cell("D4")).toBe("ten");
+    });
   });
 
   describe("arguments", () => {

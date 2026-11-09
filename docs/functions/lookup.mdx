@@ -246,9 +246,12 @@ number, or leaving it out finds the largest value less than or equal to
 
 The first column is searched like `MATCH` searches its `lookup_array`: exact
 matching is `MATCH` type `0` and approximate matching type `1`, values only
-match values of the same type, and `lookup_value` must be a number or text. An
-omitted `range_lookup`, written as a trailing comma, is `FALSE`, as in Excel:
-`=VLOOKUP("East",A2:B6,2,)` is an exact match.
+match values of the same type, and `lookup_value` must be a number or text.
+Approximate matching is Excel's binary search over every row of the table, so
+an unsorted first column gives the row Excel gives; see
+[Approximate match](#approximate-match). An omitted `range_lookup`, written as
+a trailing comma, is `FALSE`, as in Excel: `=VLOOKUP("East",A2:B6,2,)` is an
+exact match.
 
 `col_index_num` counts from `1`, the first column, and is truncated. Below `1`
 it returns `#VALUE!` and beyond the last column `#REF!`, whether or not the
