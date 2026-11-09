@@ -80,7 +80,20 @@ const result = engine.transact(() => {
 ```
 
 Use transactions for paste, imports, multi-cell forms, and operations that must
-feel atomic to a user.
+feel atomic to a user, such as
+[resizing a table and writing its new contents](/concepts/tables#resize-and-replace-the-contents).
+
+`onUpdate` listeners are notified once, when the outermost transaction ends. A
+`transact` call inside another one joins it.
+
+If an error escapes the outermost callback, every mutation the transaction made
+is rolled back, no update is sent, and the error is rethrown. The callback must
+be synchronous: a callback that returns a promise is rejected and rolled back.
+
+A transaction that would exceed the history budget (`undoRedo.maxBytes`, 64 MiB
+by default), or store metadata that history cannot copy, throws and is rolled
+back. Outside a transaction such an edit succeeds, but it clears the undo
+history and cannot be undone.
 
 ## Clear history
 

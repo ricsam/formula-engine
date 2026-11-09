@@ -783,19 +783,26 @@ export class TableManager {
     return String(value);
   }
 
-  private replaceHeader(
+  /**
+   * Builds a table's header map with several columns renamed at once. Applying
+   * renames one at a time collides on an intermediate duplicate when names are
+   * permuted (A, B -> B, A) and drops a column.
+   */
+  private buildRenamedHeaders(
     table: TableDefinition,
-    index: number,
-    newName: string
-  ): void {
+    newNamesByIndex: ReadonlyMap<number, string>
+  ): TableDefinition["headers"] {
     const headers = new Map<string, { name: string; index: number }>();
     for (const header of Array.from(table.headers.values()).sort(
       (a, b) => a.index - b.index
     )) {
-      const name = header.index === index ? newName : header.name;
+      const name = newNamesByIndex.get(header.index) ?? header.name;
+      if (headers.has(name)) {
+        throw new Error(`Duplicate table header "${name}"`);
+      }
       headers.set(name, { name, index: header.index });
     }
-    table.headers = headers;
+    return headers;
   }
 
   prepareHeaderUpdate(
@@ -927,13 +934,29 @@ export class TableManager {
 
   applyHeaderUpdates(updates: TableHeaderUpdate[]): void {
     return this.batchMutations(() => {
-      const affectedTables = new Set(updates.map((update) => update.table));
+      const newNamesByTable = new Map<TableDefinition, Map<number, string>>();
+      for (const update of updates) {
+        let newNames = newNamesByTable.get(update.table);
+        if (!newNames) {
+          newNames = new Map();
+          newNamesByTable.set(update.table, newNames);
+        }
+        newNames.set(update.index, update.newName);
+      }
+      // Build every header map before assigning any, so a rejected rename
+      // leaves all tables untouched.
+      const renamedHeaders = Array.from(
+        newNamesByTable,
+        ([table, newNames]) =>
+          [table, this.buildRenamedHeaders(table, newNames)] as const
+      );
+      const affectedTables = new Set(newNamesByTable.keys());
       const before = this.observingMutations
         ? this.captureTableObjectStates(affectedTables)
         : undefined;
 
-      for (const update of updates) {
-        this.replaceHeader(update.table, update.index, update.newName);
+      for (const [table, headers] of renamedHeaders) {
+        table.headers = headers;
       }
 
       if (before) {
