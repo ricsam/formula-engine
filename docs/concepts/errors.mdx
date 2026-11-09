@@ -13,9 +13,9 @@ Every result on this page was produced by running the code against the engine.
 
 | Value | Meaning | Typical trigger |
 | --- | --- | --- |
-| `#CALC!` | Array result is empty, or a `LET` expands too far | `=UNIQUE(A1:A2,FALSE,TRUE)` where every value repeats |
+| `#CALC!` | Array result is empty, or a `LET` expands too far | `=UNIQUE(A1:A2,FALSE,TRUE)` where every value repeats; `=FILTER(A1:A3,A1:A3="zzz")` without a match |
 | `#CYCLE!` | Circular reference | `A1: =A2`, `A2: =A1` |
-| `#N/A` | No value available | `=MATCH("zzz",A1:A3,0)` without a match; the third cell of `={1;2;3}+{10;20}` |
+| `#N/A` | No value available | `=MATCH("zzz",A1:A3,0)` or `=VLOOKUP("zzz",A1:B3,2,FALSE)` without a match; `=IFS(FALSE,1)`; the third cell of `={1;2;3}+{10;20}` |
 | `#NAME?` | Unknown function or name | `=NOSUCHFN(1)`, `=UnknownName` |
 | `#VALUE!` | Wrong argument type | `=1+"abc"` |
 | `#NUM!` | Numerically invalid | `=CEILING(-7.3,1)` |

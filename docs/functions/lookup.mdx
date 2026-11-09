@@ -1,6 +1,6 @@
 ---
 title: "Lookup and count functions"
-description: "COUNT, COUNTA, criteria counts, INDEX, MATCH, and XLOOKUP."
+description: "COUNT, COUNTA, criteria counts, INDEX, MATCH, XLOOKUP, and VLOOKUP."
 ---
 
 ## Count
@@ -217,6 +217,59 @@ An omitted `lookup_value` finds the first blank cell of `lookup_array`.
   returns `#N/A`. Excel, and `MATCH` in this engine, ignore case.
 </Warning>
 
+## `VLOOKUP`
+
+Looks for a value in the first column of a table and returns the cell in the
+same row of another column.
+
+```excel
+=VLOOKUP(lookup_value, table_array, col_index_num, [range_lookup])
+```
+
+With the regions in `A2:A6` and the units in `B2:B6`:
+
+```excel
+=VLOOKUP("East",A2:B6,2,FALSE)  // 40
+=VLOOKUP("east",A2:B6,2,FALSE)  // 40, text ignores case
+=VLOOKUP("South",A2:B6,2,FALSE) // 20, the first match
+=VLOOKUP("West",A2:B6,2,FALSE)  // #N/A
+=VLOOKUP("East",A:B,2,FALSE)    // 40, whole columns work too
+```
+
+`range_lookup` `FALSE` (or `0`) asks for an exact match. `TRUE`, any other
+number, or leaving it out finds the largest value less than or equal to
+`lookup_value` in a first column sorted in ascending order:
+
+```excel
+=VLOOKUP(72,{0,"F";60,"D";70,"C";80,"B";90,"A"},2)  // "C"
+```
+
+The first column is searched like `MATCH` searches its `lookup_array`: exact
+matching is `MATCH` type `0` and approximate matching type `1`, values only
+match values of the same type, and `lookup_value` must be a number or text.
+Approximate matching is Excel's binary search over every row of the table, so
+an unsorted first column gives the row Excel gives; see
+[Approximate match](#approximate-match). An omitted `range_lookup`, written as
+a trailing comma, is `FALSE`, as in Excel: `=VLOOKUP("East",A2:B6,2,)` is an
+exact match.
+
+`col_index_num` counts from `1`, the first column, and is truncated. Below `1`
+it returns `#VALUE!` and beyond the last column `#REF!`, whether or not the
+value is found. A blank cell in the returned column is returned as `""`, where
+Excel shows `0`.
+
+An array `lookup_value` or `col_index_num` looks up every element and spills:
+
+```excel
+=VLOOKUP({"North";"East"},A2:B6,2,FALSE)  // spills 10, 40
+=VLOOKUP("East",A2:B6,{1,2},FALSE)        // spills East, 40
+```
+
+<Warning>
+  Wildcards are not supported: `=VLOOKUP("E*",A2:B6,2,FALSE)` looks for the
+  text `E*` and returns `#N/A`, as `MATCH` does here. Excel finds `East`.
+</Warning>
+
 ## Structured ranges
 
 Lookup and count functions accept table columns:
@@ -229,6 +282,6 @@ Lookup and count functions accept table columns:
 ## Not registered
 
 <Note>
-  `VLOOKUP` and `HLOOKUP` are not registered and return `#NAME?`. Use `XLOOKUP`
-  or an `INDEX` + `MATCH` combination.
+  `HLOOKUP` is not registered and returns `#NAME?`. Use `XLOOKUP` or an
+  `INDEX` + `MATCH` combination.
 </Note>

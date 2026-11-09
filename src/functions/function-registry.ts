@@ -54,6 +54,18 @@ import { ROWS } from "./information/rows/rows";
 import { COLUMNS } from "./information/columns/columns";
 import { INT } from "./math/int/int";
 import { COUNTA } from "./lookup/count/counta";
+import { TEXT } from "./text/text/text";
+import { ROUND } from "./math/round/round";
+import { ROUNDUP } from "./math/round/roundup";
+import { ROUNDDOWN } from "./math/round/rounddown";
+import { ISBLANK } from "./information/isblank/isblank";
+import { ISNUMBER } from "./information/isnumber/isnumber";
+import { IFS } from "./logical/ifs/ifs";
+import { STDEV_S } from "./math/stdev/stdev";
+import { TRANSPOSE } from "./array/transpose/transpose";
+import { FILTER } from "./array/filter/filter";
+import { SUMPRODUCT } from "./math/sumproduct/sumproduct";
+import { VLOOKUP } from "./lookup/vlookup/vlookup";
 
 const buildFunctionIndex = (functions: Record<string, FunctionDefinition>) => {
   return Object.fromEntries(
@@ -85,13 +97,17 @@ export const functionDefinitions = {
   COUNTIF,
   COUNTIFS,
   EXACT,
+  FILTER,
   FIND,
   HSTACK,
   IF,
   IFERROR,
+  IFS,
   INDEX,
   INDIRECT,
   INT,
+  ISBLANK,
+  ISNUMBER,
   LEFT,
   LEN,
   LET,
@@ -106,16 +122,24 @@ export const functionDefinitions = {
   OFFSET,
   OR,
   RIGHT,
+  ROUND,
+  ROUNDDOWN,
+  ROUNDUP,
   ROW,
   ROWS,
   SEQUENCE,
+  "STDEV.S": STDEV_S,
   SUM,
   SUMIF,
   SUMIFS,
+  SUMPRODUCT,
+  TEXT,
   TEXTJOIN,
   TOCOL,
   TOROW,
+  TRANSPOSE,
   UNIQUE,
+  VLOOKUP,
   XLOOKUP,
 } satisfies Record<string, FunctionDefinition>;
 

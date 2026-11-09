@@ -1,6 +1,6 @@
 ---
 title: "Information functions"
-description: "Inspect cell contents, row and column numbers, and the size of ranges and arrays."
+description: "Test values, inspect cell contents, row and column numbers, and the size of ranges and arrays."
 ---
 
 ## `ROW`
@@ -88,6 +88,64 @@ These apply to both `ROWS` and `COLUMNS`:
 - An error argument is returned as the result. A single-cell reference is
   evaluated to find out whether it spills, so a reference to a cell holding an
   error returns that error too, where Excel returns `1`.
+
+## `ISNUMBER`
+
+Returns `TRUE` when a value is a number.
+
+```excel
+=ISNUMBER(value)
+```
+
+```excel
+=ISNUMBER(42)                       // TRUE
+=ISNUMBER("42")                     // FALSE: text that looks like a number is text
+=ISNUMBER(1/"x")                    // FALSE: errors are tested, not propagated
+=ISNUMBER(MATCH("x", A1:A9, 0))     // whether x occurs in A1:A9
+=IF(ISNUMBER(B1), B1*2, "")         // guard a calculation
+```
+
+`INFINITY` and `-INFINITY`, which this engine returns for a division by zero,
+are numbers.
+
+## `ISBLANK`
+
+Returns `TRUE` when a value is blank.
+
+```excel
+=ISBLANK(value)
+```
+
+```excel
+=ISBLANK(B1)                  // TRUE when B1 is empty
+=IF(ISBLANK(B1), "", B1*2)    // guard a calculation on an empty input
+```
+
+`0`, `FALSE`, a space and errors are not blank.
+
+<Warning>
+  The engine reads an empty cell as `""`, so `ISBLANK` is `TRUE` for every
+  value that reads as `""`: an empty cell, a cell whose formula returns `""`,
+  and `""` itself. Excel returns `TRUE` only for an empty cell, so
+  `=ISBLANK("")` and `ISBLANK` of a cell holding `=""` are `FALSE` there.
+</Warning>
+
+### Arrays
+
+Both functions test an array argument element by element, and the result
+spills with the argument's shape. Aggregates read every cell of a bounded
+result, the empty cells of a range included, so `IF` can count with them. Given
+`1`, an empty cell, `x` and an empty cell in `A1:A4`:
+
+```excel
+=ISBLANK(A1:A4)                    // spills FALSE, TRUE, FALSE, TRUE
+=SUM(IF(ISBLANK(A1:A4), 1, 0))     // 2, the empty cells
+=SUM(IF(ISNUMBER(A1:A4), 1, 0))    // 1, the numbers
+```
+
+An unbounded range such as `A:A` is read by its populated cells, so
+`=SUM(IF(ISBLANK(A:A), 1, 0))` counts only the populated cells that read as
+`""`.
 
 ## `CELL`
 

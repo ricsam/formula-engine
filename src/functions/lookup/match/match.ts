@@ -138,7 +138,7 @@ function approximateMatch(
 }
 
 // Helper function to perform MATCH operation
-function matchOperation(
+export function matchOperation(
   lookupValue: CellValue,
   lookupArray: EvaluateAllCellsResult,
   matchType: number,

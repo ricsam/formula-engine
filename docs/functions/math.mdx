@@ -1,6 +1,6 @@
 ---
 title: "Math functions"
-description: "SUM, AVERAGE, MIN, MAX, criteria variants, CEILING, and INT."
+description: "SUM, AVERAGE, MIN, MAX, criteria variants, SUMPRODUCT, STDEV.S, CEILING, INT, and the ROUND family."
 ---
 
 Every result below was verified against the engine.
@@ -118,6 +118,120 @@ element.
   `INT("3.7")` to `3`, `INT(TRUE)` to `1` and an empty cell to `0`. Over a
   range, an empty cell's place in the spill shows `#VALUE!`, while aggregates
   such as `SUM(INT(A1:A3))` skip it.
+</Warning>
+
+## `ROUND`, `ROUNDUP`, `ROUNDDOWN`
+
+Round a number to `num_digits` decimal places. A negative `num_digits` rounds
+to the left of the decimal point, and a fractional one is truncated.
+
+| Function | Syntax | Rounds |
+| --- | --- | --- |
+| `ROUND` | `ROUND(number, num_digits)` | to the nearest value, halves away from zero |
+| `ROUNDUP` | `ROUNDUP(number, num_digits)` | away from zero |
+| `ROUNDDOWN` | `ROUNDDOWN(number, num_digits)` | toward zero |
+
+```excel
+=ROUND(2.15, 1)            // 2.2
+=ROUND(-2.5, 0)            // -3
+=ROUND(1234.5678, -2)      // 1200
+=ROUNDUP(3.2, 0)           // 4
+=ROUNDUP(-3.2, 0)          // -4
+=ROUNDUP(31415.92654, -2)  // 31500
+=ROUNDDOWN(3.9, 0)         // 3
+=ROUNDDOWN(-3.9, 0)        // -3
+```
+
+The number is rounded as Excel shows it, in decimal with 15 significant
+digits, rather than as its binary value:
+
+```excel
+=ROUND(2.675, 2)           // 2.68   (binary rounding gives 2.67)
+=ROUNDUP(0.1+0.2, 1)       // 0.3    (the binary sum is 0.30000000000000004)
+=ROUNDDOWN(4.35*100, 0)    // 435    (the binary product is 434.99999999999994)
+```
+
+Both arguments are required. An omitted one, a comma with nothing, is `0`, as
+in Excel: `=ROUND(2.5,)` is `3`. Array arguments are rounded element by
+element and broadcast against each other like the operands of an operator; an
+error in one element stays in that element. Given `1.25`, `2.5` and `-3.75` in
+`A1:A3`:
+
+```excel
+=ROUND(A1:A3, 1)           // spills 1.3, 2.5, -3.8
+=ROUND(3.14159, {0,1,2})   // spills 3, 3.1, 3.14 across a row
+=SUM(ROUND(A1:A3, 0))      // 0
+```
+
+`INFINITY` and `-INFINITY` are returned unchanged. A result too large for a
+number, such as `=ROUNDUP(5, -400)`, is `#NUM!`.
+
+<Warning>
+  Like `INT` and `CEILING`, the rounding functions accept only numbers. Text,
+  `TRUE`, `FALSE` and empty cells return `#VALUE!` in either argument, where
+  Excel converts `ROUND("2.5", 0)` to `3`, `ROUND(TRUE, 0)` to `1` and an
+  empty cell to `0`. Aggregates such as `SUM(ROUND(A1:A9, 0))` skip the empty
+  cells of a range.
+</Warning>
+
+## `SUMPRODUCT`
+
+Multiplies the corresponding cells of arrays of the same size and adds the
+products. With one array it sums its numbers.
+
+```excel
+=SUMPRODUCT(array1, [array2], ...)
+```
+
+Given quantities `3`, `2`, `4` in `A1:A3`, prices `1.5`, `10`, `0.25` in
+`B1:B3` and `x`, `y`, `x` in `C1:C3`:
+
+```excel
+=SUMPRODUCT(A1:A3, B1:B3)                   // 25.5: 4.5 + 20 + 1
+=SUMPRODUCT(A1:A3)                          // 9
+=SUMPRODUCT(IF(C1:C3="x", A1:A3, 0), B1:B3) // 5.5: only the x rows
+```
+
+Every array must have the same number of rows and columns, otherwise the
+result is `#VALUE!`. A single value is a 1 × 1 array: `=SUMPRODUCT(2, 3)` is
+`6`. A cell that is not a number in one of the arrays, such as text, `TRUE`,
+`FALSE` or an empty cell, makes its product `0`, as in Excel, and an error
+anywhere in the arrays is the result. Whole-column ranges such as
+`=SUMPRODUCT(A:A, B:B)` read only their populated cells.
+
+<Warning>
+  Booleans are not numbers in this engine's arithmetic, so the Excel idioms
+  `=SUMPRODUCT(--(C1:C3="x"), A1:A3)` and
+  `=SUMPRODUCT((C1:C3="x")*A1:A3)` return `#VALUE!`. Choose the values with
+  `IF`, as above, or use `SUMIFS`.
+</Warning>
+
+## `STDEV.S`
+
+Returns the standard deviation of a sample, the square root of
+`sum((x - mean)^2) / (n - 1)`. `STDEV` is an alias: Excel's older name for the
+same calculation.
+
+```excel
+=STDEV.S(number1, [number2], ...)
+```
+
+```excel
+=STDEV.S(B2:B6)                  // 15.811388300841896 for 10,20,30,40,50
+=STDEV.S(2, 4, 4, 4, 5, 5, 7, 9) // 2.138089935299395
+=STDEV(1, 2, 3, 4)               // 1.2909944487358056
+```
+
+Numbers count wherever they come from: directly supplied, in a range, or in a
+spilled result such as `=STDEV.S(FILTER(B2:B6, A2:A6="North"))`. Text, logical
+values and empty cells are skipped, errors propagate, fewer than two numbers
+return `#DIV/0!` and an `INFINITY` among them returns `#NUM!`.
+
+<Warning>
+  Excel counts a logical value or numeric text typed directly into the
+  arguments: `=STDEV.S(1, 3, TRUE)` is about `1.1547` there, the deviation of
+  1, 3 and 1. This engine skips them, as `AVERAGE` does, and returns
+  `1.4142135623730951`, the deviation of 1 and 3.
 </Warning>
 
 ## Range behavior

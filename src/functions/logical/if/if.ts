@@ -43,9 +43,11 @@ import type { ASTNode } from "../../../parser/ast";
  */
 
 /**
- * Convert a cell value to boolean for logical evaluation
+ * Convert a cell value to boolean for logical evaluation: FALSE, 0 and empty
+ * text are false, every other value is true. IFS and FILTER test their
+ * conditions the same way.
  */
-function isTruthy(value: CellValue): boolean {
+export function isTruthy(value: CellValue): boolean {
   switch (value.type) {
     case "boolean":
       return value.value;

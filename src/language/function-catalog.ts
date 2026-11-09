@@ -159,6 +159,17 @@ const functionMetadata = {
     signature: "EXACT(text1, text2)",
     parameters: [parameter("text1"), parameter("text2")],
   },
+  FILTER: {
+    category: "array",
+    description:
+      "Returns the rows or columns of an array for which a condition is true.",
+    signature: "FILTER(array, include, [if_empty])",
+    parameters: [
+      parameter("array"),
+      parameter("include"),
+      parameter("if_empty", true),
+    ],
+  },
   FIND: {
     category: "text",
     description: "Returns the position of one text value within another.",
@@ -191,6 +202,18 @@ const functionMetadata = {
     signature: "IFERROR(value, value_if_error)",
     parameters: [parameter("value"), parameter("value_if_error")],
   },
+  IFS: {
+    category: "logical",
+    description: "Returns the value that belongs to the first true condition.",
+    signature:
+      "IFS(logical_test1, value_if_true1, [logical_test2, value_if_true2], ...)",
+    parameters: [
+      parameter("logical_test1"),
+      parameter("value_if_true1"),
+      parameter("logical_test2", true, true),
+      parameter("value_if_true2", true, true),
+    ],
+  },
   INDEX: {
     category: "lookup",
     description: "Returns a value at a row and column within a range or array.",
@@ -212,6 +235,18 @@ const functionMetadata = {
     description: "Rounds a number down to the nearest integer.",
     signature: "INT(number)",
     parameters: [parameter("number")],
+  },
+  ISBLANK: {
+    category: "information",
+    description: "Returns TRUE when a value is blank.",
+    signature: "ISBLANK(value)",
+    parameters: [parameter("value")],
+  },
+  ISNUMBER: {
+    category: "information",
+    description: "Returns TRUE when a value is a number.",
+    signature: "ISNUMBER(value)",
+    parameters: [parameter("value")],
   },
   LEFT: {
     category: "text",
@@ -344,6 +379,25 @@ const functionMetadata = {
     signature: "RIGHT(text, [num_chars])",
     parameters: [parameter("text"), parameter("num_chars", true)],
   },
+  ROUND: {
+    category: "math",
+    description:
+      "Rounds a number to a number of decimal places, halves away from zero.",
+    signature: "ROUND(number, num_digits)",
+    parameters: [parameter("number"), parameter("num_digits")],
+  },
+  ROUNDDOWN: {
+    category: "math",
+    description: "Rounds a number toward zero to a number of decimal places.",
+    signature: "ROUNDDOWN(number, num_digits)",
+    parameters: [parameter("number"), parameter("num_digits")],
+  },
+  ROUNDUP: {
+    category: "math",
+    description: "Rounds a number away from zero to a number of decimal places.",
+    signature: "ROUNDUP(number, num_digits)",
+    parameters: [parameter("number"), parameter("num_digits")],
+  },
   ROW: {
     category: "information",
     description: "Returns the row number of a reference or the formula cell.",
@@ -366,6 +420,12 @@ const functionMetadata = {
       parameter("start", true),
       parameter("step", true),
     ],
+  },
+  "STDEV.S": {
+    category: "math",
+    description: "Returns the standard deviation of a sample of numbers.",
+    signature: "STDEV.S(number1, [number2], ...)",
+    parameters: [parameter("number1"), parameter("number2", true, true)],
   },
   SUM: {
     category: "math",
@@ -395,6 +455,20 @@ const functionMetadata = {
       parameter("criteria_range2", true, true),
       parameter("criteria2", true, true),
     ],
+  },
+  SUMPRODUCT: {
+    category: "math",
+    description:
+      "Multiplies corresponding cells of same-sized arrays and adds the products.",
+    signature: "SUMPRODUCT(array1, [array2], ...)",
+    parameters: [parameter("array1"), parameter("array2", true, true)],
+  },
+  TEXT: {
+    category: "text",
+    description:
+      "Formats a number, date or time as text using a number format code.",
+    signature: "TEXT(value, format_text)",
+    parameters: [parameter("value"), parameter("format_text")],
   },
   TEXTJOIN: {
     category: "text",
@@ -429,6 +503,12 @@ const functionMetadata = {
       parameter("scan_by_column", true),
     ],
   },
+  TRANSPOSE: {
+    category: "array",
+    description: "Swaps the rows and columns of a range or array.",
+    signature: "TRANSPOSE(array)",
+    parameters: [parameter("array")],
+  },
   UNIQUE: {
     category: "array",
     description:
@@ -438,6 +518,18 @@ const functionMetadata = {
       parameter("array"),
       parameter("by_col", true),
       parameter("exactly_once", true),
+    ],
+  },
+  VLOOKUP: {
+    category: "lookup",
+    description:
+      "Finds a value in the first column of a table and returns a value from the same row.",
+    signature: "VLOOKUP(lookup_value, table_array, col_index_num, [range_lookup])",
+    parameters: [
+      parameter("lookup_value"),
+      parameter("table_array"),
+      parameter("col_index_num"),
+      parameter("range_lookup", true),
     ],
   },
   XLOOKUP: {
