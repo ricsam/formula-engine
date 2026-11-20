@@ -13,10 +13,7 @@ import type {
   RangeAddress,
 } from "./types";
 import type { FillDirection } from "@ricsam/selection-manager";
-import { parseFormula } from "../parser/parser";
-import { astToString } from "../parser/formatter";
-import { transformAST } from "./ast-traverser";
-import type { ReferenceNode, RangeNode } from "../parser/ast";
+import { shiftFormulaReferences } from "./formula-shift";
 import { getCellReference } from "./utils";
 import type { WorkbookManager } from "./managers/workbook-manager";
 import type { StyleManager } from "./managers/style-manager";
@@ -456,71 +453,11 @@ export class AutoFill {
     sourceAddress: LocalCellAddress,
     targetAddress: LocalCellAddress
   ): string {
-    try {
-      const ast = parseFormula(formula.slice(1)); // Remove the "=" sign
-
-      const rowDelta = targetAddress.rowIndex - sourceAddress.rowIndex;
-      const colDelta = targetAddress.colIndex - sourceAddress.colIndex;
-
-      const adjustedAst = transformAST(ast, (node) => {
-        if (node.type === "reference") {
-          const refNode = node as ReferenceNode;
-          return {
-            ...refNode,
-            address: {
-              colIndex: refNode.isAbsolute.col
-                ? refNode.address.colIndex
-                : refNode.address.colIndex + colDelta,
-              rowIndex: refNode.isAbsolute.row
-                ? refNode.address.rowIndex
-                : refNode.address.rowIndex + rowDelta,
-            },
-          };
-        } else if (node.type === "range") {
-          const rangeNode = node as RangeNode;
-          return {
-            ...rangeNode,
-            range: {
-              start: {
-                col: rangeNode.isAbsolute.start.col
-                  ? rangeNode.range.start.col
-                  : rangeNode.range.start.col + colDelta,
-                row: rangeNode.isAbsolute.start.row
-                  ? rangeNode.range.start.row
-                  : rangeNode.range.start.row + rowDelta,
-              },
-              end: {
-                col:
-                  rangeNode.range.end.col.type === "number"
-                    ? rangeNode.isAbsolute.end.col
-                      ? rangeNode.range.end.col
-                      : {
-                          type: "number" as const,
-                          value: rangeNode.range.end.col.value + colDelta,
-                        }
-                    : rangeNode.range.end.col,
-                row:
-                  rangeNode.range.end.row.type === "number"
-                    ? rangeNode.isAbsolute.end.row
-                      ? rangeNode.range.end.row
-                      : {
-                          type: "number" as const,
-                          value: rangeNode.range.end.row.value + rowDelta,
-                        }
-                    : rangeNode.range.end.row,
-              },
-            },
-          };
-        }
-        return node;
-      });
-
-      return `=${astToString(adjustedAst)}`;
-    } catch (error) {
-      // If parsing fails, return the original formula
-      console.warn("Failed to adjust formula references:", error);
-      return formula;
-    }
+    return shiftFormulaReferences(
+      formula,
+      targetAddress.rowIndex - sourceAddress.rowIndex,
+      targetAddress.colIndex - sourceAddress.colIndex
+    );
   }
 
   /**

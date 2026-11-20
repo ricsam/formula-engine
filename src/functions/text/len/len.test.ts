@@ -136,7 +136,7 @@ describe("LEN function", () => {
   describe("error handling", () => {
     test("should return error for invalid text argument", () => {
       setCellContent("A1", '=LEN(#REF!)');
-      expect(cell("A1")).toBe("#ERROR!");
+      expect(cell("A1")).toBe("#REF!");
     });
 
     test("should return error for wrong number of arguments (no arguments)", () => {

@@ -207,7 +207,90 @@ export interface TableDefinition {
   endRow: SpreadsheetRangeEnd;
   sheetName: string;
   workbookName: string;
+  /**
+   * The table's column filters (Excel's AutoFilter) and the data rows they hid
+   * when they were last applied. Absent when no column is filtered.
+   */
+  filter?: TableFilterState;
+  /**
+   * The keys of the table's last sort, for showing sort indicators. Sorting
+   * reorders the rows once; later edits are not re-sorted.
+   */
+  sort?: TableSortKey[];
 }
+
+export type TableSortDirection = "ascending" | "descending";
+
+export interface TableSortKey {
+  /** The table column: its 0-based index among the table's headers. */
+  column: number;
+  direction: TableSortDirection;
+}
+
+export type TableFilterConditionOperator =
+  | "equals"
+  | "notEquals"
+  | "greaterThan"
+  | "greaterThanOrEqual"
+  | "lessThan"
+  | "lessThanOrEqual"
+  | "beginsWith"
+  | "endsWith"
+  | "contains"
+  | "notContains";
+
+export interface TableFilterCondition {
+  operator: TableFilterConditionOperator;
+  value: string | number | boolean;
+}
+
+/** The criteria of one filtered table column. */
+export type TableColumnFilter =
+  | {
+      /** Show the rows whose value is one of these (Excel's value list). */
+      type: "values";
+      /** Text matches without regard to case; numbers and booleans exactly. */
+      values: Array<string | number | boolean>;
+      /** Show empty cells. Defaults to false. */
+      blanks?: boolean;
+      /** Error codes to show, such as `"#N/A"`. Defaults to none. */
+      errors?: string[];
+    }
+  | {
+      /** Show the rows whose value meets the conditions (a custom filter). */
+      type: "condition";
+      conditions: TableFilterCondition[];
+      /** `"all"` (AND, the default) or `"any"` (OR). */
+      match?: "all" | "any";
+    };
+
+export interface TableColumnFilterState {
+  /** The table column: its 0-based index among the table's headers. */
+  column: number;
+  filter: TableColumnFilter;
+}
+
+export interface TableFilterState {
+  /** One entry per filtered column, in ascending column order. */
+  columns: TableColumnFilterState[];
+  /**
+   * Sheet rows (0-based) hidden by the criteria when they were last applied,
+   * ascending. Editing a cell does not re-apply the criteria, as in Excel.
+   */
+  hiddenRows: number[];
+}
+
+/** One entry of a table column's value list, as a filter menu shows it. */
+export type TableColumnValue =
+  | {
+      kind: "value";
+      value: string | number | boolean;
+      count: number;
+      /** Whether the column's current filter shows these rows. */
+      selected: boolean;
+    }
+  | { kind: "blank"; count: number; selected: boolean }
+  | { kind: "error"; error: string; count: number; selected: boolean };
 
 // Formula errors
 export enum FormulaError {

@@ -48,6 +48,8 @@ interface TableDefinition {
   endRow: SpreadsheetRangeEnd;
   sheetName: string;
   workbookName: string;
+  filter?: TableFilterState; // column filters and the rows they hide
+  sort?: TableSortKey[]; // keys of the last sort
 }
 ```
 
@@ -80,7 +82,9 @@ updateTable(opts: {
 Moves or resizes an existing definition and invalidates dependent formulas.
 Header names are re-read from cell values. Existing cell contents in newly
 included rows or columns are preserved and become part of the table. A resize
-is rejected if the resulting table would overlap another table.
+is rejected if the resulting table would overlap another table. Column filters
+and sort keys follow their columns by header name, those of a column that left
+the table are dropped, and the filters are re-applied to the new rows.
 
 To resize a table and write its new contents as one update and one undo step,
 make both calls inside `transact`, resizing first. See
@@ -105,6 +109,119 @@ resetTables(tables: Map<string, Map<string, TableDefinition>>): void
 Replaces the engine's complete table registry. The outer map is keyed by
 workbook; the inner map by table name. Useful during custom deserialization,
 but `resetToSerializedEngine` is easier for whole-engine persistence.
+
+## Sort
+
+```typescript
+sortTable(opts: {
+  workbookName: string;
+  tableName: string;
+  keys: TableSortKey[];
+}): void
+
+interface TableSortKey {
+  column: number; // 0-based index among the table's headers
+  direction: "ascending" | "descending";
+}
+```
+
+```typescript
+engine.sortTable({
+  workbookName: "Budget",
+  tableName: "Sales",
+  keys: [
+    { column: 0, direction: "ascending" },
+    { column: 2, direction: "descending" },
+  ],
+});
+```
+
+Reorders the data rows like Excel: by the first key, ties by the next, equal
+rows keeping their order. Ascending is numbers, text (without regard to case),
+`FALSE`, `TRUE`, then errors; descending reverses that; blank cells always go
+last. Every cell of a row moves within the table's columns, with its cell
+metadata, direct cell styles and data type. A moved formula is adjusted like a
+pasted one (`=B5*C5` moved to row 2 reads `=B2*C2`, a reference that would
+leave the sheet becomes `#REF!`), while whole-column references such as `A:A`
+keep spanning the column. Formulas outside the table that point into it are not
+rewritten, as in Excel. The keys are stored as the table's `sort`, the table's
+filters are re-applied, and the sort is one undo step.
+
+## Filter
+
+```typescript
+setTableColumnFilter(opts: {
+  workbookName: string;
+  tableName: string;
+  column: number;
+  filter: TableColumnFilter | undefined; // undefined removes the column's filter
+}): void
+clearTableFilters(opts: { workbookName: string; tableName: string }): void
+reapplyTableFilters(opts: { workbookName: string; tableName: string }): void
+getHiddenRows(opts: { workbookName: string; sheetName: string }): Set<number>
+getTableColumnValues(opts: {
+  workbookName: string;
+  tableName: string;
+  column: number;
+}): TableColumnValue[]
+```
+
+```typescript
+type TableColumnFilter =
+  | {
+      type: "values"; // Excel's value list
+      values: Array<string | number | boolean>; // text matches without regard to case
+      blanks?: boolean;
+      errors?: string[]; // e.g. ["#N/A"]
+    }
+  | {
+      type: "condition";
+      conditions: { operator: TableFilterConditionOperator; value: string | number | boolean }[];
+      match?: "all" | "any"; // default "all"
+    };
+
+type TableFilterConditionOperator =
+  | "equals" | "notEquals"
+  | "greaterThan" | "greaterThanOrEqual" | "lessThan" | "lessThanOrEqual"
+  | "beginsWith" | "endsWith" | "contains" | "notContains";
+```
+
+```typescript
+engine.setTableColumnFilter({
+  workbookName: "Budget",
+  tableName: "Sales",
+  column: 1,
+  filter: { type: "values", values: ["North", "South"] },
+});
+engine.setTableColumnFilter({
+  workbookName: "Budget",
+  tableName: "Sales",
+  column: 3,
+  filter: {
+    type: "condition",
+    conditions: [{ operator: "greaterThan", value: 1000 }],
+  },
+});
+engine.getHiddenRows({ workbookName: "Budget", sheetName: "Q1" }); // Set {4, 7, ...}
+```
+
+A row stays visible when its value passes every filtered column. Comparisons
+are typed: number conditions match numbers, text conditions match text
+(without regard to case), and `notEquals`/`notContains` also keep blanks,
+errors and other types. The filters are stored on the table as `filter` with
+the sheet rows they hid. Filtering never moves cells: a grid renders the rows
+from `getHiddenRows` with zero height. Filters are applied when they change,
+after a sort and after `updateTable`, but not on every edit, so an edited row
+stays visible until `reapplyTableFilters` (Excel's Reapply).
+
+`getTableColumnValues` lists a column's distinct values for a filter menu, in
+ascending order with blanks last, each with a row count and whether the
+column's current filter shows it. Like Excel's list it only covers rows that
+the other columns' filters let through.
+
+Filters and sort keys are part of the table: they are undoable, serialized
+with the engine, copied with a cloned sheet, and move with a moved table.
+`WorkbookData` tables accept `filters` and `sort` too.
 
 ## Structured reference syntax
 

@@ -232,17 +232,17 @@ describe("MID function", () => {
   describe("error handling", () => {
     test("should return error for invalid text argument", () => {
       setCellContent("A1", '=MID(#REF!,2,3)');
-      expect(cell("A1")).toBe("#ERROR!");
+      expect(cell("A1")).toBe("#REF!");
     });
 
     test("should return error for invalid start_num argument", () => {
       setCellContent("A1", '=MID("Hello",#REF!,3)');
-      expect(cell("A1")).toBe("#ERROR!");
+      expect(cell("A1")).toBe("#REF!");
     });
 
     test("should return error for invalid num_chars argument", () => {
       setCellContent("A1", '=MID("Hello",2,#REF!)');
-      expect(cell("A1")).toBe("#ERROR!");
+      expect(cell("A1")).toBe("#REF!");
     });
 
     test("should return error for wrong number of arguments (too few)", () => {

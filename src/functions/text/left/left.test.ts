@@ -190,13 +190,13 @@ describe("LEFT function", () => {
     test("should return error for invalid text argument", () => {
       // Error propagation may transform #REF! to #ERROR! through the engine
       setCellContent("A1", '=LEFT(#REF!,3)');
-      expect(cell("A1")).toBe("#ERROR!");
+      expect(cell("A1")).toBe("#REF!");
     });
 
     test("should return error for invalid numChars argument", () => {
       // Error propagation may transform #REF! to #ERROR! through the engine  
       setCellContent("A1", '=LEFT("Hello",#REF!)');
-      expect(cell("A1")).toBe("#ERROR!");
+      expect(cell("A1")).toBe("#REF!");
     });
 
     test("should handle spilled arrays with text values only", () => {

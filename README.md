@@ -167,7 +167,34 @@ Sheets are created in array order, so that order becomes the tab order. Areas in
 sheet-scoped, and the engine fills in `workbookName` from the call — the same
 data can therefore be imported under any name. Application order is
 content, then named expressions, then tables (whose headers are read from the
-content just written), then data types, styles and metadata.
+content just written), then data types, styles and metadata. Table `filters`
+are applied last, once formulas can evaluate.
+
+## Sort And Filter Tables
+
+```typescript
+engine.sortTable({
+  workbookName: "Budget",
+  tableName: "Sales",
+  keys: [{ column: 1, direction: "descending" }],
+});
+
+engine.setTableColumnFilter({
+  workbookName: "Budget",
+  tableName: "Sales",
+  column: 0,
+  filter: { type: "values", values: ["pens"] },
+});
+
+engine.getHiddenRows({ workbookName: "Budget", sheetName: "Data" }); // rows to draw with zero height
+```
+
+Sorting reorders a table's data rows once, Excel-style: content, cell metadata,
+styles and data types move with their row and formulas are adjusted like a
+paste. Filtering never moves cells; it records which rows the column criteria
+hide. Both are stored on the table definition (`sort`, `filter`), so they are
+undoable and persisted with the engine. See the
+[table API](./docs/api/tables.mdx#sort) for criteria types and ordering rules.
 
 ## Clone Workbooks And Sheets
 

@@ -211,6 +211,43 @@ engine.removeTable({ tableName: "Orders", workbookName: "Budget" });
 Removing a table invalidates its structured references. In a verified
 `SUM(Table[Column])` case the result became `0` after removal.
 
+## Sort and filter
+
+Tables sort and filter like Excel tables. The two operations work differently,
+and neither ever changes what a cell address means:
+
+- **Sorting moves data.** `sortTable` reorders the data rows once: each row's
+  cells, cell metadata, styles and data types move together, and formulas are
+  adjusted as if pasted, so `=[@Qty]*[@Price]` and `=B5*C5` keep reading their
+  own row. Later edits are not re-sorted; the keys are kept on the table as
+  `sort` so a UI can show which column the table was sorted by.
+- **Filtering hides rows.** `setTableColumnFilter` stores criteria per column
+  and the sheet rows they hide. Nothing moves, formulas over the table (such as
+  `SUM(Sales[Qty])`) still see every row, and `getHiddenRows` tells a grid
+  which rows to draw with zero height.
+
+```typescript
+engine.sortTable({
+  workbookName: "Budget",
+  tableName: "Orders",
+  keys: [{ column: 2, direction: "descending" }],
+});
+engine.setTableColumnFilter({
+  workbookName: "Budget",
+  tableName: "Orders",
+  column: 0,
+  filter: { type: "values", values: ["North"] },
+});
+engine.getHiddenRows({ workbookName: "Budget", sheetName: "Q1" });
+```
+
+Filters are applied when they change, after a sort and when the table is
+resized. Editing a cell does not re-filter, so a row you just changed does not
+disappear under the cursor; call `reapplyTableFilters` to apply them again.
+Sort keys and filters are part of the table definition: undo/redo, serialized
+snapshots, cloned sheets and moved tables keep them. See
+[Sort](/api/tables#sort) and [Filter](/api/tables#filter) for the full API.
+
 ## Cross-sheet use
 
 A formula can use a table defined on another sheet without prefixing the sheet
