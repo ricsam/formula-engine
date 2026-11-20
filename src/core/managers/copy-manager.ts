@@ -19,10 +19,7 @@ import type { WorkbookManager } from "./workbook-manager";
 import type { EvaluationManager } from "./evaluation-manager";
 import type { StyleManager } from "./style-manager";
 import type { RangeMetadataManager } from "./range-metadata-manager";
-import { parseFormula } from "../../parser/parser";
-import { astToString } from "../../parser/formatter";
-import { transformAST } from "../ast-traverser";
-import type { ReferenceNode, RangeNode } from "../../parser/ast";
+import { shiftFormulaReferences } from "../formula-shift";
 import { getCellReference, isCellInRange } from "../utils";
 import { intersectRanges } from "../utils/range-utils";
 import {
@@ -675,71 +672,11 @@ export class CopyManager {
     sourceAddress: LocalCellAddress,
     targetAddress: LocalCellAddress
   ): string {
-    try {
-      const ast = parseFormula(formula.slice(1)); // Remove the "=" sign
-
-      const rowDelta = targetAddress.rowIndex - sourceAddress.rowIndex;
-      const colDelta = targetAddress.colIndex - sourceAddress.colIndex;
-
-      const adjustedAst = transformAST(ast, (node) => {
-        if (node.type === "reference") {
-          const refNode = node as ReferenceNode;
-          return {
-            ...refNode,
-            address: {
-              colIndex: refNode.isAbsolute.col
-                ? refNode.address.colIndex
-                : refNode.address.colIndex + colDelta,
-              rowIndex: refNode.isAbsolute.row
-                ? refNode.address.rowIndex
-                : refNode.address.rowIndex + rowDelta,
-            },
-          };
-        } else if (node.type === "range") {
-          const rangeNode = node as RangeNode;
-          return {
-            ...rangeNode,
-            range: {
-              start: {
-                col: rangeNode.isAbsolute.start.col
-                  ? rangeNode.range.start.col
-                  : rangeNode.range.start.col + colDelta,
-                row: rangeNode.isAbsolute.start.row
-                  ? rangeNode.range.start.row
-                  : rangeNode.range.start.row + rowDelta,
-              },
-              end: {
-                col:
-                  rangeNode.range.end.col.type === "number"
-                    ? rangeNode.isAbsolute.end.col
-                      ? rangeNode.range.end.col
-                      : {
-                          type: "number" as const,
-                          value: rangeNode.range.end.col.value + colDelta,
-                        }
-                    : rangeNode.range.end.col,
-                row:
-                  rangeNode.range.end.row.type === "number"
-                    ? rangeNode.isAbsolute.end.row
-                      ? rangeNode.range.end.row
-                      : {
-                          type: "number" as const,
-                          value: rangeNode.range.end.row.value + rowDelta,
-                        }
-                    : rangeNode.range.end.row,
-              },
-            },
-          };
-        }
-        return node;
-      });
-
-      return `=${astToString(adjustedAst)}`;
-    } catch (error) {
-      // If parsing fails, return the original formula
-      console.warn("Failed to adjust formula references:", error);
-      return formula;
-    }
+    return shiftFormulaReferences(
+      formula,
+      targetAddress.rowIndex - sourceAddress.rowIndex,
+      targetAddress.colIndex - sourceAddress.colIndex
+    );
   }
 
   /**
@@ -1360,68 +1297,7 @@ export class CopyManager {
     rowDelta: number,
     colDelta: number
   ): string {
-    try {
-      const ast = parseFormula(formula.slice(1)); // Remove the "=" sign
-
-      const adjustedAst = transformAST(ast, (node) => {
-        if (node.type === "reference") {
-          const refNode = node as ReferenceNode;
-          return {
-            ...refNode,
-            address: {
-              colIndex: refNode.isAbsolute.col
-                ? refNode.address.colIndex
-                : refNode.address.colIndex + colDelta,
-              rowIndex: refNode.isAbsolute.row
-                ? refNode.address.rowIndex
-                : refNode.address.rowIndex + rowDelta,
-            },
-          };
-        } else if (node.type === "range") {
-          const rangeNode = node as RangeNode;
-          return {
-            ...rangeNode,
-            range: {
-              start: {
-                col: rangeNode.isAbsolute.start.col
-                  ? rangeNode.range.start.col
-                  : rangeNode.range.start.col + colDelta,
-                row: rangeNode.isAbsolute.start.row
-                  ? rangeNode.range.start.row
-                  : rangeNode.range.start.row + rowDelta,
-              },
-              end: {
-                col:
-                  rangeNode.range.end.col.type === "number"
-                    ? rangeNode.isAbsolute.end.col
-                      ? rangeNode.range.end.col
-                      : {
-                          type: "number" as const,
-                          value: rangeNode.range.end.col.value + colDelta,
-                        }
-                    : rangeNode.range.end.col,
-                row:
-                  rangeNode.range.end.row.type === "number"
-                    ? rangeNode.isAbsolute.end.row
-                      ? rangeNode.range.end.row
-                      : {
-                          type: "number" as const,
-                          value: rangeNode.range.end.row.value + rowDelta,
-                        }
-                    : rangeNode.range.end.row,
-              },
-            },
-          };
-        }
-        return node;
-      });
-
-      return `=${astToString(adjustedAst)}`;
-    } catch (error) {
-      // If parsing fails, return the original formula
-      console.warn("Failed to adjust formula with offset:", error);
-      return formula;
-    }
+    return shiftFormulaReferences(formula, rowDelta, colDelta);
   }
 
   private copyCellMetadata(

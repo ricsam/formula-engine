@@ -211,13 +211,13 @@ describe("FIND function", () => {
     test("should return error for invalid findText argument", () => {
       // Error propagation may transform #REF! to #ERROR! through the engine
       setCellContent("A1", '=FIND(#REF!,"Hello")');
-      expect(cell("A1")).toBe("#ERROR!");
+      expect(cell("A1")).toBe("#REF!");
     });
 
     test("should return error for invalid withinText argument", () => {
       // Error propagation may transform #REF! to #ERROR! through the engine
       setCellContent("A1", '=FIND("l",#REF!)');
-      expect(cell("A1")).toBe("#ERROR!");
+      expect(cell("A1")).toBe("#REF!");
     });
 
     test("should return error for invalid startNum argument", () => {

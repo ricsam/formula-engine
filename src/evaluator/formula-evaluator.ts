@@ -178,11 +178,23 @@ export class FormulaEvaluator {
         case "empty":
           return this.evaluateOmittedArgument();
 
+        case "error":
+          // An error literal such as `#REF!` (which a sort or paste writes for
+          // a reference moved off the sheet) is that error, as in Excel.
+          return {
+            type: "error",
+            err: node.error,
+            message: node.message,
+            errAddress: context.dependencyNode,
+          };
+
         default:
           return {
             type: "error",
             err: FormulaError.ERROR,
-            message: "WIP: unimplemented support for " + node.type,
+            message:
+              "WIP: unimplemented support for " +
+              (node as { type: string }).type,
             errAddress: context.dependencyNode,
           };
       }

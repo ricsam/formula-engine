@@ -5,6 +5,8 @@ import type {
   SpreadsheetRange,
   SpreadsheetRangeEnd,
   TableDefinition,
+  TableFilterState,
+  TableSortKey,
 } from "../types";
 import type { TableManagerSnapshot } from "../engine-snapshot";
 import {
@@ -12,6 +14,12 @@ import {
   getCellReference,
   parseCellReference,
 } from "../utils";
+import {
+  cloneTableFilterState,
+  cloneTableSortKeys,
+  tableFilterStatesEqual,
+  tableSortKeysEqual,
+} from "../table-filter";
 import type { WorkbookManager } from "./workbook-manager";
 import type { MutationDirection } from "./mutation-observer";
 
@@ -47,13 +55,60 @@ type TableManagerState = {
 };
 
 function cloneTableDefinition(table: TableDefinition): TableDefinition {
+  const { filter, sort, ...rest } = table;
   return {
-    ...table,
+    ...rest,
     start: { ...table.start },
     endRow: { ...table.endRow },
     headers: new Map(
       Array.from(table.headers, ([name, header]) => [name, { ...header }])
     ),
+    ...(filter ? { filter: cloneTableFilterState(filter) } : {}),
+    ...(sort ? { sort: cloneTableSortKeys(sort) } : {}),
+  };
+}
+
+/**
+ * Carries a table's filters and sort keys over to its resized definition,
+ * matching columns by header name: a column that moved keeps its criteria, and
+ * criteria of a column that left the table are dropped. The engine re-applies
+ * the remaining filters to the new rows.
+ */
+function remapTableFilterAndSort(
+  previous: TableDefinition,
+  next: TableDefinition
+): Pick<TableDefinition, "filter" | "sort"> {
+  const nameByIndex = new Map(
+    Array.from(previous.headers.values(), (header) => [
+      header.index,
+      header.name,
+    ])
+  );
+  const remap = (column: number): number | undefined => {
+    const name = nameByIndex.get(column);
+    return name === undefined ? undefined : next.headers.get(name)?.index;
+  };
+
+  const columns = (previous.filter?.columns ?? []).flatMap((entry) => {
+    const column = remap(entry.column);
+    return column === undefined ? [] : [{ ...entry, column }];
+  });
+  columns.sort((left, right) => left.column - right.column);
+  const sort = (previous.sort ?? []).flatMap((key) => {
+    const column = remap(key.column);
+    return column === undefined ? [] : [{ ...key, column }];
+  });
+
+  return {
+    ...(columns.length > 0
+      ? {
+          filter: cloneTableFilterState({
+            columns,
+            hiddenRows: previous.filter?.hiddenRows ?? [],
+          }),
+        }
+      : {}),
+    ...(sort.length > 0 ? { sort } : {}),
   };
 }
 
@@ -139,7 +194,9 @@ function tableDefinitionsEqual(
     (left.endRow.type === "number" &&
       (right.endRow.type !== "number" ||
         left.endRow.value !== right.endRow.value)) ||
-    left.headers.size !== right.headers.size
+    left.headers.size !== right.headers.size ||
+    !tableFilterStatesEqual(left.filter, right.filter) ||
+    !tableSortKeysEqual(left.sort, right.sort)
   ) {
     return false;
   }
@@ -724,7 +781,7 @@ export class TableManager {
       : undefined;
     const rowOffset = target.rowIndex - table.start.rowIndex;
     const movedTable: TableDefinition = {
-      ...table,
+      ...cloneTableDefinition(table),
       workbookName: target.workbookName,
       sheetName: target.sheetName,
       start: {
@@ -735,13 +792,13 @@ export class TableManager {
         table.endRow.type === "number"
           ? { type: "number", value: table.endRow.value + rowOffset }
           : { ...table.endRow },
-      headers: new Map(
-        Array.from(table.headers, ([name, header]) => [
-          name,
-          { ...header },
-        ])
-      ),
     };
+    if (movedTable.filter) {
+      // Hidden rows are sheet rows: they move with the table's data.
+      movedTable.filter.hiddenRows = movedTable.filter.hiddenRows.map(
+        (row) => row + rowOffset
+      );
+    }
 
     this.assertTableDoesNotCollide(
       movedTable,
@@ -1241,6 +1298,7 @@ export class TableManager {
       numCols: numCols ?? table.headers.size,
       getCellValue,
     });
+    Object.assign(newTable, remapTableFilterAndSort(table, newTable));
 
     this.assertTableDoesNotCollide(newTable, wb, tableName);
     wb.set(tableName, newTable);
@@ -1255,6 +1313,40 @@ export class TableManager {
         this.reportMutations([{ kind: "table", before, after }]);
       }
     }
+  }
+
+  /**
+   * Replaces a table's filter state and sort keys, reporting the change for
+   * undo/redo. Absent values remove the field.
+   */
+  setTableFilterAndSort(
+    opts: { workbookName: string; tableName: string },
+    state: { filter?: TableFilterState; sort?: TableSortKey[] }
+  ): TableDefinition {
+    const table = this.tables.get(opts.workbookName)?.get(opts.tableName);
+    if (!table) {
+      throw new Error(`Table not found: ${opts.tableName}`);
+    }
+    const before = this.observingMutations
+      ? this.captureEntryState(opts.workbookName, opts.tableName)
+      : undefined;
+    if (state.filter) {
+      table.filter = cloneTableFilterState(state.filter);
+    } else {
+      delete table.filter;
+    }
+    if (state.sort) {
+      table.sort = cloneTableSortKeys(state.sort);
+    } else {
+      delete table.sort;
+    }
+    if (before) {
+      const after = this.captureEntryState(opts.workbookName, opts.tableName);
+      if (after && !tableEntryStatesEqual(before, after)) {
+        this.reportMutations([{ kind: "table", before, after }]);
+      }
+    }
+    return table;
   }
 
   removeTable({

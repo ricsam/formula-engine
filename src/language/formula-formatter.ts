@@ -201,6 +201,14 @@ function renderNode(
   }
 }
 
+/**
+ * @internal Render a parsed formula body the way {@link normalizeFormulaCellContent}
+ * stores it (compact style), for bulk rewrites that already hold the AST.
+ */
+export function renderCompactFormulaBody(ast: ASTNode): string {
+  return renderNode(ast, { style: "compact", indent: "  " }, 0);
+}
+
 function hasClosingStringQuote(source: string): boolean {
   let index = 1;
   while (index < source.length) {

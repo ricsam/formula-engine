@@ -16,6 +16,8 @@ import type {
   SpreadsheetRange,
   SpreadsheetRangeEnd,
   StyleCondition,
+  TableColumnFilterState,
+  TableSortKey,
 } from "./types";
 
 /**
@@ -62,6 +64,16 @@ export interface WorkbookDataTable {
   /** Number of data rows below the header row. */
   numRows: SpreadsheetRangeEnd;
   numCols: number;
+  /**
+   * Column filters, applied to the loaded values once the whole workbook is
+   * in place (after formulas, names and the other tables).
+   */
+  filters?: TableColumnFilterState[];
+  /**
+   * Keys of the table's last sort, recorded for sort indicators. The rows are
+   * taken as already being in that order.
+   */
+  sort?: TableSortKey[];
 }
 
 /**

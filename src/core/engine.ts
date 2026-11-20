@@ -26,7 +26,11 @@ import {
   type SingleEvaluationResult,
   type SpreadsheetRange,
   type SpreadsheetRangeEnd,
+  type TableColumnFilter,
+  type TableColumnFilterState,
+  type TableColumnValue,
   type TableDefinition,
+  type TableSortKey,
   type UndoRedoState,
 } from "./types";
 
@@ -47,7 +51,19 @@ import {
   renameTableInFormula,
 } from "./table-renamer";
 import { renameWorkbookInFormula } from "./workbook-renamer";
-import { getCellReference, parseCellReference } from "./utils";
+import { getCellReference, isCellInRange, parseCellReference } from "./utils";
+import { hasPositionalReferences, shiftFormulaReferences } from "./formula-shift";
+import {
+  assertTableColumn,
+  compareTableCellValues,
+  matchesTableColumnFilter,
+  normalizeTableColumnFilter,
+  normalizeTableSortKeys,
+  sortTableColumnFilters,
+  tableCellValueFromResult,
+  tableCellValueKey,
+  type TableCellValue,
+} from "./table-filter";
 import {
   areasToRangeAddresses,
   toEntryMap,
@@ -2483,6 +2499,11 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
           }),
         ],
       });
+
+      // Rows may have joined or left the table: filter its new body.
+      if (newTable?.filter) {
+        this.applyTableFilterColumns(newTable, newTable.filter.columns);
+      }
     });
   }
 
@@ -2586,6 +2607,536 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
 
   isCellInTable(cellAddress: CellAddress): TableDefinition | undefined {
     return this.tableManager.isCellInTable(cellAddress);
+  }
+
+  //#endregion
+
+  //#region Table sorting and filtering
+  /**
+   * Sort a table's data rows, like Excel's table sort. Rows are compared by
+   * the first key, ties by the next key and so on; equal rows keep their order.
+   * Ascending order is numbers, text (without regard to case), `FALSE`,
+   * `TRUE`, errors; descending reverses it; blank cells always go last.
+   *
+   * Each row's cells move together within the table's columns: content, cell
+   * metadata, direct cell styles and data types. A moved formula is adjusted
+   * like a pasted one, so `=B5*C5` moved to row 2 reads `=B2*C2`; whole-column
+   * references such as `A:A` keep spanning the column. Formulas elsewhere that
+   * point into the table are not rewritten (Excel does the same), and cells
+   * outside the table's columns do not move.
+   *
+   * The keys are recorded as the table's `sort` and its filters are re-applied
+   * to the new order. One undo step.
+   */
+  sortTable(opts: {
+    workbookName: string;
+    tableName: string;
+    keys: TableSortKey[];
+  }): void {
+    return this.withUndoRedoCheckpoint(() => {
+      const table = this.getTableOrThrow(opts);
+      const keys = normalizeTableSortKeys(opts.keys, table.headers.size);
+      const span = this.getTableDataRowSpan(table);
+      if (span) {
+        const rowCount = span.last - span.first + 1;
+        const values = Array.from({ length: rowCount }, (_, offset) =>
+          keys.map((key) =>
+            this.readTableCellValue(table, span.first + offset, key.column)
+          )
+        );
+        const order = Array.from({ length: rowCount }, (_, offset) => offset);
+        order.sort((left, right) => {
+          for (let index = 0; index < keys.length; index++) {
+            const comparison = compareTableCellValues(
+              values[left]![index]!,
+              values[right]![index]!,
+              keys[index]!.direction
+            );
+            if (comparison !== 0) {
+              return comparison;
+            }
+          }
+          return left - right;
+        });
+        if (order.some((source, target) => source !== target)) {
+          this.reorderTableRows(table, span.first, order);
+        }
+      }
+
+      const current = this.getTableOrThrow(opts);
+      this.applyTableFilterColumns(current, current.filter?.columns ?? [], keys);
+    });
+  }
+
+  /**
+   * Set the filter of one table column, or remove it with `filter: undefined`,
+   * and re-apply all of the table's filters to its current values. Rows that
+   * fail any column's filter are hidden; see {@link getHiddenRows}.
+   */
+  setTableColumnFilter(opts: {
+    workbookName: string;
+    tableName: string;
+    column: number;
+    filter: TableColumnFilter | undefined;
+  }): void {
+    return this.withUndoRedoCheckpoint(() => {
+      const table = this.getTableOrThrow(opts);
+      assertTableColumn(opts.column, table.headers.size);
+      const columns = (table.filter?.columns ?? []).filter(
+        (entry) => entry.column !== opts.column
+      );
+      if (opts.filter !== undefined) {
+        columns.push({
+          column: opts.column,
+          filter: normalizeTableColumnFilter(opts.filter),
+        });
+      }
+      this.applyTableFilterColumns(table, columns);
+    });
+  }
+
+  /** Remove every column filter of a table, showing all of its rows. */
+  clearTableFilters(opts: { workbookName: string; tableName: string }): void {
+    return this.withUndoRedoCheckpoint(() => {
+      this.applyTableFilterColumns(this.getTableOrThrow(opts), []);
+    });
+  }
+
+  /**
+   * Apply a table's filters to its current values again. Filters are applied
+   * when they change, after a sort and when the table is resized, but not
+   * after every edit, so an edited row stays visible until it is re-applied
+   * (Excel's Reapply).
+   */
+  reapplyTableFilters(opts: { workbookName: string; tableName: string }): void {
+    return this.withUndoRedoCheckpoint(() => {
+      const table = this.getTableOrThrow(opts);
+      this.applyTableFilterColumns(table, table.filter?.columns ?? []);
+    });
+  }
+
+  /**
+   * The rows of a sheet hidden by the filters of its tables, as 0-based row
+   * indexes. A grid renders them with zero height.
+   */
+  getHiddenRows(opts: { workbookName: string; sheetName: string }): Set<number> {
+    const rows = new Set<number>();
+    for (const table of this.tableManager.getTables(opts.workbookName).values()) {
+      if (table.sheetName !== opts.sheetName || !table.filter) {
+        continue;
+      }
+      for (const row of table.filter.hiddenRows) {
+        rows.add(row);
+      }
+    }
+    return rows;
+  }
+
+  /**
+   * The distinct values of a table column, for a filter menu's value list: in
+   * ascending sort order with blanks last, each with the number of rows that
+   * hold it and whether the column's current filter shows it. Like Excel, the
+   * list covers the rows that the other columns' filters let through, so it
+   * narrows as more columns are filtered. Text values that differ only in case
+   * are one entry.
+   */
+  getTableColumnValues(opts: {
+    workbookName: string;
+    tableName: string;
+    column: number;
+  }): TableColumnValue[] {
+    const table = this.getTableOrThrow(opts);
+    assertTableColumn(opts.column, table.headers.size);
+    const span = this.getTableDataRowSpan(table);
+    if (!span) {
+      return [];
+    }
+    const ownFilter = table.filter?.columns.find(
+      (entry) => entry.column === opts.column
+    )?.filter;
+    const otherFilters = (table.filter?.columns ?? []).filter(
+      (entry) => entry.column !== opts.column
+    );
+    const entries = new Map<string, { value: TableCellValue; count: number }>();
+    for (let row = span.first; row <= span.last; row++) {
+      if (
+        otherFilters.some(
+          ({ column, filter }) =>
+            !matchesTableColumnFilter(
+              this.readTableCellValue(table, row, column),
+              filter
+            )
+        )
+      ) {
+        continue;
+      }
+      const value = this.readTableCellValue(table, row, opts.column);
+      const key = tableCellValueKey(value);
+      const entry = entries.get(key);
+      if (entry) {
+        entry.count++;
+      } else {
+        entries.set(key, { value, count: 1 });
+      }
+    }
+
+    return Array.from(entries.values())
+      .sort((left, right) =>
+        compareTableCellValues(left.value, right.value, "ascending")
+      )
+      .map(({ value, count }): TableColumnValue => {
+        const selected = ownFilter
+          ? matchesTableColumnFilter(value, ownFilter)
+          : true;
+        switch (value.kind) {
+          case "blank":
+            return { kind: "blank", count, selected };
+          case "error":
+            return { kind: "error", error: value.error, count, selected };
+          default:
+            return { kind: "value", value: value.value, count, selected };
+        }
+      });
+  }
+
+  private getTableOrThrow(opts: {
+    workbookName: string;
+    tableName: string;
+  }): TableDefinition {
+    const table = this.tableManager.getTable({
+      workbookName: opts.workbookName,
+      name: opts.tableName,
+    });
+    if (!table) {
+      throw new Error(`Table not found: ${opts.tableName}`);
+    }
+    return table;
+  }
+
+  /**
+   * The sheet rows of a table's data body. An unbounded table ends at its last
+   * row with content in the table's columns.
+   */
+  private getTableDataRowSpan(
+    table: TableDefinition
+  ): { first: number; last: number } | undefined {
+    const first = table.start.rowIndex + 1;
+    let last = first - 1;
+    if (table.endRow.type === "number") {
+      last = table.endRow.value;
+    } else {
+      const lastCol = table.start.colIndex + table.headers.size - 1;
+      const sheet = this.workbookManager.getSheet(table);
+      for (const reference of sheet?.content.keys() ?? []) {
+        const { rowIndex, colIndex } = parseCellReference(reference);
+        if (
+          rowIndex > last &&
+          colIndex >= table.start.colIndex &&
+          colIndex <= lastCol
+        ) {
+          last = rowIndex;
+        }
+      }
+    }
+    return last >= first ? { first, last } : undefined;
+  }
+
+  private readTableCellValue(
+    table: TableDefinition,
+    rowIndex: number,
+    column: number
+  ): TableCellValue {
+    const address: CellAddress = {
+      workbookName: table.workbookName,
+      sheetName: table.sheetName,
+      rowIndex,
+      colIndex: table.start.colIndex + column,
+    };
+    // Nothing spills into a table, so a cell without a formula is its content;
+    // reading it directly avoids creating an evaluation node per cell.
+    const content = this.workbookManager.getCellContent(address);
+    if (typeof content !== "string" || !content.startsWith("=")) {
+      return tableCellValueFromResult({
+        type: "value",
+        result: this.evaluationManager.convertScalarValueToCellValue(content),
+      });
+    }
+    return tableCellValueFromResult(
+      this.evaluationManager.getCellEvaluationResult(address)
+    );
+  }
+
+  private computeTableHiddenRows(
+    table: TableDefinition,
+    columns: readonly TableColumnFilterState[]
+  ): number[] {
+    const span = this.getTableDataRowSpan(table);
+    if (!span || columns.length === 0) {
+      return [];
+    }
+    const hiddenRows: number[] = [];
+    for (let row = span.first; row <= span.last; row++) {
+      if (
+        columns.some(
+          ({ column, filter }) =>
+            !matchesTableColumnFilter(
+              this.readTableCellValue(table, row, column),
+              filter
+            )
+        )
+      ) {
+        hiddenRows.push(row);
+      }
+    }
+    return hiddenRows;
+  }
+
+  /**
+   * Store a table's column filters, applied to its current values, and its
+   * sort keys. Records one table change for undo/redo when anything differs.
+   */
+  private applyTableFilterColumns(
+    table: TableDefinition,
+    columns: readonly TableColumnFilterState[],
+    sort: TableSortKey[] | undefined = table.sort
+  ): void {
+    const current = this.getTableOrThrow({
+      workbookName: table.workbookName,
+      tableName: table.name,
+    });
+    const sorted = sortTableColumnFilters(columns);
+    this.tableManager.setTableFilterAndSort(
+      { workbookName: current.workbookName, tableName: current.name },
+      {
+        ...(sorted.length > 0
+          ? {
+              filter: {
+                columns: sorted,
+                hiddenRows: this.computeTableHiddenRows(current, sorted),
+              },
+            }
+          : {}),
+        ...(sort && sort.length > 0 ? { sort } : {}),
+      }
+    );
+    this.emitUpdate();
+  }
+
+  /**
+   * Move a table's data rows into a new order: the row at offset `order[i]`
+   * from `firstRow` goes to offset `i`. Formulas are adjusted like a paste.
+   */
+  private reorderTableRows(
+    table: TableDefinition,
+    firstRow: number,
+    order: readonly number[]
+  ): void {
+    const width = table.headers.size;
+    const address = (offset: number, column: number): CellAddress => ({
+      workbookName: table.workbookName,
+      sheetName: table.sheetName,
+      rowIndex: firstRow + offset,
+      colIndex: table.start.colIndex + column,
+    });
+
+    // Read every row before writing: rows trade places.
+    const contents: SerializedCellValue[][] = [];
+    const metadata: unknown[][] = [];
+    for (let offset = 0; offset < order.length; offset++) {
+      const rowContents: SerializedCellValue[] = [];
+      const rowMetadata: unknown[] = [];
+      for (let column = 0; column < width; column++) {
+        const cell = address(offset, column);
+        rowContents.push(this.workbookManager.getCellContent(cell));
+        rowMetadata.push(this.workbookManager.getCellMetadata(cell));
+      }
+      contents.push(rowContents);
+      metadata.push(rowMetadata);
+    }
+
+    // Formulas without A1 references (such as `=[@Units]*[@Price]`) read the
+    // same in every row; parse each distinct text once to find out.
+    const positional = new Map<string, boolean>();
+    const movesWithRow = (formula: string) => {
+      let result = positional.get(formula);
+      if (result === undefined) {
+        result = hasPositionalReferences(formula);
+        positional.set(formula, result);
+      }
+      return result;
+    };
+
+    this.workbookManager.batchDataChanges(() => {
+      for (let target = 0; target < order.length; target++) {
+        const source = order[target]!;
+        if (source === target) {
+          continue;
+        }
+        for (let column = 0; column < width; column++) {
+          const cell = address(target, column);
+          const content = contents[source]![column];
+          const moved =
+            typeof content === "string" && movesWithRow(content)
+              ? shiftFormulaReferences(content, target - source, 0, {
+                  preserveWholeRowsAndColumns: true,
+                  normalize: true,
+                })
+              : content;
+          if (!Object.is(moved, contents[target]![column])) {
+            this.workbookManager.setCellContent(cell, moved, {
+              formulaAlreadyNormalized: true,
+            });
+          }
+          const movedMetadata = metadata[source]![column];
+          if (!historyValuesEqual(movedMetadata, metadata[target]![column])) {
+            this.workbookManager.setCellMetadata(
+              cell,
+              movedMetadata === undefined
+                ? undefined
+                : cloneHistoryValue(movedMetadata)
+            );
+          }
+        }
+      }
+    });
+
+    this.styleManager.batchMutations(() =>
+      this.reorderTableRowFormatting(table, firstRow, order)
+    );
+  }
+
+  /**
+   * Move direct cell styles and data types with the rows of a sort. Nothing
+   * changes when formatting is uniform down every column; otherwise the data
+   * body's rules are replaced by one rule per distinct format, whose areas are
+   * the vertical runs of cells that carry it.
+   */
+  private reorderTableRowFormatting(
+    table: TableDefinition,
+    firstRow: number,
+    order: readonly number[]
+  ): void {
+    const { workbookName, sheetName } = table;
+    const firstCol = table.start.colIndex;
+    const width = table.headers.size;
+    const body: RangeAddress = {
+      workbookName,
+      sheetName,
+      range: {
+        start: { row: firstRow, col: firstCol },
+        end: {
+          row: { type: "number", value: firstRow + order.length - 1 },
+          col: { type: "number", value: firstCol + width - 1 },
+        },
+      },
+    };
+    const styleRules = this.styleManager.getStylesIntersectingWithRange(body);
+    const dataTypeRules =
+      this.styleManager.getCellDataTypesIntersectingWithRange(body);
+
+    const covers = (
+      areas: readonly RangeAddress[],
+      rowIndex: number,
+      colIndex: number
+    ) =>
+      areas.some(
+        (area) =>
+          area.workbookName === workbookName &&
+          area.sheetName === sheetName &&
+          isCellInRange({ rowIndex, colIndex }, area.range)
+      );
+
+    const reorder = <TFormat>(
+      readFormat: (rowIndex: number, colIndex: number) => TFormat | undefined,
+      clear: () => void,
+      add: (format: TFormat, areas: RangeAddress[]) => void
+    ) => {
+      const formats = Array.from({ length: order.length }, (_, offset) =>
+        Array.from({ length: width }, (_, column) =>
+          readFormat(firstRow + offset, firstCol + column)
+        )
+      );
+      const keys = formats.map((row) =>
+        row.map((format) =>
+          format === undefined ? "" : JSON.stringify(format)
+        )
+      );
+      const unchanged = order.every((source, target) =>
+        keys[source]!.every((key, column) => key === keys[target]![column])
+      );
+      if (unchanged) {
+        return;
+      }
+      clear();
+      const groups = new Map<string, { format: TFormat; areas: RangeAddress[] }>();
+      for (let column = 0; column < width; column++) {
+        let runStart = 0;
+        for (let target = 1; target <= order.length; target++) {
+          const runKey = keys[order[runStart]!]![column]!;
+          if (
+            target < order.length &&
+            keys[order[target]!]![column] === runKey
+          ) {
+            continue;
+          }
+          const format = formats[order[runStart]!]![column];
+          if (format !== undefined) {
+            let group = groups.get(runKey);
+            if (!group) {
+              group = { format, areas: [] };
+              groups.set(runKey, group);
+            }
+            group.areas.push({
+              workbookName,
+              sheetName,
+              range: {
+                start: { row: firstRow + runStart, col: firstCol + column },
+                end: {
+                  row: { type: "number", value: firstRow + target - 1 },
+                  col: { type: "number", value: firstCol + column },
+                },
+              },
+            });
+          }
+          runStart = target;
+        }
+      }
+      for (const { format, areas } of groups.values()) {
+        add(format, areas);
+      }
+    };
+
+    if (styleRules.length > 0) {
+      reorder<CellStyle>(
+        (rowIndex, colIndex) => {
+          let style: CellStyle | undefined;
+          for (const rule of styleRules) {
+            if (covers(rule.areas, rowIndex, colIndex)) {
+              style = { ...style, ...rule.style };
+            }
+          }
+          return style;
+        },
+        () => this.styleManager.clearCellStylesInRange(body),
+        (style, areas) =>
+          this.styleManager.addCellStyle({ areas, style: cloneHistoryValue(style) })
+      );
+    }
+    if (dataTypeRules.length > 0) {
+      reorder<CellDataType>(
+        (rowIndex, colIndex) => {
+          let dataType: CellDataType | undefined;
+          for (const rule of dataTypeRules) {
+            if (covers(rule.areas, rowIndex, colIndex)) {
+              dataType = rule.dataType;
+            }
+          }
+          return dataType === "general" ? undefined : dataType;
+        },
+        () => this.styleManager.clearCellDataTypesInRange(body),
+        (dataType, areas) => this.styleManager.addCellDataType({ areas, dataType })
+      );
+    }
   }
 
   //#endregion
@@ -3716,6 +4267,31 @@ export class FormulaEngine<TMetadata extends Metadata = Metadata> {
 
     if (data.workbookMetadata !== undefined) {
       this.setWorkbookMetadata(workbookName, data.workbookMetadata);
+    }
+
+    // Filters read evaluated values, so they apply once everything is loaded.
+    for (const table of data.tables ?? []) {
+      if (!table.filters?.length && !table.sort?.length) {
+        continue;
+      }
+      const definition = this.getTableOrThrow({
+        workbookName,
+        tableName: table.name,
+      });
+      const columns = (table.filters ?? []).map((entry) => {
+        assertTableColumn(entry.column, definition.headers.size);
+        return {
+          column: entry.column,
+          filter: normalizeTableColumnFilter(entry.filter),
+        };
+      });
+      this.applyTableFilterColumns(
+        definition,
+        columns,
+        table.sort?.length
+          ? normalizeTableSortKeys(table.sort, definition.headers.size)
+          : undefined
+      );
     }
   }
 
