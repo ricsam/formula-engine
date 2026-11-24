@@ -242,6 +242,12 @@ const functionMetadata = {
     signature: "ISBLANK(value)",
     parameters: [parameter("value")],
   },
+  ISERROR: {
+    category: "information",
+    description: "Returns TRUE when a value is an error, such as #N/A or #VALUE!.",
+    signature: "ISERROR(value)",
+    parameters: [parameter("value")],
+  },
   ISNUMBER: {
     category: "information",
     description: "Returns TRUE when a value is a number.",
@@ -351,6 +357,13 @@ const functionMetadata = {
       parameter("criteria_range2", true, true),
       parameter("criteria2", true, true),
     ],
+  },
+  MOD: {
+    category: "math",
+    description:
+      "Returns the remainder after dividing a number by a divisor, with the divisor's sign.",
+    signature: "MOD(number, divisor)",
+    parameters: [parameter("number"), parameter("divisor")],
   },
   OFFSET: {
     category: "reference",

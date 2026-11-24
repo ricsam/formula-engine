@@ -1,6 +1,6 @@
 ---
 title: "Errors"
-description: "Every error value the engine produces, what triggers it, and what IFERROR does and does not catch."
+description: "Every error value the engine produces, what triggers it, and what IFERROR and ISERROR do and do not catch."
 ---
 
 Errors are ordinary cell values: strings beginning with `#`. They propagate
@@ -19,6 +19,7 @@ Every result on this page was produced by running the code against the engine.
 | `#NAME?` | Unknown function or name | `=NOSUCHFN(1)`, `=UnknownName` |
 | `#VALUE!` | Wrong argument type | `=1+"abc"` |
 | `#NUM!` | Numerically invalid | `=CEILING(-7.3,1)` |
+| `#DIV/0!` | A function's divisor is `0` (the `/` operator returns `INFINITY` instead) | `=MOD(5,0)`, `=CEILING(2.5,0)` |
 | `#SPILL!` | Array cannot be placed | a blocked spill area |
 | `#REF!` | Invalid reference | a reference the engine cannot resolve |
 | `#ERROR!` | Evaluation failed | a formula pointing at a deleted sheet |
@@ -79,7 +80,8 @@ see [Spilling](/concepts/spilling#blank-cells).
 
 <Warning>
   `=10/0` evaluates to the **string `"INFINITY"`**, not `#DIV/0!`. Because it is
-  not an error value, `IFERROR` does not intercept it.
+  not an error value, `IFERROR` does not intercept it and `ISERROR` returns
+  `FALSE`.
 </Warning>
 
 ```typescript
@@ -101,9 +103,10 @@ Guard explicitly when a denominator can be zero:
 '=IF(B1=0, "n/a", A1/B1)'
 ```
 
-## What `IFERROR` does catch
+## What `IFERROR` and `ISERROR` catch
 
-`IFERROR` intercepts genuine error values.
+`IFERROR` intercepts genuine error values, and `ISERROR` returns `TRUE` for
+exactly the same values.
 
 ```typescript
 engine.setSheetContent(
@@ -118,6 +121,8 @@ read("G1"); // "caught"
 | --- | --- |
 | `=IFERROR(NOSUCHFN(1),"caught")` | `"caught"` |
 | `=IFERROR(10/0,"caught")` | `"INFINITY"` |
+| `=ISERROR(NOSUCHFN(1))` | `TRUE` |
+| `=ISERROR(10/0)` | `FALSE` |
 
 ## Deleting a referenced sheet
 

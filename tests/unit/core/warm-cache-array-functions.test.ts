@@ -6,8 +6,9 @@ import { parseCellReference } from "../../../src/core/utils";
 /**
  * Warm snapshots store spills as fixed values together with the cells they
  * were read from. These tests check that the spills of the functions added for
- * the Operations workbooks (FILTER, TRANSPOSE, IFS, ISBLANK, ROUND, VLOOKUP)
- * survive a warm restore and still follow edits afterwards.
+ * the Operations workbooks (FILTER, TRANSPOSE, IFS, ISBLANK, ROUND, VLOOKUP),
+ * and of ISERROR and MOD, survive a warm restore and still follow edits
+ * afterwards.
  */
 
 const workbookName = "Book";
@@ -130,5 +131,22 @@ describe("warm snapshots of the new array functions", () => {
     expect(
       readAfterWarmRestoreAndEdit(cells, ["D1", "D2"], setCell("B1", 1))
     ).toEqual([20.75, 1]);
+  });
+
+  test("ISERROR and MOD over a range follow edits", () => {
+    const cells = {
+      ...data,
+      C1: '=1+"x"',
+      C2: 4,
+      D1: "=ISERROR(C1:C3)",
+      E1: "=MOD(B1:B3, 10)",
+    };
+
+    expect(
+      readAfterWarmRestoreAndEdit(cells, ["D1", "D2", "D3"], setCell("C3", "=NOSUCHFN()"))
+    ).toEqual([true, false, true]);
+    expect(
+      readAfterWarmRestoreAndEdit(cells, ["E1", "E2", "E3"], setCell("B2", -3))
+    ).toEqual([0.25, 7, 0.5]);
   });
 });

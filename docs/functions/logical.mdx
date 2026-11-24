@@ -84,7 +84,8 @@ and a cell without a true condition is `#N/A`. Given `5`, `15`, `25` in
 =IFERROR(value, fallback)
 ```
 
-Returns `fallback` when `value` evaluates to a formula error.
+Returns `fallback` when `value` evaluates to a formula error. To test for an
+error without replacing it, use [`ISERROR`](/functions/information#iserror).
 
 ```excel
 =IFERROR(NOSUCHFN(1),"fallback") // "fallback"

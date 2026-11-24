@@ -1,21 +1,21 @@
 ---
 title: "Function reference"
-description: "The exact 59 functions, plus three aliases, registered by FormulaEngine."
+description: "The exact 61 functions, plus three aliases, registered by FormulaEngine."
 ---
 
-FormulaEngine currently registers **59 functions** across seven categories, plus
+FormulaEngine currently registers **61 functions** across seven categories, plus
 three aliases: `CONCAT` for `CONCATENATE`, `COLS` for `COLUMNS` and `STDEV` for
-`STDEV.S`. That makes 62 function names. Function names are case-insensitive in
+`STDEV.S`. That makes 64 function names. Function names are case-insensitive in
 formulas.
 
 | Category | Functions |
 | --- | --- |
-| [Math](/functions/math) | `SUM`, `SUMIF`, `SUMIFS`, `SUMPRODUCT`, `AVERAGE`, `AVERAGEIF`, `AVERAGEIFS`, `MIN`, `MINIF`, `MINIFS`, `MAX`, `MAXIF`, `MAXIFS`, `STDEV.S`, `STDEV`, `CEILING`, `INT`, `ROUND`, `ROUNDUP`, `ROUNDDOWN` |
+| [Math](/functions/math) | `SUM`, `SUMIF`, `SUMIFS`, `SUMPRODUCT`, `AVERAGE`, `AVERAGEIF`, `AVERAGEIFS`, `MIN`, `MINIF`, `MINIFS`, `MAX`, `MAXIF`, `MAXIFS`, `STDEV.S`, `STDEV`, `CEILING`, `INT`, `MOD`, `ROUND`, `ROUNDUP`, `ROUNDDOWN` |
 | [Logical](/functions/logical) | `IF`, `IFS`, `IFERROR`, `AND`, `OR`, `LET` |
 | [Text](/functions/text) | `CONCATENATE`, `CONCAT`, `EXACT`, `FIND`, `LEFT`, `RIGHT`, `MID`, `LEN`, `TEXT`, `TEXTJOIN` |
 | [Lookup](/functions/lookup) | `COUNT`, `COUNTA`, `COUNTIF`, `COUNTIFS`, `INDEX`, `MATCH`, `VLOOKUP`, `XLOOKUP` |
 | [Array](/functions/array) | `SEQUENCE`, `UNIQUE`, `FILTER`, `TOCOL`, `TOROW`, `HSTACK`, `TRANSPOSE` |
-| [Information](/functions/information) | `CELL`, `COLUMN`, `COLUMNS`, `COLS`, `ISBLANK`, `ISNUMBER`, `ROW`, `ROWS` |
+| [Information](/functions/information) | `CELL`, `COLUMN`, `COLUMNS`, `COLS`, `ISBLANK`, `ISERROR`, `ISNUMBER`, `ROW`, `ROWS` |
 | [Reference](/functions/reference) | `ADDRESS`, `INDIRECT`, `OFFSET` |
 
 ## Formula syntax
@@ -121,12 +121,12 @@ data exactly.
 `SEQUENCE`, `UNIQUE`, `FILTER`, `TOCOL`, `TOROW`, `HSTACK`, `TRANSPOSE`, range
 references, array literals, and operators or functions applied element by
 element to arrays may spill into neighbouring cells. Operators, `IF`, `IFS`,
-`IFERROR`, `ROUND`, `ROUNDUP`, `ROUNDDOWN`, `TEXT` and the array arguments of
-`VLOOKUP` broadcast arrays of different shapes the way Excel does, so
-`=SEQUENCE(3)*SEQUENCE(,4)` spills a 3 × 4 multiplication table. `INT`,
-`ISNUMBER` and `ISBLANK` map one array element by element. A blocked output
-area produces `#SPILL!` until the blocking content is removed. See
-[Spilling](/concepts/spilling).
+`IFERROR`, `MOD`, `ROUND`, `ROUNDUP`, `ROUNDDOWN`, `TEXT` and the array
+arguments of `VLOOKUP` broadcast arrays of different shapes the way Excel does,
+so `=SEQUENCE(3)*SEQUENCE(,4)` spills a 3 × 4 multiplication table. `INT`,
+`ISNUMBER`, `ISBLANK` and `ISERROR` map one array element by element. A
+blocked output area produces `#SPILL!` until the blocking content is removed.
+See [Spilling](/concepts/spilling).
 
 Aggregates accept these results directly:
 
@@ -137,9 +137,10 @@ Aggregates accept these results directly:
 
 ## Errors
 
-Unknown function names return `#NAME?`. `IFERROR` catches error values, with one
-important exception: division by zero currently returns the string `"INFINITY"`
-rather than an error, so it is not caught. See [Errors](/concepts/errors).
+Unknown function names return `#NAME?`. `IFERROR` catches error values and
+`ISERROR` reports them, with one important exception: division by zero
+currently returns the string `"INFINITY"` rather than an error, so neither
+sees it. See [Errors](/concepts/errors).
 
 <Note>
   Functions familiar from Excel but absent from the table above are not

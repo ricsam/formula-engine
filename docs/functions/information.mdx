@@ -130,17 +130,48 @@ Returns `TRUE` when a value is blank.
   `=ISBLANK("")` and `ISBLANK` of a cell holding `=""` are `FALSE` there.
 </Warning>
 
+## `ISERROR`
+
+Returns `TRUE` when a value is an error.
+
+```excel
+=ISERROR(value)
+```
+
+```excel
+=ISERROR(NOSUCHFN())                                // TRUE: #NAME?
+=ISERROR(42)                                        // FALSE
+=IF(ISERROR(B1), "", B1*2)                          // keep an error in B1 out
+=IF(ISERROR(MATCH("x", A1:A9, 0)), "missing", "found")
+```
+
+Every error value counts, from `#N/A` and `#VALUE!` to `#CYCLE!` and
+`#SPILL!`, and `ISERROR` never returns an error itself. It is `TRUE` exactly
+where `IFERROR` would return its fallback, so `=IF(ISERROR(x), y, x)` and
+`=IFERROR(x, y)` agree.
+
+Text that reads like an error is not one: a cell holding the text `#N/A` reads
+back as `"#N/A"`, like the error, but `ISERROR` of it is `FALSE`. The formula
+`=#N/A` is the error.
+
+<Warning>
+  Division by zero is the value `"INFINITY"` in this engine, not an error, so
+  `=ISERROR(1/0)` is `FALSE`. Excel returns `#DIV/0!` for `1/0`, and `TRUE`
+  for `ISERROR(1/0)`. Test the divisor instead: `=IF(B1=0, "n/a", A1/B1)`.
+</Warning>
+
 ### Arrays
 
-Both functions test an array argument element by element, and the result
-spills with the argument's shape. Aggregates read every cell of a bounded
-result, the empty cells of a range included, so `IF` can count with them. Given
-`1`, an empty cell, `x` and an empty cell in `A1:A4`:
+`ISNUMBER`, `ISBLANK` and `ISERROR` test an array argument element by element,
+and the result spills with the argument's shape. Aggregates read every cell of
+a bounded result, the empty cells of a range included, so `IF` can count with
+them. Given `1`, an empty cell, `x` and an empty cell in `A1:A4`:
 
 ```excel
 =ISBLANK(A1:A4)                    // spills FALSE, TRUE, FALSE, TRUE
 =SUM(IF(ISBLANK(A1:A4), 1, 0))     // 2, the empty cells
 =SUM(IF(ISNUMBER(A1:A4), 1, 0))    // 1, the numbers
+=SUM(IF(ISERROR(A1:A4), 1, 0))     // 0, the errors
 ```
 
 An unbounded range such as `A:A` is read by its populated cells, so

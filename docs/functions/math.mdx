@@ -1,6 +1,6 @@
 ---
 title: "Math functions"
-description: "SUM, AVERAGE, MIN, MAX, criteria variants, SUMPRODUCT, STDEV.S, CEILING, INT, and the ROUND family."
+description: "SUM, AVERAGE, MIN, MAX, criteria variants, SUMPRODUCT, STDEV.S, CEILING, INT, MOD, and the ROUND family."
 ---
 
 Every result below was verified against the engine.
@@ -118,6 +118,68 @@ element.
   `INT("3.7")` to `3`, `INT(TRUE)` to `1` and an empty cell to `0`. Over a
   range, an empty cell's place in the spill shows `#VALUE!`, while aggregates
   such as `SUM(INT(A1:A3))` skip it.
+</Warning>
+
+## `MOD`
+
+Returns the remainder after dividing `number` by `divisor`. The result has the
+sign of the divisor, as in Excel.
+
+```excel
+=MOD(number, divisor)
+```
+
+```excel
+=MOD(10, 3)     // 1
+=MOD(-3, 2)     // 1
+=MOD(3, -2)     // -1
+=MOD(-3, -2)    // -1
+=MOD(6.25, 1)   // 0.25, the fractional part
+```
+
+Common uses:
+
+```excel
+=MOD(A1, 1)                            // the time of a date-time serial number
+=MOD(B1-A1, 1)                         // a duration that may cross midnight
+=IF(MOD(B1, 4)=0, "leap", "common")    // divisibility
+=MOD(ROW(), 2)                         // 1, 0, 1, 0 down the rows
+=MOD(SEQUENCE(6, 1, 0), 3)+1           // spills 1, 2, 3, 1, 2, 3
+=FILTER(A1:A10, MOD(SEQUENCE(10), 2)=0) // every second row
+```
+
+A divisor of `0` returns `#DIV/0!`, as in Excel, and so does an omitted one:
+`=MOD(5,)`. An omitted number is `0`. Array arguments are divided element by
+element and broadcast against each other like the operands of an operator:
+`=MOD(10, {3,4,6})` spills `1`, `2`, `4`. An error in one element stays in
+that element, and aggregates such as `=SUM(MOD(A1:A9, 2))` read the remainders
+of the populated cells.
+
+### Fractional numbers
+
+A number that is the divisor times a whole number in this engine's arithmetic
+has a remainder of `0`. Any other remainder is that of the binary values the
+engine stores, which is why a decimal divisor such as `0.1` can leave a
+remainder close to the divisor:
+
+```excel
+=MOD(0.5, 0.1)    // 0, because 0.1*5 is 0.5
+=MOD(0.3, 0.1)    // 0.09999999999999998, because 0.1*3 is 0.30000000000000004
+=MOD(5.1, 1)      // 0.09999999999999964, the same as 5.1-5
+```
+
+To test a decimal against a decimal step, divide and round before taking the
+remainder: `=MOD(ROUND(A1/0.05, 9), 1)=0` is `TRUE` for every multiple of
+`0.05`, `0.3` included.
+
+<Warning>
+  `MOD` accepts only numbers, like `INT` and the rounding functions. Text,
+  `TRUE`, `FALSE` and empty cells return `#VALUE!`, where Excel converts
+  `MOD("7", 2)` and `MOD(TRUE, 2)` to `1`, reads an empty number as `0` and
+  an empty divisor as `#DIV/0!`. `INFINITY` and `-INFINITY` return `#NUM!` in
+  either argument, and so does a quotient of `2^53` or more in size, such as
+  `=MOD(1E300, 7)`, where a number can no longer tell consecutive multiples of
+  the divisor apart. Excel also returns `#NUM!` for very large numbers.
 </Warning>
 
 ## `ROUND`, `ROUNDUP`, `ROUNDDOWN`

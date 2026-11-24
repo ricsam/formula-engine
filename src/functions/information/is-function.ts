@@ -17,11 +17,12 @@ import {
 } from "../array/array-utils";
 
 /**
- * Shared implementation of the IS functions (ISNUMBER, ISBLANK): each tests one
- * value and returns TRUE or FALSE, never an error.
+ * Shared implementation of the IS functions (ISNUMBER, ISBLANK, ISERROR): each
+ * tests one value and returns TRUE or FALSE, never an error.
  *
- * - An error value is tested like any other value (and is not a number nor
- *   blank), so `ISNUMBER(1/"x")` is FALSE rather than #VALUE!.
+ * - An error value is tested like any other value: it is an error, but neither
+ *   a number nor blank, so `ISNUMBER(1/"x")` is FALSE rather than #VALUE! and
+ *   `ISERROR(1/"x")` is TRUE.
  * - A spilled argument, such as a range or `SEQUENCE(3)`, is tested element by
  *   element and the result spills with the argument's shape.
  * - Aggregates read every cell of a bounded result through `evaluateAllCells`,

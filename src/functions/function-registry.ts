@@ -59,6 +59,7 @@ import { ROUND } from "./math/round/round";
 import { ROUNDUP } from "./math/round/roundup";
 import { ROUNDDOWN } from "./math/round/rounddown";
 import { ISBLANK } from "./information/isblank/isblank";
+import { ISERROR } from "./information/iserror/iserror";
 import { ISNUMBER } from "./information/isnumber/isnumber";
 import { IFS } from "./logical/ifs/ifs";
 import { STDEV_S } from "./math/stdev/stdev";
@@ -66,6 +67,7 @@ import { TRANSPOSE } from "./array/transpose/transpose";
 import { FILTER } from "./array/filter/filter";
 import { SUMPRODUCT } from "./math/sumproduct/sumproduct";
 import { VLOOKUP } from "./lookup/vlookup/vlookup";
+import { MOD } from "./math/mod/mod";
 
 const buildFunctionIndex = (functions: Record<string, FunctionDefinition>) => {
   return Object.fromEntries(
@@ -107,6 +109,7 @@ export const functionDefinitions = {
   INDIRECT,
   INT,
   ISBLANK,
+  ISERROR,
   ISNUMBER,
   LEFT,
   LEN,
@@ -119,6 +122,7 @@ export const functionDefinitions = {
   MIN,
   MINIF,
   MINIFS,
+  MOD,
   OFFSET,
   OR,
   RIGHT,
